@@ -28,6 +28,11 @@ export const SECTION_SIZE = {
   horn: { cols: 2, rows: 2 }, trumpet: { cols: 3, rows: 1 }, trombone: { cols: 3, rows: 1 }, tuba: { cols: 1, rows: 1 },
 };
 const ROW_GAP = 1.9;      // 同セクション内の列（奥行き）間隔 [unit]
+// トラックの人数。名前に solo を含むトラックは楽器に関わらず 1 人（Violin solo / Cello solo 等。2026-09-09 ユーザー指定）
+function sizeOf(track) {
+  if (/\bsolo\b/i.test(track.name)) return { cols: 1, rows: 1 };
+  return { ...(SECTION_SIZE[track.variant] || { cols: 1, rows: 1 }) };
+}
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
 const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'] };
@@ -227,7 +232,7 @@ export function layoutSeats(tracks) {
     });
 
     // 各トラックの人数（横×奥行き）。列の角度幅に収まらない時は横の人数を均等に減らす
-    const sizes = list.map((tr) => ({ ...(SECTION_SIZE[tr.variant] || { cols: 1, rows: 1 }) }));
+    const sizes = list.map((tr) => sizeOf(tr));
     const span = deg(row.span);
     const angleOf = (cols) => (cols * PUPPET_GAP) / row.r; // 1トラックが占める角度 [rad]
     if (!row.beside && list.length > 1) {
