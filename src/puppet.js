@@ -105,10 +105,13 @@ const VIOLIN_AXIS = [-0.55, -0.32, 0.77];   // あごから渦巻きへ（左・
 const VIOLIN_UP = [0.15, 0.9, 0.35];        // 弦の面の法線（上・やや前）
 const VIOLIN_Q = quatFromAxes(VIOLIN_AXIS, VIOLIN_UP, '-x'); // 鏡像スプライトなので渦巻きはローカル -x
 const VIOLIN_BOW = (() => { const b = new THREE.Vector3().crossVectors(v3(VIOLIN_UP), v3(VIOLIN_AXIS)).normalize(); if (b.x > 0) b.negate(); return [b.x, b.y, b.z]; })(); // 手元→先端（右手から左へ）
-const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.28, 0, 0.08)); // 上を奏者側へ傾ける
+const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0, 0.08)); // 約 29° 傾けて上部を胸に寄りかからせる（実際のチェロはかなり寝かせる）
 // チェロ系の弓の向き・弦から離れる向きは楽器の姿勢から：弓は楽器のローカル -x（右手→左）、弦の面の法線はローカル +z（正面）
 const CELLO_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
 const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
+const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.22, 0, 0.08)); // コントラバスは立奏で浅く寄りかける
+const BASS_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
+const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
 
 const VARIANT = {
@@ -117,9 +120,9 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 2.5 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
-                p3: { pos: [0.5, 1, 6], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 }, legSpread: 6.5 }, // 膝を開いて挟む。z=10 だと弓手が届かず IK が縮んで弓が胴に入る
+                p3: { pos: [0.5, 1, 12], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む
   contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
-                p3: { pos: [2, 0, 8], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } }, // 立奏。体の前に立てかける
+                p3: { pos: [2, 0, 7], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } }, // 立奏。体の前に立てかける（傾きは浅め）
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
   // handDirs = 手首→指先の向き（楽器ローカル）。フルートは下から抱えて指は上へ、縦笛は左右から、金管は上から／横から
@@ -318,6 +321,18 @@ export class Puppet {
       const qh = quatFromBoneDir(this._handDir, new THREE.Quaternion());
       this.handGrp[side].quaternion.copy(ik.q2).invert().multiply(qh);
       this.handQ[side].copy(qh);
+      // 腕が届かない時（IK が肩→手首の距離で頭打ち）でも、手持ち物は目標位置（弦の上・打点）に置く：
+      // 実際の手首位置を求め、目標との差を手のローカル座標で補正する
+      const item = this.held[side];
+      if (item) {
+        const reach = ARM_UPPER + fore - 0.05;
+        const dx = goal[0] - S[0], dy = goal[1] - S[1], dz = goal[2] - S[2];
+        const dist = Math.hypot(dx, dy, dz);
+        const k = dist > reach ? reach / dist : 1;
+        const wrist = [S[0] + dx * k, S[1] + dy * k, S[2] + dz * k];
+        _a.set(cur[0] - wrist[0], cur[1] - wrist[1], cur[2] - wrist[2]).applyQuaternion(_q.copy(qh).invert());
+        item.position.set(_a.x * PX, _a.y * PX, _a.z * PX + (this.flat ? 3 : 0) * PX); // z を落としていたバグを修正
+      }
     } else this.handQ[side].copy(ik.q2);
     return ik;
   }
