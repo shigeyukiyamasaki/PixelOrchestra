@@ -13,10 +13,10 @@ export const ROWS = {
   woodwind:   { r: 15,   h: 1.0,  span: 90 },
   brass:      { r: 19,   h: 2.0,  span: 100 },
   percussion: { r: 23,   h: 3.0,  span: 110 },
-  // コントラバスは弦の後ろ・チェロ（一番右）の後ろ、鍵盤系（ハープ/ピアノ/チェレスタ）はその左右対称＝第1バイオリン（一番左）の後ろ。
-  // どちらも床に立つ（ひな壇なし）。木管の扇と重ならないよう少し外側へ（2026-09-09 ユーザー指定）
-  contrabass: { r: 13.5, h: 0,    span: 0, behind: 'cello',  refPick: 'max', fallbackDeg: 58,  angleOffsetDeg: 8 },
-  keyboard:   { r: 13.5, h: 0,    span: 0, behind: 'violin', refPick: 'min', fallbackDeg: -58, angleOffsetDeg: -8 },
+  // コントラバス（右）と鍵盤群（左：ハープ/ピアノ/チェレスタ/シロフォン/マリンバ）は、木管の扇のすぐ外側に隣接して床に立つ
+  // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
+  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40 },
+  keyboard:   { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40 },
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -32,7 +32,9 @@ const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'] };
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {
-  return track.variant === 'contrabass' ? 'contrabass' : track.family;
+  if (track.variant === 'contrabass') return 'contrabass';
+  if (track.variant === 'xylophone' || track.variant === 'marimba') return 'keyboard'; // 鍵盤打楽器は左の鍵盤群へ
+  return track.family;
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
@@ -200,8 +202,8 @@ export function layoutSeats(tracks) {
   const seats = [];
   const centerAngle = new Map(); // track → 列内の中心角（後ろに置く楽器の基準）
 
-  // 「behind」指定の列は基準になる列の後で処理する
-  const famKeys = Object.keys(byFam).sort((a, b) => (ROWS[a]?.behind ? 1 : 0) - (ROWS[b]?.behind ? 1 : 0));
+  // 「beside」指定の列は基準になる列（木管）の後で処理する
+  const famKeys = Object.keys(byFam).sort((a, b) => (ROWS[a]?.beside ? 1 : 0) - (ROWS[b]?.beside ? 1 : 0));
   for (const fam of famKeys) {
     const row = ROWS[fam];
     if (!row) continue;
@@ -219,7 +221,7 @@ export function layoutSeats(tracks) {
     const sizes = list.map((tr) => ({ ...(SECTION_SIZE[tr.variant] || { cols: 1, rows: 1 }) }));
     const span = deg(row.span);
     const angleOf = (cols) => (cols * PUPPET_GAP) / row.r; // 1トラックが占める角度 [rad]
-    if (!row.behind && list.length > 1) {
+    if (!row.beside && list.length > 1) {
       for (let guard = 0; guard < 8; guard++) { // 中断条件付き
         const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
         if (total <= span + angleOf(1) || sizes.every((s) => s.cols <= 1)) break;
@@ -229,12 +231,13 @@ export function layoutSeats(tracks) {
 
     // 各トラックの中心角を決める（角度幅は人数に比例）
     let centers;
-    if (row.behind) { // 基準楽器（チェロ）の真後ろに並べる。無ければ既定角
-      const refs = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t)).map((t) => centerAngle.get(t));
-      const refAngle = refs.length ? (row.refPick === 'min' ? Math.min(...refs) : Math.max(...refs)) : deg(row.fallbackDeg);
-      const base = refAngle + deg(row.angleOffsetDeg || 0);
+    if (row.beside) { // 基準列（木管）の扇のすぐ外側に隣接（side: +1 = 右、-1 = 左）
+      const refThetas = seats.filter((st) => st.track.family === row.beside).flatMap((st) => st.positions.map((p) => Math.atan2(p.x, -p.z)));
+      const edge = refThetas.length ? (row.side > 0 ? Math.max(...refThetas) : Math.min(...refThetas)) : deg(row.fallbackDeg);
       const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
-      let cursor = base - total / 2;
+      const gap = RISER_MARGIN + 0.9 / row.r; // 扇の余白 + 少し
+      const start = row.side > 0 ? edge + gap : edge - gap - total;
+      let cursor = start;
       centers = sizes.map((s) => { const c = cursor + angleOf(s.cols) / 2; cursor += angleOf(s.cols); return c; });
     } else {
       const n = list.length;
