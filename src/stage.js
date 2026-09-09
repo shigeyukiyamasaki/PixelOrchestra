@@ -67,14 +67,19 @@ export function createStage(container) {
   controls.maxAzimuthAngle = deg(75);
   controls.update();
 
+  // 床・ひな壇・指揮台は「深度を書かない」（depthWrite:false, 先に描く）。
+  // 理由：奏者の板は足元を軸にカメラへ正対するため、見下ろすと板の上半分が後方へ倒れ込み、
+  // 後列の（高い）ひな壇に深度で隠される。正当な視点でひな壇が奏者を隠すことは無いので、
+  // 舞台側を深度判定から外し、奏者同士・ロールとの前後関係だけを深度で決める（2026-09-09）。
+  const STAGE_ORDER = -10;
+  const stageMat = (opts) => new THREE.MeshBasicMaterial({ ...opts, depthWrite: false });
+  const addStage = (mesh) => { mesh.renderOrder = STAGE_ORDER; scene.add(mesh); return mesh; };
+
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(40, 48),
-    new THREE.MeshBasicMaterial({ map: floorTex, color: '#8a7a6a' }),
-  );
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 48), stageMat({ map: floorTex, color: '#8a7a6a' }));
   floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
+  addStage(floor);
 
   // ひな壇（後列ほど高い半円のリング。前列を覆わないよう内径 r-2 〜 外径 r+2 の帯にする）
   const RISER_HALF = 2;
@@ -83,32 +88,26 @@ export function createStage(container) {
     if (row.h <= 0) continue;
     const rIn = row.r - RISER_HALF, rOut = row.r + RISER_HALF;
     const col = fam === 'percussion' ? '#5a4c40' : fam === 'brass' ? '#6a5a4c' : '#7a6a5a';
-    const top = new THREE.Mesh(
-      new THREE.RingGeometry(rIn, rOut, 48, 1, 0, Math.PI),
-      new THREE.MeshBasicMaterial({ map: floorTex, color: col }),
-    );
+    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, 48, 1, 0, Math.PI), stageMat({ map: floorTex, color: col }));
     top.rotation.x = -Math.PI / 2;   // (cos a, sin a, 0) → (cos a, 0, -sin a)：a∈[0,π] で z≤0 = 後方
     top.position.y = row.h;
-    scene.add(top);
+    addStage(top);
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, 48, 1, true, Math.PI / 2, Math.PI),
-      new THREE.MeshBasicMaterial({ color: '#2e2620', side: THREE.DoubleSide }),
+      stageMat({ color: '#2e2620', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
-    scene.add(front);
+    addStage(front);
     // 段の縁（見切り線）
-    const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(rIn, 0.05, 6, 64, Math.PI),
-      new THREE.MeshBasicMaterial({ color: '#1a140f' }),
-    );
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, 64, Math.PI), stageMat({ color: '#1a140f' }));
     rim.rotation.x = -Math.PI / 2; rim.position.y = row.h + 0.01;
-    scene.add(rim);
+    addStage(rim);
   }
 
   // 指揮台
-  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), new THREE.MeshBasicMaterial({ color: '#3a2c22' }));
+  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#3a2c22' }));
   podium.position.set(0, 0.15, 2);
-  scene.add(podium);
+  addStage(podium);
 
   // ロール壁の背景板（暗い半透明で対比を作る）
   const wall = new THREE.Mesh(
