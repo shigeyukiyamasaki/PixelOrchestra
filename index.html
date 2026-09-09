@@ -13,61 +13,60 @@
 <body>
   <div id="view"></div>
 
-  <button id="panelToggle" title="パネルの表示/非表示">☰</button>
+  <button id="panelToggle" title="表示設定パネルの表示/非表示">☰</button>
 
   <header id="topbar">
     <h1>Pixel Orchestra</h1>
-    <label class="filebtn" title="MIDI ファイルを選択">MIDI<input type="file" id="midiFile" accept=".mid,.midi,audio/midi"></label>
+    <label class="filebtn" title="MIDI ファイル（.mid）を読み込む。トラック名から楽器を自動判定します">MIDI<input type="file" id="midiFile" accept=".mid,.midi,audio/midi"></label>
     <span id="status" class="status">（未読み込み）</span>
-    <label class="filebtn" title="音声ファイル（任意・MIDI と同期再生）">音声<input type="file" id="audioFile" accept="audio/*"></label>
+    <label class="filebtn" title="音声ファイル（mp3/wav/m4a・任意）。MIDI と同期して再生します。無くても動きます">音声<input type="file" id="audioFile" accept="audio/*"></label>
     <span id="audioName" class="status">（なし）</span>
-    <label class="offset" title="音声オフセット (ms)">オフセット<input type="number" id="audioOffset" value="0" step="10"><span>ms</span></label>
+    <label class="offset" title="音声を MIDI に対して何 ms 遅らせるか（マイナスで早める）。映像と音がずれる時に調整">オフセット<input type="number" id="audioOffset" value="0" step="10"><span>ms</span></label>
     <span class="spacer"></span>
-    <button id="playBtn" class="primary" title="Space でも再生／停止">▶ 再生</button>
-    <button id="stopBtn">■ 停止</button>
-    <span id="timeLabel" class="time">0:00 / 0:00</span>
-    <input type="range" id="seek" min="0" max="1000" value="0" class="seek">
+    <button id="playBtn" class="primary" title="再生／一時停止（Space キーでも可）">▶ 再生</button>
+    <button id="stopBtn" title="停止して曲頭に戻る">■ 停止</button>
+    <span id="timeLabel" class="time" title="現在位置 / 曲の長さ、♩= 現在のテンポ">0:00 / 0:00</span>
+    <input type="range" id="seek" min="0" max="1000" value="0" class="seek" title="再生位置">
     <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
   </header>
 
   <aside id="panel">
     <details open>
       <summary>ピアノロール</summary>
-      <label class="chk"><input type="checkbox" id="showRoll" checked> 表示する</label>
-      <label class="ctl"><span>位置</span>
+      <label class="chk" title="流れ落ちるピアノロールを表示する"><input type="checkbox" id="showRoll" checked> 表示する</label>
+      <label class="ctl" title="頭上：各奏者の頭の上に、そのパートの音だけが落ちてくる。壁：後方の壁に全パートの音が流れる（横軸＝音程）"><span>位置</span>
         <select id="rollMode">
           <option value="overhead" selected>各奏者の頭上に落ちる</option>
           <option value="wall">後方の壁に流れる</option>
         </select>
       </label>
-      <label class="ctl"><span>落下速度 <b data-value-for="rollSpeed">3</b></span><input type="range" id="rollSpeed" min="1" max="8" step="0.5" value="3"></label>
-      <label class="ctl"><span>高さ（頭上モード） <b data-value-for="rollHeight">7</b></span><input type="range" id="rollHeight" min="2" max="24" step="0.5" value="7"></label>
-      <label class="ctl"><span>ノート幅（半音あたり） <b data-value-for="noteWidth">0.22</b></span><input type="range" id="noteWidth" min="0.06" max="0.6" step="0.02" value="0.22"></label>
-      <label class="ctl"><span>濃度 <b data-value-for="rollOpacity">0.85</b></span><input type="range" id="rollOpacity" min="0.1" max="1" step="0.05" value="0.85"></label>
-      <label class="chk"><input type="checkbox" id="showLandLine" checked> 着地点のラインを表示</label>
+      <label class="ctl" title="ノートが落ちる速さ。速いほど先読み時間が短くなる（先読み時間 = 高さ ÷ 速度）"><span>落下速度 <b data-value-for="rollSpeed">3</b></span><input type="range" id="rollSpeed" min="1" max="8" step="0.5" value="3"></label>
+      <label class="ctl" title="頭上モードでノートが見え始める高さ。高いほど先の音まで見えるが、後列の奏者を隠しやすい"><span>高さ（頭上モード） <b data-value-for="rollHeight">7</b></span><input type="range" id="rollHeight" min="2" max="24" step="0.5" value="7"></label>
+      <label class="ctl" title="ノートの太さ（半音 1 つ分の横幅）。全パート共通。列の横幅もこれに連動して伸縮する"><span>ノート幅（半音あたり） <b data-value-for="noteWidth">0.22</b></span><input type="range" id="noteWidth" min="0.06" max="0.6" step="0.02" value="0.22"></label>
+      <label class="ctl" title="ノートの不透明度。下げると後ろの奏者が透けて見える"><span>濃度 <b data-value-for="rollOpacity">0.85</b></span><input type="range" id="rollOpacity" min="0.1" max="1" step="0.05" value="0.85"></label>
+      <label class="chk" title="ノートが着弾して発音する位置のライン（頭上：パート色の線、壁：白い線とオクターブ線）"><input type="checkbox" id="showLandLine" checked> 着地点のラインを表示</label>
     </details>
 
     <details open>
       <summary>奏者</summary>
-      <label class="ctl"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
-      <label class="chk"><input type="checkbox" id="showNames" checked> パート名を表示</label>
+      <label class="ctl" title="拍に同期した体の左右の揺れの大きさ（2 拍で 1 往復・奏者ごとに位相が違う）。指揮者の振りの大きさにも少し効く"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
+      <label class="chk" title="各パートの頭上にトラック名を表示"><input type="checkbox" id="showNames" checked> パート名を表示</label>
     </details>
 
     <details open>
       <summary>足元の光</summary>
-      <label class="chk"><input type="checkbox" id="showGlow" checked> 表示する</label>
-      <label class="ctl"><span>濃度 <b data-value-for="glowIntensity">1</b></span><input type="range" id="glowIntensity" min="0" max="2" step="0.1" value="1"></label>
-      <label class="ctl"><span>ぼかし <b data-value-for="glowSoft">0.6</b></span><input type="range" id="glowSoft" min="0" max="1" step="0.05" value="0.6"></label>
+      <label class="chk" title="各奏者の足元にパート色の光を出す。強さ（velocity / CC）に応じて明るくなり、指揮者は拍で明滅する"><input type="checkbox" id="showGlow" checked> 表示する</label>
+      <label class="ctl" title="光の明るさの倍率"><span>濃度 <b data-value-for="glowIntensity">1</b></span><input type="range" id="glowIntensity" min="0" max="2" step="0.1" value="1"></label>
+      <label class="ctl" title="光の輪郭のぼかし。0 でくっきりした円、1 で中心から外へなだらかに消える"><span>ぼかし <b data-value-for="glowSoft">0.6</b></span><input type="range" id="glowSoft" min="0" max="1" step="0.05" value="0.6"></label>
     </details>
 
   </aside>
 
   <button id="panelRightToggle" title="トラック一覧の表示/非表示">♪</button>
   <aside id="panelRight">
-    <h2>トラック（楽器の割当）</h2>
-    <p class="hint">楽器・音域（キースイッチ除外）・強弱の情報源をトラックごとに設定。設定はトラック名ごとに記憶されます。</p>
+    <h2 title="楽器・音域（キースイッチ除外）・強弱の情報源・統合をトラックごとに設定。設定はトラック名ごとに記憶されます">トラック（楽器の割当）</h2>
     <table class="tracks">
-      <thead><tr><th></th><th>名前</th><th>音数</th><th>楽器</th></tr></thead>
+      <thead><tr><th></th><th title="MIDI のトラック名。↳ は他のトラックに統合されているもの">名前</th><th title="ノートの数。除外がある時は「表示／全体」">音数</th><th title="このトラックを演奏する楽器（絵・動き・配置）">楽器</th></tr></thead>
       <tbody id="trackRows"></tbody>
     </table>
   </aside>
@@ -75,6 +74,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260910a"></script>
+  <script type="module" src="src/main.js?v=20260910b"></script>
 </body>
 </html>

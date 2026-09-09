@@ -265,6 +265,7 @@ function renderTrackTable() {
     const row = document.createElement('tr');
     if (tr.mergeTarget) row.className = 'merged';
     const sel = document.createElement('select');
+    sel.title = 'このトラックを演奏する楽器。絵・動き・配置（列）が変わる。名前から自動判定した結果が初期値';
     for (const f of FAMILIES) { // ファミリーごとにグループ化した楽器一覧
       const g = document.createElement('optgroup');
       g.label = FAMILY_LABEL[f];
@@ -286,8 +287,8 @@ function renderTrackTable() {
     const tdSw = document.createElement('td'); tdSw.appendChild(sw);
     const tdName = document.createElement('td'); tdName.className = 'name'; tdName.title = tr.name; tdName.textContent = tr.name;
     if (tr.mergeTarget) { tdName.title = `${tr.name} → ${tr.mergeTarget.name} に統合`; tdName.textContent = `↳ ${tr.name}`; }
-    const tdN = document.createElement('td'); tdN.textContent = tr.notes.length;
-    if (tr.notes.length !== tr.totalNotes) { tdN.textContent = `${tr.notes.length}/${tr.totalNotes}`; tdN.title = '音域フィルターで除外あり（表示/全体）'; }
+    const tdN = document.createElement('td'); tdN.textContent = tr.notes.length; tdN.title = 'このトラックのノート数';
+    if (tr.notes.length !== tr.totalNotes) { tdN.textContent = `${tr.notes.length}/${tr.totalNotes}`; tdN.title = '音域フィルターで除外あり（表示／全体）'; }
     row.append(tdSw, tdName, tdN);
     const td = document.createElement('td'); td.appendChild(sel); row.appendChild(td);
     tbody.appendChild(row);
@@ -301,11 +302,11 @@ function renderTrackTable() {
     const maxIn = mkNum(tr.pitchMax, '音域の上限（この番号を超えるノートを除外）');
     const minName = document.createElement('span'); minName.className = 'note-name'; minName.textContent = midiToNoteName(tr.pitchMin);
     const maxName = document.createElement('span'); maxName.className = 'note-name'; maxName.textContent = midiToNoteName(tr.pitchMax);
-    const lab = document.createElement('span'); lab.className = 'pitch-label'; lab.textContent = '音域';
+    const lab = document.createElement('span'); lab.className = 'pitch-label'; lab.textContent = '音域'; lab.title = '演奏として扱う音域（MIDI ノート番号）。範囲外＝キースイッチ等は動き・ロール・強さの全てから除外。音名は Logic 表記（C3 = 60）';
     const sep = document.createElement('span'); sep.textContent = '〜';
     td2.append(lab, minIn, minName, sep, maxIn, maxName);
     // 強弱の情報源（velocity / CC1 / CC11）。自動の時は判定結果を併記
-    const dynLab = document.createElement('span'); dynLab.className = 'pitch-label dyn-label'; dynLab.textContent = '強弱';
+    const dynLab = document.createElement('span'); dynLab.className = 'pitch-label dyn-label'; dynLab.textContent = '強弱'; dynLab.title = '前傾・揺れ幅・足元の光に使う強さの情報源';
     const dynSel = document.createElement('select'); dynSel.className = 'dyn-select';
     for (const [v, label] of Object.entries(DYN_SOURCES)) {
       const o = document.createElement('option'); o.value = v;
@@ -313,17 +314,17 @@ function renderTrackTable() {
       if (v === tr.dynSource) o.selected = true;
       dynSel.appendChild(o);
     }
-    dynSel.title = 'この楽器の強弱（前傾・揺れ幅・足元の光）に使う情報。CC1/CC11 で強弱を書く音源はそちらを選ぶ';
+    dynSel.title = '強さの情報源。自動＝曲中で変化している CC1/CC11 を採用（無ければ velocity）。CC は発音中だけ有効。弓の振り幅や打楽器の振り下ろしは常に velocity';
     dynSel.addEventListener('change', () => { saveDynSource(tr.name, dynSel.value); buildScene(currentMidi, { keepTime: true }); });
     td2.append(document.createElement('br'), dynLab, dynSel);
     // 統合先：重ね録りした別音源のトラックを同じ奏者にまとめる
-    const mgLab = document.createElement('span'); mgLab.className = 'pitch-label dyn-label'; mgLab.textContent = '統合';
+    const mgLab = document.createElement('span'); mgLab.className = 'pitch-label dyn-label'; mgLab.textContent = '統合'; mgLab.title = '重ね録りしたトラックを同じ奏者にまとめる';
     const mgSel = document.createElement('select'); mgSel.className = 'dyn-select';
     const addOpt = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (v === tr.mergeSetting) o.selected = true; mgSel.appendChild(o); };
     addOpt('auto', `自動（${tr.mergeResolved === 'none' ? 'しない' : '→ ' + tr.mergeResolved}）`);
     addOpt('none', '統合しない');
     for (const other of engine.sources) if (other !== tr && other.variant === tr.variant) addOpt(other.name, `→ ${other.name}`);
-    mgSel.title = '重ね録り（別メーカー音源の同一パート等）のトラックをこの統合先の奏者にまとめる。楽器が同じトラックだけ選べる';
+    mgSel.title = '統合先。自動＝楽器が同じで、末尾の _HW/_CB 等と +N を除いた名前が一致するトラックへ統合。楽器が同じトラックだけ選べる';
     mgSel.addEventListener('change', () => { saveMerge(tr.name, mgSel.value); buildScene(currentMidi, { keepTime: true }); });
     td2.append(mgLab, mgSel);
     row2.appendChild(td2);
