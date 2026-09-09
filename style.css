@@ -60,6 +60,9 @@ summary { cursor: pointer; color: var(--accent); margin-bottom: 6px; font-weight
 details > *:not(summary) { margin-left: 2px; }
 .hint.small { font-size: 11px; margin: 4px 0 0; }
 .ctl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.ctl.radio { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.ctl.radio > span { flex: 0 0 100%; }
+.ctl.radio label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .ctl span b { color: var(--accent); font-weight: 600; margin-left: 4px; }
 .ctl select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .ctl input[type=number] { width: 100px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }

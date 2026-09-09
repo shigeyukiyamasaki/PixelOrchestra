@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260910a">
+  <link rel="stylesheet" href="style.css?v=20260910b">
 </head>
 <body>
   <div id="view"></div>
@@ -34,12 +34,10 @@
     <details open>
       <summary>ピアノロール</summary>
       <label class="chk" title="流れ落ちるピアノロールを表示する"><input type="checkbox" id="showRoll" checked> 表示する</label>
-      <label class="ctl" title="頭上：各奏者の頭の上に、そのパートの音だけが落ちてくる。壁：後方の壁に全パートの音が流れる（横軸＝音程）"><span>位置</span>
-        <select id="rollMode">
-          <option value="overhead" selected>各奏者の頭上に落ちる</option>
-          <option value="wall">後方の壁に流れる</option>
-        </select>
-      </label>
+      <div class="ctl radio" title="頭上：各奏者の頭の上に、そのパートの音だけが落ちてくる。壁：後方の壁に全パートの音が流れる（横軸＝音程）"><span>位置</span>
+        <label><input type="radio" name="rollMode" value="overhead" checked> 奏者の頭上</label>
+        <label><input type="radio" name="rollMode" value="wall"> 後方の壁</label>
+      </div>
       <label class="ctl" title="ノートが落ちる速さ。速いほど先読み時間が短くなる（先読み時間 = 高さ ÷ 速度）"><span>落下速度 <b data-value-for="rollSpeed">3</b></span><input type="range" id="rollSpeed" min="1" max="8" step="0.5" value="3"></label>
       <label class="ctl" title="頭上モードでノートが見え始める高さ。高いほど先の音まで見えるが、後列の奏者を隠しやすい"><span>高さ（頭上モード） <b data-value-for="rollHeight">7</b></span><input type="range" id="rollHeight" min="2" max="24" step="0.5" value="7"></label>
       <label class="ctl" title="ノートの太さ（半音 1 つ分の横幅）。全パート共通。列の横幅もこれに連動して伸縮する"><span>ノート幅（半音あたり） <b data-value-for="noteWidth">0.22</b></span><input type="range" id="noteWidth" min="0.06" max="0.6" step="0.02" value="0.22"></label>
@@ -49,18 +47,14 @@
 
     <details open>
       <summary>奏者</summary>
-      <label class="ctl" title="ボクセル：ドット絵を奥行き方向に押し出した立体（どの角度からも見られる）。2D：ドット絵の板（常にカメラ正対がおすすめ）"><span>絵の方式</span>
-        <select id="partStyle">
-          <option value="voxel" selected>ボクセル（立体）</option>
-          <option value="sprite">2D ドット絵（板）</option>
-        </select>
-      </label>
-      <label class="ctl" title="指揮者：奏者は指揮者の方を向き、指揮者は楽団の方を向く（実際の配置）。カメラ：常にカメラの方を向く"><span>体の向き</span>
-        <select id="facing">
-          <option value="camera">常にカメラの方を向く</option>
-          <option value="conductor" selected>指揮者の方を向く</option>
-        </select>
-      </label>
+      <div class="ctl radio" title="ボクセル：ドット絵を奥行き方向に押し出した立体（どの角度からも見られる）。2D：ドット絵の板（常にカメラ正対がおすすめ）"><span>絵の方式</span>
+        <label><input type="radio" name="partStyle" value="voxel" checked> ボクセル</label>
+        <label><input type="radio" name="partStyle" value="sprite"> 2D の板</label>
+      </div>
+      <div class="ctl radio" title="指揮者：奏者は指揮者の方を向き、指揮者は楽団の方を向く（実際の配置）。カメラ：常にカメラの方を向く"><span>体の向き</span>
+        <label><input type="radio" name="facing" value="conductor" checked> 指揮者</label>
+        <label><input type="radio" name="facing" value="camera"> カメラ</label>
+      </div>
       <label class="ctl" title="拍に同期した体の左右の揺れの大きさ（2 拍で 1 往復・奏者ごとに位相が違う）。指揮者の振りの大きさにも少し効く"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
       <label class="chk" title="各パートの頭上にトラック名を表示"><input type="checkbox" id="showNames" checked> パート名を表示</label>
     </details>
@@ -86,6 +80,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260910i"></script>
+  <script type="module" src="src/main.js?v=20260910j"></script>
 </body>
 </html>

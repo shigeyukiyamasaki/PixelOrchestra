@@ -86,10 +86,14 @@ function seek(t) {
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
+// ラジオボタンは name をキーに、選択中の value を保存
+const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
+const radioValue = (name) => document.querySelector(`#panel input[type=radio][name="${name}"]:checked`)?.value;
 
 function saveSettings() {
   const data = {};
   for (const el of SETTING_IDS()) data[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  for (const name of RADIO_NAMES()) data[name] = radioValue(name);
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) { console.warn('設定保存失敗:', e); }
 }
 function loadSettings() {
@@ -98,6 +102,11 @@ function loadSettings() {
   for (const el of SETTING_IDS()) {
     if (!(el.id in data)) continue;
     if (el.type === 'checkbox') el.checked = !!data[el.id]; else el.value = data[el.id];
+  }
+  for (const name of RADIO_NAMES()) {
+    if (!(name in data)) continue;
+    const el = document.querySelector(`#panel input[type=radio][name="${name}"][value="${data[name]}"]`);
+    if (el) el.checked = true;
   }
 }
 let saveTimer = null;
@@ -120,15 +129,15 @@ function settings() {
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
     showRoll: $('showRoll').checked,
-    rollMode: $('rollMode').value === 'wall' ? 'wall' : 'overhead',
+    rollMode: radioValue('rollMode') === 'wall' ? 'wall' : 'overhead',
     showLandLine: $('showLandLine').checked,
     rollOpacity: num('rollOpacity', 0.85),
     showGlow: $('showGlow').checked,
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
-    facing: $('facing').value === 'conductor' ? 'conductor' : 'camera',
-    partStyle: $('partStyle').value === 'sprite' ? 'sprite' : 'voxel',
+    facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
+    partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
   };
 }
 
@@ -365,7 +374,7 @@ window.addEventListener('keydown', (e) => {
 for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
-$('partStyle').addEventListener('change', () => { if (engine) placePuppets(); }); // 絵の方式：奏者を作り直す
+for (const el of document.querySelectorAll('#panel input[type=radio][name="partStyle"]')) el.addEventListener('change', () => { if (engine) placePuppets(); }); // 絵の方式：奏者を作り直す
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
 });
