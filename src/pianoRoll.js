@@ -206,6 +206,7 @@ export class PianoRoll {
   }
 
   setVisible(v) { this.group.visible = v; }
+  setOpacity(v) { this.mesh.material.opacity = Math.max(0, Math.min(1, v)); }
 
   dispose() {
     this.scene.remove(this.group);
