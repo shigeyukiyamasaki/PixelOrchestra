@@ -8,7 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, CONDUCTOR_Z } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel } from './sprites.js';
+import { nameLabel, setGlowSoftness } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { PianoRoll } from './pianoRoll.js';
 
@@ -122,6 +122,8 @@ function settings() {
     showRoll: $('showRoll').checked,
     rollMode: $('rollMode').value === 'wall' ? 'wall' : 'overhead',
     showGlow: $('showGlow').checked,
+    glowIntensity: num('glowIntensity', 1),
+    glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
   };
 }
@@ -381,6 +383,7 @@ function animate() {
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
+    setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode);
     wall.visible = s.showRoll && s.rollMode === 'wall';

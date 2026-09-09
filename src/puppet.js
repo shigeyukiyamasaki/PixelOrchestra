@@ -171,7 +171,7 @@ export class Puppet {
 
     // 足元の光：baseOpacity × エネルギー
     this.glow.visible = settings.showGlow;
-    this.glow.material.opacity = this.glow.userData.baseOpacity * clamp(energy, 0, 1);
+    this.glow.material.opacity = this.glow.userData.baseOpacity * clamp(energy, 0, 1) * (settings.glowIntensity ?? 1);
   }
 
   // ---- 弦：弓のストローク（ノートごとに往復、velocity で振り幅、長さでゆっくり）----

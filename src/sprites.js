@@ -235,10 +235,49 @@ export function nameLabel(text, color = '#ffffff') {
   return sp;
 }
 
-/** 足元の光（トラック色）。AdditiveBlending・opacity は baseOpacity × 倍率で制御 */
+// ---------------- 足元の光 ----------------
+// 全奏者で 1 枚の放射状グラデーションのテクスチャを共有し、ぼかしスライダーで描き直す（色はマテリアル側）
+const GLOW_TEX_SIZE = 128;
+let glowCanvas = null, glowTex = null, glowSoftness = 0.6;
+function drawGlow() {
+  if (!glowCanvas) glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = GLOW_TEX_SIZE;
+  const g = glowCanvas.getContext('2d');
+  const img = g.createImageData(GLOW_TEX_SIZE, GLOW_TEX_SIZE);
+  const c = GLOW_TEX_SIZE / 2, R = c - 1;
+  const inner = R * (1 - glowSoftness); // ここまでは全開、ここから外へ向けてなめらかに消える
+  for (let y = 0; y < GLOW_TEX_SIZE; y++) for (let x = 0; x < GLOW_TEX_SIZE; x++) {
+    const d = Math.hypot(x + 0.5 - c, y + 0.5 - c);
+    let a = 1;
+    if (d >= R) a = 0;
+    else if (d > inner) { const p = (d - inner) / Math.max(1e-6, R - inner); a = 1 - p * p * (3 - 2 * p); } // smoothstep
+    const i = (y * GLOW_TEX_SIZE + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+    img.data[i + 3] = Math.round(a * 255);
+  }
+  g.putImageData(img, 0, 0);
+}
+/** ぼかし（0 = 輪郭くっきり … 1 = 中心から外へ全体がグラデーション） */
+export function setGlowSoftness(v) {
+  const s = Math.max(0, Math.min(1, v));
+  if (glowTex && Math.abs(s - glowSoftness) < 1e-6) return;
+  glowSoftness = s;
+  drawGlow();
+  if (glowTex) glowTex.needsUpdate = true;
+}
+function getGlowTexture() {
+  if (!glowTex) {
+    drawGlow();
+    glowTex = new THREE.CanvasTexture(glowCanvas);
+    glowTex.minFilter = THREE.LinearFilter; glowTex.magFilter = THREE.LinearFilter; // 光はドットにしない
+    glowTex.generateMipmaps = false;
+  }
+  return glowTex;
+}
+/** 足元の光（トラック色）。AdditiveBlending・opacity は baseOpacity × エネルギー × 濃度で制御 */
 export function glowDisc(color) {
-  const geo = new THREE.CircleGeometry(1.2, 24);
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+  const geo = new THREE.PlaneGeometry(2.6, 2.6);
+  const mat = new THREE.MeshBasicMaterial({ map: getGlowTexture(), color, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
   const m = new THREE.Mesh(geo, mat);
   m.rotation.x = -Math.PI / 2;
   m.userData.baseOpacity = mat.opacity;
