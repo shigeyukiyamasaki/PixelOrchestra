@@ -154,6 +154,14 @@ export class Puppet {
   faceCamera(cam) {
     this.group.quaternion.copy(cam.quaternion);
   }
+  /**
+   * 向きを固定する（紙人形劇）：板は垂直のまま、指定の点（指揮者）の方を向く。
+   * 指揮者自身は客席（+z）を向いたまま（後ろ姿の絵）。
+   */
+  faceToward(px, pz) {
+    const yaw = this.family === 'conductor' ? 0 : Math.atan2(px - this.root.position.x, pz - this.root.position.z);
+    this.group.rotation.set(0, yaw, 0);
+  }
 
   // ---- 手の配置：目標へ滑らかに寄せてから IK（rate が大きいほど即応。Infinity で即時）----
   setHand(side, target, dt, rate = 30) {

@@ -127,6 +127,7 @@ function settings() {
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
+    facing: $('facing').value === 'conductor' ? 'conductor' : 'camera',
   };
 }
 
@@ -385,11 +386,12 @@ function animate() {
     const g = engine.globalEnergyAt(t);
     const ctx = { t, dt, beat, settings: s, globalEnergy: g };
 
+    const face = (p) => (s.facing === 'conductor' ? p.faceToward(0, CONDUCTOR_Z) : p.faceCamera(camera));
     for (const { puppet, track } of puppets) {
-      puppet.faceCamera(camera);
+      face(puppet);
       puppet.update(engine.trackState(track, t - puppet.delay), ctx);
     }
-    conductor.faceCamera(camera);
+    face(conductor);
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
