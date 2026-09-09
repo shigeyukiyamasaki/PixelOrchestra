@@ -27,6 +27,13 @@ open -a "Google Chrome" "http://localhost:8766/index.html?midi=samples/test_orch
 | `src/main.js` | UI・再生クロック・音声同期・設定の自動保存 |
 | `tools/make_test_midi.py` | テスト用 14 トラック MIDI の生成（依存なし） |
 
+## 3D リグ（ボクセル時）
+
+腕は 3D の 2 関節 IK（`puppet.js` の `solveIK3`）。手の目標は rig 空間の (x, y, z) px。
+楽器ごとに 3D 姿勢（`VARIANT[*].p3`：位置・回転・手の位置・弓の向き・打点）を持ち、
+2D 板モードでは従来の平面の値（z=0・楽器は z 回転のみ）を使うので見た目は変わらない。
+バイオリンは前方左へ突き出し、金管のベルは前方、木管は前下方、打楽器は前方の楽器の上から叩く。
+
 ## MIDI → 動き の対応
 
 | MIDI 情報 | 動き |
