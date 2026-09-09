@@ -40,10 +40,10 @@ function rowKeyOf(track) {
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
-export const CONDUCTOR_Z = 5;   // 指揮台の z（+z = 客席側）
-export const FLOOR_RADIUS = 21;  // ステージ円の半径
-export const FLOOR_CENTER_Z = -8; // ステージ円の中心 z（楽団の重心付近）
-export const FLOOR_DEPTH_SCALE = 0.85; // 奥行き方向の縮小率（楕円）
+export const CONDUCTOR_Z = -1;  // 指揮台の z（弦の最前列 z=-8 に寄せる。+z = 客席側）
+export const FLOOR_RADIUS = 20;  // ステージ円の半径
+export const FLOOR_CENTER_Z = -10; // ステージ円の中心 z（楽団の重心付近）
+export const FLOOR_DEPTH_SCALE = 0.8; // 奥行き方向の縮小率（楕円）
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
