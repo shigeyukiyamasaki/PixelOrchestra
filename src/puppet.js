@@ -13,7 +13,9 @@ const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ARM_UPPER = 8, ARM_FORE = 8; // 2関節腕の長さ [px]（上腕・前腕）
-const SHOULDER = { L: [-6, 30, 0], R: [6, 30, 0] };
+// 肩の位置：上着の上端の角（x=±5.5, y=25.5）。以前の (±6, 30) は体の外側かつ上で、腕が胴から離れて見えた（2026-09-09 修正）
+const SHOULDER = { L: [-5.5, 25.5, 0], R: [5.5, 25.5, 0] };
+const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
 // 本人の右手は forward×up = -x なので、rig 全体を x 反転して右利きにする（2026-09-09 ユーザー指摘：全員左利きだった）
 const MIRROR = -1;
@@ -185,7 +187,7 @@ export class Puppet {
     this.rig.add(this.body);
 
     this.headPivot = new THREE.Group();
-    this.headPivot.position.set(0, 33 * PX, 0);
+    this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
     this.head = head(this.seed, false);
     this.headPivot.add(this.head);
     this.rig.add(this.headPivot);
@@ -358,7 +360,7 @@ export class Puppet {
     if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、少し下を向き、頭がわずかに下がる
       this.headPivot.rotation.z += 0.32 + 0.08 * energy;
       if (!this.flat) this.headPivot.rotation.x = 0.18;
-      this.headPivot.position.y = 32.2 * PX;
+      this.headPivot.position.y = (HEAD_Y_PX - 0.8) * PX;
     } else {
       this.headPivot.rotation.z += -0.1 * energy;
     }
@@ -477,7 +479,7 @@ export class Puppet {
   _conductor(st, { beat, dt, settings }) {
     const g = st.energy; // = globalEnergy
     const n = beat.beatsPerBar || 4;
-    const C = [7, 30, this.flat ? 3 : 7]; // 右手の振りの中心（rig px）。3D では体の前で振る
+    const C = this.flat ? [7, 30, 3] : [6, 25, 10]; // 右手の振りの中心（rig px）。3D では胸の高さ・体の前で振る（顔の前に手が来ないように）
     const P4 = [[0, -7], [-6, -4], [8, -3], [1, 6]];
     const P3 = [[0, -7], [8, -3], [1, 6]];
     const P2 = [[0, -7], [1, 6]];
@@ -489,12 +491,13 @@ export class Puppet {
     const bounce = ph < 0.3 ? Math.sin(Math.PI * ph / 0.3) * 2.5 : 0; // 到着直後の跳ね
     const px = lerp(from[0], to[0], e), py = lerp(from[1], to[1], e) + bounce;
     this.setHand('R', [C[0] + px * amp, C[1] + py * amp, C[2]], dt, Infinity);
-    // 指揮棒：3D では楽団の方（前方）へやや上向きに構える。2D 板では前腕の延長よりやや上向き
-    if (this.flat) { _a.set(0, -1, 0).applyQuaternion(this.foreQ.R); _a.y += 0.35; this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x'); }
-    else this.aimHeldDir('R', [0.15, 0.3 + 0.4 * (py / 8), 1], 'x'); // 手の高さに合わせて棒先も上下
+    // 指揮棒：肘→手首の延長線上（前腕の -y 方向）。2D 板は面内なので少し上向きに補正
+    _a.set(0, -1, 0).applyQuaternion(this.foreQ.R);
+    if (this.flat) _a.y += 0.35;
+    this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x');
     // 左手：強い時は鏡像で同調、弱い時は胸の前で控える
     const mirror = [-C[0] - px * amp * 0.7, C[1] + py * amp * 0.6, C[2]];
-    const restL = [-5, 24, this.flat ? 3 : 5];
+    const restL = this.flat ? [-5, 24, 3] : [-5, 22, 7];
     const w = clamp((g - 0.25) / 0.5, 0, 1);
     this.setHand('L', [lerp(restL[0], mirror[0], w), lerp(restL[1], mirror[1], w), lerp(restL[2], mirror[2], w)], dt, 18);
     const nod = ph < 0.15 ? (1 - ph / 0.15) * 0.15 * g : 0;
