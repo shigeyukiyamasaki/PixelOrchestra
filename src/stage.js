@@ -85,8 +85,7 @@ export function createStage(container) {
   controls.maxDistance = 90;
   controls.minPolarAngle = deg(12);
   controls.maxPolarAngle = deg(89); // ほぼ床の高さまで下りられる（2026-09-09 ユーザー要望）
-  controls.minAzimuthAngle = deg(-75);  // 裏側には回れない（紙の板が薄く見えるため）
-  controls.maxAzimuthAngle = deg(75);
+  // 水平方向の制限なし（ボクセル化で全周から見られる。2026-09-09）
   controls.update();
 
   // 床・ひな壇・指揮台は「深度を書かない」（depthWrite:false, 先に描く）。

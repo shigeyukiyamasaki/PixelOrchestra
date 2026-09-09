@@ -7,7 +7,8 @@
  * 座標系：キャンバス左上原点・y 下向き（px）。pivot はそのピクセル座標で指定する。
  */
 
-export const PX = 0.075; // 1ピクセル = 0.075 world unit（34px の体 ≒ 2.55 unit。画面上で絵柄が読める大きさ優先）
+export const PX = 0.075; // 基本グリッドの 1ピクセル = 0.075 world unit（34px の体 ≒ 2.55 unit。座標・pivot・手の位置はこの単位）
+export const VOX = PX / 2; // ボクセル 1 個 = 基本グリッドの半分（2 倍解像度の絵の 1 ドット）。res:1 のパーツは 1 ドット = 2×2 ボクセル
 
 export const C = {
   coat: '#1b1b26', coat2: '#2b2b3c', shirt: '#f4f4f4', skin: '#f1c9a5', skin2: '#d9a880',
@@ -20,7 +21,7 @@ const HAIR = ['#2b1b12', '#5a3a1e', '#d9c27a', '#3a3a3a', '#8c2e2e', '#6d4b31', 
 class Pen {
   constructor(g) { this.g = g; }
   r(x, y, w, h, col) { if (w <= 0 || h <= 0) return; this.g.fillStyle = col; this.g.fillRect(x, y, w, h); }
-  p(x, y, col) { this.r(x, y, 1, 1, col); }
+  p(x, y, col) { if (col === null) { this.g.clearRect(x, y, 1, 1); return; } this.r(x, y, 1, 1, col); }
   line(x0, y0, x1, y1, col) { // ブレゼンハム
     let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx - dy;
     let x = x0, y = y0;
@@ -54,10 +55,17 @@ export let PART_STYLE = 'voxel';
 export function setPartStyle(style) { PART_STYLE = style === 'sprite' ? 'sprite' : 'voxel'; }
 
 const partCache = new Map();
+/**
+ * opts.res: 描画グリッドの解像度。1 = 基本グリッド（従来の絵。1 ドット = 2×2 ボクセル）、2 = 2 倍解像度（1 ドット = 1 ボクセル）。
+ *   w/h/pivot/depth/z0 は res のグリッド単位で指定する（res:2 なら細かい px）。
+ * opts.side: 側面図の描画関数（省略可）。指定すると正面図の押し出しと側面図の押し出しの共通部分で立体を削り出す。
+ *   側面図のキャンバスは 幅 = depth（奥行き、左が背面 z0）・高さ = h、y は正面図と同じ行。
+ */
 export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
-  if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw);
+  const res = opts.res ?? 1;
+  if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw, res);
   const depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
-  const key = opts.key || `${draw.toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0}|${opts.accent || ''}`;
+  const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
   let geo = partCache.get(key);
   if (!geo) {
     const c = document.createElement('canvas');
@@ -65,7 +73,17 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
     draw(new Pen(g));
-    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null);
+    let sideImg = null;
+    if (opts.side) {
+      const sc = document.createElement('canvas');
+      sc.width = depth; sc.height = h;
+      const sg = sc.getContext('2d');
+      opts.side(new Pen(sg));
+      sideImg = sg.getImageData(0, 0, depth, h);
+    }
+    // グリッド単位 → ボクセル単位（res:1 は 2 倍に拡大）
+    const cell = res === 1 ? PX : VOX;
+    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -76,7 +94,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
 }
 
 // 2D 版：ドット絵をテクスチャにした板（最近傍補間）。pivot がローカル原点
-function makePartSprite(w, h, pivotX, pivotY, draw) {
+function makePartSprite(w, h, pivotX, pivotY, draw, res = 1) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
@@ -86,8 +104,9 @@ function makePartSprite(w, h, pivotX, pivotY, draw) {
   tex.magFilter = THREE.NearestFilter;   // ドット絵は最近傍補間（TOOL_CRAFT_MEDIA §1-3）
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  const geo = new THREE.PlaneGeometry(w * PX, h * PX);
-  geo.translate((w / 2 - pivotX) * PX, (pivotY - h / 2) * PX, 0);
+  const cell = res === 1 ? PX : VOX;
+  const geo = new THREE.PlaneGeometry(w * cell, h * cell);
+  geo.translate((w / 2 - pivotX) * cell, (pivotY - h / 2) * cell, 0);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.userData.baseColor = mat.color.clone();
@@ -95,10 +114,15 @@ function makePartSprite(w, h, pivotX, pivotY, draw) {
   return mesh;
 }
 
-// ピクセル → ボクセル柱 → 露出面のみの BufferGeometry（頂点色・法線付き）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back) {
+// ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
+// cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null) {
   const d = img.data;
-  const filled = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
+  const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
+  const sd = sideImg ? sideImg.data : null;
+  const filledSide = (z, y) => !sd || (z >= 0 && z < depth && y >= 0 && y < h && sd[(y * depth + z) * 4 + 3] > 127);
+  // 3 次元の占有：正面図 AND 側面図。z は 0..depth-1（0 = 背面側）
+  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y);
   const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
   const backColor = (x, y) => {
     const i = (y * w + x) * 4;
@@ -110,20 +134,26 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back) {
   };
   const pos = [], nor = [], col = [];
   const quad = (a, b, c, e, n, rgb) => { // 4 頂点（反時計回り）→ 2 三角形
-    for (const v of [a, b, c, a, c, e]) { pos.push(v[0] * PX, v[1] * PX, v[2] * PX); nor.push(...n); col.push(...rgb); }
+    for (const v of [a, b, c, a, c, e]) { pos.push(v[0] * cell, v[1] * cell, v[2] * cell); nor.push(...n); col.push(...rgb); }
   };
-  const zf = z0 + depth, zb = z0;
+  // 正面から見えない奥のボクセルの色：同じ行で一番手前の塗りの色（側面図で削った時の断面色）
   for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
-    if (!filled(px, py)) continue;
-    const x0 = px - pivotX, x1 = x0 + 1;
-    const y1 = pivotY - py, y0 = y1 - 1;
-    const rgb = colorAt(px, py);
-    quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);               // 正面
-    quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], backColor(px, py)); // 背面
-    if (!filled(px - 1, py)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
-    if (!filled(px + 1, py)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
-    if (!filled(px, py - 1)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
-    if (!filled(px, py + 1)) quad([x0, y0, zb], [x1, y0, zb], [x1, y0, zf], [x0, y0, zf], [0, -1, 0], rgb); // 下
+    if (!filledFront(px, py)) continue;
+    const rgb = colorAt(px, py), rgbBack = backColor(px, py);
+    for (let z = 0; z < depth; z++) {
+      if (!filled(px, py, z)) continue;
+      const x0 = px - pivotX, x1 = x0 + 1;
+      const y1 = pivotY - py, y0 = y1 - 1;
+      const zb = z0 + z, zf = zb + 1;
+      const front = z === depth - 1 || !filled(px, py, z + 1);
+      const backF = z === 0 || !filled(px, py, z - 1);
+      if (front) quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);                 // 正面（+z）
+      if (backF) quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], z === 0 ? rgbBack : rgb); // 背面（-z）
+      if (!filled(px - 1, py, z)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
+      if (!filled(px + 1, py, z)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
+      if (!filled(px, py - 1, z)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
+      if (!filled(px, py + 1, z)) quad([x0, y0, zb], [x1, y0, zb], [x1, y0, zf], [x0, y0, zf], [0, -1, 0], rgb); // 下
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -134,8 +164,45 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back) {
 
 // ---------------- 人物パーツ ----------------
 
-/** 体（燕尾服・立ち姿）16×34、pivot = 足元中央 */
+/**
+ * 体（燕尾服・立ち姿）2 倍解像度 32×68（基本グリッド 16×34 相当）、pivot = 足元中央。
+ * 側面図：胸が厚く腰が細く、脚は薄い。奥行き 12（基本 6）
+ */
 export function body(accent = '#c03030') {
+  const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat, [C.coat2]: C.coat2 };
+  const front = (d) => {
+    d.r(12, 10, 8, 6, C.skin);                                  // 首
+    d.r(6, 16, 20, 26, C.coat);                                 // 上着
+    d.r(5, 18, 1, 6, C.coat2); d.r(26, 18, 1, 6, C.coat2);      // 肩の張り
+    d.r(6, 40, 20, 2, C.coat2);                                 // 裾のライン
+    // シャツの V ゾーン（下へ狭まる）
+    const v = [[12, 8], [13, 6], [13, 6], [14, 4], [14, 4], [15, 2], [15, 2], [15, 2], [15, 2], [15, 2], [15, 2], [15, 2], [15, 2], [15, 2]];
+    v.forEach(([x, w], i) => d.r(x, 16 + i, w, 1, C.shirt));
+    d.r(11, 16, 1, 2, C.coat2); d.r(20, 16, 1, 2, C.coat2);     // ラペルの陰
+    d.r(12, 17, 8, 2, accent); d.r(15, 16, 2, 4, accent);       // 蝶ネクタイ
+    d.p(15, 31, C.coat2); d.p(15, 35, C.coat2);                  // ボタン
+    d.r(6, 42, 7, 10, C.coat); d.r(19, 42, 7, 10, C.coat);      // 燕尾
+    d.r(8, 42, 7, 22, C.coat2); d.r(17, 42, 7, 22, C.coat2);    // ズボン
+    d.r(9, 62, 5, 2, C.coat);                                    // 折り返し
+    d.r(18, 62, 5, 2, C.coat);
+    d.r(7, 64, 8, 4, C.shoe); d.r(17, 64, 8, 4, C.shoe);        // 靴
+    d.r(8, 64, 6, 1, '#2a2a34');                                 // 靴の光沢
+    d.r(18, 64, 6, 1, '#2a2a34');
+  };
+  // 側面図（幅 12 = 奥行き、右端が正面）：首 → 胸（厚い）→ 腰（細い）→ 脚（薄い）
+  const side = (d) => {
+    d.r(4, 10, 5, 6, C.skin);                 // 首
+    d.r(0, 16, 12, 12, C.coat);               // 胸
+    d.r(1, 28, 10, 14, C.coat);               // 腹〜腰
+    d.r(1, 42, 9, 10, C.coat);                // 燕尾・腰
+    d.r(2, 42, 8, 22, C.coat2);               // 脚
+    d.r(1, 64, 11, 4, C.shoe);                // 靴（つま先は前へ）
+  };
+  return makePart(32, 68, 16, 68, front, { res: 2, depth: 12, z0: -6, back, accent, side });
+}
+
+/** 旧・体（基本グリッド 16×34）。参考用に残す */
+export function bodyLegacy(accent = '#c03030') {
   // 背面：シャツ・蝶ネクタイは表だけ（後ろから見たら上着の色）
   const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat };
   return makePart(16, 34, 8, 34, (d) => {
@@ -150,8 +217,41 @@ export function body(accent = '#c03030') {
   }, { depth: 6, z0: -3, back, accent });
 }
 
-/** 頭 12×12、pivot = 首の付け根中央。back=true で後ろ姿（指揮者用） */
+/** 頭 2 倍解像度 24×24（基本 12×12 相当）、pivot = 首の付け根中央。側面図で前後に丸める */
 export function head(seed = 0, back = false) {
+  const hair = HAIR[seed % HAIR.length];
+  const backMap = { [C.skin]: hair, [C.skin2]: hair, [C.eye]: hair, '#ffffff': hair };
+  const styleId = seed % 4; // 髪型の種類
+  const front = (d) => {
+    d.r(4, 6, 16, 18, C.skin);                         // 顔
+    d.p(4, 6, null); d.r(4, 22, 1, 2, C.skin2); d.r(19, 22, 1, 2, C.skin2); // あご
+    d.r(2, 2, 20, 8, hair);                            // 髪（頭頂）
+    d.r(3, 1, 18, 1, hair); d.r(4, 0, 16, 1, hair);    // 丸み
+    if (styleId === 0) { d.r(2, 10, 3, 6, hair); d.r(19, 10, 3, 6, hair); }           // もみあげ長め
+    if (styleId === 1) { d.r(2, 10, 2, 3, hair); d.r(20, 10, 2, 3, hair); d.r(6, 10, 4, 2, hair); } // 前髪
+    if (styleId === 2) { d.r(2, 10, 3, 10, hair); d.r(19, 10, 3, 10, hair); d.r(8, 10, 8, 1, hair); } // ロング
+    if (styleId === 3) { d.r(2, 10, 2, 4, hair); d.r(20, 10, 2, 4, hair); d.r(13, 10, 6, 2, hair); }  // 横分け
+    d.r(2, 12, 2, 4, C.skin); d.r(20, 12, 2, 4, C.skin); // 耳
+    d.r(2, 14, 1, 1, C.skin2); d.r(21, 14, 1, 1, C.skin2);
+    d.r(7, 12, 4, 1, hair); d.r(13, 12, 4, 1, hair);   // 眉
+    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye); // 目
+    d.p(8, 14, '#ffffff'); d.p(14, 14, '#ffffff');     // ハイライト
+    d.p(12, 17, C.skin2);                              // 鼻
+    d.r(10, 19, 4, 1, C.skin2);                        // 口
+    d.p(6, 17, '#e8a99a'); d.p(17, 17, '#e8a99a');     // 頬
+  };
+  // 側面図（幅 16 = 奥行き、右端が正面）：後頭部は丸く、鼻が少し出る
+  const side = (d) => {
+    d.r(3, 0, 10, 1, hair); d.r(1, 1, 13, 1, hair); d.r(0, 2, 15, 8, hair);
+    d.r(1, 10, 14, 10, C.skin); d.r(2, 20, 12, 2, C.skin); d.r(4, 22, 9, 2, C.skin); // 顔〜あご
+    d.r(15, 15, 1, 3, C.skin);                          // 鼻
+    d.r(0, 10, 2, 6, hair);                             // 後頭部の髪
+  };
+  return makePart(24, 24, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `${hair}${styleId}${back}`, side });
+}
+
+/** 旧・頭 12×12 */
+export function headLegacy(seed = 0, back = false) {
   const hair = HAIR[seed % HAIR.length];
   // 背面は髪の色（顔は正面だけ）
   const backMap = { [C.skin]: hair, [C.skin2]: hair, [C.eye]: hair };
@@ -167,11 +267,13 @@ export function head(seed = 0, back = false) {
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
 export function upperArm() {
-  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); }, { depth: 3, z0: -1.5 });
+  // 10×18（基本 5×9 相当）、pivot = 肩。奥行き 6
+  return makePart(10, 18, 4, 2, (d) => { d.r(2, 0, 6, 18, C.coat); d.r(2, 0, 1, 18, C.coat2); d.r(3, 0, 4, 1, C.coat2); }, { res: 2, depth: 6, z0: -3 });
 }
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
-  return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
+  // 10×20（基本 5×10 相当）、pivot = 肘。袖口の白と手
+  return makePart(10, 20, 4, 2, (d) => { d.r(2, 0, 6, 12, C.coat); d.r(2, 0, 1, 12, C.coat2); d.r(2, 12, 6, 2, C.shirt); d.r(2, 14, 6, 6, C.skin); d.r(2, 15, 1, 5, C.skin2); }, { res: 2, depth: 6, z0: -3 });
 }
 
 /** 腕 5×16、pivot = 肩（上端中央）。垂らした状態で描く */
@@ -186,11 +288,18 @@ export function arm() {
 // それぞれ [mesh] を返す。pivot は「体に取り付ける点」または「手に持つ点」。
 
 export const INSTRUMENT = {
-  violin: () => makePart(14, 8, 7, 4, (d) => {
-    d.r(3, 1, 6, 6, C.wood); d.r(2, 2, 8, 4, C.wood); d.r(1, 3, 2, 2, C.wood);
-    d.r(9, 3, 5, 1, C.wood2); d.p(13, 2, C.wood2);
-    d.r(4, 3, 5, 1, C.black);
-  }),
+  // バイオリン 28×16（基本 14×8 相当）、pivot = 胴の中央。下部・くびれ・上部のふくらみ、f 字孔、指板、渦巻き
+  violin: () => makePart(28, 16, 14, 8, (d) => {
+    d.r(3, 3, 7, 10, C.wood); d.r(2, 5, 9, 6, C.wood); d.r(4, 2, 5, 12, C.wood);      // 下部のふくらみ
+    d.r(9, 5, 3, 6, C.wood);                                                          // くびれ
+    d.r(11, 3, 6, 10, C.wood); d.r(10, 5, 8, 6, C.wood); d.r(12, 2, 4, 12, C.wood);   // 上部のふくらみ
+    d.r(5, 4, 1, 8, '#a0623c'); d.r(15, 4, 1, 8, '#a0623c');                          // 艶
+    d.p(7, 6, C.black); d.p(7, 9, C.black); d.p(13, 6, C.black); d.p(13, 9, C.black); // f 字孔
+    d.r(10, 7, 16, 2, C.black);                                                       // 指板
+    d.r(17, 7, 9, 2, C.wood2);                                                        // ネック
+    d.r(25, 5, 3, 5, C.wood2); d.p(26, 6, C.wood);                                    // 渦巻き
+    d.p(9, 8, C.ivory);                                                               // 駒
+  }, { res: 2, depth: 4, z0: -2 }),
   viola: () => makePart(16, 9, 8, 4, (d) => {
     d.r(3, 1, 7, 7, C.wood2); d.r(2, 2, 9, 5, C.wood2); d.r(1, 3, 2, 3, C.wood2);
     d.r(10, 4, 6, 1, C.wood); d.p(15, 3, C.wood);
@@ -208,7 +317,7 @@ export const INSTRUMENT = {
     d.r(6, 9, 2, 24, C.black);
     d.r(6, 34, 2, 4, C.silver);
   }),
-  bow: () => makePart(20, 2, 1, 1, (d) => { d.r(0, 0, 20, 1, C.wood2); d.r(1, 1, 18, 1, C.ivory); }),
+  bow: () => makePart(40, 4, 2, 2, (d) => { d.r(0, 1, 40, 1, C.wood2); d.r(2, 2, 36, 1, C.ivory); d.r(0, 0, 3, 4, C.black); d.p(39, 1, C.ivory); }, { res: 2, depth: 2, z0: -1 }),
 
   flute: () => makePart(20, 3, 1, 1, (d) => { d.r(0, 0, 20, 2, C.silver); for (let x = 6; x < 18; x += 3) d.p(x, 2, C.silver2); }),
   clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }),
