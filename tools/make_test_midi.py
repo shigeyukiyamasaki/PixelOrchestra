@@ -95,7 +95,7 @@ def notes_for(part):
 PARTS = [
     ('Violin I', 40, 0, 'vn1'), ('Violin II', 40, 1, 'vn2'), ('Viola', 41, 2, 'va'), ('Cello', 42, 3, 'vc'), ('Contrabass', 43, 4, 'cb'),
     ('Flute', 73, 5, 'fl'), ('Oboe', 68, 6, 'ob'), ('Clarinet', 71, 7, 'cl'), ('Bassoon', 70, 8, 'fg'),
-    ('Horn', 60, 10, 'hn'), ('Trumpet', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'),
+    ('Horn', 60, 10, 'hn'), ('Trumpets_HW', 56, 11, 'tp'), ('Trumpets_CB', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'),
     ('Timpani', 47, 13, 'timp'), ('Gran Cassa', 116, 9, 'gc'), ('Xylophone_HW', 13, 15, 'xylo'), ('Celeste_BBC', 8, 15, 'cel'), ('Harp', 46, 14, 'hp'),
 ]
 

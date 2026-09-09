@@ -17,6 +17,7 @@ const FAMILY_KEY = 'pixelOrchestra.families.v1';
 // MIDIOrchestra と同じキー・同じ形式 { trackName: {pitchMin, pitchMax} }。同一オリジン（romashige.com）に置けば両ツールで共用される
 const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
+const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -156,6 +157,16 @@ function saveDynSource(trackName, source) {
   try { localStorage.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
 }
 
+// トラック統合：トラック名 → 'auto' | 'none' | 統合先トラック名
+function loadMerges() {
+  try { return JSON.parse(localStorage.getItem(MERGE_KEY) || '{}'); } catch { return {}; }
+}
+function saveMerge(trackName, value) {
+  const all = loadMerges();
+  if (value === 'auto') delete all[trackName]; else all[trackName] = value;
+  try { localStorage.setItem(MERGE_KEY, JSON.stringify(all)); } catch (e) { console.warn('統合設定保存失敗:', e); }
+}
+
 // ---------- MIDI 読み込み ----------
 $('midiFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -192,7 +203,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   roll?.dispose();
   puppets = [];
 
-  engine = new MidiEngine(midi, loadFamilyOverrides(midiFileName), loadPitchFilters(), loadDynSources());
+  engine = new MidiEngine(midi, loadFamilyOverrides(midiFileName), loadPitchFilters(), loadDynSources(), loadMerges());
   roll = new PianoRoll(scene, engine, camera);
   placePuppets();
   renderTrackTable();
@@ -239,8 +250,9 @@ function placePuppets() {
 function renderTrackTable() {
   const tbody = $('trackRows');
   tbody.innerHTML = '';
-  for (const tr of engine.tracks) {
+  for (const tr of engine.sources) { // 設定は MIDI トラック単位（統合後のセクションではなく）
     const row = document.createElement('tr');
+    if (tr.mergeTarget) row.className = 'merged';
     const sel = document.createElement('select');
     for (const f of FAMILIES) { // ファミリーごとにグループ化した楽器一覧
       const g = document.createElement('optgroup');
@@ -255,15 +267,14 @@ function renderTrackTable() {
       sel.appendChild(g);
     }
     sel.addEventListener('change', () => {
-      engine.setVariant(tr, sel.value);
       saveFamilyOverride(midiFileName, tr.key, sel.value);
-      roll.refreshColors();
-      placePuppets();
-      renderTrackTable(); // 色見本を更新
+      buildScene(currentMidi, { keepTime: true }); // 統合の可否（同じ楽器か）も変わるので組み直す
     });
-    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = tr.color;
+    const section = engine.tracks.find((sec) => sec.sources.includes(tr));
+    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = section ? section.color : '#888';
     const tdSw = document.createElement('td'); tdSw.appendChild(sw);
     const tdName = document.createElement('td'); tdName.className = 'name'; tdName.title = tr.name; tdName.textContent = tr.name;
+    if (tr.mergeTarget) { tdName.title = `${tr.name} → ${tr.mergeTarget.name} に統合`; tdName.textContent = `↳ ${tr.name}`; }
     const tdN = document.createElement('td'); tdN.textContent = tr.notes.length;
     if (tr.notes.length !== tr.totalNotes) { tdN.textContent = `${tr.notes.length}/${tr.totalNotes}`; tdN.title = '音域フィルターで除外あり（表示/全体）'; }
     row.append(tdSw, tdName, tdN);
@@ -294,6 +305,16 @@ function renderTrackTable() {
     dynSel.title = 'この楽器の強弱（前傾・揺れ幅・足元の光）に使う情報。CC1/CC11 で強弱を書く音源はそちらを選ぶ';
     dynSel.addEventListener('change', () => { saveDynSource(tr.name, dynSel.value); buildScene(currentMidi, { keepTime: true }); });
     td2.append(document.createElement('br'), dynLab, dynSel);
+    // 統合先：重ね録りした別音源のトラックを同じ奏者にまとめる
+    const mgLab = document.createElement('span'); mgLab.className = 'pitch-label dyn-label'; mgLab.textContent = '統合';
+    const mgSel = document.createElement('select'); mgSel.className = 'dyn-select';
+    const addOpt = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (v === tr.mergeSetting) o.selected = true; mgSel.appendChild(o); };
+    addOpt('auto', `自動（${tr.mergeResolved === 'none' ? 'しない' : '→ ' + tr.mergeResolved}）`);
+    addOpt('none', '統合しない');
+    for (const other of engine.sources) if (other !== tr && other.variant === tr.variant) addOpt(other.name, `→ ${other.name}`);
+    mgSel.title = '重ね録り（別メーカー音源の同一パート等）のトラックをこの統合先の奏者にまとめる。楽器が同じトラックだけ選べる';
+    mgSel.addEventListener('change', () => { saveMerge(tr.name, mgSel.value); buildScene(currentMidi, { keepTime: true }); });
+    td2.append(mgLab, mgSel);
     row2.appendChild(td2);
     tbody.appendChild(row2);
     const applyFilter = () => {

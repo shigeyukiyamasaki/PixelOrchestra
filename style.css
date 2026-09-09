@@ -61,6 +61,8 @@ tr.pitch-row input[type=number] { width: 44px; background: var(--panel2); color:
 tr.pitch-row .note-name { display: inline-block; min-width: 26px; color: var(--accent); }
 tr.pitch-row .pitch-label { margin-right: 4px; }
 tr.pitch-row .dyn-label { margin-left: 0; }
+tr.pitch-row .dyn-label + select + .dyn-label { margin-left: 8px; }
+tr.merged td.name { color: var(--muted); }
 tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; font-size: 11px; margin-top: 3px; }
 
 @media (max-width: 900px) {

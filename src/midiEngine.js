@@ -220,14 +220,16 @@ export class MidiEngine {
    * @param {object} familyOverrides  { trackKey: variant }  楽器の手動割当
    * @param {object} pitchFilters     { trackName: {pitchMin, pitchMax} }  音域フィルター（キースイッチ除外）
    * @param {object} dynSources       { trackName: 'auto'|'velocity'|'cc1'|'cc11'|'cc1+cc11' }  強弱の情報源
+   * @param {object} mergeInto        { trackName: 'auto'|'none'|targetTrackName }  トラック統合（重ね録りの音源を1セクションに）
    */
-  constructor(midi, familyOverrides = {}, pitchFilters = {}, dynSources = {}) {
+  constructor(midi, familyOverrides = {}, pitchFilters = {}, dynSources = {}, mergeInto = {}) {
     this.midi = midi;
     this.ppq = midi.header.ppq;
     this.duration = midi.duration;
 
     let ti = 0;
-    this.tracks = midi.tracks
+    // sources = MIDI のトラックごとの情報（設定はこの単位）。tracks = 統合後のセクション（奏者・ロールはこの単位）
+    this.sources = midi.tracks
       .filter((t) => t.notes.length > 0)
       .map((t) => {
         // （フィルターで 0 音になったトラックも席は残す：後で範囲を戻せるように）
@@ -262,21 +264,18 @@ export class MidiEngine {
           const v1 = varies(cc1), v11 = varies(cc11);
           dynResolved = v1 && v11 ? 'cc1+cc11' : v1 ? 'cc1' : v11 ? 'cc11' : 'velocity';
         }
-        const pitches = notes.length ? notes.map((n) => n.midi) : [60];
-        const track = {
+        const src = {
           cc1, cc11, dynSource, dynResolved,
           index: ti, key, name, channel: t.channel, program, family, variant,
           notes, totalNotes, pitchMin, pitchMax,
-          maxDur: notes.length ? Math.max(...notes.map((n) => n.duration)) : 0,
-          meanPitch: pitches.reduce((a, b) => a + b, 0) / pitches.length,
-          minPitch: Math.min(...pitches),
-          maxPitch: Math.max(...pitches),
-          color: null, energy: null,
+          mergeSetting: mergeInto[name] || 'auto', mergeTarget: null, // mergeTarget: 統合先 source（null = 自分がセクション）
         };
         ti++;
-        return track;
+        return src;
       });
 
+    this._resolveMerges();
+    this.tracks = this._buildSections();
     this.assignColors();
 
     this.allNotes = this.tracks.flatMap((tr) => tr.notes.map((n) => ({ ...n, track: tr })))
@@ -286,6 +285,57 @@ export class MidiEngine {
 
     this._precomputeEnergy();
     this._buildTempo();
+  }
+
+  // ---- トラック統合 ----
+  // 自動：楽器が同じで、末尾サフィックス（_HW / _CB 等）を除いた名前が一致する先行トラックへ統合
+  //（Trumpets_HW + Trumpets_CB → 1 セクション。Violins 1_HW と Violins 2_HW は別）
+  static baseName(name) { return name.replace(/_[^_]*$/, '').trim().toLowerCase(); }
+  _resolveMerges() {
+    const byName = new Map(this.sources.map((s) => [s.name, s]));
+    for (const src of this.sources) {
+      const set = src.mergeSetting;
+      let target = null;
+      if (set === 'none') target = null;
+      else if (set !== 'auto') target = byName.get(set) || null;
+      else {
+        const base = MidiEngine.baseName(src.name);
+        target = this.sources.find((o) => o !== src && o.index < src.index && o.variant === src.variant && MidiEngine.baseName(o.name) === base) || null;
+      }
+      // 統合先が自分／楽器違い／さらに統合されている → その先を辿る（1 段まで）。自己参照・楽器違いは無効
+      if (target && target.mergeTarget) target = target.mergeTarget;
+      if (target === src || (target && target.variant !== src.variant)) target = null;
+      src.mergeTarget = target;
+      src.mergeResolved = target ? target.name : 'none';
+    }
+  }
+  // 統合後のセクション（奏者・ロール・エネルギーの単位）を作る
+  _buildSections() {
+    const sections = [];
+    const map = new Map(); // 代表 source → section
+    for (const src of this.sources) {
+      const head = src.mergeTarget || src;
+      if (!map.has(head)) {
+        const sec = { ...head, sources: [], notes: [], totalNotes: 0, mergedNames: [] };
+        map.set(head, sec); sections.push(sec);
+      }
+      const sec = map.get(head);
+      sec.sources.push(src);
+      sec.notes = sec.notes.concat(src.notes);
+      sec.totalNotes += src.totalNotes;
+      if (src !== head) sec.mergedNames.push(src.name);
+    }
+    for (const sec of sections) {
+      sec.notes.sort((a, b) => a.time - b.time);
+      sec.notes.forEach((n, i) => { n.index = i; });
+      const pitches = sec.notes.length ? sec.notes.map((n) => n.midi) : [60];
+      sec.maxDur = sec.notes.length ? Math.max(...sec.notes.map((n) => n.duration)) : 0;
+      sec.meanPitch = pitches.reduce((a, b) => a + b, 0) / pitches.length;
+      sec.minPitch = Math.min(...pitches);
+      sec.maxPitch = Math.max(...pitches);
+      sec.color = null; sec.energy = null;
+    }
+    return sections;
   }
 
   // 色：ファミリー色相 + 同ファミリー内で明度をずらす（割当変更後にも呼ぶ）
@@ -325,10 +375,12 @@ export class MidiEngine {
         }
         // CC 由来の強弱：発音中だけ有効（休符で CC が高くても前傾しない）
         let d = e;
-        if (active.length && tr.dynResolved !== 'velocity') {
+        if (active.length) { // 統合された各トラックの CC の最大値
           let cc = 0;
-          if (tr.dynResolved === 'cc1' || tr.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(tr.cc1, t));
-          if (tr.dynResolved === 'cc11' || tr.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(tr.cc11, t));
+          for (const src of tr.sources) {
+            if (src.dynResolved === 'cc1' || src.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(src.cc1, t));
+            if (src.dynResolved === 'cc11' || src.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(src.cc11, t));
+          }
           d = Math.max(e, cc);
         }
         E[k] = d;
