@@ -60,6 +60,7 @@ const partCache = new Map();
  *   w/h/pivot/depth/z0 は res のグリッド単位で指定する（res:2 なら細かい px）。
  * opts.side: 側面図の描画関数（省略可）。指定すると正面図の押し出しと側面図の押し出しの共通部分で立体を削り出す。
  *   側面図のキャンバスは 幅 = depth（奥行き、左が背面 z0）・高さ = h、y は正面図と同じ行。
+ * opts.top: 上面図の描画関数（省略可）。幅 = w（x は正面図と同じ列）・高さ = depth（上が背面 z0）。3 面削り出し。
  */
 export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   const res = opts.res ?? 1;
@@ -73,7 +74,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
     draw(new Pen(g));
-    let sideImg = null;
+    let sideImg = null, topImg = null;
     if (opts.side) {
       const sc = document.createElement('canvas');
       sc.width = depth; sc.height = h;
@@ -81,9 +82,16 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
       opts.side(new Pen(sg));
       sideImg = sg.getImageData(0, 0, depth, h);
     }
+    if (opts.top) {
+      const tc = document.createElement('canvas');
+      tc.width = w; tc.height = depth;
+      const tg = tc.getContext('2d');
+      opts.top(new Pen(tg));
+      topImg = tg.getImageData(0, 0, w, depth);
+    }
     // グリッド単位 → ボクセル単位（res:1 は 2 倍に拡大）
     const cell = res === 1 ? PX : VOX;
-    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg);
+    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -116,13 +124,15 @@ function makePartSprite(w, h, pivotX, pivotY, draw, res = 1) {
 
 // ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
 // cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null) {
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null) {
   const d = img.data;
   const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
   const sd = sideImg ? sideImg.data : null;
   const filledSide = (z, y) => !sd || (z >= 0 && z < depth && y >= 0 && y < h && sd[(y * depth + z) * 4 + 3] > 127);
-  // 3 次元の占有：正面図 AND 側面図。z は 0..depth-1（0 = 背面側）
-  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y);
+  const td = topImg ? topImg.data : null;
+  const filledTop = (x, z) => !td || (x >= 0 && x < w && z >= 0 && z < depth && td[(z * w + x) * 4 + 3] > 127);
+  // 3 次元の占有：正面図 AND 側面図 AND 上面図。z は 0..depth-1（0 = 背面側）
+  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y) && filledTop(x, z);
   const filledBehind = (x, y, z) => { for (let k = 0; k < z; k++) if (filled(x, y, k)) return true; return false; };
   const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
   // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
@@ -431,7 +441,9 @@ export const INSTRUMENT = {
     for (let i = 0; i < 3; i++) { d.r(12 + i * 3, 1, 2, 9, C.gold2); d.r(12 + i * 3, 0, 2, 1, C.silver); } // ピストン
     d.r(25, 4, 3, 4, C.gold); d.r(28, 3, 2, 6, C.gold); d.r(30, 1, 2, 10, C.gold); d.r(32, 0, 3, 12, C.gold); d.r(35, 0, 1, 12, C.gold2); // ベル
     d.r(26, 5, 8, 1, '#f3d27a');                                            // ハイライト
-  }, { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 4, 2, 4, F); d.r(0, 1, 6, 10, F); } }),
+  }, { res: 2, depth: 12, z0: -6,
+       side: (d) => { d.disc(6, 6, 6, F); d.r(5, 4, 2, 4, F); },                                  // 断面は円（ベルが丸く見える）
+       top: (d) => { d.r(0, 5, 25, 2, F); d.r(8, 4, 16, 4, F); d.r(12, 3, 8, 6, F); d.r(25, 4, 3, 4, F); d.r(28, 3, 2, 6, F); d.r(30, 1, 2, 10, F); d.r(32, 0, 4, 12, F); } }), // 管は細く、ベルは正面と同じ広がり
   horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }, { depth: 8, z0: -2, side: SIDE.horn }),
   trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }, { depth: 4 }),
   tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }, { depth: 10, z0: -2, side: SIDE.tuba }),
