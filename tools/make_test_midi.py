@@ -28,10 +28,20 @@ def track_chunk(events):
 
 def meta(tp, payload): return b'\xff' + bytes([tp]) + vlq(len(payload)) + payload
 
-# 進行（各小節のルート・和音）：C - Am - F - G を2周、ffへ
-PROG = [(60, [0, 4, 7]), (57, [0, 3, 7]), (53, [0, 4, 7]), (55, [0, 4, 7])] * 2
+# 進行（各小節のルート・和音）：C - Am - F - G を 6 周（24 小節 @ 96bpm = 60 秒）。段階的に楽器が増えて tutti へ
+#   A: 0-7 弦＋木管＋ハープ/チェレスタ  B: 8-15 金管・ティンパニ・鍵盤打楽器・ピアノ  C: 16-23 tutti（シンバル・スネア）→ 最後は全員で全音符
+PROG = [(60, [0, 4, 7]), (57, [0, 3, 7]), (53, [0, 4, 7]), (55, [0, 4, 7])] * 6
 BARS = len(PROG)
 BEAT = PPQ
+FINAL = BARS - 1  # 最終小節：全員で全音符
+
+# 最終小節で鳴らす音（全音符）。None の打楽器は個別に扱う
+FINAL_PITCH = {
+    'vn1': lambda r, c: r + 12 + c[2], 'vn2': lambda r, c: r + c[1], 'va': lambda r, c: r - 5 + c[1], 'vc': lambda r, c: r - 12, 'cb': lambda r, c: r - 24,
+    'fl': lambda r, c: r + 24 + c[2], 'ob': lambda r, c: r + 12 + c[1], 'cl': lambda r, c: r + c[2], 'fg': lambda r, c: r - 12,
+    'hn': lambda r, c: r - 5 + c[1], 'tp': lambda r, c: r + 12, 'tb': lambda r, c: r - 12 + c[2], 'tuba': lambda r, c: r - 24,
+    'cel': lambda r, c: r + 24, 'hp': lambda r, c: r + 12, 'pf': lambda r, c: r, 'mar': lambda r, c: r + 12 + c[1], 'xylo': lambda r, c: r + 36,
+}
 
 def notes_for(part):
     """part -> list of (tick, dur, pitch, vel)"""
@@ -40,6 +50,13 @@ def notes_for(part):
         b0 = bar * 4 * BEAT
         dyn = 0.55 + 0.45 * (bar / (BARS - 1))  # だんだん強く
         v = lambda base: max(20, min(127, int(base * dyn + random.randint(-6, 6))))
+        if bar == FINAL:
+            if part in FINAL_PITCH: ev.append((b0, 4 * BEAT - 40, FINAL_PITCH[part](root, chord), v(110)))
+            elif part == 'timp': ev.append((b0, 4 * BEAT - 40, root - 24, v(120)))
+            elif part in ('gc', 'cym'): ev.append((b0, 2 * BEAT, 36 if part == 'gc' else 49, v(120)))
+            elif part == 'snare':
+                for i in range(16): ev.append((b0 + i * BEAT // 4, BEAT // 8, 38, v(70 + 3 * i)))
+            continue
         if part == 'vn1':   # 8分音符の刻み（高音）＋ 小節頭にキースイッチ（C-1=24, vel 1）
             ev.append((b0, 30, 24 + (bar % 3), 1))
             for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + 12 + chord[i % 3], v(95)))
@@ -51,7 +68,7 @@ def notes_for(part):
             for i in range(2): ev.append((b0 + i * 2 * BEAT, 2 * BEAT - 40, root - 12, v(90)))
         elif part == 'cb':
             ev.append((b0, 4 * BEAT - 40, root - 24, v(90)))
-        elif part == 'fl':  # 後半から旋律
+        elif part == 'fl':  # 旋律
             if bar >= 2:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT - 60, root + 24 + chord[(i * 2) % 3], v(85)))
         elif part == 'ob':
@@ -64,24 +81,24 @@ def notes_for(part):
             if bar >= 1:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, root - 12 + chord[0], v(80)))
         elif part == 'hn':
-            if bar >= 4:
+            if bar >= 8:
                 ev.append((b0, 4 * BEAT - 40, root - 5 + chord[1], v(90)))
         elif part == 'tp':
-            if bar >= 5:
+            if bar >= 10:
                 for i in (0, 2, 3): ev.append((b0 + i * BEAT, BEAT // 2, root + 12 + chord[0], v(100)))
         elif part == 'tb':
-            if bar >= 5:
+            if bar >= 10:
                 ev.append((b0, 2 * BEAT - 40, root - 12 + chord[0], v(95))); ev.append((b0 + 2 * BEAT, 2 * BEAT - 40, root - 12 + chord[2], v(95)))
         elif part == 'timp':
-            ev.append((b0, BEAT // 2, root - 24, v(110)))
-            if bar >= 4: ev.append((b0 + 2 * BEAT, BEAT // 2, root - 24, v(95)))
-            if bar >= 6:
+            if bar >= 8: ev.append((b0, BEAT // 2, root - 24, v(110)))
+            if bar >= 12: ev.append((b0 + 2 * BEAT, BEAT // 2, root - 24, v(95)))
+            if bar >= 16:
                 for i in range(4): ev.append((b0 + 3 * BEAT + i * BEAT // 4, BEAT // 8, root - 24, v(100)))
         elif part == 'gc':  # グランカッサ：小節頭＋後半は3拍目も
-            ev.append((b0, BEAT // 2, 36, v(115)))
-            if bar >= 4: ev.append((b0 + 2 * BEAT, BEAT // 2, 36, v(100)))
+            if bar >= 8: ev.append((b0, BEAT // 2, 36, v(115)))
+            if bar >= 16: ev.append((b0 + 2 * BEAT, BEAT // 2, 36, v(100)))
         elif part == 'xylo':  # 16分の走句（高音）
-            if bar >= 3:
+            if bar >= 9 and bar % 2 == 1:
                 for i in range(8): ev.append((b0 + 2 * BEAT + i * BEAT // 4, BEAT // 8, root + 24 + chord[i % 3] + (12 if i >= 4 else 0), v(90)))
         elif part == 'cel':   # 和音の分散
             if bar >= 2:
@@ -89,19 +106,37 @@ def notes_for(part):
         elif part == 'hp':
             if bar >= 2:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2, root + 12 + chord[i % 3] + 12 * (i // 4), v(70)))
+        elif part == 'tuba':  # 小節頭と3拍目のバス
+            if bar >= 12:
+                for i in (0, 2): ev.append((b0 + i * BEAT, BEAT - 40, root - 24, v(95)))
+        elif part == 'snare':  # 2・4拍目＋後半はロール気味の16分
+            if bar >= 14:
+                for i in (1, 3): ev.append((b0 + i * BEAT, BEAT // 4, 38, v(85)))
+            if bar >= 18:
+                for i in range(4): ev.append((b0 + 3 * BEAT + i * BEAT // 4, BEAT // 8, 38, v(75)))
+        elif part == 'cym':  # 4小節ごとの頭でクラッシュ
+            if bar >= 16 and bar % 4 == 0: ev.append((b0, 2 * BEAT, 49, v(110)))
+        elif part == 'mar':  # 8分の分散和音（中音域）
+            if bar >= 8:
+                for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + chord[i % 3] + (12 if i % 2 else 0), v(80)))
+        elif part == 'pf':  # 小節頭の和音＋4拍目の低音
+            if bar >= 6:
+                for n in chord: ev.append((b0, 2 * BEAT - 40, root + n, v(90)))
+                ev.append((b0 + 3 * BEAT, BEAT - 40, root - 12, v(85)))
     return ev
 
 # (トラック名, プログラム番号, チャンネル, part)
 PARTS = [
     ('Violin I', 40, 0, 'vn1'), ('Violin II', 40, 1, 'vn2'), ('Viola', 41, 2, 'va'), ('Cello', 42, 3, 'vc'), ('Contrabass', 43, 4, 'cb'),
     ('Flute', 73, 5, 'fl'), ('Oboe', 68, 6, 'ob'), ('Clarinet', 71, 7, 'cl'), ('Bassoon', 70, 8, 'fg'),
-    ('Horn', 60, 10, 'hn'), ('Trumpets_HW', 56, 11, 'tp'), ('Trumpets_CB', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'),
-    ('Timpani', 47, 13, 'timp'), ('Gran Cassa', 116, 9, 'gc'), ('Xylophone_HW', 13, 15, 'xylo'), ('Celeste_BBC', 8, 15, 'cel'), ('Harp', 46, 14, 'hp'),
+    ('Horn', 60, 10, 'hn'), ('Trumpets_HW', 56, 11, 'tp'), ('Trumpets_CB', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'), ('Tuba', 58, 12, 'tuba'),
+    ('Timpani', 47, 13, 'timp'), ('Gran Cassa', 116, 9, 'gc'), ('Snare Drum', 116, 9, 'snare'), ('Cymbals', 116, 9, 'cym'),
+    ('Xylophone_HW', 13, 15, 'xylo'), ('Marimba', 12, 15, 'mar'), ('Celeste_BBC', 8, 15, 'cel'), ('Piano', 0, 15, 'pf'), ('Harp', 46, 14, 'hp'),
 ]
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'samples', 'test_orchestra.mid')
-    bpm = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
+    bpm = float(sys.argv[2]) if len(sys.argv) > 2 else 96.0  # 24 小節 × 4 拍 @ 96bpm = 60 秒
     tracks = []
     t0 = [(0, meta(0x03, b'Tempo/Meta')), (0, meta(0x51, struct.pack('>I', int(60_000_000 / bpm))[1:])), (0, meta(0x58, bytes([4, 2, 24, 8])))]
     tracks.append(track_chunk(t0))
@@ -111,7 +146,7 @@ def main():
         if part in ('vn1', 'vn2', 'va', 'vc', 'cb'):
             for k in range(BARS * 8):
                 ev.append((k * BEAT // 2, bytes([0xB0 | ch, 11, int(40 + 85 * k / (BARS * 8))])))
-        if part in ('hn', 'tp', 'tb'):
+        if part in ('hn', 'tp', 'tb', 'tuba'):
             for bar in range(BARS):
                 for k in range(8):
                     ev.append((bar * 4 * BEAT + k * BEAT // 2, bytes([0xB0 | ch, 1, int(50 + 70 * (k / 7))])))
