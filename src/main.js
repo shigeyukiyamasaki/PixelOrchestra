@@ -8,7 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, CONDUCTOR_Z } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel, setGlowSoftness, LABEL_FONT } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { PianoRoll } from './pianoRoll.js';
 
@@ -128,6 +128,7 @@ function settings() {
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
     facing: $('facing').value === 'conductor' ? 'conductor' : 'camera',
+    partStyle: $('partStyle').value === 'sprite' ? 'sprite' : 'voxel',
   };
 }
 
@@ -219,8 +220,10 @@ function buildScene(midi, { keepTime = false } = {}) {
 window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls };
 
 function placePuppets() {
+  setPartStyle(settings().partStyle);
   for (const p of puppets) scene.remove(p.puppet.root);
   puppets = [];
+  if (conductor && conductor.style !== settings().partStyle) { scene.remove(conductor.root); conductor = null; } // 方式が変わったら作り直す
   const seats = layoutSeats(engine.tracks);
   let seed = 1;
   for (const seat of seats) {
@@ -362,6 +365,7 @@ window.addEventListener('keydown', (e) => {
 for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
+$('partStyle').addEventListener('change', () => { if (engine) placePuppets(); }); // 絵の方式：奏者を作り直す
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
 });

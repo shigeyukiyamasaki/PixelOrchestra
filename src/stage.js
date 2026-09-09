@@ -67,6 +67,12 @@ export function createStage(container) {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 22, 34);
 
+  // ライト：ボクセルの面ごとの陰影用（舞台側は MeshBasicMaterial なので影響しない）
+  scene.add(new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.95));
+  const sun = new THREE.DirectionalLight('#fff4e0', 0.55);
+  sun.position.set(-8, 20, 14); // 客席側の上手斜め上から
+  scene.add(sun);
+
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);

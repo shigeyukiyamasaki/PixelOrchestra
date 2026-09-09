@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、y 上向き）。1px = PX unit。
  * 角度規約：腕の rotation.z は「垂らした向きを 0、+ で手が +x 側へ上がる」。
  */
-import { PX, body, head, upperArm, foreArm, INSTRUMENT, glowDisc } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, INSTRUMENT, glowDisc, PART_STYLE } from './sprites.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -45,40 +45,40 @@ function instPoint(inst, lx, ly) {
 }
 
 // ---------------- 楽器バリアント別の設定 ----------------
-// inst: { pos:[px,py,z], rot, mirror }  held: { L/R: item }
+// inst: { pos:[px,py,z(px・正面が +)], rot, mirror }  held: { L/R: item }
 // 家族ごとの「手の置き方」は下の update 関数群を参照。値はすべて rig px。
 const VARIANT = {
   // 弦：bow = { contact: 弓と弦の接点, world: 正面から見た弓の角度, sMin/sMax: 接点→手元の距離 }, leftHand: 左手の位置, vib: ビブラートの方向
-  violin:     { inst: { pos: [-5, 28, 0.03], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-3.2, 28.9], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [-9.0, 27.2] },
-  viola:      { inst: { pos: [-5, 28, 0.03], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-3.2, 28.9], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [-9.5, 25.8] },
-  cello:      { inst: { pos: [2, 2, 0.02], rot: 0 }, held: { R: 'bow' }, bow: { contact: [2.5, 19], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [1.5, 29], vib: [0, 1] },
-  contrabass: { inst: { pos: [3, 0, 0.02], rot: 0 }, held: { R: 'bow' }, bow: { contact: [3.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [3, 32], vib: [0, 1] },
+  violin:     { inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-3.2, 28.9], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [-9.0, 27.2] },
+  viola:      { inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-3.2, 28.9], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [-9.5, 25.8] },
+  cello:      { inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [2.5, 19], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [1.5, 29], vib: [0, 1] },
+  contrabass: { inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [3.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [3, 32], vib: [0, 1] },
   // 木管・金管：hands = 楽器ローカル px（pivot 基準・y 上向き）。楽器が動くと手が追従する
-  flute:      { inst: { pos: [-1, 35, 0.03], rot: -0.15 }, hands: { L: [6, -1], R: [13, -1] }, kind: 'flute' },
-  oboe:       { inst: { pos: [0, 35, 0.03], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed' },
-  clarinet:   { inst: { pos: [0, 35, 0.03], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed' },
-  bassoon:    { inst: { pos: [4, 4, 0.03], rot: 0.35 }, hands: { L: [0.5, 24], R: [0.5, 16] }, kind: 'bassoon' },
-  trumpet:    { inst: { pos: [1, 36, 0.03], rot: -0.15 }, hands: { L: [6, -1], R: [8, 1] }, kind: 'bell' },
-  horn:       { inst: { pos: [2, 24, 0.03], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn' },
-  trombone:   { inst: { pos: [1, 36, 0.03], rot: -0.1 }, hands: { L: [4, -1], R: [10, 0] }, kind: 'bell', slide: true },
-  tuba:       { inst: { pos: [3, 6, 0.03], rot: 0 }, hands: { L: [-2, 12], R: [4, 14] }, kind: 'tuba' },
+  flute:      { inst: { pos: [-1, 35, 4], rot: -0.15 }, hands: { L: [6, -1], R: [13, -1] }, kind: 'flute' },
+  oboe:       { inst: { pos: [0, 35, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed' },
+  clarinet:   { inst: { pos: [0, 35, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed' },
+  bassoon:    { inst: { pos: [4, 4, 4], rot: 0.35 }, hands: { L: [0.5, 24], R: [0.5, 16] }, kind: 'bassoon' },
+  trumpet:    { inst: { pos: [1, 36, 4], rot: -0.15 }, hands: { L: [6, -1], R: [8, 1] }, kind: 'bell' },
+  horn:       { inst: { pos: [2, 24, 4], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn' },
+  trombone:   { inst: { pos: [1, 36, 4], rot: -0.1 }, hands: { L: [4, -1], R: [10, 0] }, kind: 'bell', slide: true },
+  tuba:       { inst: { pos: [3, 6, 4], rot: 0 }, hands: { L: [-2, 12], R: [4, 14] }, kind: 'tuba' },
   // 打楽器：strike = { L/R: { hit: 打つ時の手, rest: 構えの手, head: マレットが向く打点 } }
-  timpani:    { inst: { pos: [0, 15, 0.06], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
+  timpani:    { inst: { pos: [0, 15, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } } },
-  bassdrum:   { inst: { pos: [-4, 0, 0.06], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R',
+  bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R',
                 strike: { R: { hit: [4, 22], rest: [13, 31], head: [-2, 15] } }, fixedHand: { L: [-12, 22] } },
-  snare:      { inst: { pos: [0, 17, 0.06], rot: 0 }, held: { L: 'stick', R: 'stick' },
+  snare:      { inst: { pos: [0, 17, 4], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } } },
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: Math.PI, R: 0 },
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } } },
-  xylophone:  { inst: { pos: [0, 8, 0.06], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
+  xylophone:  { inst: { pos: [0, 8, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 22], rest: [-7, 29], head: [-3, 15] }, R: { hit: [3, 22], rest: [7, 29], head: [3, 15] } } },
-  marimba:    { inst: { pos: [0, 6, 0.06], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 13,
+  marimba:    { inst: { pos: [0, 6, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 21], rest: [-7, 28], head: [-3, 14] }, R: { hit: [3, 21], rest: [7, 28], head: [3, 14] } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔
-  piano:      { inst: { pos: [0, 0, 0.08], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 } },
-  celesta:    { inst: { pos: [0, 0, 0.08], rot: 0 }, keys: { y: 16, spread: 7, gap: 3 } },
-  harp:       { inst: { pos: [-9, 0, 0.05], rot: 0 }, harp: true },
+  piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 } },
+  celesta:    { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 16, spread: 7, gap: 3 } },
+  harp:       { inst: { pos: [-9, 0, 4], rot: 0 }, harp: true },
   conductor:  { held: { R: 'baton' } },
 };
 
@@ -94,6 +94,7 @@ export class Puppet {
     this.phase = (this.seed * 1.618) % 6.283;          // 個体差（揺れの位相）
     this.scaleVar = 0.9 + ((this.seed * 7) % 5) * 0.05; // 個体差（振り幅）
     this.delay = 0;
+    this.style = PART_STYLE; // 生成時の絵の方式（'voxel' | 'sprite'）
 
     this.root = new THREE.Group();    // ステージ位置（足元の光はここに付ける：傾けない）
     this.group = new THREE.Group();   // ビルボード回転（常にカメラ正対）
@@ -105,16 +106,16 @@ export class Puppet {
     this.rig.add(this.body);
 
     this.headPivot = new THREE.Group();
-    this.headPivot.position.set(0, 33 * PX, 0.01);
-    this.head = head(this.seed, !!o.isConductor);
+    this.headPivot.position.set(0, 33 * PX, 0);
+    this.head = head(this.seed, false);
     this.headPivot.add(this.head);
     this.rig.add(this.headPivot);
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）
     this.arm = {}; this.fore = {}; this.held = {}; this.hand = {};
     for (const side of ['L', 'R']) {
-      const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, 0.04);
-      const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0.005);
+      const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, 3 * PX); // 腕は体の前面側
+      const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0.5 * PX);
       a.add(upperArm(), f); f.add(foreArm());
       this.rig.add(a);
       this.arm[side] = a; this.fore[side] = f;
@@ -122,7 +123,7 @@ export class Puppet {
       const item = this.cfg.held?.[side];
       if (item) {
         const m = INSTRUMENT[item]();
-        m.position.set(0, -ARM_FORE * PX, 0.01);
+        m.position.set(0, -ARM_FORE * PX, 3 * PX); // 手持ち物は前腕の前
         f.add(m);
         this.held[side] = m;
       }
@@ -132,7 +133,7 @@ export class Puppet {
     if (this.cfg.inst && INSTRUMENT[this.variant]) {
       const m = INSTRUMENT[this.variant]();
       const [px, py, z] = this.cfg.inst.pos;
-      m.position.set(px * PX, py * PX, z);
+      m.position.set(px * PX, py * PX, z * PX);
       m.rotation.z = this.cfg.inst.rot;
       if (this.cfg.inst.mirror) m.scale.x = -1;
       m.userData.baseRot = this.cfg.inst.rot;
@@ -150,16 +151,15 @@ export class Puppet {
     this.root.add(this.glow);
   }
 
-  /** カメラに正対する（ビルボード）。足元を軸に傾くので見下ろしても潰れない */
+  /** カメラの方を向く。2D の板は完全に正対（見下ろしても潰れない）、立体は水平回転のみ */
   faceCamera(cam) {
-    this.group.quaternion.copy(cam.quaternion);
+    if (this.style === 'sprite') { this.group.quaternion.copy(cam.quaternion); return; }
+    const yaw = Math.atan2(cam.position.x - this.root.position.x, cam.position.z - this.root.position.z);
+    this.group.rotation.set(0, yaw, 0);
   }
-  /**
-   * 向きを固定する（紙人形劇）：板は垂直のまま、指定の点（指揮者）の方を向く。
-   * 指揮者自身は客席（+z）を向いたまま（後ろ姿の絵）。
-   */
+  /** 向きを固定：指定の点（指揮者）の方を向く。指揮者自身は楽団（-z）の方を向く */
   faceToward(px, pz) {
-    const yaw = this.family === 'conductor' ? 0 : Math.atan2(px - this.root.position.x, pz - this.root.position.z);
+    const yaw = this.family === 'conductor' ? Math.PI : Math.atan2(px - this.root.position.x, pz - this.root.position.z);
     this.group.rotation.set(0, yaw, 0);
   }
 

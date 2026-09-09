@@ -44,10 +44,39 @@ class Pen {
 }
 
 /**
- * ドット絵パーツを Three.js のメッシュとして生成する。
- * pivot（回転の中心）がメッシュのローカル原点に来るようジオメトリを平行移動する。
+ * ドット絵パーツをボクセル（押し出し）メッシュとして生成する。
+ * ドットを描いたキャンバスを読み取り、塗られたピクセルを奥行き depth のボクセル柱にして露出面だけをメッシュ化。
+ * pivot（回転の中心）がメッシュのローカル原点、+z が正面。同じ定義のパーツはジオメトリを共有（キャッシュ）。
+ * opts: { depth: 奥行き[px], z0: 背面の z[px], back: 背面の色置換 {from:to} }
  */
-export function makePart(w, h, pivotX, pivotY, draw) {
+// 絵の方式：'voxel'（押し出し立体）／'sprite'（2D の板・ビルボード）。切替後は奏者を作り直す
+export let PART_STYLE = 'voxel';
+export function setPartStyle(style) { PART_STYLE = style === 'sprite' ? 'sprite' : 'voxel'; }
+
+const partCache = new Map();
+export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
+  if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw);
+  const depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
+  const key = opts.key || `${draw.toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0}|${opts.accent || ''}`;
+  let geo = partCache.get(key);
+  if (!geo) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    draw(new Pen(g));
+    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null);
+    partCache.set(key, geo);
+  }
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.baseColor = mat.color.clone(); // 明滅は baseColor × 倍率で行う（直接代入しない）
+  mesh.userData.size = { w, h, depth };
+  return mesh;
+}
+
+// 2D 版：ドット絵をテクスチャにした板（最近傍補間）。pivot がローカル原点
+function makePartSprite(w, h, pivotX, pivotY, draw) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
@@ -61,15 +90,54 @@ export function makePart(w, h, pivotX, pivotY, draw) {
   geo.translate((w / 2 - pivotX) * PX, (pivotY - h / 2) * PX, 0);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.userData.baseColor = mat.color.clone(); // 明滅は baseColor × 倍率で行う（直接代入しない）
-  mesh.userData.size = { w, h };
+  mesh.userData.baseColor = mat.color.clone();
+  mesh.userData.size = { w, h, depth: 0 };
   return mesh;
+}
+
+// ピクセル → ボクセル柱 → 露出面のみの BufferGeometry（頂点色・法線付き）
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back) {
+  const d = img.data;
+  const filled = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
+  const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
+  const backColor = (x, y) => {
+    const i = (y * w + x) * 4;
+    const hex = '#' + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+    const to = back && back[hex];
+    if (!to) return colorAt(x, y);
+    const n = parseInt(to.slice(1), 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  };
+  const pos = [], nor = [], col = [];
+  const quad = (a, b, c, e, n, rgb) => { // 4 頂点（反時計回り）→ 2 三角形
+    for (const v of [a, b, c, a, c, e]) { pos.push(v[0] * PX, v[1] * PX, v[2] * PX); nor.push(...n); col.push(...rgb); }
+  };
+  const zf = z0 + depth, zb = z0;
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    if (!filled(px, py)) continue;
+    const x0 = px - pivotX, x1 = x0 + 1;
+    const y1 = pivotY - py, y0 = y1 - 1;
+    const rgb = colorAt(px, py);
+    quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);               // 正面
+    quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], backColor(px, py)); // 背面
+    if (!filled(px - 1, py)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
+    if (!filled(px + 1, py)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
+    if (!filled(px, py - 1)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
+    if (!filled(px, py + 1)) quad([x0, y0, zb], [x1, y0, zb], [x1, y0, zf], [x0, y0, zf], [0, -1, 0], rgb); // 下
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return geo;
 }
 
 // ---------------- 人物パーツ ----------------
 
 /** 体（燕尾服・立ち姿）16×34、pivot = 足元中央 */
 export function body(accent = '#c03030') {
+  // 背面：シャツ・蝶ネクタイは表だけ（後ろから見たら上着の色）
+  const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat };
   return makePart(16, 34, 8, 34, (d) => {
     d.r(6, 5, 4, 3, C.skin);                 // 首
     d.r(3, 8, 10, 13, C.coat);               // 上着
@@ -79,12 +147,14 @@ export function body(accent = '#c03030') {
     d.r(3, 21, 4, 4, C.coat); d.r(9, 21, 4, 4, C.coat); // 燕尾
     d.r(4, 21, 3, 11, C.coat2); d.r(9, 21, 3, 11, C.coat2); // ズボン
     d.r(3, 32, 4, 2, C.shoe); d.r(9, 32, 4, 2, C.shoe);   // 靴
-  });
+  }, { depth: 6, z0: -3, back, accent });
 }
 
 /** 頭 12×12、pivot = 首の付け根中央。back=true で後ろ姿（指揮者用） */
 export function head(seed = 0, back = false) {
   const hair = HAIR[seed % HAIR.length];
+  // 背面は髪の色（顔は正面だけ）
+  const backMap = { [C.skin]: hair, [C.skin2]: hair, [C.eye]: hair };
   return makePart(12, 12, 6, 12, (d) => {
     d.r(2, 3, 8, 9, back ? C.skin2 : C.skin);
     d.r(1, 1, 10, 4, hair);
@@ -92,16 +162,16 @@ export function head(seed = 0, back = false) {
     if (back) { d.r(2, 3, 8, 6, hair); return; }
     d.p(4, 7, C.eye); d.p(8, 7, C.eye);
     d.r(5, 10, 3, 1, C.skin2);
-  });
+  }, { depth: 8, z0: -4, back: backMap, accent: `${hair}${back}` });
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
 export function upperArm() {
-  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); });
+  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); }, { depth: 3, z0: -1.5 });
 }
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
-  return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); });
+  return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
 
 /** 腕 5×16、pivot = 肩（上端中央）。垂らした状態で描く */
