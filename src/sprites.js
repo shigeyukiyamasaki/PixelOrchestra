@@ -61,6 +61,7 @@ const partCache = new Map();
  * opts.side: 側面図の描画関数（省略可）。指定すると正面図の押し出しと側面図の押し出しの共通部分で立体を削り出す。
  *   側面図のキャンバスは 幅 = depth（奥行き、左が背面 z0）・高さ = h、y は正面図と同じ行。
  * opts.top: 上面図の描画関数（省略可）。幅 = w（x は正面図と同じ列）・高さ = depth（上が背面 z0）。3 面削り出し。
+ * opts.carve: (x, y, z) => true で削る（ベルの穴・太鼓の中など、面図では表せない中空用）。x=列, y=行(上が0), z=0..depth-1
  */
 export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   const res = opts.res ?? 1;
@@ -91,7 +92,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
     }
     // グリッド単位 → ボクセル単位（res:1 は 2 倍に拡大）
     const cell = res === 1 ? PX : VOX;
-    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg);
+    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -124,7 +125,7 @@ function makePartSprite(w, h, pivotX, pivotY, draw, res = 1) {
 
 // ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
 // cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null) {
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null) {
   const d = img.data;
   const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
   const sd = sideImg ? sideImg.data : null;
@@ -132,7 +133,7 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
   const td = topImg ? topImg.data : null;
   const filledTop = (x, z) => !td || (x >= 0 && x < w && z >= 0 && z < depth && td[(z * w + x) * 4 + 3] > 127);
   // 3 次元の占有：正面図 AND 側面図 AND 上面図。z は 0..depth-1（0 = 背面側）
-  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y) && filledTop(x, z);
+  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y) && filledTop(x, z) && !(carve && carve(x, y, z));
   const filledBehind = (x, y, z) => { for (let k = 0; k < z; k++) if (filled(x, y, k)) return true; return false; };
   const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
   // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
@@ -443,7 +444,9 @@ export const INSTRUMENT = {
     d.r(26, 5, 8, 1, '#f3d27a');                                            // ハイライト
   }, { res: 2, depth: 12, z0: -6,
        side: (d) => { d.disc(6, 6, 6, F); d.r(5, 4, 2, 4, F); },                                  // 断面は円（ベルが丸く見える）
-       top: (d) => { d.r(0, 5, 25, 2, F); d.r(8, 4, 16, 4, F); d.r(12, 3, 8, 6, F); d.r(25, 4, 3, 4, F); d.r(28, 3, 2, 6, F); d.r(30, 1, 2, 10, F); d.r(32, 0, 4, 12, F); } }), // 管は細く、ベルは正面と同じ広がり
+       top: (d) => { d.r(0, 5, 25, 2, F); d.r(8, 4, 16, 4, F); d.r(12, 3, 8, 6, F); d.r(25, 4, 3, 4, F); d.r(28, 3, 2, 6, F); d.r(30, 1, 2, 10, F); d.r(32, 0, 4, 12, F); }, // 管は細く、ベルは正面と同じ広がり
+       // ベルの穴：x ≥ 26 で外径 R(x) より 1 内側を中空に（朝顔の内側が見える）
+       carve: (x, y, z) => { if (x < 26) return false; const R = x >= 32 ? 6 : x >= 30 ? 5 : x >= 28 ? 3 : 2; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } }),
   horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }, { depth: 8, z0: -2, side: SIDE.horn }),
   trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }, { depth: 4 }),
   tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }, { depth: 10, z0: -2, side: SIDE.tuba }),
