@@ -14,8 +14,8 @@ export const ROWS = {
   brass:      { r: 19,   h: 2.0,  span: 100 },
   percussion: { r: 23,   h: 3.0,  span: 110 },
   keyboard:   { r: 19,   h: 2.0,  span: 0, edge: true }, // 金管ひな壇の両端
-  // コントラバスは弦の後ろ（木管ひな壇の手前縁）、チェロの真後ろ（2026-09-09 ユーザー指定）
-  contrabass: { r: 14,   h: 1.0,  span: 0, behind: 'cello', fallbackDeg: 55 },
+  // コントラバスは弦の後ろ・チェロの後ろ、ひな壇なしで床に立つ（2026-09-09 ユーザー指定）。木管の扇と重ならないよう少し外側へ
+  contrabass: { r: 13.5, h: 0,    span: 0, behind: 'cello', fallbackDeg: 55, angleOffsetDeg: 8 },
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -243,7 +243,8 @@ export function layoutSeats(tracks) {
     let centers;
     if (row.behind) { // 基準楽器（チェロ）の真後ろに並べる。無ければ既定角
       const ref = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t));
-      const base = ref.length ? ref.reduce((a, t) => a + centerAngle.get(t), 0) / ref.length : deg(row.fallbackDeg);
+      const refAngle = ref.length ? ref.reduce((a, t) => a + centerAngle.get(t), 0) / ref.length : deg(row.fallbackDeg);
+      const base = refAngle + deg(row.angleOffsetDeg || 0);
       const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
       let cursor = base - total / 2;
       centers = sizes.map((s) => { const c = cursor + angleOf(s.cols) / 2; cursor += angleOf(s.cols); return c; });
