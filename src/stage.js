@@ -30,7 +30,7 @@ export const SECTION_SIZE = {
 const ROW_GAP = 1.9;      // 同セクション内の列（奥行き）間隔 [unit]
 // トラックの人数。名前に solo を含むトラックは楽器に関わらず 1 人（Violin solo / Cello solo 等。2026-09-09 ユーザー指定）
 function sizeOf(track) {
-  if (/\bsolo\b/i.test(track.name)) return { cols: 1, rows: 1 };
+  if (/solo/i.test(track.name)) return { cols: 1, rows: 1 }; // "_CS" 等が続くと \b が効かないので単純一致
   return { ...(SECTION_SIZE[track.variant] || { cols: 1, rows: 1 }) };
 }
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
