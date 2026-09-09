@@ -14,6 +14,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ARM_UPPER = 8, ARM_FORE = 8; // 2関節腕の長さ [px]（上腕・前腕）
 const SHOULDER = { L: [-6, 30, 0], R: [6, 30, 0] };
+// リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
+// 本人の右手は forward×up = -x なので、rig 全体を x 反転して右利きにする（2026-09-09 ユーザー指摘：全員左利きだった）
+const MIRROR = -1;
 // 肘を出す向きのヒント（rig 空間）。平面モードでは面内（z=0）に保つ
 const POLE = { L: [-1, -0.5, -0.35], R: [1, -0.5, -0.35] };
 const POLE_FLAT = { L: [-1, -0.3, 0], R: [1, -0.3, 0] };
@@ -102,9 +105,9 @@ const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.28, 0, 0.
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
 
 const VARIANT = {
-  violin:     { inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [4, 1],
+  violin:     { chin: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [4, 1],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS } },
-  viola:      { inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
+  viola:      { chin: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS } },
   cello:      { inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 17], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 27], vib: [0, 1, 0],
                 p3: { pos: [2, 1, 7], quat: CELLO_Q, bowDir: [-1, 0.05, 0.1], liftDir: [0, 0.2, 1], sMin: 2, sMax: 10, vib: [0, 1, 0] } },
@@ -281,7 +284,7 @@ export class Puppet {
     const energy = st.energy;
 
     // 共通：呼吸と拍に同期した体の揺れ
-    this.rig.scale.set(1, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
+    this.rig.scale.set(MIRROR, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
     const swayAmt = Math.sin(Math.PI * beat.beat + this.phase) * 0.07 * (0.25 + 0.75 * energy) * settings.sway;
     this.rig.rotation.z = swayAmt;
     this.headPivot.rotation.z = swayAmt * 0.6;
@@ -352,7 +355,13 @@ export class Puppet {
     this.setHand('L', [L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], dt, 20);
 
     this.rig.scale.y *= 1 - 0.025 * energy; // 前傾
-    this.headPivot.rotation.z += -0.1 * energy;
+    if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、少し下を向き、頭がわずかに下がる
+      this.headPivot.rotation.z += 0.32 + 0.08 * energy;
+      if (!this.flat) this.headPivot.rotation.x = 0.18;
+      this.headPivot.position.y = 32.2 * PX;
+    } else {
+      this.headPivot.rotation.z += -0.1 * energy;
+    }
   }
 
   // ---- 管楽器（木管・金管）：両手は楽器上の点に置き、楽器の動きに追従。息継ぎ→アタック→ベル/角度の変化 ----
@@ -365,7 +374,7 @@ export class Puppet {
     this._breath = approach(this._breath, breath, 12, dt);
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
     this.rig.position.y = (0.5 * this._breath - 0.9 * attack) * PX;
-    this.rig.scale.x = 1 + 0.05 * this._breath + 0.05 * energy;
+    this.rig.scale.x = MIRROR * (1 + 0.05 * this._breath + 0.05 * energy);
 
     // 楽器の角度（種類別）。回転はスプライト面内（ローカル z 軸）。3D 姿勢でもローカル z 回転で「ベルが上がる」になる
     let lift = 0;
@@ -480,9 +489,9 @@ export class Puppet {
     const bounce = ph < 0.3 ? Math.sin(Math.PI * ph / 0.3) * 2.5 : 0; // 到着直後の跳ね
     const px = lerp(from[0], to[0], e), py = lerp(from[1], to[1], e) + bounce;
     this.setHand('R', [C[0] + px * amp, C[1] + py * amp, C[2]], dt, Infinity);
-    // 指揮棒は前腕の延長よりやや上向き（前腕の -y 方向を取り、少し上へ）
-    _a.set(0, -1, 0).applyQuaternion(this.foreQ.R); _a.y += 0.35;
-    this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x');
+    // 指揮棒：3D では楽団の方（前方）へやや上向きに構える。2D 板では前腕の延長よりやや上向き
+    if (this.flat) { _a.set(0, -1, 0).applyQuaternion(this.foreQ.R); _a.y += 0.35; this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x'); }
+    else this.aimHeldDir('R', [0.15, 0.3 + 0.4 * (py / 8), 1], 'x'); // 手の高さに合わせて棒先も上下
     // 左手：強い時は鏡像で同調、弱い時は胸の前で控える
     const mirror = [-C[0] - px * amp * 0.7, C[1] + py * amp * 0.6, C[2]];
     const restL = [-5, 24, this.flat ? 3 : 5];
