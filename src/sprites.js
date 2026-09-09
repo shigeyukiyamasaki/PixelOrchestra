@@ -95,6 +95,15 @@ export function head(seed = 0, back = false) {
   });
 }
 
+/** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
+export function upperArm() {
+  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); });
+}
+/** 前腕＋手 5×10、pivot = 肘（上端中央） */
+export function foreArm() {
+  return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); });
+}
+
 /** 腕 5×16、pivot = 肩（上端中央）。垂らした状態で描く */
 export function arm() {
   return makePart(5, 16, 2, 1, (d) => {

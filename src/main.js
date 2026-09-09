@@ -199,6 +199,7 @@ function placePuppets() {
   for (const seat of seats) {
     seat.positions.forEach((pos) => {
       const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++ });
+      puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
       scene.add(puppet.root);
       puppets.push({ puppet, track: seat.track });
@@ -321,7 +322,7 @@ function animate() {
 
     for (const { puppet, track } of puppets) {
       puppet.faceCamera(camera);
-      puppet.update(engine.trackState(track, t), ctx);
+      puppet.update(engine.trackState(track, t - puppet.delay), ctx);
     }
     conductor.faceCamera(camera);
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);

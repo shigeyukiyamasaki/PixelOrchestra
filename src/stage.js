@@ -230,7 +230,7 @@ function gridPositions(row, center, cols, rows) {
     const stagger = (k % 2) * 0.5;
     for (let j = 0; j < cols; j++) {
       const th = center + (j - (cols - 1) / 2 + stagger) * (PUPPET_GAP / row.r);
-      positions.push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th) });
+      positions.push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th), row: k });
     }
   }
   return positions;

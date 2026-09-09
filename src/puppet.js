@@ -5,17 +5,41 @@
  * 2D パペット（パーツ板を pivot で回す）と、楽器ファミリー別の動きテンプレート。
  * 角度の向き：arm の rotation.z が +θ のとき、垂らした手が画面右（+x）側へ上がる。
  */
-import { PX, body, head, arm, INSTRUMENT, glowDisc } from './sprites.js';
+import { PX, body, head, arm, upperArm, foreArm, INSTRUMENT, glowDisc } from './sprites.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ARM_UPPER = 8, ARM_FORE = 8; // 2関節腕の長さ [px]（上腕・前腕）
+
+/**
+ * 2関節の平面 IK（rig 座標・px）。肩 S から手 T へ、上腕 L1・前腕 L2 で届く角度を返す。
+ * 角度は「腕を垂らした向きを 0、+で手が +x 側へ上がる」規約（rotation.z にそのまま入る）。
+ * elbowSign: 肘を出す側（+1 = +x 側、-1 = -x 側）
+ */
+function solveIK(S, T, L1, L2, elbowSign) {
+  const dx = T[0] - S[0], dy = T[1] - S[1];
+  const d = clamp(Math.hypot(dx, dy), 0.05, L1 + L2 - 0.05);
+  const base = Math.atan2(dx, -dy);                     // S→T の垂下角
+  const A = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+  let best = null;
+  for (const sgn of [1, -1]) {
+    const th1 = base + sgn * A;
+    const ex = S[0] + L1 * Math.sin(th1), ey = S[1] - L1 * Math.cos(th1);
+    const score = elbowSign * (ex - S[0]);
+    if (!best || score > best.score) best = { th1, ex, ey, score };
+  }
+  const th2 = Math.atan2(T[0] - best.ex, -(T[1] - best.ey)); // 前腕の垂下角（世界）
+  return { theta1: best.th1, theta2: th2 };
+}
 
 // 楽器バリアント別の取り付け設定
 // inst: { parent, pos:[px, py, z], rot, mirror }  held: { armL/armR: { name, rot } }
 // restL / restR: 待機時の腕角度 [rad]
 const VARIANT = {
-  violin:     { inst: { parent: 'rig', pos: [-2, 29, 0.03], rot: 0.35, mirror: true }, held: { armR: { name: 'bow' } }, restL: -2.3, restR: 0.8, bowWorld: 2.6 },
-  viola:      { inst: { parent: 'rig', pos: [-2, 29, 0.03], rot: 0.35, mirror: true }, held: { armR: { name: 'bow' } }, restL: -2.3, restR: 0.8, bowWorld: 2.6 },
+  // IK 弦：contact = 弓と弦の接点（駒の位置）、leftHand = 左手の位置（ネック）、sMin/sMax = 接点から弓の手元までの距離の範囲 [px]
+  // bowWorld は正面から見た弓の角度。楽器の軸（左下向き）に対して垂直が理想だが、奥行きの遠近を正面図で近似して少し寝かせている
+  violin:     { inst: { parent: 'rig', pos: [-5, 28, 0.03], rot: 0.45, mirror: true }, ik: true, bowWorld: 2.3, contact: [-3.2, 28.9], leftHand: [-9.0, 27.2], sMin: 3, sMax: 17 },
+  viola:      { inst: { parent: 'rig', pos: [-5, 28, 0.03], rot: 0.45, mirror: true }, ik: true, bowWorld: 2.3, contact: [-3.2, 28.9], leftHand: [-9.5, 25.8], sMin: 3, sMax: 17 },
   cello:      { inst: { parent: 'rig', pos: [2, 0, 0.02], rot: 0 }, held: { armR: { name: 'bow' } }, restL: -0.9, restR: 1.15, bowWorld: 3.05 },
   contrabass: { inst: { parent: 'rig', pos: [3, 0, 0.02], rot: 0 }, held: { armR: { name: 'bow' } }, restL: -0.8, restR: 1.15, bowWorld: 3.05 },
   flute:      { inst: { parent: 'rig', pos: [-1, 35, 0.03], rot: -0.15 }, restL: 1.4, restR: 1.9 },
@@ -68,10 +92,24 @@ export class Puppet {
 
     this.armL = new THREE.Group(); this.armL.position.set(-6 * PX, 30 * PX, 0.04);
     this.armR = new THREE.Group(); this.armR.position.set(6 * PX, 30 * PX, 0.04);
-    this.armL.add(arm()); this.armR.add(arm());
     this.rig.add(this.armL, this.armR);
-    this.armL.rotation.z = this.cfg.restL;
-    this.armR.rotation.z = this.cfg.restR;
+    if (this.cfg.ik) { // 2関節腕（上腕 → 肘に前腕）
+      this.foreL = new THREE.Group(); this.foreL.position.set(0, -ARM_UPPER * PX, 0.005);
+      this.foreR = new THREE.Group(); this.foreR.position.set(0, -ARM_UPPER * PX, 0.005);
+      this.armL.add(upperArm(), this.foreL); this.armR.add(upperArm(), this.foreR);
+      this.foreL.add(foreArm()); this.foreR.add(foreArm());
+      // 弓は前腕の手の位置に持つ
+      const bow = INSTRUMENT.bow();
+      bow.position.set(0, -ARM_FORE * PX, 0.01);
+      this.foreR.add(bow);
+      this.bow = bow;
+      this.bowPos = (this.cfg.sMin + this.cfg.sMax) / 2; // 弓の現在位置（接点から手元までの距離 px）
+      this.bowDir = 1; this.bowFrom = this.bowPos; this.bowTo = this.bowPos; this.bowDur = 0.1; this.lift = 2.5; this.lastOnsetIndex = -1;
+    } else {
+      this.armL.add(arm()); this.armR.add(arm());
+      this.armL.rotation.z = this.cfg.restL;
+      this.armR.rotation.z = this.cfg.restR;
+    }
 
     // 楽器（体に取り付け）
     if (this.cfg.inst && INSTRUMENT[this.variant]) {
@@ -123,7 +161,7 @@ export class Puppet {
     this.rig.position.y = 0;
 
     switch (this.family) {
-      case 'strings': this._strings(st, ctx); break;
+      case 'strings': this.cfg.ik ? this._stringsIK(st, ctx) : this._strings(st, ctx); break;
       case 'woodwind': this._woodwind(st, ctx); break;
       case 'brass': this._brass(st, ctx); break;
       case 'percussion': this._percussion(st, ctx); break;
@@ -157,6 +195,62 @@ export class Puppet {
     const vib = st.active.length ? 0.05 * Math.sin(t * 30 + this.phase) : 0;
     this.armL.rotation.z = approach(this.armL.rotation.z, cfg.restL + vib, 20, dt);
     this.headPivot.rotation.z += -0.08 * st.energy;
+  }
+
+  // ---- 弦（IK 版）：弓の接点を固定し、手元が弓の上を滑る。ノートごとに上げ弓/下げ弓を交互、
+  //      前のストロークの終点から続ける（実際の運弓と同じ）。休符では弓を弦から離し、次の音の直前に着弦する ----
+  _stringsIK(st, { t, dt }) {
+    const { onset, next, age, toNext, active, energy } = st;
+    const cfg = this.cfg;
+    // 新しいノート：ストロークの方向と長さを決める（長い音ほど弓を多く使う、強いほど多く使う）
+    if (onset && onset.index !== this.lastOnsetIndex) {
+      this.lastOnsetIndex = onset.index;
+      const range = cfg.sMax - cfg.sMin;
+      const len = clamp(onset.duration * 18, 2.5, range) * (0.55 + 0.45 * onset.velocity) * this.scaleVar;
+      let dir = -this.bowDir;
+      let target = this.bowPos + dir * len;
+      if (target > cfg.sMax || target < cfg.sMin) { dir = -dir; target = clamp(this.bowPos + dir * len, cfg.sMin, cfg.sMax); }
+      this.bowDir = dir; this.bowFrom = this.bowPos; this.bowTo = target;
+      this.bowDur = Math.max(onset.duration, 0.1);
+    }
+    // 弓の進行（イーズイン・アウト）
+    let s = this.bowPos;
+    if (onset) {
+      if (age < this.bowDur) {
+        const p = clamp(age / this.bowDur, 0, 1);
+        const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        s = this.bowFrom + (this.bowTo - this.bowFrom) * e;
+      } else s = this.bowTo;
+    }
+    this.bowPos = s;
+    // 弓を弦から離す：休符中は離し、次の音の 0.25 秒前から着弦へ向かう（予備動作）
+    let lift = 0;
+    const resting = !active.length && age > 0.5;
+    if (resting) lift = 2.5;
+    if (next && !active.length && toNext < 0.25) lift = 2.5 * (toNext / 0.25);
+    this.lift = approach(this.lift, lift, 14, dt);
+
+    const a = cfg.bowWorld;
+    const d = [Math.cos(a), Math.sin(a)];        // 弓の向き（手元→先端）
+    const n = [Math.sin(a), -Math.cos(a)];       // 弓に垂直（弦から離れる向き）
+    const C = cfg.contact;
+    const handR = [C[0] - d[0] * s + n[0] * this.lift, C[1] - d[1] * s + n[1] * this.lift];
+    const S_R = [6, 30], S_L = [-6, 30];
+    const ikR = solveIK(S_R, handR, ARM_UPPER, ARM_FORE, +1);
+    this.armR.rotation.z = ikR.theta1;
+    this.foreR.rotation.z = ikR.theta2 - ikR.theta1;
+    this.bow.rotation.z = a - ikR.theta2;        // 弓は世界角度を保つ
+
+    // 左手：ネックの位置。長い音ではビブラート（弦に沿って 5.5Hz）
+    const vib = active.length && onset && onset.duration > 0.2 ? 0.35 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
+    const handL = [cfg.leftHand[0] + n[0] * vib, cfg.leftHand[1] + n[1] * vib];
+    const ikL = solveIK(S_L, handL, ARM_UPPER, ARM_FORE, -1);
+    this.armL.rotation.z = ikL.theta1;
+    this.foreL.rotation.z = ikL.theta2 - ikL.theta1;
+
+    // 前傾（強いほど楽器に入り込む）と頭の傾き
+    this.rig.scale.y *= 1 - 0.025 * energy;
+    this.headPivot.rotation.z += -0.1 * energy;
   }
 
   // ---- 木管：アタックで沈み込み、指の動き、音程で楽器の角度 ----
