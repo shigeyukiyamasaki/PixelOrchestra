@@ -353,9 +353,11 @@ export class Puppet {
    * @param {object} st  engine.trackState() の戻り値（指揮者は energy=globalEnergy）
    * @param {object} ctx { t, dt, beat:{beat,beatInBar,beatPhase,beatsPerBar}, settings, globalEnergy }
    */
-  update(st, ctx) {
+  update(stRaw, ctx) {
     const { t, dt, beat, settings } = ctx;
-    const energy = st.energy;
+    const energy = stRaw.energy;
+    // 「強弱の反応」スライダー：前傾・楽器の角度・膨らみなど、強さ（velocity/CC）で動く量の倍率。揺れと足元の光には掛けない
+    const st = { ...stRaw, energy: clamp(energy * (settings.dynResponse ?? 1), 0, 1.5) };
 
     // 共通：呼吸と拍に同期した体の揺れ
     // 揺れ・呼吸・上下動は腰（spine）から上だけ。下半身と椅子は動かない（2026-09-09 ユーザー指定）

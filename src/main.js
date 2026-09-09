@@ -125,6 +125,7 @@ function settings() {
   const num = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
   return {
     sway: num('sway', 1),
+    dynResponse: num('dynResponse', 1),
     rollSpeed: num('rollSpeed', 3),
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
