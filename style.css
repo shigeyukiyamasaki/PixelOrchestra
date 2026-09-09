@@ -9,13 +9,21 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 #view { position: fixed; inset: 0; width: 100vw; height: 100dvh; }
 #view canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 
-#panel { position: fixed; top: 12px; left: 12px; width: 320px; max-height: calc(100dvh - 24px); overflow-y: auto;
-  background: rgba(22, 22, 42, 0.92); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
+/* 左：再生・設定、右：トラック一覧。どちらも半透明でステージが透ける */
+#panel, #panelRight { position: fixed; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto;
+  background: rgba(22, 22, 42, 0.72); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
   backdrop-filter: blur(6px); transition: transform 0.2s; }
+#panel { left: 12px; width: 320px; }
+#panelRight { right: 12px; width: 340px; }
 body.panel-hidden #panel { transform: translateX(-360px); }
-#panelToggle { position: fixed; top: 12px; left: 344px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; transition: left 0.2s; }
+body.panel-right-hidden #panelRight { transform: translateX(380px); }
+#panelToggle, #panelRightToggle { position: fixed; top: 12px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--line); background: rgba(22, 22, 42, 0.85); color: var(--text); cursor: pointer; transition: left 0.2s, right 0.2s; }
+#panelToggle { left: 344px; }
 body.panel-hidden #panelToggle { left: 12px; }
+#panelRightToggle { right: 364px; }
+body.panel-right-hidden #panelRightToggle { right: 12px; }
+h2 { font-size: 15px; margin: 0 0 6px; color: var(--accent); }
 
 h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
 .hint { color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
@@ -55,7 +63,9 @@ tr.pitch-row .pitch-label { margin-right: 4px; }
 tr.pitch-row .dyn-label { margin-left: 0; }
 tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; font-size: 11px; margin-top: 3px; }
 
-@media (max-width: 600px) {
-  #panel { width: calc(100vw - 24px); }
-  #panelToggle { left: auto; right: 12px; }
+@media (max-width: 900px) {
+  #panel, #panelRight { width: calc(100vw - 24px); }
+  #panelToggle { left: auto; right: 56px; }
+  #panelRightToggle { right: 12px; }
+  body:not(.panel-right-hidden) #panel { display: none; } /* 狭い画面では片方ずつ */
 }

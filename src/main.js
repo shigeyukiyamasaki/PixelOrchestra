@@ -319,6 +319,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); clock.playing ? pause() : play(); }
 });
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
+$('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
 });
