@@ -391,7 +391,8 @@ export const INSTRUMENT = {
     d.r(6, 9, 2, 24, C.black);
     d.r(6, 34, 2, 4, C.silver);
   }, { depth: 8, side: SIDE.contrabass }),
-  bow: () => makePart(20, 2, 1, 1, (d) => { d.r(0, 0, 20, 1, C.wood2); d.r(1, 1, 18, 1, C.ivory); }),
+  // 弓・指揮棒は 2 倍解像度グリッドで細く（断面 1×1 / 0.5×0.5 基本 px）
+  bow: () => makePart(40, 2, 2, 1, (d) => { d.r(0, 0, 40, 1, C.wood2); d.r(2, 1, 36, 1, C.ivory); d.r(0, 0, 3, 2, C.black); }, { res: 2, depth: 2, z0: -1 }),
 
   flute: () => makePart(20, 3, 1, 1, (d) => { d.r(0, 0, 20, 2, C.silver); for (let x = 6; x < 18; x += 3) d.p(x, 2, C.silver2); }),
   clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
@@ -458,7 +459,7 @@ export const INSTRUMENT = {
     d.r(3, 26, 18, 8, C.wood); d.r(2, 34, 20, 2, C.wood2);
     for (let x = 6; x <= 19; x += 2) { const yt = 3 + Math.round((x - 4) * 0.62); d.r(x, yt, 1, 27 - yt, C.silver); }
   }, { depth: 6, side: SIDE.harp }),
-  baton: () => makePart(12, 1, 0, 0, (d) => { d.r(0, 0, 12, 1, C.ivory); }),
+  baton: () => makePart(24, 1, 0, 0, (d) => { d.r(0, 0, 24, 1, C.ivory); d.r(0, 0, 4, 1, C.black); }, { res: 2, depth: 1, z0: -0.5 }),
 };
 
 /**
