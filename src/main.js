@@ -8,7 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, CONDUCTOR_Z } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel, setGlowSoftness } from './sprites.js';
+import { nameLabel, setGlowSoftness, LABEL_FONT } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { PianoRoll } from './pianoRoll.js';
 
@@ -231,10 +231,21 @@ function placePuppets() {
   }
   roll.setSeats(seats); // 頭上ロールの列位置を座席に合わせる
   buildRisers(seats);   // ひな壇を使われている角度だけの扇形に作り直す
-  // パート名ラベル：トラックごとに奏者グループの中央・頭の少し上
+  lastSeats = seats;
+  rebuildLabels();
+  if (!conductor) {
+    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99 });
+    conductor.root.position.set(0, 0.3, CONDUCTOR_Z);
+  }
+  scene.add(conductor.root);
+}
+
+// パート名ラベル：トラックごとに奏者グループの中央・頭の少し上（フォント読み込み後にも作り直す）
+let lastSeats = [];
+function rebuildLabels() {
   labels.traverse((o) => { if (o.material) { o.material.map?.dispose(); o.material.dispose(); } });
   labels.clear();
-  for (const seat of seats) {
+  for (const seat of lastSeats) {
     const ps = seat.positions;
     const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length;
     const cz = ps.reduce((a, p) => a + p.z, 0) / ps.length;
@@ -242,12 +253,8 @@ function placePuppets() {
     sp.position.set(cx, ps[0].y + HEAD_Y - 0.55, cz);
     labels.add(sp);
   }
-  if (!conductor) {
-    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99 });
-    conductor.root.position.set(0, 0.3, CONDUCTOR_Z);
-  }
-  scene.add(conductor.root);
 }
+document.fonts?.load(`12px "${LABEL_FONT}"`).then(() => rebuildLabels()).catch(() => {});
 
 function renderTrackTable() {
   const tbody = $('trackRows');

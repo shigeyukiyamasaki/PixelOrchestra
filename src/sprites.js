@@ -212,25 +212,29 @@ export const INSTRUMENT = {
  * パート名ラベル（ドット風の小さな文字板）。常にカメラを向く Sprite。
  * 小さなキャンバスに描いて最近傍拡大するので文字もドット絵風になる。
  */
+export const LABEL_FONT = 'DotGothic16'; // ドットフォント（Google Fonts。index.html で読み込み）
 export function nameLabel(text, color = '#ffffff') {
-  const font = '11px "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif';
+  const SS = 3;                                    // 高解像度で描いて縮小（縁取りを滑らかに）
+  const fontPx = 12 * SS;
+  const font = `${fontPx}px "${LABEL_FONT}", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif`;
   const m = document.createElement('canvas').getContext('2d');
   m.font = font;
   const tw = Math.ceil(m.measureText(text).width);
-  const w = Math.min(160, tw + 10), h = 16;
+  const pad = 4 * SS, mark = 3 * SS;               // 余白・左端のトラック色マーク
+  const w = Math.min(220 * SS, tw + pad * 2 + mark + 2 * SS), h = 18 * SS;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.imageSmoothingEnabled = false;
-  g.fillStyle = 'rgba(10, 10, 20, 0.75)';
-  g.fillRect(0, 0, w, h);
-  g.fillStyle = color; g.fillRect(0, 0, 2, h);      // 左端にトラック色
-  g.font = font; g.textBaseline = 'middle'; g.fillStyle = '#f4f4f4';
-  g.fillText(text, 5, h / 2 + 0.5, w - 7);
+  g.font = font; g.textBaseline = 'middle';
+  g.fillStyle = color; g.fillRect(pad, h / 2 - mark, mark, mark * 2);            // トラック色の小さな四角
+  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)'; // 黒縁取り
+  g.strokeText(text, pad + mark + 2 * SS, h / 2 + SS * 0.5, w - pad * 2 - mark);
+  g.fillStyle = '#f4f4f4';
+  g.fillText(text, pad + mark + 2 * SS, h / 2 + SS * 0.5, w - pad * 2 - mark);
   const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set(w * 0.045, h * 0.045, 1);           // 1px ≒ 0.045 unit
+  sp.scale.set((w / SS) * 0.032, (h / SS) * 0.032, 1); // 1px ≒ 0.032 unit（以前の 0.045 より小さく）
   sp.renderOrder = 10;
   return sp;
 }
