@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, CONDUCTOR_Z } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -231,7 +231,7 @@ function placePuppets() {
   }
   if (!conductor) {
     conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99 });
-    conductor.root.position.set(0, 0.3, 2);
+    conductor.root.position.set(0, 0.3, CONDUCTOR_Z);
   }
   scene.add(conductor.root);
 }

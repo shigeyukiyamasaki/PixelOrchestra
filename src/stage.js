@@ -40,6 +40,10 @@ function rowKeyOf(track) {
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
+export const CONDUCTOR_Z = 5;   // 指揮台の z（+z = 客席側）
+export const FLOOR_RADIUS = 21;  // ステージ円の半径
+export const FLOOR_CENTER_Z = -8; // ステージ円の中心 z（楽団の重心付近）
+export const FLOOR_DEPTH_SCALE = 0.85; // 奥行き方向の縮小率（楕円）
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
@@ -84,8 +88,11 @@ export function createStage(container) {
 
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 48), stageMat({ map: floorTex, color: '#8a7a6a' }));
+  // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8a7a6a' }));
   floor.rotation.x = -Math.PI / 2;
+  floor.position.z = FLOOR_CENTER_Z;
+  floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
   addStage(floor);
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
@@ -96,7 +103,7 @@ export function createStage(container) {
 
   // 指揮台
   const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#3a2c22' }));
-  podium.position.set(0, 0.15, 2);
+  podium.position.set(0, 0.15, CONDUCTOR_Z);
   addStage(podium);
 
   // ロール壁の背景板（暗い半透明で対比を作る）
