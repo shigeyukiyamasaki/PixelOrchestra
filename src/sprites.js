@@ -329,6 +329,14 @@ export function upperArm() {
 export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
+/** 手首あり版：前腕（袖のみ）5×7、pivot = 肘。手は別パーツ */
+export function foreArmNoHand() {
+  return makePart(5, 7, 2, 1, (d) => { d.r(1, 0, 3, 7, C.coat); }, { depth: 3, z0: -1.5 });
+}
+/** 手 5×5、pivot = 手首（上端中央）。-y が指先 */
+export function hand() {
+  return makePart(5, 5, 2, 1, (d) => { d.r(1, 0, 3, 4, C.skin); d.r(1, 3, 3, 1, C.skin2); }, { depth: 3, z0: -1.5 });
+}
 
 /** 腕 5×16、pivot = 肩（上端中央）。垂らした状態で描く */
 export function arm() {
