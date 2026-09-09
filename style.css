@@ -9,15 +9,28 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 #view { position: fixed; inset: 0; width: 100vw; height: 100dvh; }
 #view canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 
-/* 左：再生・設定、右：トラック一覧。どちらも半透明でステージが透ける */
-#panel, #panelRight { position: fixed; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto;
+/* 上：タイトル・ファイル・再生。左：表示設定、右：トラック一覧。どれも半透明でステージが透ける */
+#topbar { position: fixed; top: 0; left: 0; right: 0; height: 52px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  background: rgba(22, 22, 42, 0.72); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+#topbar h1 { margin: 0 8px 0 0; white-space: nowrap; }
+#topbar .status { margin: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#topbar .spacer { flex: 0 0 8px; }
+#topbar .seek { flex: 1 1 160px; min-width: 120px; margin: 0; }
+#topbar .time { margin-left: 0; }
+.filebtn { position: relative; display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.filebtn:hover { border-color: var(--accent); }
+.filebtn input[type=file] { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.offset { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
+.offset input[type=number] { width: 64px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+#panel, #panelRight { position: fixed; top: 64px; max-height: calc(100dvh - 76px); overflow-y: auto;
   background: rgba(22, 22, 42, 0.72); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
   backdrop-filter: blur(6px); transition: transform 0.2s; }
 #panel { left: 12px; width: 320px; }
 #panelRight { right: 12px; width: 340px; }
 body.panel-hidden #panel { transform: translateX(-360px); }
 body.panel-right-hidden #panelRight { transform: translateX(380px); }
-#panelToggle, #panelRightToggle { position: fixed; top: 12px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
+#panelToggle, #panelRightToggle { position: fixed; top: 64px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
   border: 1px solid var(--line); background: rgba(22, 22, 42, 0.85); color: var(--text); cursor: pointer; transition: left 0.2s, right 0.2s; }
 #panelToggle { left: 344px; }
 body.panel-hidden #panelToggle { left: 12px; }
@@ -68,7 +81,8 @@ tr.merged td.name { color: var(--muted); }
 tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; font-size: 11px; margin-top: 3px; }
 
 @media (max-width: 900px) {
-  #panel, #panelRight { width: calc(100vw - 24px); }
+  #topbar { height: auto; flex-wrap: wrap; padding: 8px 10px; }
+  #panel, #panelRight { width: calc(100vw - 24px); top: 120px; }
   #panelToggle { left: auto; right: 56px; }
   #panelRightToggle { right: 12px; }
   body:not(.panel-right-hidden) #panel { display: none; } /* 狭い画面では片方ずつ */

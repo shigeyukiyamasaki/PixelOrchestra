@@ -8,43 +8,28 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260909g">
+  <link rel="stylesheet" href="style.css?v=20260909h">
 </head>
 <body>
   <div id="view"></div>
 
   <button id="panelToggle" title="パネルの表示/非表示">☰</button>
 
-  <aside id="panel">
+  <header id="topbar">
     <h1>Pixel Orchestra</h1>
-    <p class="hint">MIDI を読み込むとドット絵の楽団が演奏します。ドラッグで視点を回転、ホイールでズーム。</p>
+    <label class="filebtn" title="MIDI ファイルを選択">MIDI<input type="file" id="midiFile" accept=".mid,.midi,audio/midi"></label>
+    <span id="status" class="status">（未読み込み）</span>
+    <label class="filebtn" title="音声ファイル（任意・MIDI と同期再生）">音声<input type="file" id="audioFile" accept="audio/*"></label>
+    <span id="audioName" class="status">（なし）</span>
+    <label class="offset" title="音声オフセット (ms)">オフセット<input type="number" id="audioOffset" value="0" step="10"><span>ms</span></label>
+    <span class="spacer"></span>
+    <button id="playBtn" class="primary" title="Space でも再生／停止">▶ 再生</button>
+    <button id="stopBtn">■ 停止</button>
+    <span id="timeLabel" class="time">0:00 / 0:00</span>
+    <input type="range" id="seek" min="0" max="1000" value="0" class="seek">
+  </header>
 
-    <details open>
-      <summary>ファイル</summary>
-      <label class="file">
-        <span>MIDI ファイル</span>
-        <input type="file" id="midiFile" accept=".mid,.midi,audio/midi">
-      </label>
-      <div id="status" class="status">（未読み込み）</div>
-      <label class="file">
-        <span>音声ファイル（任意・MIDI と同期再生）</span>
-        <input type="file" id="audioFile" accept="audio/*">
-      </label>
-      <div id="audioName" class="status">（音声なしでも動きます）</div>
-      <label class="ctl"><span>音声オフセット (ms)</span><input type="number" id="audioOffset" value="0" step="10"></label>
-    </details>
-
-    <details open>
-      <summary>再生</summary>
-      <div class="row">
-        <button id="playBtn" class="primary">▶ 再生</button>
-        <button id="stopBtn">■ 停止</button>
-        <span id="timeLabel" class="time">0:00 / 0:00</span>
-      </div>
-      <input type="range" id="seek" min="0" max="1000" value="0" class="seek">
-      <p class="hint small">Space = 再生／停止</p>
-    </details>
-
+  <aside id="panel">
     <details open>
       <summary>ピアノロール</summary>
       <label class="chk"><input type="checkbox" id="showRoll" checked> 表示する</label>
@@ -93,6 +78,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260909y"></script>
+  <script type="module" src="src/main.js?v=20260909z"></script>
 </body>
 </html>

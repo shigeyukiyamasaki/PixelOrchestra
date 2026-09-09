@@ -84,7 +84,7 @@ function seek(t) {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
 
 function saveSettings() {
@@ -101,7 +101,7 @@ function loadSettings() {
   }
 }
 let saveTimer = null;
-document.getElementById('panel')?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
@@ -192,7 +192,7 @@ $('audioFile').addEventListener('change', (e) => {
   if (!file) return;
   audio.src = URL.createObjectURL(file);
   audio.addEventListener('loadedmetadata', () => { audioLoaded = true; $('audioName').textContent = file.name; }, { once: true });
-  audio.addEventListener('error', () => { audioLoaded = false; $('audioName').textContent = '✗ 再生できない形式です（mp3 / wav / m4a を選んでください）'; }, { once: true });
+  audio.addEventListener('error', () => { audioLoaded = false; $('audioName').textContent = '✗ 再生できない形式（mp3/wav/m4a）'; }, { once: true });
 });
 
 function buildScene(midi, { keepTime = false } = {}) {
