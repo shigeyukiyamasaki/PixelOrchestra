@@ -108,10 +108,11 @@ export class PianoRoll {
     }
   }
 
-  setMode(mode) {
+  setMode(mode, showLine = true) {
     this.mode = mode;
-    this.wallGroup.visible = mode === 'wall';
-    this.overheadGroup.visible = mode === 'overhead';
+    this.showLine = showLine;
+    this.wallGroup.visible = mode === 'wall' && showLine;       // 壁モードの着弾ライン・オクターブ線
+    this.overheadGroup.visible = mode === 'overhead' && showLine; // 頭上モードの着弾ライン
   }
 
   /**

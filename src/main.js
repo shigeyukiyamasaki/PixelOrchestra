@@ -121,6 +121,7 @@ function settings() {
     noteWidth: num('noteWidth', 0.22),
     showRoll: $('showRoll').checked,
     rollMode: $('rollMode').value === 'wall' ? 'wall' : 'overhead',
+    showLandLine: $('showLandLine').checked,
     showGlow: $('showGlow').checked,
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
@@ -392,7 +393,7 @@ function animate() {
     labels.visible = s.showNames;
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
-    roll.setMode(s.rollMode);
+    roll.setMode(s.rollMode, s.showLandLine);
     wall.visible = s.showRoll && s.rollMode === 'wall';
     if (s.showRoll) roll.update(t, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 
