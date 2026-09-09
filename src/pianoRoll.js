@@ -96,8 +96,7 @@ export class PianoRoll {
       const ps = seat.positions;
       const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length;
       const cz = ps.reduce((a, p) => a + p.z, 0) / ps.length;
-      const first = ps[0], last = ps[ps.length - 1];
-      const spread = Math.hypot(last.x - first.x, last.z - first.z); // 同トラックの奏者の広がり
+      const spread = 2 * Math.max(...ps.map((p) => Math.hypot(p.x - cx, p.z - cz))); // 同トラックの奏者の広がり（格子対応）
       // 列幅 = 音域 × 半音幅（上限あり）は update で毎フレーム計算（半音幅がスライダーで変わるため）。線は幅 1 で作り scale.x で伸ばす
       const line = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 0.05),

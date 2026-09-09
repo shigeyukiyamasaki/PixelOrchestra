@@ -296,7 +296,7 @@ window.addEventListener('keydown', (e) => {
 });
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('resetCam').addEventListener('click', () => {
-  camera.position.set(0, 15, 24); controls.target.set(0, 2.5, -9); controls.update();
+  camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
 });
 
 function setStatus(msg) { $('status').textContent = msg; }

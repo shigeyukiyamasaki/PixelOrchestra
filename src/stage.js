@@ -6,16 +6,25 @@
  * トラック → 座席位置（扇形配置）の計算。
  */
 
-// 列の定義：r=指揮者からの半径、h=ひな壇の高さ、puppets=1トラックあたりの人数
+// 列の定義：r=指揮者からの半径（そのセクションの最前列）、h=ひな壇の高さ、span=列が占める角度幅 [deg]
+// 弦は 3 列（r 〜 r+2×ROW_GAP ≒ 8〜11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
 export const ROWS = {
-  strings:    { r: 7,    h: 0,    puppets: 3, span: 140 },
-  woodwind:   { r: 11,   h: 1.0,  puppets: 1, span: 90 },
-  brass:      { r: 15,   h: 2.0,  puppets: 1, span: 100 },
-  percussion: { r: 19,   h: 3.0,  puppets: 1, span: 110 },
-  keyboard:   { r: 13.5, h: 2.0,  puppets: 1, span: 0, edge: true }, // 金管ひな壇の両端（コントラバスと重ならない距離）
-  // コントラバスは弦の列より一段後ろ（木管ひな壇の手前縁）、チェロの真後ろ（2026-09-09 ユーザー指定）
-  contrabass: { r: 10.5, h: 1.0,  puppets: 2, span: 0, behind: 'cello', fallbackDeg: 55 },
+  strings:    { r: 8,    h: 0,    span: 150 },   // 弦 4 パート × 3 列 = 12 列分の弧が必要（r=8, 150° で弧長 ≒ 21）
+  woodwind:   { r: 15,   h: 1.0,  span: 90 },
+  brass:      { r: 19,   h: 2.0,  span: 100 },
+  percussion: { r: 23,   h: 3.0,  span: 110 },
+  keyboard:   { r: 19,   h: 2.0,  span: 0, edge: true }, // 金管ひな壇の両端
+  // コントラバスは弦の後ろ（木管ひな壇の手前縁）、チェロの真後ろ（2026-09-09 ユーザー指定）
+  contrabass: { r: 14,   h: 1.0,  span: 0, behind: 'cello', fallbackDeg: 55 },
 };
+// 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
+// 未指定は 1 人
+export const SECTION_SIZE = {
+  violin: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 2, rows: 2 },
+  flute: { cols: 2, rows: 1 }, oboe: { cols: 2, rows: 1 }, clarinet: { cols: 2, rows: 1 }, bassoon: { cols: 2, rows: 1 },
+  horn: { cols: 2, rows: 2 }, trumpet: { cols: 3, rows: 1 }, trombone: { cols: 3, rows: 1 }, tuba: { cols: 1, rows: 1 },
+};
+const ROW_GAP = 1.9;      // 同セクション内の列（奥行き）間隔 [unit]
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
 const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'] };
@@ -24,11 +33,11 @@ const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'] };
 function rowKeyOf(track) {
   return track.variant === 'contrabass' ? 'contrabass' : track.family;
 }
-const PUPPET_GAP = 2.1;   // 同一トラック内の奏者間隔 [unit]
+const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 const KEYBOARD_ANGLE = 72; // 鍵盤/ハープを置く角度 [deg]（左右交互）
 
-export const WALL_Z = -23;      // ピアノロール壁の z
-export const WALL_WIDTH = 44;
+export const WALL_Z = -30;      // ピアノロール壁の z
+export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
 export const WALL_BASE_Y = 3.2; // 着弾ライン（後列ひな壇の少し上）
 
@@ -37,21 +46,21 @@ const deg = (d) => (d * Math.PI) / 180;
 export function createStage(container) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#0b0b16');
-  scene.fog = new THREE.Fog('#0b0b16', 40, 80);
+  scene.fog = new THREE.Fog('#0b0b16', 55, 110);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-  camera.position.set(0, 15, 24);
+  camera.position.set(0, 22, 34);
 
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 2.5, -9);
+  controls.target.set(0, 3, -12);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 5;
-  controls.maxDistance = 60;
+  controls.maxDistance = 90;
   controls.minPolarAngle = deg(12);
   controls.maxPolarAngle = deg(82);
   controls.minAzimuthAngle = deg(-75);  // 裏側には回れない（紙の板が薄く見えるため）
@@ -61,7 +70,7 @@ export function createStage(container) {
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
   const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(30, 48),
+    new THREE.CircleGeometry(40, 48),
     new THREE.MeshBasicMaterial({ map: floorTex, color: '#8a7a6a' }),
   );
   floor.rotation.x = -Math.PI / 2;
@@ -165,21 +174,6 @@ export function layoutSeats(tracks) {
       return b.meanPitch - a.meanPitch;
     });
 
-    if (row.behind) { // 基準楽器（チェロ）の真後ろに並べる。無ければ既定角
-      const ref = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t));
-      const base = ref.length ? ref.reduce((a, t) => a + centerAngle.get(t), 0) / ref.length : deg(row.fallbackDeg);
-      const puppets = row.puppets;
-      const slot = (puppets * PUPPET_GAP) / row.r;
-      const start = base - slot * (list.length - 1) / 2;
-      list.forEach((tr, i) => {
-        const center = start + slot * i;
-        const positions = [];
-        for (let k = 0; k < puppets; k++) positions.push(seatPos(row, center + (k - (puppets - 1) / 2) * (PUPPET_GAP / row.r)));
-        seats.push({ track: tr, puppets, positions });
-      });
-      continue;
-    }
-
     if (row.edge) { // 鍵盤/ハープは両端に交互配置
       for (const tr of list) {
         const side = kbCount % 2 ? 1 : -1;
@@ -191,25 +185,56 @@ export function layoutSeats(tracks) {
       continue;
     }
 
-    const n = list.length;
-    let puppets = row.puppets;
-    if (n >= 6) puppets = 1; else if (n >= 4 && puppets > 2) puppets = 2;
-    const slotAngle = (puppets * PUPPET_GAP) / row.r; // 1トラックが占める角度 [rad]
+    // 各トラックの人数（横×奥行き）。列の角度幅に収まらない時は横の人数を均等に減らす
+    const sizes = list.map((tr) => ({ ...(SECTION_SIZE[tr.variant] || { cols: 1, rows: 1 }) }));
     const span = deg(row.span);
-    const step = n > 1 ? Math.min(span / (n - 1), slotAngle * 1.25) : 0;
-    const start = -step * (n - 1) / 2;
-    list.forEach((tr, i) => {
-      const center = start + step * i;
-      centerAngle.set(tr, center);
-      const positions = [];
-      for (let k = 0; k < puppets; k++) {
-        const th = center + (k - (puppets - 1) / 2) * (PUPPET_GAP / row.r);
-        positions.push(seatPos(row, th));
+    const angleOf = (cols) => (cols * PUPPET_GAP) / row.r; // 1トラックが占める角度 [rad]
+    if (!row.behind && list.length > 1) {
+      for (let guard = 0; guard < 8; guard++) { // 中断条件付き
+        const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
+        if (total <= span + angleOf(1) || sizes.every((s) => s.cols <= 1)) break;
+        for (const s of sizes) if (s.cols > 1) s.cols--;
       }
-      seats.push({ track: tr, puppets, positions });
+    }
+
+    // 各トラックの中心角を決める（角度幅は人数に比例）
+    let centers;
+    if (row.behind) { // 基準楽器（チェロ）の真後ろに並べる。無ければ既定角
+      const ref = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t));
+      const base = ref.length ? ref.reduce((a, t) => a + centerAngle.get(t), 0) / ref.length : deg(row.fallbackDeg);
+      const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
+      let cursor = base - total / 2;
+      centers = sizes.map((s) => { const c = cursor + angleOf(s.cols) / 2; cursor += angleOf(s.cols); return c; });
+    } else {
+      const n = list.length;
+      const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
+      const gap = n > 1 ? Math.max(0, Math.min((span - total) / (n - 1), angleOf(1) * 0.5)) : 0; // トラック間の余白
+      let cursor = -(total + gap * (n - 1)) / 2;
+      centers = sizes.map((s) => { const c = cursor + angleOf(s.cols) / 2; cursor += angleOf(s.cols) + gap; return c; });
+    }
+
+    list.forEach((tr, i) => {
+      const { cols, rows } = sizes[i];
+      const center = centers[i];
+      centerAngle.set(tr, center);
+      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows) });
     });
   }
   return seats;
+}
+
+// 中心角 center を軸に cols × rows の格子で座らせる。奥の列ほど半径が大きい。偶数列は半人分ずらす（重なり防止・自然な見た目）
+function gridPositions(row, center, cols, rows) {
+  const positions = [];
+  for (let k = 0; k < rows; k++) {
+    const r = row.r + k * ROW_GAP;
+    const stagger = (k % 2) * 0.5;
+    for (let j = 0; j < cols; j++) {
+      const th = center + (j - (cols - 1) / 2 + stagger) * (PUPPET_GAP / row.r);
+      positions.push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th) });
+    }
+  }
+  return positions;
 }
 
 // 角度 0 = 指揮者の真後ろ（-z 方向）。x = r sinθ, z = -r cosθ

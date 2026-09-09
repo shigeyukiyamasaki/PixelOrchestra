@@ -37,6 +37,12 @@ open -a "Google Chrome" "http://localhost:8766/index.html?midi=samples/test_orch
 | テンポマップ・拍 | 全員の揺れ周期、指揮者の振り |
 | 音程 | 弦: 左手のビブラート／フルート: 楽器の角度／ピアノ: 手の左右位置 |
 
+## 人数と配置
+
+楽器ごとの人数は `src/stage.js` の `SECTION_SIZE`（横 cols × 奥行き rows）で定義。
+1st/2nd Vn = 3×3、Va/Vc = 3×2、Cb = 2×2、木管各 2、Hr = 2×2、Tp/Tb = 3、他は 1。
+列の角度幅に収まらない場合は横の人数を自動で減らす。ひな壇の半径は `ROWS`。
+
 ## キースイッチの除外（音域フィルター）
 
 トラック表の各行の下に「音域 下限 〜 上限」（MIDI ノート番号、横に Logic 表記の音名 C3=60）。
