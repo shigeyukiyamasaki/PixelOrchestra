@@ -196,9 +196,14 @@ export class Puppet {
       case 'conductor': this._conductor(st, ctx); break;
     }
 
-    // 足元の光：baseOpacity × エネルギー × 濃度
+    // 足元の光：baseOpacity × エネルギー × 濃度。指揮者だけは拍で明滅（小節頭は強く、拍の頭で光って減衰）
     this.glow.visible = settings.showGlow;
-    this.glow.material.opacity = this.glow.userData.baseOpacity * clamp(energy, 0, 1) * (settings.glowIntensity ?? 1);
+    let level = clamp(energy, 0, 1);
+    if (this.family === 'conductor') {
+      const accent = beat.beatInBar === 0 ? 1.0 : 0.55;
+      level = (0.08 + accent * Math.exp(-beat.beatPhase * 5)) * (0.5 + 0.5 * clamp(energy, 0, 1));
+    }
+    this.glow.material.opacity = this.glow.userData.baseOpacity * level * (settings.glowIntensity ?? 1);
   }
 
   // ---- 弦：弓の接点を固定し、手元が弓の上を滑る。ノートごとに上げ弓/下げ弓を交互、前のストロークの終点から続ける。
