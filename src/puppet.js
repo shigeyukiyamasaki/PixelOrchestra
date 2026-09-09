@@ -104,17 +104,20 @@ const VIOLIN_UP = [0.15, 0.9, 0.35];        // 弦の面の法線（上・やや
 const VIOLIN_Q = quatFromAxes(VIOLIN_AXIS, VIOLIN_UP, '-x'); // 鏡像スプライトなので渦巻きはローカル -x
 const VIOLIN_BOW = (() => { const b = new THREE.Vector3().crossVectors(v3(VIOLIN_UP), v3(VIOLIN_AXIS)).normalize(); if (b.x > 0) b.negate(); return [b.x, b.y, b.z]; })(); // 手元→先端（右手から左へ）
 const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.28, 0, 0.08)); // 上を奏者側へ傾ける
+// チェロ系の弓の向き・弦から離れる向きは楽器の姿勢から：弓は楽器のローカル -x（右手→左）、弦の面の法線はローカル +z（正面）
+const CELLO_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
+const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
 
 const VARIANT = {
   violin:     { chin: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [4, 1],
-                p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS } },
+                p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 2.5 } },
   viola:      { chin: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
-                p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS } },
+                p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 2.5 } },
   cello:      { inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 17], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 27], vib: [0, 1, 0],
-                p3: { pos: [2, 1, 7], quat: CELLO_Q, bowDir: [-1, 0.05, 0.1], liftDir: [0, 0.2, 1], sMin: 2, sMax: 10, vib: [0, 1, 0] } },
+                p3: { pos: [2, 1, 6], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 } },
   contrabass: { inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
-                p3: { pos: [3, 0, 8], quat: CELLO_Q, bowDir: [-1, 0.05, 0.1], liftDir: [0, 0.2, 1], sMin: 2, sMax: 9, vib: [0, 1, 0] } },
+                p3: { pos: [3, 0, 6], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } },
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   flute:      { inst: { pos: [-1, 35, 4], rot: -0.15 }, hands: { L: [6, -1], R: [13, -1] }, kind: 'flute',
                 p3: { pos: [-1, 35, 5], rot3: [0, -0.35, -0.15], hands: { L: [6, -1, 1], R: [13, -1, 1] } } },
@@ -342,7 +345,7 @@ export class Puppet {
     this.lift = approach(this.lift, lift, 14, dt);
 
     // 接点（駒）と弓の向き・弦から離れる向き（2D は平面、3D は楽器の姿勢から）
-    const C = instPoint(this.inst, bow.contact[0], bow.contact[1], 0);
+    const C = instPoint(this.inst, bow.contact[0], bow.contact[1], p3?.contactZ ?? 0); // 3D では弦のある正面側
     let d, n;
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
@@ -351,7 +354,7 @@ export class Puppet {
     this.aimHeldDir('R', d, 'x');
 
     // 左手：指板の位置。長い音ではビブラート（弦に沿って 5.5Hz）
-    const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], 0);
+    const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
     const vibAxis = p3?.vib || cfg.vib || n;
     const vib = active.length && onset && onset.duration > 0.2 ? 0.35 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
     this.setHand('L', [L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], dt, 20);
