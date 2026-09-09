@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, INSTRUMENT, glowDisc, PART_STYLE } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -187,8 +187,26 @@ export class Puppet {
     this.root.add(this.group);
     this.group.add(this.rig);
 
-    this.body = body(o.color || '#c03030');
-    this.rig.add(this.body);
+    // 座る／立つ：打楽器と指揮者以外は椅子に座る（2026-09-09 ユーザー指定）。上半身の高さは立ち姿と同じにし、脚だけ差し替える
+    this.seated = !o.isConductor && this.family !== 'percussion';
+    if (this.seated) {
+      this.body = torsoSeated(o.color || '#c03030');
+      this.body.position.y = 13 * PX;           // 腰＝座面の高さ
+      this.rig.add(this.body);
+      const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
+      if (this.flat) {
+        const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
+      } else {
+        for (const sx of [-3.5, 3.5]) {
+          const t = thigh(); t.position.set(sx * PX, 12 * PX, 0); this.rig.add(t);           // 太もも：腰から前へ
+          const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); this.rig.add(sh);          // すね：太ももの先から床へ
+          const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); this.rig.add(so);          // 靴：前へ
+        }
+      }
+    } else {
+      this.body = body(o.color || '#c03030');
+      this.rig.add(this.body);
+    }
 
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);

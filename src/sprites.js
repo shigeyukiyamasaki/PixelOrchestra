@@ -234,6 +234,41 @@ export function body(accent = '#c03030') {
   }, { depth: 6, z0: -3, back, accent, side });
 }
 
+// ---------------- 座り姿勢のパーツ ----------------
+// 立ち姿の体（16×34）からズボン以下を除いた上半身。pivot = 腰（座面の高さ y=13 に置く）。座った時も肩・首の高さは立ち姿と同じ
+export function torsoSeated(accent = '#c03030') {
+  const back = { [C.shirt]: C.coat, [toHex(accent)]: C.coat };
+  const side = (d) => { d.r(2, 5, 3, 3, C.skin); d.r(0, 8, 6, 6, C.coat); d.r(1, 14, 4, 7, C.coat); };
+  return makePart(16, 21, 8, 21, (d) => {
+    d.r(6, 5, 4, 3, C.skin);                 // 首
+    d.r(3, 8, 10, 13, C.coat);               // 上着
+    d.r(2, 9, 1, 8, C.coat2); d.r(13, 9, 1, 8, C.coat2);
+    d.r(6, 8, 4, 8, C.shirt);
+    d.r(5, 9, 6, 2, accent);
+  }, { depth: 6, z0: -3, back, accent, side });
+}
+/** 座った脚（ボクセル用）：太もも（前へ 10）・すね（下へ 12）・靴。配置は puppet 側 */
+export function thigh() { return makePart(3, 3, 1.5, 3, (d) => { d.r(0, 0, 3, 3, C.coat2); }, { depth: 10, z0: 0 }); }
+export function shin()  { return makePart(3, 12, 1.5, 12, (d) => { d.r(0, 0, 3, 12, C.coat2); }, { depth: 3, z0: 0 }); }
+export function shoe()  { return makePart(4, 2, 2, 2, (d) => { d.r(0, 0, 4, 2, C.shoe); }, { depth: 6, z0: 0 }); }
+/** 座った脚（2D 板用・正面図）16×14、pivot = 足元中央 */
+export function legsSeatedSprite() {
+  return makePart(16, 14, 8, 14, (d) => {
+    d.r(3, 0, 4, 2, C.coat2); d.r(9, 0, 4, 2, C.coat2);    // 太もも（手前に短く見える）
+    d.r(4, 2, 3, 10, C.coat2); d.r(9, 2, 3, 10, C.coat2);  // すね
+    d.r(3, 12, 4, 2, C.shoe); d.r(9, 12, 4, 2, C.shoe);    // 靴
+  });
+}
+/** 椅子 12×25（背もたれ 12・座面 2・脚 11）、pivot = 床の後端中央。奥行き 12：背もたれは後ろ、脚は前後 2 本ずつ */
+export function chair() {
+  const side = (d) => { d.r(0, 0, 2, 12, F); d.r(0, 12, 12, 2, F); d.r(0, 14, 2, 11, F); d.r(10, 14, 2, 11, F); };
+  return makePart(12, 25, 6, 25, (d) => {
+    d.r(0, 0, 12, 12, '#4a3020'); d.r(1, 1, 10, 10, '#5a3a26'); // 背もたれ
+    d.r(0, 12, 12, 2, '#6a4630');                              // 座面
+    d.r(0, 14, 2, 11, '#3a2418'); d.r(10, 14, 2, 11, '#3a2418'); // 脚
+  }, { depth: 12, z0: 0, side });
+}
+
 /** 頭（高解像度版・未採用）24×24 */
 export function headHiRes(seed = 0, back = false) {
   const hair = HAIR[seed % HAIR.length];
