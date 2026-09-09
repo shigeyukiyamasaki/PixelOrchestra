@@ -369,22 +369,37 @@ const SIDE = {
 // それぞれ [mesh] を返す。pivot は「体に取り付ける点」または「手に持つ点」。
 
 export const INSTRUMENT = {
-  violin: () => makePart(14, 8, 7, 4, (d) => {
-    d.r(3, 1, 6, 6, C.wood); d.r(2, 2, 8, 4, C.wood); d.r(1, 3, 2, 2, C.wood);
-    d.r(9, 3, 5, 1, C.wood2); d.p(13, 2, C.wood2);
-    d.r(4, 3, 5, 1, C.black);
-  }),
+  // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
+  violin: () => makePart(28, 16, 14, 8, (d) => {
+    d.disc(7, 8, 6, C.wood); d.disc(18, 8, 5, C.wood); d.r(11, 5, 7, 7, C.wood);   // 胴（下部・上部のふくらみ、くびれ）
+    d.p(11, 4, null); d.p(11, 12, null); d.p(13, 4, null); d.p(13, 12, null);     // くびれの切れ込み
+    d.r(3, 5, 1, 7, '#a0623c'); d.r(15, 6, 1, 5, '#a0623c');                       // 艶
+    d.r(5, 5, 1, 2, C.black); d.r(5, 10, 1, 2, C.black); d.r(13, 5, 1, 2, C.black); d.r(13, 10, 1, 2, C.black); // f 字孔
+    d.r(2, 7, 4, 2, C.black);                                                       // テールピース
+    d.r(9, 7, 15, 2, C.black); d.r(9, 7, 15, 1, '#2a2a30');                         // 指板
+    d.r(22, 7, 5, 2, C.wood2);                                                      // ネック
+    d.r(25, 5, 3, 6, C.wood2); d.p(26, 6, C.wood);                                  // 渦巻き
+    d.r(10, 6, 1, 4, C.ivory);                                                      // 駒
+    d.r(1, 10, 4, 3, C.black);                                                      // あご当て
+  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(1, 2, 2, 12, F); d.r(0, 4, 4, 8, F); } }),
   viola: () => makePart(16, 9, 8, 4, (d) => {
     d.r(3, 1, 7, 7, C.wood2); d.r(2, 2, 9, 5, C.wood2); d.r(1, 3, 2, 3, C.wood2);
     d.r(10, 4, 6, 1, C.wood); d.p(15, 3, C.wood);
     d.r(4, 4, 6, 1, C.black);
   }),
-  cello: () => makePart(12, 30, 6, 30, (d) => {
-    d.r(5, 0, 2, 7, C.wood2); d.r(4, 0, 4, 2, C.wood2);   // ネック・渦巻き
-    d.r(3, 6, 6, 20, C.wood); d.r(1, 9, 10, 6, C.wood); d.r(1, 18, 10, 8, C.wood);
-    d.r(5, 7, 2, 18, C.black);                            // 弦
-    d.r(5, 26, 2, 4, C.silver);                           // エンドピン
-  }, { depth: 6, side: SIDE.cello }),
+  // チェロ 24×60（2倍解像度）。渦巻き・ネック・上部/下部のふくらみ・くびれ・f 字孔・駒（row 36）・テールピース・エンドピン
+  cello: () => makePart(24, 60, 12, 60, (d) => {
+    d.r(9, 0, 5, 4, C.wood2); d.p(10, 1, C.wood);                          // 渦巻き
+    d.r(10, 3, 4, 12, C.wood2);                                            // ネック
+    d.disc(12, 17, 7, C.wood); d.r(6, 22, 12, 8, C.wood); d.disc(12, 38, 10, C.wood); // 上部・くびれ・下部
+    d.p(6, 22, null); d.p(17, 22, null); d.p(6, 29, null); d.p(17, 29, null);
+    d.r(4, 12, 1, 10, '#a0623c'); d.r(3, 30, 1, 14, '#a0623c');             // 艶
+    d.r(7, 32, 1, 4, C.black); d.r(16, 32, 1, 4, C.black); d.r(7, 40, 1, 4, C.black); d.r(16, 40, 1, 4, C.black); // f 字孔
+    d.r(11, 10, 2, 24, C.black); d.r(11, 10, 1, 24, '#2a2a30');              // 指板
+    d.r(9, 36, 6, 1, C.ivory);                                             // 駒
+    d.r(11, 37, 2, 10, '#3a3a44'); d.r(10, 46, 4, 6, C.black);              // 弦・テールピース
+    d.r(11, 52, 2, 8, C.silver);                                           // エンドピン
+  }, { res: 2, depth: 12, z0: 0, side: (d) => { d.r(4, 0, 4, 12, F); d.r(2, 10, 8, 4, F); d.r(0, 14, 12, 34, F); d.r(2, 48, 8, 4, F); d.r(5, 52, 2, 8, F); } }),
   contrabass: () => makePart(14, 38, 7, 38, (d) => {
     d.r(6, 0, 2, 9, C.wood2); d.r(5, 0, 4, 2, C.wood2);
     d.r(3, 8, 8, 26, C.wood2); d.r(1, 11, 12, 8, C.wood2); d.r(1, 22, 12, 12, C.wood2);
@@ -399,7 +414,15 @@ export const INSTRUMENT = {
   oboe: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.wood2); d.r(0, 17, 4, 3, C.wood2); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
   bassoon: () => makePart(5, 34, 2, 34, (d) => { d.r(1, 0, 3, 34, C.wood); d.r(0, 0, 5, 3, C.wood2); d.r(3, 3, 2, 8, C.silver); for (let y = 12; y < 30; y += 4) d.p(1, y, C.silver); }, { depth: 4 }),
 
-  trumpet: () => makePart(18, 6, 0, 3, (d) => { d.r(0, 2, 12, 2, C.gold); d.r(5, 0, 1, 2, C.gold2); d.r(7, 0, 1, 2, C.gold2); d.r(9, 0, 1, 2, C.gold2); d.r(12, 1, 4, 4, C.gold); d.r(16, 0, 2, 6, C.gold2); }, { depth: 4 }),
+  // トランペット 36×12（2倍解像度）。マウスピース・リードパイプ・ピストン 3 本・下の U 管・ベルの広がり
+  trumpet: () => makePart(36, 12, 0, 6, (d) => {
+    d.r(0, 5, 3, 2, C.silver);                                             // マウスピース
+    d.r(3, 5, 22, 2, C.gold);                                              // リードパイプ
+    d.r(8, 8, 2, 2, C.gold); d.r(8, 9, 16, 2, C.gold); d.r(22, 8, 2, 2, C.gold); // 下の U 管
+    for (let i = 0; i < 3; i++) { d.r(12 + i * 3, 1, 2, 9, C.gold2); d.r(12 + i * 3, 0, 2, 1, C.silver); } // ピストン
+    d.r(25, 4, 3, 4, C.gold); d.r(28, 3, 2, 6, C.gold); d.r(30, 1, 2, 10, C.gold); d.r(32, 0, 3, 12, C.gold); d.r(35, 0, 1, 12, C.gold2); // ベル
+    d.r(26, 5, 8, 1, '#f3d27a');                                            // ハイライト
+  }, { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 4, 2, 4, F); d.r(0, 1, 6, 10, F); } }),
   horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }, { depth: 8, z0: -2, side: SIDE.horn }),
   trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }, { depth: 4 }),
   tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }, { depth: 10, z0: -2, side: SIDE.tuba }),
