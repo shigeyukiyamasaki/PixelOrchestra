@@ -117,7 +117,7 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 2.5 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
-                p3: { pos: [0.5, 1, 10], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 } }, // 膝の間・前方。上部は胸に寄りかかる
+                p3: { pos: [0.5, 1, 6], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 }, legSpread: 6.5 }, // 膝を開いて挟む。z=10 だと弓手が届かず IK が縮んで弓が胴に入る
   contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
                 p3: { pos: [2, 0, 8], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } }, // 立奏。体の前に立てかける
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
@@ -208,7 +208,8 @@ export class Puppet {
       if (this.flat) {
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
       } else {
-        for (const sx of [-3.5, 3.5]) {
+        const spread = this.cfg.legSpread ?? 3.5; // 膝の開き（チェロは楽器を挟むので広く）
+        for (const sx of [-spread, spread]) {
           const t = thigh(); t.position.set(sx * PX, 12 * PX, 0); this.rig.add(t);           // 太もも：腰から前へ
           const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); this.rig.add(sh);          // すね：太ももの先から床へ
           const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); this.rig.add(so);          // 靴：前へ
@@ -240,14 +241,14 @@ export class Puppet {
         f.add(foreArmNoHand());
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
         h.add(hand()); f.add(h);
-        this.handGrp[side] = h; holder = h; holdY = -HAND_LEN + 1; // 手持ち物は指の位置
+        this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
         f.add(foreArm());
       }
       const item = this.cfg.held?.[side];
       if (item) {
         const m = INSTRUMENT[item]();
-        m.position.set(0, holdY * PX, (this.flat ? 3 : 2) * PX); // 手持ち物は手の少し前
+        m.position.set(0, holdY * PX, (this.flat ? 3 : 0) * PX); // 2D 板では手の少し前（重ね順）。3D では手の軸上
         holder.add(m);
         this.held[side] = m;
       }
@@ -425,8 +426,8 @@ export class Puppet {
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
     const handR = [C[0] - d[0] * s + n[0] * this.lift, C[1] - d[1] * s + n[1] * this.lift, C[2] - d[2] * s + n[2] * this.lift];
-    // 手首あり：右手は弓の上に被さる（手首→指先の向き ≒ 弦の面の法線の逆＋弓の進行方向へ少し）。左手は指板の下から弦を押さえる（法線方向）
-    const rightHandDir = this.hasWrist ? [-n[0] + d[0] * 0.3 * this.bowDir, -n[1] + d[1] * 0.3 * this.bowDir, -n[2] + d[2] * 0.3 * this.bowDir] : null;
+    // 手首あり：右手は弓の上から被さる（手首→指先 ≒ 下向き＋弦の面へ少し＋弓の進行方向へ少し）。手首が弓の上に来るので腕が届く
+    const rightHandDir = this.hasWrist ? [-0.5 * n[0] + d[0] * 0.25 * this.bowDir, -0.75 - 0.5 * n[1] + d[1] * 0.25 * this.bowDir, -0.5 * n[2] + d[2] * 0.25 * this.bowDir] : null;
     this.setHand('R', handR, dt, Infinity, rightHandDir);
     this.aimHeldDir('R', d, 'x');
 
@@ -434,7 +435,8 @@ export class Puppet {
     const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
     const vibAxis = p3?.vib || cfg.vib || n;
     const vib = active.length && onset && onset.duration > 0.2 ? 0.35 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
-    this.setHand('L', [L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], dt, 20, this.hasWrist ? [n[0] * 0.8 + d[0] * 0.2, n[1] * 0.8 + d[1] * 0.2, n[2] * 0.8 + d[2] * 0.2] : null);
+    // 左手：指は弦を上から押さえる（下向き＋弦の面へ少し＋弓元側へ少し）。手首は指板の上に来る
+    this.setHand('L', [L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], dt, 20, this.hasWrist ? [-0.4 * n[0] - 0.4 * d[0], -0.7 - 0.4 * n[1] - 0.4 * d[1], -0.4 * n[2] - 0.4 * d[2]] : null);
 
     // 腰：強いほど前傾（楽器へ入り込む）、弓の進行方向へわずかに傾く。視線：弾いている間は楽器の方（あご楽器は左下、チェロ系は下）
     this.spine.rotation.z += MIRROR * 0.03 * this.bowDir * clamp(energy, 0, 1);
