@@ -107,6 +107,14 @@ def main():
     tracks.append(track_chunk(t0))
     for name, prog, ch, part in PARTS:
         ev = [(0, meta(0x03, name.encode())), (0, bytes([0xC0 | ch, prog]))]
+        # 強弱の CC：弦は CC11 で曲全体のクレッシェンド（velocity はほぼ一定）、金管は CC1 で各小節スウェル
+        if part in ('vn1', 'vn2', 'va', 'vc', 'cb'):
+            for k in range(BARS * 8):
+                ev.append((k * BEAT // 2, bytes([0xB0 | ch, 11, int(40 + 85 * k / (BARS * 8))])))
+        if part in ('hn', 'tp', 'tb'):
+            for bar in range(BARS):
+                for k in range(8):
+                    ev.append((bar * 4 * BEAT + k * BEAT // 2, bytes([0xB0 | ch, 1, int(50 + 70 * (k / 7))])))
         for tick, dur, pitch, vel in notes_for(part):
             ev.append((tick, bytes([0x90 | ch, pitch, vel])))
             ev.append((tick + dur, bytes([0x80 | ch, pitch, 0])))

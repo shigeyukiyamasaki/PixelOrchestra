@@ -5,7 +5,7 @@
  * UI・再生クロック・シーン組み立て。描画ロジックは「時刻 t → 状態」の純関数で書き、
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
-import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, midiToNoteName } from './midiEngine.js';
+import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
 import { createStage, layoutSeats } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel } from './sprites.js';
@@ -16,6 +16,7 @@ const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
 const FAMILY_KEY = 'pixelOrchestra.families.v1';
 // MIDIOrchestra と同じキー・同じ形式 { trackName: {pitchMin, pitchMax} }。同一オリジン（romashige.com）に置けば両ツールで共用される
 const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
+const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -145,6 +146,16 @@ function savePitchFilter(trackName, pitchMin, pitchMax) {
   try { localStorage.setItem(PITCH_FILTER_KEY, JSON.stringify(all)); } catch (e) { console.warn('音域保存失敗:', e); }
 }
 
+// 強弱の情報源（velocity / CC1 / CC11）：トラック名 → source
+function loadDynSources() {
+  try { return JSON.parse(localStorage.getItem(DYN_SOURCE_KEY) || '{}'); } catch { return {}; }
+}
+function saveDynSource(trackName, source) {
+  const all = loadDynSources();
+  if (source === 'auto') delete all[trackName]; else all[trackName] = source;
+  try { localStorage.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
+}
+
 // ---------- MIDI 読み込み ----------
 $('midiFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -181,7 +192,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   roll?.dispose();
   puppets = [];
 
-  engine = new MidiEngine(midi, loadFamilyOverrides(midiFileName), loadPitchFilters());
+  engine = new MidiEngine(midi, loadFamilyOverrides(midiFileName), loadPitchFilters(), loadDynSources());
   roll = new PianoRoll(scene, engine, camera);
   placePuppets();
   renderTrackTable();
@@ -270,6 +281,18 @@ function renderTrackTable() {
     const lab = document.createElement('span'); lab.className = 'pitch-label'; lab.textContent = '音域';
     const sep = document.createElement('span'); sep.textContent = '〜';
     td2.append(lab, minIn, minName, sep, maxIn, maxName);
+    // 強弱の情報源（velocity / CC1 / CC11）。自動の時は判定結果を併記
+    const dynLab = document.createElement('span'); dynLab.className = 'pitch-label dyn-label'; dynLab.textContent = '強弱';
+    const dynSel = document.createElement('select'); dynSel.className = 'dyn-select';
+    for (const [v, label] of Object.entries(DYN_SOURCES)) {
+      const o = document.createElement('option'); o.value = v;
+      o.textContent = v === 'auto' ? `自動（${DYN_SOURCES[tr.dynResolved] || tr.dynResolved}）` : label;
+      if (v === tr.dynSource) o.selected = true;
+      dynSel.appendChild(o);
+    }
+    dynSel.title = 'この楽器の強弱（前傾・揺れ幅・足元の光）に使う情報。CC1/CC11 で強弱を書く音源はそちらを選ぶ';
+    dynSel.addEventListener('change', () => { saveDynSource(tr.name, dynSel.value); buildScene(currentMidi, { keepTime: true }); });
+    td2.append(document.createElement('br'), dynLab, dynSel);
     row2.appendChild(td2);
     tbody.appendChild(row2);
     const applyFilter = () => {

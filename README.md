@@ -49,6 +49,13 @@ open -a "Google Chrome" "http://localhost:8766/index.html?midi=samples/test_orch
 範囲外のノートは動き・ロール・エネルギー計算のすべてから除外される。
 設定は **トラック名** をキーに localStorage へ保存（MIDIOrchestra と同じ方式。別ファイルでも同名トラックなら効く）。
 
+## 強弱の情報源（velocity / CC1 / CC11）
+
+前傾・揺れ幅・足元の光などの「持続的な強さ」は、トラックごとに velocity / CC1 / CC11 / CC1+CC11 から取る。
+既定は自動判定（曲中で実際に変化している CC を採用、両方なら max、無ければ velocity）。
+CC は発音中だけ有効（休符で CC が高くても前傾しない）。弓の振り幅や打楽器の振り下ろしなどアタック系は常に velocity。
+トラック表の「強弱」プルダウンで手動指定でき、トラック名をキーに保存。
+
 ## 本番のドット絵への差し替え
 
 `src/sprites.js` の各 `makePart(w, h, pivotX, pivotY, draw)` を、同じサイズ・同じ pivot の PNG 読み込みに置き換える。

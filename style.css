@@ -52,6 +52,8 @@ tr.pitch-row td { border-top: none; padding: 0 4px 6px 24px; color: var(--muted)
 tr.pitch-row input[type=number] { width: 44px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 11px; margin: 0 2px; }
 tr.pitch-row .note-name { display: inline-block; min-width: 26px; color: var(--accent); }
 tr.pitch-row .pitch-label { margin-right: 4px; }
+tr.pitch-row .dyn-label { margin-left: 0; }
+tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; font-size: 11px; margin-top: 3px; }
 
 @media (max-width: 600px) {
   #panel { width: calc(100vw - 24px); }

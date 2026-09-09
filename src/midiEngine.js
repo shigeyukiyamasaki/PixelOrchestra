@@ -197,6 +197,17 @@ const FAMILY_HUE = { strings: 20, woodwind: 130, brass: 48, percussion: 285, key
 const ENERGY_RATE = 50;   // エネルギー包絡線のサンプリング周波数 [Hz]
 const ENERGY_DECAY = 0.86; // 1ステップ（20ms）ごとの減衰率（≒ 130ms で半減）
 
+// CC 列（time 昇順）の時刻 t における値。最初のイベントより前は最初の値、以降は直前の値（二分探索）
+function ccValueAt(list, t) {
+  if (!list.length) return 0;
+  if (t < list[0].time) return list[0].value;
+  let lo = 0, hi = list.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (list[mid].time <= t) lo = mid; else hi = mid - 1; }
+  return list[lo].value;
+}
+
+export const DYN_SOURCES = { auto: '自動', velocity: 'velocity', cc1: 'CC1', cc11: 'CC11', 'cc1+cc11': 'CC1+CC11' };
+
 // MIDI ノート番号 → 音名（Logic Pro 準拠：C3 = 60。MIDIOrchestra と同じ）
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export function midiToNoteName(midi) {
@@ -208,8 +219,9 @@ export class MidiEngine {
    * @param {object} midi  @tonejs/midi の Midi
    * @param {object} familyOverrides  { trackKey: variant }  楽器の手動割当
    * @param {object} pitchFilters     { trackName: {pitchMin, pitchMax} }  音域フィルター（キースイッチ除外）
+   * @param {object} dynSources       { trackName: 'auto'|'velocity'|'cc1'|'cc11'|'cc1+cc11' }  強弱の情報源
    */
-  constructor(midi, familyOverrides = {}, pitchFilters = {}) {
+  constructor(midi, familyOverrides = {}, pitchFilters = {}, dynSources = {}) {
     this.midi = midi;
     this.ppq = midi.header.ppq;
     this.duration = midi.duration;
@@ -240,8 +252,19 @@ export class MidiEngine {
           variant = detectInstrument(name, program, t.channel);
           family = VARIANTS[variant].family;
         }
+        // CC1（モジュレーション）/ CC11（エクスプレッション）：持続系音源の強弱。値 0〜1、time 昇順
+        const ccList = (num) => ((t.controlChanges && t.controlChanges[num]) || []).map((c) => ({ time: c.time, value: c.value })).sort((a, b) => a.time - b.time);
+        const cc1 = ccList(1), cc11 = ccList(11);
+        const varies = (list) => list.length >= 3 && (Math.max(...list.map((c) => c.value)) - Math.min(...list.map((c) => c.value))) > 0.1;
+        const dynSource = dynSources[name] || 'auto';
+        let dynResolved = dynSource;
+        if (dynSource === 'auto') {
+          const v1 = varies(cc1), v11 = varies(cc11);
+          dynResolved = v1 && v11 ? 'cc1+cc11' : v1 ? 'cc1' : v11 ? 'cc11' : 'velocity';
+        }
         const pitches = notes.length ? notes.map((n) => n.midi) : [60];
         const track = {
+          cc1, cc11, dynSource, dynResolved,
           index: ti, key, name, channel: t.channel, program, family, variant,
           notes, totalNotes, pitchMin, pitchMax,
           maxDur: notes.length ? Math.max(...notes.map((n) => n.duration)) : 0,
@@ -300,8 +323,16 @@ export class MidiEngine {
           const sus = Math.max(...active.map((n) => n.velocity)) * 0.4;
           e = Math.max(e, sus);
         }
-        E[k] = e;
-        global[k] += e;
+        // CC 由来の強弱：発音中だけ有効（休符で CC が高くても前傾しない）
+        let d = e;
+        if (active.length && tr.dynResolved !== 'velocity') {
+          let cc = 0;
+          if (tr.dynResolved === 'cc1' || tr.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(tr.cc1, t));
+          if (tr.dynResolved === 'cc11' || tr.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(tr.cc11, t));
+          d = Math.max(e, cc);
+        }
+        E[k] = d;
+        global[k] += d;
       }
       tr.energy = E;
     }
