@@ -17,6 +17,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 #topbar .spacer { flex: 0 0 8px; }
 #topbar .seek { flex: 1 1 160px; min-width: 120px; margin: 0; }
 #topbar .time { margin-left: 0; }
+#topbar #resetCam { white-space: nowrap; }
 .filebtn { position: relative; display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
   padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 .filebtn:hover { border-color: var(--accent); }

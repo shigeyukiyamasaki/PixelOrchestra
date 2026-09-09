@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260909h">
+  <link rel="stylesheet" href="style.css?v=20260910a">
 </head>
 <body>
   <div id="view"></div>
@@ -27,6 +27,7 @@
     <button id="stopBtn">■ 停止</button>
     <span id="timeLabel" class="time">0:00 / 0:00</span>
     <input type="range" id="seek" min="0" max="1000" value="0" class="seek">
+    <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
   </header>
 
   <aside id="panel">
@@ -59,10 +60,6 @@
       <label class="ctl"><span>ぼかし <b data-value-for="glowSoft">0.6</b></span><input type="range" id="glowSoft" min="0" max="1" step="0.05" value="0.6"></label>
     </details>
 
-    <details open>
-      <summary>視点</summary>
-      <button id="resetCam">視点をリセット</button>
-    </details>
   </aside>
 
   <button id="panelRightToggle" title="トラック一覧の表示/非表示">♪</button>
@@ -78,6 +75,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260909z"></script>
+  <script type="module" src="src/main.js?v=20260910a"></script>
 </body>
 </html>
