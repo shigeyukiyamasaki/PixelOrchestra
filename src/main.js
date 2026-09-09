@@ -227,7 +227,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls };
+window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, Puppet };
 
 function placePuppets() {
   setPartStyle(settings().partStyle);

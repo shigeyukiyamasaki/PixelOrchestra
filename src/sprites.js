@@ -67,7 +67,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   const res = opts.res ?? 1;
   if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw, res);
   const depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
-  const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
+  const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${(opts.top || '').toString()}|${(opts.carve || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
   let geo = partCache.get(key);
   if (!geo) {
     const c = document.createElement('canvas');
@@ -357,24 +357,11 @@ export function arm() {
   });
 }
 
-// ---------------- 楽器の側面図（形だけ。色は正面図の行の色が使われる）----------------
-// キャンバスは 幅 = 奥行き（左が背面・右が正面）、高さ = 正面図と同じ
-const F = '#000';
-const SIDE = {
-  cello:      (d) => { d.r(2, 0, 2, 7, F); d.r(1, 6, 4, 3, F); d.r(0, 9, 6, 15, F); d.r(1, 24, 4, 2, F); d.r(3, 26, 1, 4, F); },
-  contrabass: (d) => { d.r(3, 0, 2, 9, F); d.r(1, 8, 6, 4, F); d.r(0, 12, 8, 20, F); d.r(1, 32, 6, 2, F); d.r(4, 34, 1, 4, F); },
-  timpani:    (d) => { d.r(0, 0, 16, 3, F); d.r(1, 3, 14, 6, F); d.r(3, 9, 10, 3, F); d.r(5, 12, 6, 2, F); d.r(6, 14, 4, 2, F); }, // 椀型
-  bassdrum:   (d) => { d.r(0, 0, 8, 26, F); d.r(3, 24, 2, 6, F); },                                      // 薄い円筒＋スタンド
-  snare:      (d) => { d.r(0, 0, 12, 8, F); d.r(5, 8, 2, 2, F); },
-  cymbal:     (d) => { d.r(7, 0, 4, 1, F); d.r(1, 1, 16, 2, F); d.r(7, 3, 4, 1, F); },                     // 円盤（奥行き方向に丸い）
-  xylophone:  (d) => { d.r(0, 3, 10, 7, F); d.r(0, 9, 10, 2, F); d.r(4, 10, 2, 4, F); },
-  marimba:    (d) => { d.r(0, 2, 12, 10, F); d.r(3, 12, 6, 5, F); d.r(5, 14, 2, 4, F); },
-  piano:      (d) => { d.r(0, 0, 22, 4, F); d.r(0, 4, 30, 10, F); d.r(25, 14, 5, 4, F); d.r(1, 18, 2, 8, F); d.r(27, 18, 2, 8, F); }, // 蓋は後方、鍵盤は前
-  celesta:    (d) => { d.r(0, 0, 8, 26, F); d.r(7, 13, 3, 5, F); d.r(1, 26, 2, 4, F); d.r(5, 26, 2, 4, F); },
-  harp:       (d) => { d.r(2, 0, 2, 26, F); d.r(0, 26, 6, 10, F); },                                       // 弦・柱は薄く、共鳴胴だけ厚い
-  horn:       (d) => { d.r(2, 0, 4, 2, F); d.r(0, 2, 8, 10, F); d.r(2, 12, 4, 2, F); },                     // 丸いベル
-  tuba:       (d) => { d.r(0, 0, 10, 6, F); d.r(1, 6, 8, 16, F); },
-};
+const F = '#000'; // 側面図・上面図の塗り色（形だけ。色は正面図が使われる）
+// 弦楽器の背面：f 字孔・指板・駒・弦・テールピースは裏板の色にする（裏から見ると板とネックだけ）
+const STRING_BACK = (plate) => ({ [C.black]: plate, [C.ivory]: plate, '#2a2a30': plate, '#3a3a44': plate });
+// 木管のベルの穴（8×40 の絵、row ≥ 34 を中空に）
+const WW_BELL_HOLE = (x, y, z) => { if (y < 34) return false; const r = (y >= 36 ? 3 : 2) - 1; const dx = x - 3.5, dz = z - 3.5; return dx * dx + dz * dz < r * r; };
 
 // ---------------- 楽器パーツ ----------------
 // それぞれ [mesh] を返す。pivot は「体に取り付ける点」または「手に持つ点」。
@@ -393,7 +380,7 @@ export const INSTRUMENT = {
     d.r(25, 5, 3, 6, C.wood2); d.p(26, 6, C.wood);                                  // 渦巻き
     d.r(10, 6, 1, 4, C.ivory);                                                      // 駒
     d.r(1, 10, 4, 3, C.black);                                                      // あご当て
-  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(1, 2, 2, 12, F); d.r(0, 4, 4, 8, F); } }),
+  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(1, 2, 2, 12, F); d.r(0, 4, 4, 8, F); }, back: STRING_BACK(C.wood) }),
   // ヴィオラ 32×18（2倍解像度）：バイオリンより一回り大きく、濃い色。駒は x=12（基本座標 -2）
   viola: () => makePart(32, 18, 16, 9, (d) => {
     d.disc(8, 9, 7, C.wood2); d.disc(16, 9, 5, C.wood2); d.r(12, 5, 5, 9, C.wood2);
@@ -406,7 +393,7 @@ export const INSTRUMENT = {
     d.r(28, 6, 4, 6, C.wood); d.p(29, 7, C.wood2);
     d.r(12, 7, 1, 4, C.ivory);
     d.r(1, 11, 5, 3, C.black);
-  }, { res: 2, depth: 5, z0: -2.5, side: (d) => { d.r(1, 2, 3, 14, F); d.r(0, 4, 5, 10, F); } }),
+  }, { res: 2, depth: 5, z0: -2.5, side: (d) => { d.r(1, 2, 3, 14, F); d.r(0, 4, 5, 10, F); }, back: STRING_BACK(C.wood2) }),
   // チェロ 24×60（2倍解像度）。渦巻き・ネック・上部/下部のふくらみ・くびれ・f 字孔・駒（row 36）・テールピース・エンドピン
   cello: () => makePart(24, 60, 12, 60, (d) => {
     d.r(9, 0, 5, 4, C.wood2); d.p(10, 1, C.wood);                          // 渦巻き
@@ -419,21 +406,58 @@ export const INSTRUMENT = {
     d.r(9, 36, 6, 1, C.ivory);                                             // 駒
     d.r(11, 37, 2, 10, '#3a3a44'); d.r(10, 46, 4, 6, C.black);              // 弦・テールピース
     d.r(11, 52, 2, 8, C.silver);                                           // エンドピン
-  }, { res: 2, depth: 12, z0: 0, side: (d) => { d.r(4, 0, 4, 12, F); d.r(2, 10, 8, 4, F); d.r(0, 14, 12, 34, F); d.r(2, 48, 8, 4, F); d.r(5, 52, 2, 8, F); } }),
-  contrabass: () => makePart(14, 38, 7, 38, (d) => {
-    d.r(6, 0, 2, 9, C.wood2); d.r(5, 0, 4, 2, C.wood2);
-    d.r(3, 8, 8, 26, C.wood2); d.r(1, 11, 12, 8, C.wood2); d.r(1, 22, 12, 12, C.wood2);
-    d.r(6, 9, 2, 24, C.black);
-    d.r(6, 34, 2, 4, C.silver);
-  }, { depth: 8, side: SIDE.contrabass }),
+  }, { res: 2, depth: 12, z0: 0, side: (d) => { d.r(4, 0, 4, 12, F); d.r(2, 10, 8, 4, F); d.r(0, 14, 12, 34, F); d.r(2, 48, 8, 4, F); d.r(5, 52, 2, 8, F); }, back: STRING_BACK(C.wood) }),
+  // コントラバス 28×76（2倍解像度）。渦巻き・ネック・ふくらみ・くびれ・f 字孔・駒（row 38 = 基本 y 19）・エンドピン。立奏用
+  contrabass: () => makePart(28, 76, 14, 76, (d) => {
+    d.r(10, 0, 8, 5, C.wood2); d.p(12, 2, C.wood);                          // 渦巻き
+    d.r(11, 4, 6, 14, C.wood2);                                            // ネック
+    d.disc(14, 26, 10, C.wood); d.r(7, 32, 14, 10, C.wood); d.disc(14, 50, 13, C.wood); // 上部・くびれ・下部
+    d.p(7, 33, null); d.p(20, 33, null); d.p(7, 41, null); d.p(20, 41, null);
+    d.r(4, 22, 1, 12, '#a0623c'); d.r(3, 44, 1, 16, '#a0623c');             // 艶
+    d.r(8, 42, 1, 6, C.black); d.r(19, 42, 1, 6, C.black); d.r(8, 52, 1, 6, C.black); d.r(19, 52, 1, 6, C.black); // f 字孔
+    d.r(13, 12, 3, 30, C.black); d.r(13, 12, 1, 30, '#2a2a30');              // 指板
+    d.r(10, 38, 8, 1, C.ivory);                                            // 駒
+    d.r(13, 39, 2, 14, '#3a3a44'); d.r(12, 53, 4, 10, C.black);             // 弦・テールピース
+    d.r(13, 64, 2, 12, C.silver);                                          // エンドピン
+  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(5, 0, 6, 5, F); d.r(6, 4, 4, 14, F); d.r(2, 16, 12, 6, F); d.r(0, 22, 16, 41, F); d.r(7, 64, 2, 12, F); }, back: STRING_BACK(C.wood) }),
   // 弓・指揮棒は 2 倍解像度グリッドで細く（断面 1×1 / 0.5×0.5 基本 px）
   bow: () => makePart(40, 2, 2, 1, (d) => { d.r(0, 0, 40, 1, C.wood2); d.r(2, 1, 36, 1, C.ivory); d.r(0, 0, 3, 2, C.black); }, { res: 2, depth: 2, z0: -1 }),
 
-  flute: () => makePart(20, 3, 1, 1, (d) => { d.r(0, 0, 20, 2, C.silver); for (let x = 6; x < 18; x += 3) d.p(x, 2, C.silver2); }),
-  clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
-  oboe: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.wood2); d.r(0, 17, 4, 3, C.wood2); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
-  bassoon: () => makePart(5, 34, 2, 34, (d) => { d.r(1, 0, 3, 34, C.wood); d.r(0, 0, 5, 3, C.wood2); d.r(3, 3, 2, 8, C.silver); for (let y = 12; y < 30; y += 4) d.p(1, y, C.silver); }, { depth: 4 }),
-
+  // ---- 木管（2倍解像度。断面は丸く、ベルは中空）----
+  // フルート 40×6：頭部管（歌口）・主管のキー・足部管。断面は丸
+  flute: () => makePart(40, 6, 2, 2, (d) => {
+    d.r(0, 1, 40, 4, C.silver); d.r(0, 1, 10, 4, C.silver2); d.r(36, 1, 4, 4, C.silver2); // 主管・頭部管・足部管
+    d.r(5, 1, 3, 2, '#b8c0c8'); d.p(6, 2, C.black);                                        // リッププレート・歌口
+    for (let x = 14; x < 36; x += 4) { d.r(x, 0, 3, 1, C.silver2); d.r(x, 5, 3, 1, C.silver2); } // キー
+    d.r(12, 2, 26, 1, '#eef2f6');                                                           // ハイライト
+  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(0, 1, 4, 4, F); d.r(1, 0, 2, 6, F); }, top: (d) => { d.r(0, 0, 40, 4, F); } }),
+  // オーボエ 8×40：リード・円錐の管・キー・ベル（中空）。pivot = リードの先（口）
+  oboe: () => makePart(8, 40, 4, 0, (d) => {
+    d.r(3, 0, 2, 3, C.ivory); d.r(3, 2, 2, 1, C.black); d.r(3, 3, 2, 2, C.silver);          // リード・コルク・ステープル
+    d.r(3, 5, 2, 8, C.wood2); d.r(2, 13, 4, 18, C.wood2); d.r(1, 31, 6, 5, C.wood2); d.r(0, 36, 8, 4, C.wood2); // 管（円錐）・ベル
+    d.r(2, 14, 1, 16, '#6e3a1c');                                                           // 艶
+    for (let y = 8; y < 30; y += 4) { d.r(5, y, 2, 2, C.silver); d.p(1, y + 2, C.silver); } // キー
+    d.r(2, 13, 4, 1, C.silver2); d.r(2, 24, 4, 1, C.silver2);                               // 継ぎ目
+  }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(3, 0, 2, 5, F); d.r(3, 5, 2, 8, F); d.r(2, 13, 4, 18, F); d.r(1, 31, 6, 5, F); d.r(0, 36, 8, 4, F); },
+       top: (d) => { d.disc(4, 4, 3, F); }, carve: WW_BELL_HOLE }),
+  // クラリネット 8×40：マウスピース・バレル・円筒の管・キー・ベル（中空）
+  clarinet: () => makePart(8, 40, 4, 0, (d) => {
+    d.r(3, 0, 2, 4, C.black); d.r(3, 2, 2, 1, C.silver);                                   // マウスピース・リガチャー
+    d.r(2, 4, 4, 4, C.black); d.r(2, 8, 4, 24, C.black); d.r(1, 32, 6, 4, C.black); d.r(0, 36, 8, 4, C.black); // バレル・管・ベル
+    d.r(2, 9, 1, 22, '#2a2a34');                                                            // 艶
+    for (let y = 10; y < 30; y += 4) { d.r(5, y, 2, 2, C.silver); d.p(1, y + 2, C.silver); } // キー
+    d.r(2, 8, 4, 1, C.silver2); d.r(2, 16, 4, 1, C.silver2); d.r(2, 24, 4, 1, C.silver2); d.r(2, 32, 4, 1, C.silver2); // 継ぎ目
+  }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(3, 0, 2, 4, F); d.r(2, 4, 4, 28, F); d.r(1, 32, 6, 4, F); d.r(0, 36, 8, 4, F); },
+       top: (d) => { d.disc(4, 4, 3, F); }, carve: WW_BELL_HOLE }),
+  // ファゴット 10×68：長い主管（上にベル）・平行するウィングジョイント・下のブーツ・ボーカル（銀の曲管）とリード。pivot = 底中央
+  bassoon: () => makePart(10, 68, 4, 68, (d) => {
+    d.r(2, 0, 4, 68, C.wood); d.r(1, 0, 6, 4, C.coat2);                                    // 主管・ベル（黒いキャップ）
+    d.r(6, 14, 3, 48, C.wood2);                                                             // ウィングジョイント
+    d.r(1, 58, 8, 10, C.wood2); d.r(2, 66, 6, 2, C.black);                                  // ブーツ
+    d.r(3, 6, 1, 50, '#6e3a1c');                                                            // 艶
+    d.r(7, 10, 2, 5, C.silver); d.r(5, 8, 3, 2, C.silver); d.r(3, 6, 2, 2, C.silver); d.p(2, 5, C.silver); d.r(1, 3, 1, 3, C.ivory); // ボーカル・リード
+    for (let y = 20; y < 56; y += 6) { d.r(5, y, 2, 1, C.silver); d.p(1, y + 3, C.silver); } // キー
+  }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(2, 0, 4, 68, F); d.r(1, 58, 6, 10, F); } }),
   // トランペット 36×12（2倍解像度）。マウスピース・リードパイプ・ピストン 3 本・下の U 管・ベルの広がり
   trumpet: () => makePart(36, 12, 0, 6, (d) => {
     d.r(0, 5, 3, 2, C.silver);                                             // マウスピース
@@ -447,65 +471,132 @@ export const INSTRUMENT = {
        top: (d) => { d.r(0, 5, 25, 2, F); d.r(8, 4, 16, 4, F); d.r(12, 3, 8, 6, F); d.r(25, 4, 3, 4, F); d.r(28, 3, 2, 6, F); d.r(30, 1, 2, 10, F); d.r(32, 0, 4, 12, F); }, // 管は細く、ベルは正面と同じ広がり
        // ベルの穴：x ≥ 26 で外径 R(x) より 1 内側を中空に（朝顔の内側が見える）
        carve: (x, y, z) => { if (x < 26) return false; const R = x >= 32 ? 6 : x >= 30 ? 5 : x >= 28 ? 3 : 2; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } }),
-  horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }, { depth: 8, z0: -2, side: SIDE.horn }),
-  trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }, { depth: 4 }),
-  tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }, { depth: 10, z0: -2, side: SIDE.tuba }),
+  // ---- 金管（2倍解像度。ベルは円断面＋中空）----
+  // ホルン 28×28：巻いた主管・ロータリー 3 つ・マウスパイプ・右下に広がるベル（右手を入れる）
+  horn: () => makePart(28, 28, 14, 14, (d) => {
+    d.ring(11, 14, 10, C.gold); d.ring(11, 14, 9, C.gold); d.ring(11, 14, 6, C.gold2);      // 主管の巻き・内側の管
+    d.r(6, 10, 9, 6, C.gold2); d.r(6, 9, 2, 2, C.silver); d.r(9, 9, 2, 2, C.silver); d.r(12, 9, 2, 2, C.silver); // ロータリーとレバー
+    d.r(0, 12, 8, 2, C.gold); d.r(0, 12, 2, 2, C.silver);                                   // マウスパイプ・マウスピース
+    d.r(16, 16, 4, 6, C.gold); d.r(20, 14, 3, 10, C.gold); d.r(23, 12, 3, 14, C.gold); d.r(26, 10, 2, 18, C.gold2); // ベル
+    d.r(17, 18, 8, 1, '#f3d27a');
+  }, { res: 2, depth: 16, z0: -4,
+       side: (d) => { d.r(6, 4, 4, 22, F); d.disc(8, 19, 8, F); },
+       top: (d) => { d.r(0, 6, 20, 4, F); d.r(16, 5, 4, 6, F); d.r(20, 3, 3, 10, F); d.r(23, 1, 3, 14, F); d.r(26, 0, 2, 16, F); },
+       carve: (x, y, z) => { if (x < 20) return false; const R = x >= 26 ? 9 : x >= 23 ? 7 : 5; const r = R - 1.5; const dy = y - 19, dz = z - 7.5; return dy * dy + dz * dz < r * r; } }),
+  // トロンボーン 52×12：マウスピース・二重のスライド（右端が U 字）・ベル管・前に広がるベル
+  trombone: () => makePart(52, 12, 0, 6, (d) => {
+    d.r(0, 5, 3, 2, C.silver);                                                              // マウスピース
+    d.r(3, 5, 38, 2, C.gold);                                                               // ベル管
+    d.r(3, 3, 28, 1, C.gold2); d.r(3, 8, 28, 1, C.gold2);                                   // 内管
+    d.r(6, 2, 24, 2, C.gold); d.r(6, 8, 24, 2, C.gold); d.r(28, 2, 3, 8, C.gold);           // 外管（スライド）・先端の U 字
+    d.r(7, 2, 1, 8, C.silver); d.r(4, 3, 1, 6, C.silver);                                   // 支柱
+    d.r(40, 4, 3, 4, C.gold); d.r(43, 3, 3, 6, C.gold); d.r(46, 1, 3, 10, C.gold); d.r(49, 0, 3, 12, C.gold); d.r(51, 0, 1, 12, C.gold2); // ベル
+    d.r(30, 5, 14, 1, '#f3d27a');
+  }, { res: 2, depth: 12, z0: -6,
+       side: (d) => { d.disc(6, 6, 6, F); d.r(4, 2, 4, 8, F); },
+       top: (d) => { d.r(0, 5, 41, 2, F); d.r(3, 3, 28, 6, F); d.r(40, 4, 3, 4, F); d.r(43, 3, 3, 6, F); d.r(46, 1, 3, 10, F); d.r(49, 0, 3, 12, F); },
+       carve: (x, y, z) => { if (x < 42) return false; const R = x >= 49 ? 6 : x >= 46 ? 5 : 3; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } }),
+  // チューバ 32×44：上に開く大きなベル（中空）・巻いた胴・ピストン 4 本・左へ出るマウスパイプ。pivot = 底中央
+  tuba: () => makePart(32, 44, 16, 44, (d) => {
+    d.r(4, 0, 24, 2, C.gold2); d.r(5, 2, 22, 4, C.gold); d.r(8, 6, 16, 4, C.gold); d.r(10, 10, 12, 4, C.gold); // ベル（上向き）・喉
+    d.r(6, 14, 20, 2, C.gold); d.r(4, 16, 24, 24, C.gold); d.r(6, 40, 20, 2, C.gold); d.r(8, 42, 16, 2, C.gold2); // 胴（丸み）
+    d.r(6, 22, 20, 1, C.gold2); d.r(6, 31, 20, 1, C.gold2);                                 // 管の継ぎ目
+    d.r(11, 18, 10, 12, C.gold2); for (let x = 10; x <= 19; x += 3) d.r(x, 16, 2, 2, C.silver); // ピストンとボタン
+    d.r(3, 25, 8, 2, C.gold); d.r(0, 24, 3, 3, C.silver);                                   // マウスパイプ・マウスピース
+    d.r(6, 18, 1, 20, '#f3d27a');
+  }, { res: 2, depth: 20, z0: -4,
+       side: (d) => { d.r(2, 0, 16, 2, F); d.r(3, 2, 14, 4, F); d.r(5, 6, 10, 4, F); d.r(6, 10, 8, 4, F); d.r(2, 14, 16, 28, F); d.r(4, 42, 12, 2, F); },
+       top: (d) => { d.disc(16, 10, 12, F); d.r(4, 4, 24, 12, F); d.r(0, 6, 6, 6, F); },
+       carve: (x, y, z) => { if (y > 10) return false; const R = y < 2 ? 11 : y < 6 ? 10 : 7; const r = R - 1.5; const dx = x - 15.5, dz = z - 9.5; return dx * dx + dz * dz < r * r; } }),
 
-  timpani: () => makePart(28, 16, 14, 0, (d) => {
-    d.r(2, 0, 24, 3, C.head); d.r(1, 3, 26, 6, C.copper); d.r(3, 9, 22, 3, C.copper2); d.r(6, 12, 16, 2, C.copper2);
-    d.r(6, 14, 2, 2, C.silver); d.r(20, 14, 2, 2, C.silver);
-  }, { depth: 16, side: SIDE.timpani }),
-  snare: () => makePart(16, 10, 8, 0, (d) => { d.r(2, 0, 12, 2, C.head); d.r(1, 2, 14, 6, C.silver); d.r(1, 4, 14, 1, C.silver2); d.r(6, 8, 1, 2, C.silver2); d.r(9, 8, 1, 2, C.silver2); }, { depth: 12, side: SIDE.snare }),
-  cymbal: () => makePart(18, 4, 9, 0, (d) => { d.r(0, 1, 18, 2, C.gold); d.r(7, 0, 4, 1, C.gold2); d.r(8, 3, 2, 1, C.silver2); }, { depth: 18, z0: -9, side: SIDE.cymbal }),
-  mallet: () => makePart(3, 14, 1, 0, (d) => { d.r(1, 0, 1, 10, C.wood2); d.r(0, 10, 3, 4, C.ivory); }),
-  bigmallet: () => makePart(5, 16, 2, 0, (d) => { d.r(2, 0, 1, 10, C.wood2); d.disc(2, 12, 2, C.ivory); }),
-  // シロフォン：明るい木の音板が左（長）→右（短）に並ぶ。pivot = 底中央
-  xylophone: () => makePart(28, 14, 14, 14, (d) => {
-    d.r(3, 10, 2, 4, C.silver2); d.r(23, 10, 2, 4, C.silver2);              // 脚
-    d.r(1, 9, 26, 2, C.wood2);                                               // フレーム
-    for (let i = 0; i < 12; i++) { const h = 8 - Math.floor(i / 3); d.r(2 + i * 2, 9 - h, 1, h, i % 2 ? '#e8c98a' : '#d9b46e'); } // 音板
-    d.r(1, 3, 26, 1, C.wood2);
-  }, { depth: 10, side: SIDE.xylophone }),
-  // マリンバ：濃い紫檀の音板＋下に共鳴管。pivot = 底中央
-  marimba: () => makePart(36, 18, 18, 18, (d) => {
-    d.r(3, 14, 2, 4, C.silver2); d.r(31, 14, 2, 4, C.silver2);              // 脚
-    for (let i = 0; i < 16; i++) { const h = 7 - Math.floor(i / 4); d.r(2 + i * 2, 12, 1, h - 1, C.silver); } // 共鳴管（下向き）
-    d.r(1, 11, 34, 2, C.wood2);                                              // フレーム
-    for (let i = 0; i < 16; i++) { const h = 9 - Math.floor(i / 4); d.r(2 + i * 2, 11 - h, 1, h, i % 2 ? '#7a3b2e' : '#8f4636'); } // 音板
-    d.r(1, 2, 34, 1, C.wood2);
-  }, { depth: 12, side: SIDE.marimba }),
-  // チェレスタ：小さなアップライト型の鍵盤。奏者はこの後ろに立つ。pivot = 底中央
-  celesta: () => makePart(26, 30, 13, 30, (d) => {
-    d.r(2, 0, 22, 26, C.wood); d.r(3, 1, 20, 12, C.wood2);                  // 筐体・上部パネル
-    d.r(1, 13, 24, 2, C.wood2);                                              // 鍵盤蓋の縁
-    d.r(3, 15, 20, 3, C.white); for (let x = 4; x < 22; x += 3) d.p(x, 15, C.black); // 鍵盤
-    d.r(3, 18, 20, 1, C.black);
-    d.r(3, 26, 2, 4, C.wood2); d.r(21, 26, 2, 4, C.wood2);                   // 脚
-    d.r(11, 27, 4, 2, C.gold2);                                              // ペダル
-  }, { depth: 10, side: SIDE.celesta }),
-  // グランカッサ：正面向きの大太鼓（白い打面・木の胴・スタンド）。pivot = 底中央
-  bassdrum: () => makePart(26, 30, 13, 30, (d) => {
-    d.r(11, 24, 4, 6, C.silver2); d.r(4, 28, 18, 2, C.silver2);   // スタンド
-    d.disc(13, 13, 12, C.wood2);                                    // 胴（外周）
-    d.disc(13, 13, 10, C.head);                                     // 打面
-    d.ring(13, 13, 10, C.silver);                                   // リム
-    for (let a = 0; a < 8; a++) { const x = 13 + Math.round(11 * Math.cos(a * Math.PI / 4)), y = 13 + Math.round(11 * Math.sin(a * Math.PI / 4)); d.p(x, y, C.gold2); } // ラグ
-  }, { depth: 8, side: SIDE.bassdrum }),
-  stick: () => makePart(3, 14, 1, 0, (d) => { d.r(1, 0, 1, 14, C.wood); }),
+  // ---- 打楽器（2倍解像度。太鼓・シンバルは上から見て丸い）----
+  // ティンパニ 56×32：皮・フープ・銅の椀・脚・ペダル。pivot = 皮の中央
+  timpani: () => makePart(56, 32, 28, 0, (d) => {
+    d.r(4, 0, 48, 4, C.head); d.r(2, 4, 52, 2, C.silver);                                   // 皮・フープ
+    d.r(2, 6, 52, 8, C.copper); d.r(5, 14, 46, 6, C.copper); d.r(10, 20, 36, 4, C.copper2); d.r(18, 24, 20, 3, C.copper2); // 椀
+    d.r(8, 8, 3, 10, '#d08c50');                                                            // 艶
+    d.r(10, 26, 3, 6, C.silver2); d.r(43, 26, 3, 6, C.silver2); d.r(26, 27, 4, 5, C.silver2); // 脚
+    d.r(24, 30, 8, 2, C.black);                                                             // ペダル
+  }, { res: 2, depth: 56, z0: 0,
+       side: (d) => { d.r(4, 0, 48, 4, F); d.r(2, 4, 52, 2, F); d.r(2, 6, 52, 8, F); d.r(5, 14, 46, 6, F); d.r(10, 20, 36, 4, F); d.r(18, 24, 20, 3, F); d.r(10, 26, 3, 6, F); d.r(43, 26, 3, 6, F); d.r(26, 27, 4, 5, F); },
+       top: (d) => { d.disc(28, 28, 27, F); } }),
+  // スネア 32×20：皮・フープ・クロームの胴とラグ・脚
+  snare: () => makePart(32, 20, 16, 0, (d) => {
+    d.r(4, 0, 24, 3, C.head); d.r(2, 3, 28, 2, C.silver);
+    d.r(3, 5, 26, 10, C.silver); for (let x = 5; x < 30; x += 7) d.r(x, 6, 2, 8, C.silver2); // 胴・ラグ
+    d.r(2, 15, 28, 2, C.silver);
+    d.r(10, 17, 2, 3, C.silver2); d.r(20, 17, 2, 3, C.silver2); d.r(15, 17, 2, 3, C.silver2);
+  }, { res: 2, depth: 32, z0: 0,
+       side: (d) => { d.r(4, 0, 24, 3, F); d.r(2, 3, 28, 2, F); d.r(3, 5, 26, 10, F); d.r(2, 15, 28, 2, F); d.r(10, 17, 2, 3, F); d.r(20, 17, 2, 3, F); },
+       top: (d) => { d.disc(16, 16, 15, F); } }),
+  // シンバル 36×8：カップ・薄い円盤（上から見て丸い）・スタンド
+  cymbal: () => makePart(36, 8, 18, 0, (d) => { d.r(14, 0, 8, 1, C.gold2); d.r(12, 1, 12, 1, C.gold); d.r(0, 2, 36, 3, C.gold); d.r(2, 4, 32, 1, C.gold2); d.r(17, 5, 2, 3, C.silver2); },
+    { res: 2, depth: 36, z0: -18, side: (d) => { d.r(14, 0, 8, 1, F); d.r(12, 1, 12, 1, F); d.r(0, 2, 36, 3, F); d.r(17, 5, 2, 3, F); }, top: (d) => { d.disc(18, 18, 17, F); } }),
+  // マレット類（2倍解像度。頭は球）
+  mallet: () => makePart(6, 28, 3, 0, (d) => { d.r(2, 0, 2, 21, C.wood2); d.disc(3, 24, 3, C.ivory); },
+    { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 21, F); d.disc(3, 24, 3, F); }, top: (d) => { d.disc(3, 3, 3, F); } }),
+  bigmallet: () => makePart(10, 32, 5, 0, (d) => { d.r(4, 0, 2, 22, C.wood2); d.disc(5, 27, 5, C.white); d.r(3, 24, 1, 4, '#e6e6e6'); },
+    { res: 2, depth: 10, z0: -5, side: (d) => { d.r(4, 0, 2, 22, F); d.disc(5, 27, 5, F); }, top: (d) => { d.disc(5, 5, 5, F); } }),
+  stick: () => makePart(6, 28, 3, 0, (d) => { d.r(2, 0, 2, 26, C.wood); d.r(2, 26, 2, 2, '#c9a06a'); }, { res: 2, depth: 2, z0: -1 }),
+  // シロフォン 56×28：明るい木の音板 16 枚（左が長い）・フレーム・脚。pivot = 底中央
+  xylophone: () => makePart(56, 28, 28, 28, (d) => {
+    d.r(6, 20, 4, 8, C.silver2); d.r(46, 20, 4, 8, C.silver2);                             // 脚
+    d.r(2, 18, 52, 3, C.wood2);                                                             // フレーム
+    for (let i = 0; i < 16; i++) { const h = 14 - Math.floor(i / 2); d.r(4 + i * 3, 18 - h, 2, h, i % 2 ? '#e8c98a' : '#d9b46e'); } // 音板
+  }, { res: 2, depth: 20, z0: 0, side: (d) => { d.r(2, 4, 16, 14, F); d.r(0, 18, 20, 3, F); d.r(4, 21, 4, 7, F); d.r(12, 21, 4, 7, F); }, top: (d) => { d.r(2, 0, 52, 20, F); } }),
+  // マリンバ 72×36：紫檀の音板 22 枚・下に共鳴管・フレーム・脚。pivot = 底中央
+  marimba: () => makePart(72, 36, 36, 36, (d) => {
+    d.r(6, 28, 4, 8, C.silver2); d.r(62, 28, 4, 8, C.silver2);                             // 脚
+    for (let i = 0; i < 22; i++) { const len = 12 - Math.floor(i * 7 / 21); d.r(4 + i * 3, 23, 2, len, C.silver); } // 共鳴管
+    d.r(2, 20, 68, 3, C.wood2);                                                             // フレーム
+    for (let i = 0; i < 22; i++) { const h = 18 - Math.floor(i * 10 / 21); d.r(4 + i * 3, 20 - h, 2, h, i % 2 ? '#7a3b2e' : '#8f4636'); } // 音板
+  }, { res: 2, depth: 24, z0: 0, side: (d) => { d.r(2, 2, 20, 18, F); d.r(0, 20, 24, 3, F); d.r(4, 23, 16, 12, F); d.r(4, 28, 4, 8, F); d.r(16, 28, 4, 8, F); }, top: (d) => { d.r(2, 0, 68, 24, F); } }),
+  // グランカッサ 52×60：正面向きの大太鼓（白い皮・木の胴・フープ・ラグ・スタンド）。pivot = 底中央
+  bassdrum: () => makePart(52, 60, 26, 60, (d) => {
+    d.r(22, 48, 8, 12, C.silver2); d.r(8, 56, 36, 4, C.silver2);                            // スタンド
+    d.disc(26, 26, 25, C.wood2);                                                            // 胴
+    d.disc(26, 26, 21, C.head); d.ring(26, 26, 12, '#e4dcc8');                              // 皮
+    d.ring(26, 26, 22, C.silver); d.ring(26, 26, 23, C.silver);                             // フープ
+    for (let a = 0; a < 10; a++) { const x = 26 + Math.round(24 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(24 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 2, 2, C.gold2); } // ラグ
+  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 1, 16, 50, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); } }),
 
-  piano: () => makePart(40, 26, 20, 26, (d) => {
-    d.r(4, 0, 32, 4, C.black); d.r(6, 1, 28, 1, C.coat2);     // 蓋
-    d.r(0, 4, 40, 10, C.black);
-    d.r(2, 14, 36, 3, C.white); for (let x = 3; x < 38; x += 3) d.p(x, 14, C.black); // 鍵盤
-    d.r(0, 17, 40, 1, C.black);
-    d.r(3, 18, 2, 8, C.black); d.r(35, 18, 2, 8, C.black); d.r(19, 18, 2, 8, C.black);
-  }, { depth: 30, side: SIDE.piano }),
-  harp: () => makePart(22, 36, 11, 36, (d) => {
-    d.r(2, 0, 3, 34, C.gold); d.r(1, 0, 4, 2, C.gold2);
-    d.line(4, 2, 20, 12, C.gold); d.line(4, 3, 20, 13, C.gold);
-    d.r(3, 26, 18, 8, C.wood); d.r(2, 34, 20, 2, C.wood2);
-    for (let x = 6; x <= 19; x += 2) { const yt = 3 + Math.round((x - 4) * 0.62); d.r(x, yt, 1, 27 - yt, C.silver); }
-  }, { depth: 6, side: SIDE.harp }),
+  // ---- 鍵盤・ハープ（2倍解像度）----
+  // チェレスタ 52×60：小さなアップライト型。上部パネル・鍵盤（手前に張り出す）・脚・ペダル。pivot = 底中央
+  celesta: () => makePart(52, 60, 26, 60, (d) => {
+    d.r(4, 0, 44, 52, C.wood); d.r(6, 2, 40, 22, C.wood2); d.r(8, 4, 36, 18, '#4a2410');    // 筐体・上部パネル
+    d.r(2, 26, 48, 3, C.wood2);                                                             // 鍵盤蓋の縁
+    d.r(6, 29, 40, 6, C.white); for (let i = 0; i < 13; i++) { if ([0, 1, 3, 4, 5].includes(i % 7)) d.r(8 + i * 3, 29, 2, 4, C.black); } // 鍵盤
+    d.r(6, 35, 40, 2, C.black); d.r(6, 38, 40, 12, C.wood2);                                // 鍵盤の台・下のパネル
+    d.r(6, 52, 4, 8, C.wood2); d.r(42, 52, 4, 8, C.wood2);                                  // 脚
+    d.r(22, 54, 8, 4, C.gold2);                                                             // ペダル
+  }, { res: 2, depth: 20, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(14, 26, 6, 10, F); d.r(2, 52, 4, 8, F); d.r(10, 52, 4, 8, F); }, top: (d) => { d.r(4, 0, 44, 16, F); d.r(6, 14, 40, 6, F); },
+       back: { [C.white]: C.wood, [C.black]: C.wood, '#4a2410': C.wood2, [C.gold2]: C.wood } }),
+  // グランドピアノ 80×52：蓋・胴（上から見て翼型）・鍵盤（白鍵 24・黒鍵はオクターブ配列）・脚 3 本・ペダル。pivot = 底中央
+  piano: () => makePart(80, 52, 40, 52, (d) => {
+    d.r(8, 0, 64, 8, C.black); d.r(10, 1, 60, 2, C.coat2);                                  // 蓋
+    d.r(0, 8, 80, 20, C.black); d.r(2, 10, 76, 1, C.coat2); d.r(4, 26, 72, 2, C.coat2);     // 胴・艶・鍵盤蓋
+    d.r(4, 28, 72, 6, C.white); for (let i = 0; i < 24; i++) { if ([0, 1, 3, 4, 5].includes(i % 7)) d.r(6 + i * 3, 28, 2, 4, C.black); } // 鍵盤
+    d.r(2, 34, 76, 2, C.black);                                                             // 鍵盤の台
+    d.r(6, 36, 4, 16, C.black); d.r(70, 36, 4, 16, C.black); d.r(22, 36, 4, 16, C.black);   // 脚（鍵盤側 2 本＋尾部 1 本。どれをどの奥行きに残すかは carve）
+    d.r(39, 36, 2, 4, C.black); d.r(38, 40, 4, 6, C.black); d.r(36, 46, 8, 3, C.gold2);     // ペダルのリラ（支柱・リラ・ペダル）
+  }, { res: 2, depth: 60, z0: 0,
+       side: (d) => { d.r(0, 0, 44, 8, F); d.r(0, 8, 60, 20, F); d.r(50, 28, 10, 8, F); d.r(2, 36, 4, 16, F); d.r(54, 36, 4, 16, F); d.r(54, 36, 6, 13, F); },
+       top: (d) => { d.r(0, 30, 80, 30, F); for (let z = 0; z < 30; z++) d.r(0, z, Math.round(80 - (29 - z) * 1.6), 1, F); }, // 鍵盤側は全幅、奥（尾部）ほど細い翼型
+       // 脚：鍵盤側（z ≥ 50）は x=6・70 の 2 本、尾部（z < 10）は x=22 の 1 本。リラは鍵盤側だけ
+       carve: (x, y, z) => y >= 36 && ((z >= 50 && x >= 22 && x < 26) || (z < 10 && (x < 10 || (x >= 36 && x < 44)))),
+       back: { [C.white]: C.black, [C.coat2]: C.black, [C.gold2]: C.black } }),
+  // ハープ 44×72：柱・湾曲したネック・弦（C 弦は赤）・共鳴胴（下ほど深い）・台座。pivot = 底中央
+  harp: () => makePart(44, 72, 22, 72, (d) => {
+    const neckY = (x) => 2 + Math.round(Math.pow((x - 8) / 33, 1.3) * 26);
+    const boxAt = (y) => ({ x0: 10 + Math.round((68 - y) * 12 / 28), w: 32 - Math.round((68 - y) * 24 / 28) });
+    for (let y = 40; y < 68; y++) { const b = boxAt(y); d.r(b.x0, y, b.w, 1, C.wood); d.p(b.x0, y, C.wood2); d.p(b.x0 + b.w - 1, y, C.wood2); } // 共鳴胴
+    for (let x = 12; x <= 40; x += 2) { const yt = neckY(x) + 4; let yb = 68; for (let y = 40; y < 68; y++) { const b = boxAt(y); if (x >= b.x0 && x < b.x0 + b.w) { yb = y; break; } } d.r(x, yt, 1, yb - yt, x % 14 === 0 ? '#e05050' : C.silver); } // 弦
+    for (let x = 8; x < 42; x++) d.r(x, neckY(x), 1, 4, C.gold);                            // ネック
+    d.r(4, 0, 6, 66, C.gold); d.r(6, 2, 1, 62, '#c99a2f'); d.r(2, 0, 10, 4, C.gold2); d.r(2, 62, 10, 6, C.gold2); // 柱・柱頭・柱脚
+    d.r(2, 68, 42, 4, C.wood2);                                                             // 台座
+  }, { res: 2, depth: 12, z0: 0,
+       side: (d) => { d.r(3, 0, 6, 4, F); d.r(4, 0, 4, 32, F); d.r(5, 0, 2, 68, F); for (let y = 40; y < 68; y++) { const w = 4 + Math.round((y - 40) * 8 / 28); d.r(Math.round(6 - w / 2), y, w, 1, F); } d.r(0, 68, 12, 4, F); },
+       top: (d) => { d.r(2, 3, 10, 6, F); d.r(10, 0, 34, 12, F); } }),
   baton: () => makePart(24, 1, 0, 0, (d) => { d.r(0, 0, 24, 1, C.ivory); d.r(0, 0, 4, 1, C.black); }, { res: 2, depth: 1, z0: -0.5 }),
 };
 
