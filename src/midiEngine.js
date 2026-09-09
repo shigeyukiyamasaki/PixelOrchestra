@@ -288,9 +288,10 @@ export class MidiEngine {
   }
 
   // ---- トラック統合 ----
-  // 自動：楽器が同じで、末尾サフィックス（_HW / _CB 等）を除いた名前が一致する先行トラックへ統合
-  //（Trumpets_HW + Trumpets_CB → 1 セクション。Violins 1_HW と Violins 2_HW は別）
-  static baseName(name) { return name.replace(/_[^_]*$/, '').trim().toLowerCase(); }
+  // 自動：楽器が同じで、末尾サフィックス（_HW / _CB 等）と「+N」を除いた名前が一致する先行トラックへ統合
+  //（Trumpets_HW + Trumpets_CB + Trumpets +3_CB → 1 セクション。Violins 1_HW と Violins 2_HW は別）
+  // 末尾サフィックス（_HW 等）と「+3」のような追加人数の表記を除いた基底名（"Trumpets +3_CB" → "trumpets"）
+  static baseName(name) { return name.replace(/_[^_]*$/, '').replace(/\s*\+\s*\d+\s*$/, '').trim().toLowerCase(); }
   _resolveMerges() {
     const byName = new Map(this.sources.map((s) => [s.name, s]));
     for (const src of this.sources) {
