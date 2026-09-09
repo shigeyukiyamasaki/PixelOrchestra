@@ -13,9 +13,10 @@ export const ROWS = {
   woodwind:   { r: 15,   h: 1.0,  span: 90 },
   brass:      { r: 19,   h: 2.0,  span: 100 },
   percussion: { r: 23,   h: 3.0,  span: 110 },
-  keyboard:   { r: 19,   h: 2.0,  span: 0, edge: true }, // 金管ひな壇の両端
-  // コントラバスは弦の後ろ・チェロの後ろ、ひな壇なしで床に立つ（2026-09-09 ユーザー指定）。木管の扇と重ならないよう少し外側へ
-  contrabass: { r: 13.5, h: 0,    span: 0, behind: 'cello', fallbackDeg: 55, angleOffsetDeg: 8 },
+  // コントラバスは弦の後ろ・チェロ（一番右）の後ろ、鍵盤系（ハープ/ピアノ/チェレスタ）はその左右対称＝第1バイオリン（一番左）の後ろ。
+  // どちらも床に立つ（ひな壇なし）。木管の扇と重ならないよう少し外側へ（2026-09-09 ユーザー指定）
+  contrabass: { r: 13.5, h: 0,    span: 0, behind: 'cello',  refPick: 'max', fallbackDeg: 58,  angleOffsetDeg: 8 },
+  keyboard:   { r: 13.5, h: 0,    span: 0, behind: 'violin', refPick: 'min', fallbackDeg: -58, angleOffsetDeg: -8 },
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -34,7 +35,6 @@ function rowKeyOf(track) {
   return track.variant === 'contrabass' ? 'contrabass' : track.family;
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
-const KEYBOARD_ANGLE = 72; // 鍵盤/ハープを置く角度 [deg]（左右交互）
 
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
@@ -198,7 +198,6 @@ export function layoutSeats(tracks) {
   const byFam = {};
   for (const tr of tracks) (byFam[rowKeyOf(tr)] ||= []).push(tr);
   const seats = [];
-  let kbCount = 0;
   const centerAngle = new Map(); // track → 列内の中心角（後ろに置く楽器の基準）
 
   // 「behind」指定の列は基準になる列の後で処理する
@@ -216,17 +215,6 @@ export function layoutSeats(tracks) {
       return b.meanPitch - a.meanPitch;
     });
 
-    if (row.edge) { // 鍵盤/ハープは両端に交互配置
-      for (const tr of list) {
-        const side = kbCount % 2 ? 1 : -1;
-        const extra = Math.floor(kbCount / 2) * 6; // 3人目以降は角度を内側へ
-        const th = deg(side * (KEYBOARD_ANGLE - extra));
-        seats.push({ track: tr, puppets: 1, positions: [seatPos(row, th)] });
-        kbCount++;
-      }
-      continue;
-    }
-
     // 各トラックの人数（横×奥行き）。列の角度幅に収まらない時は横の人数を均等に減らす
     const sizes = list.map((tr) => ({ ...(SECTION_SIZE[tr.variant] || { cols: 1, rows: 1 }) }));
     const span = deg(row.span);
@@ -242,8 +230,8 @@ export function layoutSeats(tracks) {
     // 各トラックの中心角を決める（角度幅は人数に比例）
     let centers;
     if (row.behind) { // 基準楽器（チェロ）の真後ろに並べる。無ければ既定角
-      const ref = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t));
-      const refAngle = ref.length ? ref.reduce((a, t) => a + centerAngle.get(t), 0) / ref.length : deg(row.fallbackDeg);
+      const refs = tracks.filter((t) => t.variant === row.behind && centerAngle.has(t)).map((t) => centerAngle.get(t));
+      const refAngle = refs.length ? (row.refPick === 'min' ? Math.min(...refs) : Math.max(...refs)) : deg(row.fallbackDeg);
       const base = refAngle + deg(row.angleOffsetDeg || 0);
       const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
       let cursor = base - total / 2;
