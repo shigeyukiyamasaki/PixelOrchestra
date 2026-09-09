@@ -337,9 +337,16 @@ $('playBtn').addEventListener('click', () => (clock.playing ? pause() : play()))
 $('stopBtn').addEventListener('click', () => { pause(); seek(0); });
 $('seek').addEventListener('input', (e) => seek(parseInt(e.target.value, 10) / 100));
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-  if (e.code === 'Space') { e.preventDefault(); clock.playing ? pause() : play(); }
+  if (e.code !== 'Space') return;
+  // 文字/数値入力とプルダウンの中だけはスペースを通す。ファイル選択・ボタン・スライダーにフォーカスがあっても再生/停止にする
+  const el = e.target;
+  const typing = (el.tagName === 'INPUT' && ['text', 'number', 'search'].includes(el.type)) || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA';
+  if (typing) return;
+  e.preventDefault();
+  clock.playing ? pause() : play();
 });
+// ファイル選択後はフォーカスを外す（残っているとスペースがファイルダイアログに取られる）
+for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
 $('resetCam').addEventListener('click', () => {
