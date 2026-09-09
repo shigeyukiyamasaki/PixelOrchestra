@@ -168,7 +168,7 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
  * 体（燕尾服・立ち姿）2 倍解像度 32×68（基本グリッド 16×34 相当）、pivot = 足元中央。
  * 側面図：胸が厚く腰が細く、脚は薄い。奥行き 12（基本 6）
  */
-export function body(accent = '#c03030') {
+export function bodyHiRes(accent = '#c03030') {
   const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat, [C.coat2]: C.coat2 };
   const front = (d) => {
     d.r(12, 10, 8, 6, C.skin);                                  // 首
@@ -201,10 +201,20 @@ export function body(accent = '#c03030') {
   return makePart(32, 68, 16, 68, front, { res: 2, depth: 12, z0: -6, back, accent, side });
 }
 
-/** 旧・体（基本グリッド 16×34）。参考用に残す */
-export function bodyLegacy(accent = '#c03030') {
+/**
+ * 体（燕尾服・立ち姿）16×34、pivot = 足元中央。ディテールは少なめ（2026-09-09 ユーザー判断：中途半端な描き込みより簡素な方が良い）。
+ * 側面図で「胸が厚く腰が細く脚が薄い」立体だけ与える。奥行き 6
+ */
+export function body(accent = '#c03030') {
   // 背面：シャツ・蝶ネクタイは表だけ（後ろから見たら上着の色）
   const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat };
+  const side = (d) => {
+    d.r(2, 5, 3, 3, C.skin);      // 首
+    d.r(0, 8, 6, 6, C.coat);      // 胸
+    d.r(1, 14, 4, 7, C.coat);     // 腹〜腰
+    d.r(1, 21, 4, 11, C.coat2);   // 脚
+    d.r(0, 32, 6, 2, C.shoe);     // 靴
+  };
   return makePart(16, 34, 8, 34, (d) => {
     d.r(6, 5, 4, 3, C.skin);                 // 首
     d.r(3, 8, 10, 13, C.coat);               // 上着
@@ -214,11 +224,11 @@ export function bodyLegacy(accent = '#c03030') {
     d.r(3, 21, 4, 4, C.coat); d.r(9, 21, 4, 4, C.coat); // 燕尾
     d.r(4, 21, 3, 11, C.coat2); d.r(9, 21, 3, 11, C.coat2); // ズボン
     d.r(3, 32, 4, 2, C.shoe); d.r(9, 32, 4, 2, C.shoe);   // 靴
-  }, { depth: 6, z0: -3, back, accent });
+  }, { depth: 6, z0: -3, back, accent, side });
 }
 
-/** 頭 2 倍解像度 24×24（基本 12×12 相当）、pivot = 首の付け根中央。側面図で前後に丸める */
-export function head(seed = 0, back = false) {
+/** 頭（高解像度版・未採用）24×24 */
+export function headHiRes(seed = 0, back = false) {
   const hair = HAIR[seed % HAIR.length];
   const backMap = { [C.skin]: hair, [C.skin2]: hair, [C.eye]: hair, '#ffffff': hair };
   const styleId = seed % 4; // 髪型の種類
@@ -250,11 +260,15 @@ export function head(seed = 0, back = false) {
   return makePart(24, 24, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `${hair}${styleId}${back}`, side });
 }
 
-/** 旧・頭 12×12 */
-export function headLegacy(seed = 0, back = false) {
+/** 頭 12×12、pivot = 首の付け根中央。側面図で後頭部を丸める。奥行き 8 */
+export function head(seed = 0, back = false) {
   const hair = HAIR[seed % HAIR.length];
   // 背面は髪の色（顔は正面だけ）
   const backMap = { [C.skin]: hair, [C.skin2]: hair, [C.eye]: hair };
+  const side = (d) => {
+    d.r(2, 0, 5, 1, hair); d.r(1, 1, 7, 4, hair); d.r(0, 2, 8, 3, hair); // 頭頂〜後頭部の丸み
+    d.r(0, 5, 8, 5, C.skin); d.r(1, 10, 7, 2, C.skin);                   // 顔〜あご
+  };
   return makePart(12, 12, 6, 12, (d) => {
     d.r(2, 3, 8, 9, back ? C.skin2 : C.skin);
     d.r(1, 1, 10, 4, hair);
@@ -262,18 +276,16 @@ export function headLegacy(seed = 0, back = false) {
     if (back) { d.r(2, 3, 8, 6, hair); return; }
     d.p(4, 7, C.eye); d.p(8, 7, C.eye);
     d.r(5, 10, 3, 1, C.skin2);
-  }, { depth: 8, z0: -4, back: backMap, accent: `${hair}${back}` });
+  }, { depth: 8, z0: -4, back: backMap, accent: `${hair}${back}`, side });
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
 export function upperArm() {
-  // 10×18（基本 5×9 相当）、pivot = 肩。奥行き 6
-  return makePart(10, 18, 4, 2, (d) => { d.r(2, 0, 6, 18, C.coat); d.r(2, 0, 1, 18, C.coat2); d.r(3, 0, 4, 1, C.coat2); }, { res: 2, depth: 6, z0: -3 });
+  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); }, { depth: 3, z0: -1.5 });
 }
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
-  // 10×20（基本 5×10 相当）、pivot = 肘。袖口の白と手
-  return makePart(10, 20, 4, 2, (d) => { d.r(2, 0, 6, 12, C.coat); d.r(2, 0, 1, 12, C.coat2); d.r(2, 12, 6, 2, C.shirt); d.r(2, 14, 6, 6, C.skin); d.r(2, 15, 1, 5, C.skin2); }, { res: 2, depth: 6, z0: -3 });
+  return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
 
 /** 腕 5×16、pivot = 肩（上端中央）。垂らした状態で描く */
@@ -288,18 +300,11 @@ export function arm() {
 // それぞれ [mesh] を返す。pivot は「体に取り付ける点」または「手に持つ点」。
 
 export const INSTRUMENT = {
-  // バイオリン 28×16（基本 14×8 相当）、pivot = 胴の中央。下部・くびれ・上部のふくらみ、f 字孔、指板、渦巻き
-  violin: () => makePart(28, 16, 14, 8, (d) => {
-    d.r(3, 3, 7, 10, C.wood); d.r(2, 5, 9, 6, C.wood); d.r(4, 2, 5, 12, C.wood);      // 下部のふくらみ
-    d.r(9, 5, 3, 6, C.wood);                                                          // くびれ
-    d.r(11, 3, 6, 10, C.wood); d.r(10, 5, 8, 6, C.wood); d.r(12, 2, 4, 12, C.wood);   // 上部のふくらみ
-    d.r(5, 4, 1, 8, '#a0623c'); d.r(15, 4, 1, 8, '#a0623c');                          // 艶
-    d.p(7, 6, C.black); d.p(7, 9, C.black); d.p(13, 6, C.black); d.p(13, 9, C.black); // f 字孔
-    d.r(10, 7, 16, 2, C.black);                                                       // 指板
-    d.r(17, 7, 9, 2, C.wood2);                                                        // ネック
-    d.r(25, 5, 3, 5, C.wood2); d.p(26, 6, C.wood);                                    // 渦巻き
-    d.p(9, 8, C.ivory);                                                               // 駒
-  }, { res: 2, depth: 4, z0: -2 }),
+  violin: () => makePart(14, 8, 7, 4, (d) => {
+    d.r(3, 1, 6, 6, C.wood); d.r(2, 2, 8, 4, C.wood); d.r(1, 3, 2, 2, C.wood);
+    d.r(9, 3, 5, 1, C.wood2); d.p(13, 2, C.wood2);
+    d.r(4, 3, 5, 1, C.black);
+  }),
   viola: () => makePart(16, 9, 8, 4, (d) => {
     d.r(3, 1, 7, 7, C.wood2); d.r(2, 2, 9, 5, C.wood2); d.r(1, 3, 2, 3, C.wood2);
     d.r(10, 4, 6, 1, C.wood); d.p(15, 3, C.wood);
@@ -317,7 +322,7 @@ export const INSTRUMENT = {
     d.r(6, 9, 2, 24, C.black);
     d.r(6, 34, 2, 4, C.silver);
   }),
-  bow: () => makePart(40, 4, 2, 2, (d) => { d.r(0, 1, 40, 1, C.wood2); d.r(2, 2, 36, 1, C.ivory); d.r(0, 0, 3, 4, C.black); d.p(39, 1, C.ivory); }, { res: 2, depth: 2, z0: -1 }),
+  bow: () => makePart(20, 2, 1, 1, (d) => { d.r(0, 0, 20, 1, C.wood2); d.r(1, 1, 18, 1, C.ivory); }),
 
   flute: () => makePart(20, 3, 1, 1, (d) => { d.r(0, 0, 20, 2, C.silver); for (let x = 6; x < 18; x += 3) d.p(x, 2, C.silver2); }),
   clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }),
