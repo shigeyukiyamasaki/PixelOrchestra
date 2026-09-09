@@ -1,0 +1,59 @@
+/* PixelOrchestra — 最終更新: 2026-09-09 / v0.1 / 生成元: PixelOrchestra */
+:root {
+  --bg: #0b0b16; --panel: #16162a; --panel2: #1f1f38; --text: #e8e8f0; --muted: #a0a0b8;
+  --accent: #e2b348; --line: #2c2c48;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif; font-size: 13px; }
+#view { position: fixed; inset: 0; width: 100vw; height: 100dvh; }
+#view canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+
+#panel { position: fixed; top: 12px; left: 12px; width: 320px; max-height: calc(100dvh - 24px); overflow-y: auto;
+  background: rgba(22, 22, 42, 0.92); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
+  backdrop-filter: blur(6px); transition: transform 0.2s; }
+body.panel-hidden #panel { transform: translateX(-360px); }
+#panelToggle { position: fixed; top: 12px; left: 344px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; transition: left 0.2s; }
+body.panel-hidden #panelToggle { left: 12px; }
+
+h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
+.hint { color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+.status { color: var(--muted); margin: 4px 0 12px; font-size: 12px; word-break: break-all; }
+
+label.file { display: block; margin-top: 8px; }
+label.file span { display: block; margin-bottom: 4px; }
+input[type=file] { width: 100%; color: var(--muted); }
+
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0 6px; }
+button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 12px; cursor: pointer; font-size: 13px; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 600; min-width: 110px; }
+.time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.seek { width: 100%; margin: 0 0 8px; }
+
+details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+.ctl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.ctl span b { color: var(--accent); font-weight: 600; margin-left: 4px; }
+.ctl select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.ctl input[type=number] { width: 100px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.chk { display: block; margin: 6px 0; }
+#resetCam { margin-top: 8px; }
+
+table.tracks { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.tracks th { text-align: left; color: var(--muted); font-weight: normal; padding: 2px 4px; }
+table.tracks td { padding: 3px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+table.tracks td.name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.tracks select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+tr.pitch-row td { border-top: none; padding: 0 4px 6px 24px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+tr.pitch-row input[type=number] { width: 44px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 11px; margin: 0 2px; }
+tr.pitch-row .note-name { display: inline-block; min-width: 26px; color: var(--accent); }
+tr.pitch-row .pitch-label { margin-right: 4px; }
+
+@media (max-width: 600px) {
+  #panel { width: calc(100vw - 24px); }
+  #panelToggle { left: auto; right: 12px; }
+}

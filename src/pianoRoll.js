@@ -1,0 +1,214 @@
+/*
+ * PixelOrchestra — pianoRoll.js
+ * 最終更新: 2026-09-09 / v0.2 / 生成元: PixelOrchestra
+ *
+ * 滝型ピアノロール。2 モード：
+ *   overhead: 各奏者（トラック）の頭上にノートが降ってきて頭の上で着弾する（既定）
+ *   wall:     後方の壁を上から下へ流れる（横軸 = 音程・全トラック共通）
+ * どちらも InstancedMesh 1つで全ノートを描く。
+ */
+import { WALL_Z, WALL_WIDTH, WALL_HEIGHT, WALL_BASE_Y } from './stage.js';
+import { PX } from './sprites.js';
+
+const FLASH_SEC = 0.12;       // 着弾後に明るく光る時間
+export const HEAD_Y = 52 * PX; // 頭上の着弾高さ（体 34px + 頭 12px + パート名ラベルの余白）
+// 頭上ロールの見える高さ [unit] と半音あたりの幅 [unit] は UI スライダーから毎フレーム渡される（update の opts）
+const DEFAULT_OVERHEAD_HEIGHT = 7;
+const DEFAULT_SEMITONE_W = 0.22;
+const COLUMN_EXTRA_MAX = 5;   // 列幅の上限 = 奏者の並び幅 + これ [unit]。超える音域は半音幅を詰めて収める
+
+export class PianoRoll {
+  constructor(scene, engine, camera) {
+    this.scene = scene;
+    this.engine = engine;
+    this.camera = camera;
+    this.notes = engine.allNotes;
+    this.group = new THREE.Group();
+    scene.add(this.group);
+    this.mode = 'overhead';
+
+    const lo = engine.minPitch - 1, hi = engine.maxPitch + 1;
+    this.pitchLo = lo;
+    this.semitoneW = WALL_WIDTH / (hi - lo + 1);
+
+    // ノート：底辺が pivot の 1×1 平面
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.translate(0, 0.5, 0);
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+    this.mesh = new THREE.InstancedMesh(geo, mat, this.notes.length);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.group.add(this.mesh);
+    // 初期状態は全ノート非表示（identity のままだと原点に 1×1 の板が出る）
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < this.notes.length; i++) { this.mesh.setMatrixAt(i, zero); this.mesh.setColorAt(i, new THREE.Color(0)); }
+    this.mesh.instanceMatrix.needsUpdate = true;
+
+    this._color = new THREE.Color();
+    this._white = new THREE.Color(1, 1, 1);
+    this._m = new THREE.Matrix4();
+    this._pos = new THREE.Vector3();
+    this._identityQ = new THREE.Quaternion();
+    this._scl = new THREE.Vector3();
+    this._yAxis = new THREE.Vector3(0, 1, 0);
+    this.columns = new Map(); // track → { x, y, z, width, yaw, quat, line }（setSeats で生成）
+    this.trackColors = new Map();
+    this.refreshColors();
+    this._lastVisible = new Set();
+    this.maxDurAll = Math.max(...this.notes.map((n) => n.duration));
+
+    // ---- 壁モードの装飾 ----
+    this.wallGroup = new THREE.Group();
+    this.group.add(this.wallGroup);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(WALL_WIDTH, 0.08), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+    line.position.set(0, WALL_BASE_Y, WALL_Z + 0.02);
+    this.wallGroup.add(line);
+    const octMat = new THREE.MeshBasicMaterial({ color: '#2a2a48' });
+    for (let p = Math.ceil(lo / 12) * 12; p <= hi; p += 12) {
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.03, WALL_HEIGHT), octMat);
+      l.position.set(this._wallX(p) - this.semitoneW / 2, WALL_BASE_Y + WALL_HEIGHT / 2, WALL_Z);
+      this.wallGroup.add(l);
+    }
+
+    // ---- 頭上モードの装飾（トラックごとの着弾ライン。setSeats で生成）----
+    this.overheadGroup = new THREE.Group();
+    this.group.add(this.overheadGroup);
+    this.setMode(this.mode);
+  }
+
+  _wallX(midi) {
+    return -WALL_WIDTH / 2 + (midi - this.pitchLo + 0.5) * this.semitoneW;
+  }
+
+  /** トラック色の再取得（楽器割当を変えた後に呼ぶ） */
+  refreshColors() {
+    for (const tr of this.engine.tracks) this.trackColors.set(tr, new THREE.Color(tr.color));
+    for (const [tr, c] of this.columns) c.line.material.color.set(tr.color);
+  }
+
+  /**
+   * 頭上モードの列位置を座席から作る（配置が変わるたびに呼ぶ）
+   * @param {Array<{track, positions:[{x,y,z}]}>} seats  stage.layoutSeats() の戻り値
+   */
+  setSeats(seats) {
+    for (const c of this.columns.values()) { this.overheadGroup.remove(c.line); c.line.geometry.dispose(); c.line.material.dispose(); }
+    this.columns.clear();
+    for (const seat of seats) {
+      const ps = seat.positions;
+      const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length;
+      const cz = ps.reduce((a, p) => a + p.z, 0) / ps.length;
+      const first = ps[0], last = ps[ps.length - 1];
+      const spread = Math.hypot(last.x - first.x, last.z - first.z); // 同トラックの奏者の広がり
+      // 列幅 = 音域 × 半音幅（上限あり）は update で毎フレーム計算（半音幅がスライダーで変わるため）。線は幅 1 で作り scale.x で伸ばす
+      const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 0.05),
+        new THREE.MeshBasicMaterial({ color: seat.track.color, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+      );
+      line.position.set(cx, ps[0].y + HEAD_Y, cz);
+      this.overheadGroup.add(line);
+      this.columns.set(seat.track, { x: cx, y: ps[0].y + HEAD_Y, z: cz, spread, width: 1, yaw: 0, quat: new THREE.Quaternion(), line });
+    }
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+    this.wallGroup.visible = mode === 'wall';
+    this.overheadGroup.visible = mode === 'overhead';
+  }
+
+  /**
+   * @param {number} t 現在時刻 [s]
+   * @param {number} speed 落下速度 [unit/s]
+   * @param {object} opts { overheadHeight, semitoneW }（頭上モードの見える高さ・半音幅）
+   */
+  update(t, speed, opts = {}) {
+    const overhead = this.mode === 'overhead';
+    const overheadH = Number.isFinite(opts.overheadHeight) ? opts.overheadHeight : DEFAULT_OVERHEAD_HEIGHT;
+    const semitoneW = Number.isFinite(opts.semitoneW) ? opts.semitoneW : DEFAULT_SEMITONE_W;
+    const visibleH = overhead ? overheadH : WALL_HEIGHT;
+    const lookahead = visibleH / speed;   // 上端に見える未来 [s]
+    const tailSec = 0.5;                  // 着弾後も少しだけ残す
+    const notes = this.notes;
+    const mesh = this.mesh;
+    const zeroM = this._m.identity().scale(this._scl.set(0, 0, 0));
+
+    // 前フレームで表示していたものを一旦消す（表示範囲外になったものを確実に隠す）
+    for (const i of this._lastVisible) mesh.setMatrixAt(i, zeroM);
+    this._lastVisible.clear();
+
+    // 頭上モード：列ごとにカメラの方位へ向ける（円筒ビルボード）。着弾ラインも同じ向き
+    if (overhead) {
+      const cam = this.camera.position;
+      for (const [tr, c] of this.columns) {
+        const range = tr.maxPitch - tr.minPitch + 1;
+        c.width = Math.min(range * semitoneW, c.spread + COLUMN_EXTRA_MAX);
+        c.line.scale.x = c.width;
+        c.yaw = Math.atan2(cam.x - c.x, cam.z - c.z);
+        c.quat.setFromAxisAngle(this._yAxis, c.yaw);
+        c.line.quaternion.copy(c.quat);
+      }
+    }
+
+    // 表示対象：end > t - tail かつ time < t + lookahead。time 昇順なので二分探索で開始点を探す
+    let lo = 0, hi = notes.length;
+    const tMin = t - tailSec - this.maxDurAll;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (notes[mid].time < tMin) lo = mid + 1; else hi = mid; }
+
+    for (let i = lo; i < notes.length; i++) {
+      const n = notes[i];
+      if (n.time > t + lookahead) break;
+      if (n.end < t - tailSec) continue;
+
+      let baseY, x, z, w, quat;
+      if (overhead) {
+        const c = this.columns.get(n.track);
+        if (!c) continue;
+        const tr = n.track;
+        const range = tr.maxPitch - tr.minPitch + 1;
+        const semi = c.width / range; // 通常は SEMITONE_W。列幅上限に当たった時だけ詰まる
+        w = semi * 0.9;
+        const localX = -c.width / 2 + (n.midi - tr.minPitch + 0.5) * semi; // 列の中で音程を横に展開
+        // 列のビルボード回転（yaw）に合わせて横オフセットを世界座標へ（y 回転で x→(cos, 0, -sin)）
+        x = c.x + Math.cos(c.yaw) * localX;
+        z = c.z - Math.sin(c.yaw) * localX;
+        baseY = c.y;
+        quat = c.quat;
+      } else {
+        x = this._wallX(n.midi); z = WALL_Z; baseY = WALL_BASE_Y;
+        w = this.semitoneW * 0.85;
+        quat = this._identityQ;
+      }
+
+      const yBottom = baseY + (n.time - t) * speed;
+      const h = n.duration * speed;
+      // 着弾ライン以下は切り詰める（過去部分は描かない＝発音中は消費されて縮む）
+      const clipBottom = Math.max(yBottom, baseY);
+      const clipTop = Math.min(yBottom + h, baseY + visibleH);
+      if (clipTop <= clipBottom) continue;
+
+      this._pos.set(x, clipBottom, z);
+      this._scl.set(w, clipTop - clipBottom, 1);
+      this._m.compose(this._pos, quat, this._scl);
+      mesh.setMatrixAt(i, this._m);
+
+      // 色：未来 = トラック色、発音中 = 明るく、直後 = 白フラッシュ
+      const c = this._color.copy(this.trackColors.get(n.track));
+      if (t >= n.time && t < n.end) {
+        const flash = t - n.time < FLASH_SEC ? 1 : 0;
+        c.lerp(this._white, 0.15 + 0.7 * flash); // 発音中はやや明るく、着弾直後だけ白く
+      } else if (t < n.time) {
+        c.multiplyScalar(0.55 + 0.45 * n.velocity);
+      }
+      mesh.setColorAt(i, c);
+      this._lastVisible.add(i);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  setVisible(v) { this.group.visible = v; }
+
+  dispose() {
+    this.scene.remove(this.group);
+    this.group.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+  }
+}

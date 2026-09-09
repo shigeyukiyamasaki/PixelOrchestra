@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+# ユーザーの MIDI・音声はコミットしない（samples/ のテスト生成物のみ追跡）
+*.mp3
+*.wav
+*.m4a
