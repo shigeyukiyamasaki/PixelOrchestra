@@ -17,6 +17,7 @@ const FORE_NOHAND = 6, HAND_LEN = 4; // 手首あり版：前腕 6 ＋ 手 4（�
 // 肩の位置：上着の上端の角（x=±5.5, y=25.5）。以前の (±6, 30) は体の外側かつ上で、腕が胴から離れて見えた（2026-09-09 修正）
 const SHOULDER = { L: [-5.5, 25.5, 0], R: [5.5, 25.5, 0] };
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
+const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
 // 本人の右手は forward×up = -x なので、rig 全体を x 反転して右利きにする（2026-09-09 ユーザー指摘：全員左利きだった）
 const MIRROR = -1;
@@ -189,10 +190,10 @@ export class Puppet {
     this.group.add(this.rig);
     // 腰（背骨 1 関節）：上半身・頭・腕・楽器はこの下にぶら下がる。pivot は腰（y=13）。関節拡張の試作（バイオリン系のみ回す）
     this.spine = new THREE.Group();
-    this.spine.position.set(0, 13 * PX, 0);
+    this.spine.position.set(0, SPINE_Y * PX, 0);
     this.rig.add(this.spine);
-    this.upper = new THREE.Group();   // spine の子。座標は rig と同じ px で書けるよう -13 戻す
-    this.upper.position.set(0, -13 * PX, 0);
+    this.upper = new THREE.Group();   // spine の子。座標は rig と同じ px で書けるよう -SPINE_Y 戻す
+    this.upper.position.set(0, -SPINE_Y * PX, 0);
     this.spine.add(this.upper);
     this.hasWrist = !!this.cfg.wrist;
 
@@ -341,14 +342,15 @@ export class Puppet {
     const energy = st.energy;
 
     // 共通：呼吸と拍に同期した体の揺れ
-    this.rig.scale.set(MIRROR, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
+    // 揺れ・呼吸・上下動は腰（spine）から上だけ。下半身と椅子は動かない（2026-09-09 ユーザー指定）
+    this.rig.scale.set(MIRROR, 1, 1);
     const swayAmt = Math.sin(Math.PI * beat.beat + this.phase) * 0.07 * (0.25 + 0.75 * energy) * settings.sway;
-    this.rig.rotation.z = swayAmt;
+    this.spine.rotation.set(0, 0, swayAmt);
+    this.spine.scale.set(1, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
+    this.spine.position.y = SPINE_Y * PX;
     this.headPivot.rotation.z = swayAmt * 0.6;
     this.headPivot.rotation.y = 0;
     this.headPivot.rotation.x = 0;
-    this.spine.rotation.set(0, 0, 0);
-    this.rig.position.y = 0;
 
     switch (this.family) {
       case 'strings': this._strings(st, ctx); break;
@@ -419,9 +421,9 @@ export class Puppet {
     if (cfg.spine) { // 腰：強いほど前傾（楽器へ入り込む）、弓の進行方向へわずかに傾く
       this._lean = approach(this._lean ?? 0, 0.16 * energy, 6, dt);
       this.spine.rotation.x = this.flat ? 0 : this._lean;
-      this.spine.rotation.z = MIRROR * 0.03 * this.bowDir * clamp(energy, 0, 1);
-      if (this.flat) this.rig.scale.y *= 1 - 0.025 * energy;
-    } else this.rig.scale.y *= 1 - 0.025 * energy; // 前傾
+      this.spine.rotation.z += MIRROR * 0.03 * this.bowDir * clamp(energy, 0, 1);
+      if (this.flat) this.spine.scale.y *= 1 - 0.025 * energy;
+    } else this.spine.scale.y *= 1 - 0.025 * energy; // 前傾
     if (cfg.gaze && !this.flat) { // 視線：休符・出だしの直前は指揮者を見る（正面）、弾いている間は楽器の方（左下）を見る
       const wantConductor = (!active.length && (age > 0.5 || (next && toNext < 1.0)));
       this._gaze = approach(this._gaze ?? 0, wantConductor ? 0 : 1, 4, dt);
@@ -446,8 +448,8 @@ export class Puppet {
     if (next && !active.length && toNext < 0.35) breath = 1 - toNext / 0.35;
     this._breath = approach(this._breath, breath, 12, dt);
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
-    this.rig.position.y = (0.5 * this._breath - 0.9 * attack) * PX;
-    this.rig.scale.x = MIRROR * (1 + 0.05 * this._breath + 0.05 * energy);
+    this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack) * PX;
+    this.spine.scale.x = 1 + 0.05 * this._breath + 0.05 * energy;
 
     // 楽器の角度（種類別）。回転はスプライト面内（ローカル z 軸）。3D 姿勢でもローカル z 回転で「ベルが上がる」になる
     let lift = 0;
@@ -573,7 +575,7 @@ export class Puppet {
     this.setHand('L', [lerp(restL[0], mirror[0], w), lerp(restL[1], mirror[1], w), lerp(restL[2], mirror[2], w)], dt, 18);
     const nod = ph < 0.15 ? (1 - ph / 0.15) * 0.15 * g : 0;
     this.headPivot.rotation.z += -nod;
-    this.rig.rotation.z = Math.sin(Math.PI * beat.beat * 0.5) * 0.06 * (0.3 + 0.7 * g) * settings.sway;
-    this.rig.position.y = -0.02 * (1 - ph) * g;
+    this.spine.rotation.z = Math.sin(Math.PI * beat.beat * 0.5) * 0.06 * (0.3 + 0.7 * g) * settings.sway;
+    this.spine.position.y = (SPINE_Y - 0.3 * (1 - ph) * g) * PX;
   }
 }
