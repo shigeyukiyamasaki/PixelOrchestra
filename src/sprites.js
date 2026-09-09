@@ -123,14 +123,16 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
   const filledSide = (z, y) => !sd || (z >= 0 && z < depth && y >= 0 && y < h && sd[(y * depth + z) * 4 + 3] > 127);
   // 3 次元の占有：正面図 AND 側面図。z は 0..depth-1（0 = 背面側）
   const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y);
+  const filledBehind = (x, y, z) => { for (let k = 0; k < z; k++) if (filled(x, y, k)) return true; return false; };
   const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
+  // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
+  const backEntries = back ? Object.entries(back).map(([k, v]) => { const a = parseInt(k.slice(1), 16), b = parseInt(v.slice(1), 16); return [[(a >> 16) & 255, (a >> 8) & 255, a & 255], [((b >> 16) & 255) / 255, ((b >> 8) & 255) / 255, (b & 255) / 255]]; }) : [];
   const backColor = (x, y) => {
     const i = (y * w + x) * 4;
-    const hex = '#' + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('');
-    const to = back && back[hex];
-    if (!to) return colorAt(x, y);
-    const n = parseInt(to.slice(1), 16);
-    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+    for (const [k, v] of backEntries) {
+      if (Math.abs(d[i] - k[0]) <= 6 && Math.abs(d[i + 1] - k[1]) <= 6 && Math.abs(d[i + 2] - k[2]) <= 6) return v;
+    }
+    return colorAt(x, y);
   };
   const pos = [], nor = [], col = [];
   const quad = (a, b, c, e, n, rgb) => { // 4 頂点（反時計回り）→ 2 三角形
@@ -147,8 +149,9 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
       const zb = z0 + z, zf = zb + 1;
       const front = z === depth - 1 || !filled(px, py, z + 1);
       const backF = z === 0 || !filled(px, py, z - 1);
+      const rearmost = backF && !filledBehind(px, py, z);
       if (front) quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);                 // 正面（+z）
-      if (backF) quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], z === 0 ? rgbBack : rgb); // 背面（-z）
+      if (backF) quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], rearmost ? rgbBack : rgb); // 背面（-z）：一番奥の面は背面色
       if (!filled(px - 1, py, z)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
       if (!filled(px + 1, py, z)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
       if (!filled(px, py - 1, z)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
@@ -205,9 +208,13 @@ export function bodyHiRes(accent = '#c03030') {
  * 体（燕尾服・立ち姿）16×34、pivot = 足元中央。ディテールは少なめ（2026-09-09 ユーザー判断：中途半端な描き込みより簡素な方が良い）。
  * 側面図で「胸が厚く腰が細く脚が薄い」立体だけ与える。奥行き 6
  */
+// 任意の CSS 色（hsl() 等）を #rrggbb に正規化（背面色の置換表のキーに使う）
+const _norm = document.createElement('canvas').getContext('2d');
+function toHex(color) { _norm.fillStyle = color; return _norm.fillStyle; }
+
 export function body(accent = '#c03030') {
   // 背面：シャツ・蝶ネクタイは表だけ（後ろから見たら上着の色）
-  const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat };
+  const back = { [C.shirt]: C.coat, [toHex(accent)]: C.coat };
   const side = (d) => {
     d.r(2, 5, 3, 3, C.skin);      // 首
     d.r(0, 8, 6, 6, C.coat);      // 胸
@@ -296,6 +303,25 @@ export function arm() {
   });
 }
 
+// ---------------- 楽器の側面図（形だけ。色は正面図の行の色が使われる）----------------
+// キャンバスは 幅 = 奥行き（左が背面・右が正面）、高さ = 正面図と同じ
+const F = '#000';
+const SIDE = {
+  cello:      (d) => { d.r(2, 0, 2, 7, F); d.r(1, 6, 4, 3, F); d.r(0, 9, 6, 15, F); d.r(1, 24, 4, 2, F); d.r(3, 26, 1, 4, F); },
+  contrabass: (d) => { d.r(3, 0, 2, 9, F); d.r(1, 8, 6, 4, F); d.r(0, 12, 8, 20, F); d.r(1, 32, 6, 2, F); d.r(4, 34, 1, 4, F); },
+  timpani:    (d) => { d.r(0, 0, 16, 3, F); d.r(1, 3, 14, 6, F); d.r(3, 9, 10, 3, F); d.r(5, 12, 6, 2, F); d.r(6, 14, 4, 2, F); }, // 椀型
+  bassdrum:   (d) => { d.r(0, 0, 8, 26, F); d.r(3, 24, 2, 6, F); },                                      // 薄い円筒＋スタンド
+  snare:      (d) => { d.r(0, 0, 12, 8, F); d.r(5, 8, 2, 2, F); },
+  cymbal:     (d) => { d.r(7, 0, 4, 1, F); d.r(1, 1, 16, 2, F); d.r(7, 3, 4, 1, F); },                     // 円盤（奥行き方向に丸い）
+  xylophone:  (d) => { d.r(0, 3, 10, 7, F); d.r(0, 9, 10, 2, F); d.r(4, 10, 2, 4, F); },
+  marimba:    (d) => { d.r(0, 2, 12, 10, F); d.r(3, 12, 6, 5, F); d.r(5, 14, 2, 4, F); },
+  piano:      (d) => { d.r(0, 0, 22, 4, F); d.r(0, 4, 30, 10, F); d.r(25, 14, 5, 4, F); d.r(1, 18, 2, 8, F); d.r(27, 18, 2, 8, F); }, // 蓋は後方、鍵盤は前
+  celesta:    (d) => { d.r(0, 0, 8, 26, F); d.r(7, 13, 3, 5, F); d.r(1, 26, 2, 4, F); d.r(5, 26, 2, 4, F); },
+  harp:       (d) => { d.r(2, 0, 2, 26, F); d.r(0, 26, 6, 10, F); },                                       // 弦・柱は薄く、共鳴胴だけ厚い
+  horn:       (d) => { d.r(2, 0, 4, 2, F); d.r(0, 2, 8, 10, F); d.r(2, 12, 4, 2, F); },                     // 丸いベル
+  tuba:       (d) => { d.r(0, 0, 10, 6, F); d.r(1, 6, 8, 16, F); },
+};
+
 // ---------------- 楽器パーツ ----------------
 // それぞれ [mesh] を返す。pivot は「体に取り付ける点」または「手に持つ点」。
 
@@ -315,31 +341,31 @@ export const INSTRUMENT = {
     d.r(3, 6, 6, 20, C.wood); d.r(1, 9, 10, 6, C.wood); d.r(1, 18, 10, 8, C.wood);
     d.r(5, 7, 2, 18, C.black);                            // 弦
     d.r(5, 26, 2, 4, C.silver);                           // エンドピン
-  }),
+  }, { depth: 6, side: SIDE.cello }),
   contrabass: () => makePart(14, 38, 7, 38, (d) => {
     d.r(6, 0, 2, 9, C.wood2); d.r(5, 0, 4, 2, C.wood2);
     d.r(3, 8, 8, 26, C.wood2); d.r(1, 11, 12, 8, C.wood2); d.r(1, 22, 12, 12, C.wood2);
     d.r(6, 9, 2, 24, C.black);
     d.r(6, 34, 2, 4, C.silver);
-  }),
+  }, { depth: 8, side: SIDE.contrabass }),
   bow: () => makePart(20, 2, 1, 1, (d) => { d.r(0, 0, 20, 1, C.wood2); d.r(1, 1, 18, 1, C.ivory); }),
 
   flute: () => makePart(20, 3, 1, 1, (d) => { d.r(0, 0, 20, 2, C.silver); for (let x = 6; x < 18; x += 3) d.p(x, 2, C.silver2); }),
-  clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }),
-  oboe: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.wood2); d.r(0, 17, 4, 3, C.wood2); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }),
-  bassoon: () => makePart(5, 34, 2, 34, (d) => { d.r(1, 0, 3, 34, C.wood); d.r(0, 0, 5, 3, C.wood2); d.r(3, 3, 2, 8, C.silver); for (let y = 12; y < 30; y += 4) d.p(1, y, C.silver); }),
+  clarinet: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.black); d.r(0, 17, 4, 3, C.black); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
+  oboe: () => makePart(4, 20, 2, 0, (d) => { d.r(1, 0, 2, 18, C.wood2); d.r(0, 17, 4, 3, C.wood2); for (let y = 4; y < 15; y += 3) d.p(3, y, C.silver); }, { depth: 3 }),
+  bassoon: () => makePart(5, 34, 2, 34, (d) => { d.r(1, 0, 3, 34, C.wood); d.r(0, 0, 5, 3, C.wood2); d.r(3, 3, 2, 8, C.silver); for (let y = 12; y < 30; y += 4) d.p(1, y, C.silver); }, { depth: 4 }),
 
-  trumpet: () => makePart(18, 6, 0, 3, (d) => { d.r(0, 2, 12, 2, C.gold); d.r(5, 0, 1, 2, C.gold2); d.r(7, 0, 1, 2, C.gold2); d.r(9, 0, 1, 2, C.gold2); d.r(12, 1, 4, 4, C.gold); d.r(16, 0, 2, 6, C.gold2); }),
-  horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }),
-  trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }),
-  tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }),
+  trumpet: () => makePart(18, 6, 0, 3, (d) => { d.r(0, 2, 12, 2, C.gold); d.r(5, 0, 1, 2, C.gold2); d.r(7, 0, 1, 2, C.gold2); d.r(9, 0, 1, 2, C.gold2); d.r(12, 1, 4, 4, C.gold); d.r(16, 0, 2, 6, C.gold2); }, { depth: 4 }),
+  horn: () => makePart(14, 14, 7, 7, (d) => { d.ring(6, 6, 5, C.gold); d.r(9, 8, 5, 6, C.gold); d.r(12, 7, 2, 7, C.gold2); d.r(2, 2, 2, 2, C.gold2); }, { depth: 8, z0: -2, side: SIDE.horn }),
+  trombone: () => makePart(26, 6, 0, 3, (d) => { d.r(0, 2, 20, 2, C.gold); d.r(3, 0, 12, 1, C.gold2); d.r(3, 0, 1, 3, C.gold2); d.r(14, 0, 1, 3, C.gold2); d.r(20, 1, 4, 4, C.gold); d.r(24, 0, 2, 6, C.gold2); }, { depth: 4 }),
+  tuba: () => makePart(16, 22, 8, 22, (d) => { d.r(2, 6, 12, 16, C.gold); d.r(4, 0, 10, 6, C.gold); d.r(4, 0, 10, 2, C.gold2); d.r(5, 9, 6, 8, C.gold2); }, { depth: 10, z0: -2, side: SIDE.tuba }),
 
   timpani: () => makePart(28, 16, 14, 0, (d) => {
     d.r(2, 0, 24, 3, C.head); d.r(1, 3, 26, 6, C.copper); d.r(3, 9, 22, 3, C.copper2); d.r(6, 12, 16, 2, C.copper2);
     d.r(6, 14, 2, 2, C.silver); d.r(20, 14, 2, 2, C.silver);
-  }),
-  snare: () => makePart(16, 10, 8, 0, (d) => { d.r(2, 0, 12, 2, C.head); d.r(1, 2, 14, 6, C.silver); d.r(1, 4, 14, 1, C.silver2); d.r(6, 8, 1, 2, C.silver2); d.r(9, 8, 1, 2, C.silver2); }),
-  cymbal: () => makePart(18, 4, 9, 0, (d) => { d.r(0, 1, 18, 2, C.gold); d.r(7, 0, 4, 1, C.gold2); d.r(8, 3, 2, 1, C.silver2); }),
+  }, { depth: 16, side: SIDE.timpani }),
+  snare: () => makePart(16, 10, 8, 0, (d) => { d.r(2, 0, 12, 2, C.head); d.r(1, 2, 14, 6, C.silver); d.r(1, 4, 14, 1, C.silver2); d.r(6, 8, 1, 2, C.silver2); d.r(9, 8, 1, 2, C.silver2); }, { depth: 12, side: SIDE.snare }),
+  cymbal: () => makePart(18, 4, 9, 0, (d) => { d.r(0, 1, 18, 2, C.gold); d.r(7, 0, 4, 1, C.gold2); d.r(8, 3, 2, 1, C.silver2); }, { depth: 18, z0: -9, side: SIDE.cymbal }),
   mallet: () => makePart(3, 14, 1, 0, (d) => { d.r(1, 0, 1, 10, C.wood2); d.r(0, 10, 3, 4, C.ivory); }),
   bigmallet: () => makePart(5, 16, 2, 0, (d) => { d.r(2, 0, 1, 10, C.wood2); d.disc(2, 12, 2, C.ivory); }),
   // シロフォン：明るい木の音板が左（長）→右（短）に並ぶ。pivot = 底中央
@@ -348,7 +374,7 @@ export const INSTRUMENT = {
     d.r(1, 9, 26, 2, C.wood2);                                               // フレーム
     for (let i = 0; i < 12; i++) { const h = 8 - Math.floor(i / 3); d.r(2 + i * 2, 9 - h, 1, h, i % 2 ? '#e8c98a' : '#d9b46e'); } // 音板
     d.r(1, 3, 26, 1, C.wood2);
-  }),
+  }, { depth: 10, side: SIDE.xylophone }),
   // マリンバ：濃い紫檀の音板＋下に共鳴管。pivot = 底中央
   marimba: () => makePart(36, 18, 18, 18, (d) => {
     d.r(3, 14, 2, 4, C.silver2); d.r(31, 14, 2, 4, C.silver2);              // 脚
@@ -356,7 +382,7 @@ export const INSTRUMENT = {
     d.r(1, 11, 34, 2, C.wood2);                                              // フレーム
     for (let i = 0; i < 16; i++) { const h = 9 - Math.floor(i / 4); d.r(2 + i * 2, 11 - h, 1, h, i % 2 ? '#7a3b2e' : '#8f4636'); } // 音板
     d.r(1, 2, 34, 1, C.wood2);
-  }),
+  }, { depth: 12, side: SIDE.marimba }),
   // チェレスタ：小さなアップライト型の鍵盤。奏者はこの後ろに立つ。pivot = 底中央
   celesta: () => makePart(26, 30, 13, 30, (d) => {
     d.r(2, 0, 22, 26, C.wood); d.r(3, 1, 20, 12, C.wood2);                  // 筐体・上部パネル
@@ -365,7 +391,7 @@ export const INSTRUMENT = {
     d.r(3, 18, 20, 1, C.black);
     d.r(3, 26, 2, 4, C.wood2); d.r(21, 26, 2, 4, C.wood2);                   // 脚
     d.r(11, 27, 4, 2, C.gold2);                                              // ペダル
-  }),
+  }, { depth: 10, side: SIDE.celesta }),
   // グランカッサ：正面向きの大太鼓（白い打面・木の胴・スタンド）。pivot = 底中央
   bassdrum: () => makePart(26, 30, 13, 30, (d) => {
     d.r(11, 24, 4, 6, C.silver2); d.r(4, 28, 18, 2, C.silver2);   // スタンド
@@ -373,7 +399,7 @@ export const INSTRUMENT = {
     d.disc(13, 13, 10, C.head);                                     // 打面
     d.ring(13, 13, 10, C.silver);                                   // リム
     for (let a = 0; a < 8; a++) { const x = 13 + Math.round(11 * Math.cos(a * Math.PI / 4)), y = 13 + Math.round(11 * Math.sin(a * Math.PI / 4)); d.p(x, y, C.gold2); } // ラグ
-  }),
+  }, { depth: 8, side: SIDE.bassdrum }),
   stick: () => makePart(3, 14, 1, 0, (d) => { d.r(1, 0, 1, 14, C.wood); }),
 
   piano: () => makePart(40, 26, 20, 26, (d) => {
@@ -382,13 +408,13 @@ export const INSTRUMENT = {
     d.r(2, 14, 36, 3, C.white); for (let x = 3; x < 38; x += 3) d.p(x, 14, C.black); // 鍵盤
     d.r(0, 17, 40, 1, C.black);
     d.r(3, 18, 2, 8, C.black); d.r(35, 18, 2, 8, C.black); d.r(19, 18, 2, 8, C.black);
-  }),
+  }, { depth: 30, side: SIDE.piano }),
   harp: () => makePart(22, 36, 11, 36, (d) => {
     d.r(2, 0, 3, 34, C.gold); d.r(1, 0, 4, 2, C.gold2);
     d.line(4, 2, 20, 12, C.gold); d.line(4, 3, 20, 13, C.gold);
     d.r(3, 26, 18, 8, C.wood); d.r(2, 34, 20, 2, C.wood2);
     for (let x = 6; x <= 19; x += 2) { const yt = 3 + Math.round((x - 4) * 0.62); d.r(x, yt, 1, 27 - yt, C.silver); }
-  }),
+  }, { depth: 6, side: SIDE.harp }),
   baton: () => makePart(12, 1, 0, 0, (d) => { d.r(0, 0, 12, 1, C.ivory); }),
 };
 
