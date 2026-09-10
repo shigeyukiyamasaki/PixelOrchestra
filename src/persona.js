@@ -116,9 +116,9 @@ export function headFor(p) {
   const colorOf = (x, y, z) => {
     if (y >= 24) return null;
     if (!bald && (x <= 5 || x >= 18) && y >= 10 && y <= 11) return hair; // こめかみ：前後どこでも髪（生え際）
+    const earCol = (x <= 3 || x >= 20) && y >= 12 && y <= 15;
+    if (earCol) return z >= 5 ? null : hair;               // 耳の列：耳より後ろ（z < 5）は髪（耳の高さに肌の横線が出ないように）
     if (z >= 8) return null;
-    const ear = (x <= 3 || x >= 20) && y >= 12 && y <= 15;
-    if (ear) return null;
     if (bald) return y >= 8 && y <= 15 ? hair : null;
     if (y >= 10 && y <= 19) return hair;
     if (y >= 20 && (x <= 5 || x >= 18)) return hair;   // あごの横（うなじ側）
