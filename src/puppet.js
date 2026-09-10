@@ -160,9 +160,10 @@ const VARIANT = {
   timpani:    { inst: { pos: [0, 15, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 p3: { strike: { L: { hit: [-6, 24, 10], rest: [-12, 32, 4], head: [-6, 15, 12] }, R: { hit: [6, 24, 10], rest: [12, 32, 4], head: [6, 15, 12] } } } },
-  bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R',
+  // グランカッサ：打面は横向き（左右を向く）。奏者の右に置き、右手で横振りに打つ。視線は右の打面へ（2026-09-10 ユーザー指摘：向きが 90° 違う）
+  bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', gazeYaw: MIRROR * 0.5,
                 strike: { R: { hit: [4, 22], rest: [13, 31], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
-                p3: { strike: { R: { hit: [5, 22, 2], rest: [13, 31, -2], head: [-2, 15, 3] } }, fixedHand: { L: [-13, 22, 2] } } },
+                p3: { pos: [13, 0, 5], rot3: [0, Math.PI / 2, 0], strike: { R: { hit: [12.5, 22, 5], rest: [6, 30, 3], head: [17, 22, 5] } }, fixedHand: { L: [-7, 18, 3] } } },
   snare:      { inst: { pos: [0, 17, 4], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
                 p3: { strike: { L: { hit: [-3, 25, 7], rest: [-9, 32, 3], head: [-3, 18, 9] }, R: { hit: [3, 25, 7], rest: [9, 32, 3], head: [3, 18, 9] } } } },
@@ -596,7 +597,7 @@ export class Puppet {
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);
     }
     const sNow = this._strikeMax ?? 0; this._strikeMax = 0;
-    this._spineGaze(st, dt, 0.06 * st.energy + 0.05 * sNow, 0.25, 0); // 打つ時に少し前へ、視線は打面
+    this._spineGaze(st, dt, 0.06 * st.energy + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
     if (this.inst) { // 打面の明滅：baseColor × 倍率
       const flash = onset ? 1 + 0.8 * Math.exp(-age * 10) * onset.velocity : 1;
       this.inst.material.color.copy(this.inst.userData.baseColor).multiplyScalar(flash);
