@@ -180,6 +180,37 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
   return geo;
 }
 
+/**
+ * 木の楽器の個体差（2026-09-11、顔の二色と同じ考え方）：共有ジオメトリを複製し、木の色の頂点だけを
+ *   1) ニスの色味（seed で色相 ±6°・明るさ ±8%）で全体に色を振り
+ *   2) 2px 単位の区画ハッシュで 25% を少し暗くして木目の塊感を出す
+ * 6 頂点＝1 面なので面の中心で判定し、面内で色が割れないようにする。木の判定は「赤 > 緑 > 青 で赤と青の差が大きい」茶系
+ */
+export function applyWoodVariation(root, seed) {
+  const h3 = (x, y, z) => { let n = Math.imul((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ (seed * 2654435761), 1) >>> 0; n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  const r0 = h3(1, 2, 3), r1 = h3(4, 5, 6);
+  const hueShift = (r0 - 0.5) * 12 / 360, lightMul = 1 + (r1 - 0.5) * 0.16;
+  const c = new THREE.Color(), hsl = { h: 0, s: 0, l: 0 };
+  const cellPx = PX * 2; // 区画 = 2px
+  root.traverse((m) => {
+    if (!m.isMesh || !m.geometry?.attributes?.color) return;
+    const geo = m.geometry.clone();
+    const col = geo.attributes.color, pos = geo.attributes.position;
+    for (let i = 0; i + 5 < col.count; i += 6) {
+      const r = col.getX(i), g = col.getY(i), b = col.getZ(i);
+      if (!(r > g && g > b && r - b > 0.15)) continue; // 木の茶系だけ
+      let cx = 0, cy = 0, cz = 0;
+      for (let k = 0; k < 6; k++) { cx += pos.getX(i + k); cy += pos.getY(i + k); cz += pos.getZ(i + k); }
+      const grain = h3(Math.floor(cx / 6 / cellPx + 50), Math.floor(cy / 6 / cellPx + 50), Math.floor(cz / 6 / cellPx + 50)) < 0.25 ? 0.9 : 1;
+      c.setRGB(r, g, b).getHSL(hsl);
+      c.setHSL((hsl.h + hueShift + 1) % 1, hsl.s, Math.min(1, hsl.l * lightMul * grain));
+      for (let k = 0; k < 6; k++) col.setXYZ(i + k, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+    m.geometry = geo;
+  });
+}
+
 // ---------------- 人物パーツ ----------------
 
 /**

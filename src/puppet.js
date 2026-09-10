@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation } from './sprites.js';
 import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
@@ -25,6 +25,7 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 楽器の大きさ（体との比率）。弦・木管・金管は実物に近い比率まで大きく（2026-09-10 ユーザー指定）。
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
+const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
 const INST_SCALE_VARIANT = { contrabass: 1.1, bassdrum: 1.5, trumpet: 0.65 }; // トランペットは 1.25 だと全長 1.7unit（実物の 2 倍）でピストンが遠く右腕が伸び切る → 0.65（≒ 59cm）で肘が曲がる（2026-09-10） // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
@@ -310,6 +311,7 @@ export class Puppet {
     // 楽器（体に取り付け）
     if (this.cfg.inst && INSTRUMENT[this.variant]) {
       const m = INSTRUMENT[this.variant]();
+      if (!this.flat && WOOD_INSTRUMENTS.has(this.variant)) applyWoodVariation(m, this.seed); // ニスの個体差＋木目の区画（2026-09-11）
       const pos = (this.p3 && this.p3.pos) || this.cfg.inst.pos;
       m.position.set(pos[0] * PX, pos[1] * PX, pos[2] * PX);
       if (this.p3 && this.p3.quat) m.quaternion.copy(this.p3.quat);
