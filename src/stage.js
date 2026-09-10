@@ -190,6 +190,13 @@ export function buildRisers(seats) {
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; risers.add(front);
+    // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
+    const back = new THREE.Mesh(
+      new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
+      stageMat({ color: '#2a221c', side: THREE.DoubleSide }),
+    );
+    back.position.y = row.h / 2;
+    back.renderOrder = ro; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
       const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#241d18', side: THREE.DoubleSide }));
