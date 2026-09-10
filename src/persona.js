@@ -6,7 +6,7 @@
  * 顔・髪（2 倍解像度）、上半身（燕尾服 / ドレス）、脚（ズボン / ロングスカート）、手（肌色）を描く。
  * 同じ MIDI なら座席の seed が同じなので、毎回同じ顔ぶれになる。
  */
-import { makePart, C } from './sprites.js';
+import { makePart, C, roundColumn } from './sprites.js';
 
 const F = '#000';
 
@@ -163,7 +163,10 @@ export function legsStandingFor(p) {
     d.r(6, 22, 8, 4, C.shoe); d.r(18, 22, 8, 4, C.shoe);     // 靴
   };
   const side = p.gender === 'm' ? (d) => { d.r(2, 0, 8, 22, F); d.r(0, 22, 12, 4, F); } : (d) => { d.r(1, 0, 10, 12, F); d.r(0, 12, 12, 10, F); d.r(0, 22, 12, 4, F); };
-  return makePart(32, 26, 16, 26, front, { res: 2, depth: 12, z0: -6, accent: `legs|${p.gender}`, side });
+  // 男性のズボンは断面を円に（腰 r3.2 → 足首 r2.6。燕尾がかかる上 8 行は削らない。2026-09-11）。左右の脚の中心 x = 11, 21、z 中心 6
+  const legL = roundColumn(11, 6, 3.2, 2.6, 8, 21), legR = roundColumn(21, 6, 3.2, 2.6, 8, 21);
+  const carve = p.gender === 'm' ? (x, y, z) => (x < 16 ? legL(x, y, z) : legR(x, y, z)) : null;
+  return makePart(32, 26, 16, 26, front, { res: 2, depth: 12, z0: -6, accent: `legs|${p.gender}`, side, carve });
 }
 
 /** 座った女性のスカート：腰の上（太ももを覆う）＋膝から床へ垂れる前面。基本 px で配置（puppet 側で thigh と同じ位置に置く） */

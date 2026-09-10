@@ -273,9 +273,10 @@ export function legsStanding() {
 }
 /** 座った脚（ボクセル用）：太もも（前へ 10）・すね（下へ 12）・靴。配置は puppet 側 */
 // 2 倍解像度（2026-09-10）。寸法は従来どおり（太もも 3×3×10、すね 3×12×3、靴 4×2×6 [px]）
-export function thigh() { return makePart(6, 6, 3, 6, (d) => { d.r(0, 0, 6, 6, C.coat2); d.r(0, 0, 1, 6, '#1a1a24'); d.r(5, 0, 1, 6, '#1a1a24'); }, { res: 2, depth: 20, z0: 0,
-  side: (d) => { d.r(0, 0, 20, 6, F); d.r(0, 0, 20, 1, F); }, top: (d) => { d.r(0, 0, 6, 20, F); } }); }
-export function shin()  { return makePart(6, 24, 3, 24, (d) => { d.r(0, 0, 6, 24, C.coat2); d.r(0, 0, 1, 24, '#1a1a24'); d.r(5, 0, 1, 24, '#1a1a24'); d.r(1, 22, 4, 2, C.coat2); }, { res: 2, depth: 6, z0: 0 }); }
+// 断面は円（2026-09-11）。太ももは前へ伸びる横向きの柱なので x-y 面で円、すねは縦の柱で膝 r3.0 → 足首 r2.4 に細くなる
+export function thigh() { return makePart(6, 6, 3, 6, (d) => { d.r(0, 0, 6, 6, C.coat2); }, { res: 2, depth: 20, z0: 0,
+  carve: (x, y, z) => { const dx = x + 0.5 - 3, dy = y + 0.5 - 3; return dx * dx + dy * dy > 9; } }); }
+export function shin()  { return makePart(6, 24, 3, 24, (d) => { d.r(0, 0, 6, 24, C.coat2); }, { res: 2, depth: 6, z0: 0, carve: roundColumn(3, 3, 3.0, 2.4, 0, 23) }); }
 // 靴：つま先が細く丸い（上面図で絞る）。かかとは少し暗く
 export function shoe()  { return makePart(8, 4, 4, 4, (d) => { d.r(0, 0, 8, 4, C.shoe); d.r(0, 0, 8, 1, '#2a2a34'); }, { res: 2, depth: 12, z0: 0,
   top: (d) => { d.r(0, 0, 8, 8, F); d.r(1, 8, 6, 2, F); d.r(2, 10, 4, 2, F); } }); }
@@ -353,8 +354,19 @@ export function head(seed = 0, back = false) {
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
-// 腕の断面を円にする削り（2026-09-11 ユーザー指定：ブロック感をなくす）。半径 r0（上端）→ r1（下端）に細くなる。x 中心 5、z 中心 4（depth 8）
-const roundArm = (r0, r1, h) => (x, y, z) => { const r = r0 + (r1 - r0) * (y / (h - 1)); const dx = x + 0.5 - 5, dz = z + 0.5 - 4; return dx * dx + dz * dz > r * r; };
+// 縦の柱の断面を円にする削り（2026-09-11 ユーザー指定：腕・脚のブロック感をなくす）。
+// 行 y0..y1 の範囲で、半径 r0（y0）→ r1（y1）に細くなる。中心 (cx, cz) はセル座標。範囲外の行は削らない
+export const roundColumn = (cx, cz, r0, r1, y0, y1) => {
+  const f = (x, y, z) => {
+    if (y < y0 || y > y1) return false;
+    const r = r0 + (r1 - r0) * ((y - y0) / Math.max(1, y1 - y0));
+    const dx = x + 0.5 - cx, dz = z + 0.5 - cz;
+    return dx * dx + dz * dz > r * r;
+  };
+  f.toString = () => `roundColumn(${cx},${cz},${r0},${r1},${y0},${y1})`; // makePart のキャッシュキーはソース文字列なので、引数を含めて区別する
+  return f;
+};
+const roundArm = (r0, r1, h) => roundColumn(5, 4, r0, r1, 0, h - 1); // 腕：x 中心 5、z 中心 4（depth 8）
 export function upperArm() { // 2 倍解像度 10×22 セル（肩の下 10px = ARM_UPPER）、pivot = 肩（上端から 1 セル）。断面は円、肩側 r3.3 → 肘側 r2.7 セル
   return makePart(10, 22, 5, 2, (d) => { d.r(0, 0, 10, 22, C.coat); }, { res: 2, depth: 8, z0: -4, carve: roundArm(3.3, 2.7, 22) });
 }
