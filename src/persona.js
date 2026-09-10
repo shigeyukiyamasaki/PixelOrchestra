@@ -173,7 +173,19 @@ export function skirtSeated() {
   return { hip, front };
 }
 
-/** 手 5×5、pivot = 手首（上端中央）。-y が指先。肌色は人物ごと */
-export function handFor(p) {
-  return makePart(5, 5, 2, 1, (d) => { d.r(1, 0, 3, 4, p.skin); d.r(1, 3, 3, 1, p.skin2); }, { depth: 3, z0: -1.5, accent: `hand|${p.skin}` });
+/**
+ * 手 12×12（2 倍解像度）、pivot = 手首（上端中央 (6,2)）。-y が指先、長さ 8 セル = 4px（HAND_LEN と同じ）。
+ * 掌 3.5px 幅・厚み 2px、指 4 本は先端側 3 セルで分かれ（中指・薬指が長い）厚みは掌の半分、親指は体の内側（R は -x、L は +x）。
+ * 肌色は人物ごと（2026-09-10 解像度アップ）
+ */
+export function handFor(p, side = 'R') {
+  const tx = side === 'R' ? 1 : 10; // 親指の x（内側）
+  return makePart(12, 12, 6, 2, (d) => {
+    d.r(4, 2, 5, 1, p.skin);                                   // 手首側は少し細い
+    d.r(3, 3, 7, 5, p.skin);                                   // 掌
+    d.r(tx + (side === 'R' ? 1 : 0), 3, 1, 4, p.skin); d.r(tx, 4, 1, 3, p.skin); d.p(tx, 6, p.skin2); // 親指（斜めに出る）
+    for (let i = 0; i < 4; i++) { const x = 3 + i * 2, tip = (i === 1 || i === 2) ? 10 : 9; d.r(x, 8, 1, tip - 8, p.skin); d.p(x, tip, p.skin2); } // 指 4 本
+    d.r(3, 7, 7, 1, p.skin2);                                  // 指の付け根（関節の線）
+  }, { res: 2, depth: 4, z0: -2, accent: `hand|${p.skin}|${side}`,
+       side: (d) => { d.r(0, 2, 4, 6, F); d.r(1, 8, 2, 4, F); } }); // (z, y)：掌は 4 セル厚、指は 2 セル厚
 }

@@ -288,7 +288,7 @@ export class Puppet {
       if (this.hasWrist) {
         f.add(foreArmNoHand());
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
-        h.add(this.flat ? hand() : handFor(P)); f.add(h);
+        h.add(this.flat ? hand() : handFor(P, side)); f.add(h);
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
         f.add(foreArm());
