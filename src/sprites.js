@@ -336,6 +336,10 @@ export function head(seed = 0, back = false) {
 export function upperArm() {
   return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); }, { depth: 3, z0: -1.5 });
 }
+/** 肩の球 5×5×5、pivot = 中心。上腕の根元に付けて、肩関節が前へ出た時に胴との隙間を埋める */
+export function shoulderPad() {
+  return makePart(5, 5, 2, 2, (d) => { d.r(0, 1, 5, 3, C.coat); d.r(1, 0, 3, 5, C.coat); }, { depth: 5, z0: -2.5, side: (d) => { d.r(0, 1, 5, 3, F); d.r(1, 0, 3, 5, F); } });
+}
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });

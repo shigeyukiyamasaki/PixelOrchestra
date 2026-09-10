@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -16,6 +16,13 @@ const ARM_UPPER = 8, ARM_FORE = 8; // 2関節腕の長さ [px]（上腕・前腕
 const FORE_NOHAND = 6, HAND_LEN = 4; // 手首あり版：前腕 6 ＋ 手 4（合計は同じ）
 // 肩の位置：上着の上端の角（x=±5.5, y=25.5）。以前の (±6, 30) は体の外側かつ上で、腕が胴から離れて見えた（2026-09-09 修正）
 const SHOULDER = { L: [-5.5, 25.5, 0], R: [5.5, 25.5, 0] };
+// 肩関節（鎖骨）：胸の中心 (0, 25.5) から肩までを 1 本の骨として、腕が届かない時だけ目標の方へ回す（最大 SHOULDER_MAX）。
+// 胴体と腕のつなぎとして可動域を広げる装置（2026-09-10 ユーザー提案）
+const CLAVICLE_LEN = 5.5;
+const SHOULDER_MAX = 0.75; // rad ≈ 43°
+// 楽器の大きさ（体との比率）。弦・木管・金管は実物に近い比率まで大きく（2026-09-10 ユーザー指定）。
+// 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
+const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
@@ -26,7 +33,7 @@ const POLE = { L: [-1, -0.5, -0.35], R: [1, -0.5, -0.35] };
 const POLE_FLAT = { L: [-1, -0.3, 0], R: [1, -0.3, 0] };
 
 // ---- ベクトル・回転の小道具（THREE を使う。使い回しのテンポラリ）----
-const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _m = new THREE.Matrix4();
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const v3 = (arr) => new THREE.Vector3(arr[0], arr[1], arr[2] || 0);
 
@@ -81,7 +88,7 @@ function solveIK3(S, T, L1, L2, pole) {
 
 // 楽器ローカル px（pivot 基準・y 上向き・z 前）→ rig px。楽器の現在の位置・回転・鏡像を反映
 function instPoint(inst, lx, ly, lz = 0) {
-  _a.set(inst.scale.x < 0 ? -lx : lx, ly, lz).applyQuaternion(inst.quaternion);
+  _a.set(lx * inst.scale.x, ly * inst.scale.y, lz * inst.scale.z).applyQuaternion(inst.quaternion); // 鏡像（scale.x<0）と拡大を反映
   return [inst.position.x / PX + _a.x, inst.position.y / PX + _a.y, inst.position.z / PX + _a.z];
 }
 // 2 つのベクトル（楽器の軸 D と天面法線 N）から楽器の回転を作る。axisLocal = 軸に対応するローカル軸（+x / -x / +y / -y）
@@ -235,6 +242,7 @@ export class Puppet {
       const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, (this.flat ? 3 : 0) * PX);
       const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0);
       a.add(upperArm(), f);
+      if (!this.flat) a.add(shoulderPad()); // 肩関節の球：肩が前に出ても胴と腕の間が空かない
       this.upper.add(a);
       this.arm[side] = a; this.fore[side] = f;
       this.hand[side] = [SHOULDER[side][0], SHOULDER[side][1] - ARM_UPPER - ARM_FORE, this.flat ? 3 : 0];
@@ -265,7 +273,8 @@ export class Puppet {
       if (this.p3 && this.p3.quat) m.quaternion.copy(this.p3.quat);
       else if (this.p3 && this.p3.rot3) m.quaternion.setFromEuler(new THREE.Euler(...this.p3.rot3));
       else m.quaternion.setFromEuler(new THREE.Euler(0, 0, this.cfg.inst.rot));
-      if (this.cfg.inst.mirror) m.scale.x = -1;
+      const sc = INST_SCALE[this.family] ?? 1;
+      m.scale.set(this.cfg.inst.mirror ? -sc : sc, sc, sc);
       m.userData.baseQ = m.quaternion.clone();
       this.inst = m;
       this.upper.add(m);
@@ -302,17 +311,19 @@ export class Puppet {
     const tz = this.flat ? 3 : (target[2] ?? 0);
     if (rate === Infinity) { cur[0] = target[0]; cur[1] = target[1]; cur[2] = tz; }
     else { cur[0] = approach(cur[0], target[0], rate, dt); cur[1] = approach(cur[1], target[1], rate, dt); cur[2] = approach(cur[2], tz, rate, dt); }
-    const S = [SHOULDER[side][0], SHOULDER[side][1], this.flat ? 3 : 0];
+    const S0 = [SHOULDER[side][0], SHOULDER[side][1], this.flat ? 3 : 0];
     let goal = cur, fore = ARM_FORE;
     if (this.hasWrist) {
       fore = FORE_NOHAND;
       let hd = handDir ? v3(handDir) : null;
-      if (!hd || hd.lengthSq() < 1e-6) { hd = v3([cur[0] - S[0], cur[1] - S[1], cur[2] - S[2]]); } // 指定なし：腕の延長
+      if (!hd || hd.lengthSq() < 1e-6) { hd = v3([cur[0] - S0[0], cur[1] - S0[1], cur[2] - S0[2]]); } // 指定なし：腕の延長
       hd.normalize();
       if (this.flat) hd.z = 0;
       goal = [cur[0] - hd.x * HAND_LEN, cur[1] - hd.y * HAND_LEN, cur[2] - hd.z * HAND_LEN]; // 手首の位置
       this._handDir = hd;
     }
+    const S = this._shoulder(side, S0, goal, ARM_UPPER + fore - 0.05); // 肩関節：届かない時だけ肩を目標側へ出す
+    this.arm[side].position.set(S[0] * PX, S[1] * PX, S[2] * PX);
     const ik = solveIK3(S, goal, ARM_UPPER, fore, this.flat ? POLE_FLAT[side] : POLE[side]);
     this.arm[side].quaternion.copy(ik.q1);
     this.fore[side].quaternion.copy(ik.q1).invert().multiply(ik.q2); // 前腕は上腕の子：ローカル回転 = q1⁻¹ · q2
@@ -335,6 +346,31 @@ export class Puppet {
       }
     } else this.handQ[side].copy(ik.q2);
     return ik;
+  }
+  /**
+   * 肩関節。胸の中心 C=(0, 肩の高さ) から肩 S0 への鎖骨を、手首の目標 goal が腕の長さ reach を超える時だけ goal の方へ回す。
+   * 回す角度は「ちょうど届く最小」を二分探索で求め、SHOULDER_MAX で頭打ち。届く範囲なら S0 のまま
+   * @returns {number[]} 肩の位置（rig px）
+   */
+  _shoulder(side, S0, goal, reach) {
+    if (this.flat) return S0;
+    const dist0 = Math.hypot(goal[0] - S0[0], goal[1] - S0[1], goal[2] - S0[2]);
+    if (dist0 <= reach) return S0;
+    const C = [0, S0[1], S0[2]];
+    const a0 = _a.set(S0[0] - C[0], 0, 0).normalize();
+    const g = _b.set(goal[0] - C[0], goal[1] - C[1], goal[2] - C[2]);
+    if (g.lengthSq() < 1e-6) return S0;
+    g.normalize();
+    const full = Math.min(a0.angleTo(g), SHOULDER_MAX);
+    const axis = _c.crossVectors(a0, g);
+    if (axis.lengthSq() < 1e-6) return S0;
+    axis.normalize();
+    const at = (t) => { const d = _d.copy(a0).applyAxisAngle(axis, t); return [C[0] + d.x * CLAVICLE_LEN, C[1] + d.y * CLAVICLE_LEN, C[2] + d.z * CLAVICLE_LEN]; };
+    const reaches = (S) => Math.hypot(goal[0] - S[0], goal[1] - S[1], goal[2] - S[2]) <= reach;
+    if (!reaches(at(full))) return at(full);
+    let lo = 0, hi = full;
+    for (let i = 0; i < 7; i++) { const mid = (lo + hi) / 2; if (reaches(at(mid))) hi = mid; else lo = mid; }
+    return at(hi);
   }
   /** 手に持った物の向き（rig 空間の方向ベクトル）。primary: 'x'（弓・指揮棒）| 'ny'（マレット：-y が先端） */
   aimHeldDir(side, dir, primary = 'x') {
