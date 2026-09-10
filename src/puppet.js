@@ -178,7 +178,7 @@ const VARIANT = {
                 strike: { R: { hit: [4, 22], rest: [13, 28], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
                 // 手前の打面は x≈-8（下）〜-10.5（高さ 20）。hit = 手（左腰の前）、head = マレットの頭の中心（半径 2.5 なので打面の 2.5px 手前）。
                 // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
-                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10] } }, fixedHand: { L: [-9, 20, 10] } } }, // 構えは右へ 11.5・上へ 5（大きく振りかぶる） // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
+                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10], restAim: [0, 0.15, 1], wind: 1.4 } }, fixedHand: { L: [-9, 20, 10] } } }, // 構え：マレットは真前（打面を向かない）。振りかぶりで手も右へ大きく（wind 1.4）、打つ瞬間に打面へ // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
   snare:      { inst: { pos: [0, 17, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
@@ -633,7 +633,7 @@ export class Puppet {
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
-      const target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * 0.6);
+      const target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
       // 手首：マレットは打点を向き、手首はそれより少し起きる（振りかぶりで返し、打つ瞬間に伸びる）
       let aim = null;
       if (sp.head) {
@@ -641,6 +641,11 @@ export class Puppet {
         const liftTip = (1 - s) * Math.max(0, rest[1] - hit[1]) * 1.5;
         const headPt = [sp.head[0] + dx, sp.head[1] + liftTip, sp.head[2] || 0];
         aim = [headPt[0] - target[0], headPt[1] - target[1], headPt[2] - target[2]];
+        if (sp.restAim) { // 構えではマレットを restAim（真前）に向け、振りかぶり(ant)で打面から離れる側へ振り、打つ瞬間(s)に打面へ（グランカッサ。2026-09-10 ユーザー指定）
+          const h = v3(aim).normalize();
+          const a = v3(sp.restAim).normalize().addScaledVector(h, -ant * 1.2).normalize().lerp(h, s).normalize();
+          aim = [a.x, a.y, a.z];
+        }
       }
       else if (cfg.heldAngle) aim = [Math.cos(cfg.heldAngle[side]), Math.sin(cfg.heldAngle[side]), 0];
       let hd = null;
