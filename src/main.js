@@ -144,6 +144,7 @@ function settings() {
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
     exposure: num('exposure', 1),
+    bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
   };
@@ -264,6 +265,14 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
   }`,
 );
 renderer.toneMapping = THREE.CustomToneMapping;
+// 背景：上下グラデーション（CSS）。中間地点 = 2 色が半分ずつ混ざる高さ [%]（2026-09-10）
+let bgApplied = '';
+function applyBackground(top, bottom, mid) {
+  const css = `linear-gradient(to bottom, ${top}, ${mid}%, ${bottom})`;
+  if (css === bgApplied) return;
+  bgApplied = css;
+  $('view').style.background = css;
+}
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 function placePuppets() {
@@ -449,6 +458,7 @@ function animate() {
     labels.visible = s.showNames;
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
     applyToneMapping(s.exposure);
+    applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);

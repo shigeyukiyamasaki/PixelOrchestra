@@ -62,7 +62,7 @@ let stageCtx = null;         // createStage() で設定（buildRisers から使�
 
 export function createStage(container) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0b0b16');
+  scene.background = null; // 背景は #view の CSS グラデーション（main.js の applyBackground）。キャンバスは透過
   scene.fog = new THREE.Fog('#0b0b16', 55, 110);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
@@ -87,7 +87,8 @@ export function createStage(container) {
     spots.push(sp);
   }
 
-  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.BasicShadowMap; // ドット絵に合わせて硬い影
