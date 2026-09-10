@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, CONDUCTOR_Z } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, CONDUCTOR_Z } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -243,6 +243,7 @@ function footprintOf(track) {
 
 function placePuppets() {
   setPartStyle(settings().partStyle);
+  setStageDepthWrite(settings().partStyle !== 'sprite'); // ボクセルは通常の深度、2D の板は描画順で前後を決める
   for (const p of puppets) scene.remove(p.puppet.root);
   puppets = [];
   if (conductor && conductor.style !== settings().partStyle) { scene.remove(conductor.root); conductor = null; } // 方式が変わったら作り直す

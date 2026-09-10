@@ -89,12 +89,11 @@ export function createStage(container) {
   // 水平方向の制限なし（ボクセル化で全周から見られる。2026-09-09）
   controls.update();
 
-  // 床・ひな壇・指揮台は「深度を書かない」（depthWrite:false, 先に描く）。
-  // 理由：奏者の板は足元を軸にカメラへ正対するため、見下ろすと板の上半分が後方へ倒れ込み、
-  // 後列の（高い）ひな壇に深度で隠される。正当な視点でひな壇が奏者を隠すことは無いので、
-  // 舞台側を深度判定から外し、奏者同士・ロールとの前後関係だけを深度で決める（2026-09-09）。
-  // 舞台側は深度を書かないので「描く順」が前後関係になる。床 → 後列のひな壇 → 前列のひな壇 → 指揮台 の順（renderOrder 小さい方が先）
-  const stageMat = (opts) => new THREE.MeshBasicMaterial({ ...opts, depthWrite: false });
+  // 床・ひな壇・指揮台の深度書き込みは絵の方式で切り替える（setStageDepthWrite）。
+  //   2D の板：深度を書かない（depthWrite:false, 先に描く）。奏者の板は足元を軸にカメラへ正対するため、見下ろすと板の上半分が
+  //   後方へ倒れ込み、後列の（高い）ひな壇に深度で隠されるから。描く順（renderOrder）が前後関係になる（床 → 後列 → 前列 → 指揮台）
+  //   ボクセル：通常どおり深度を書く。深度を書かないと後ろから見た時に前列のひな壇が後列を塗り潰す（2026-09-10 ユーザー指摘）
+  const stageMat = (opts) => { const m = new THREE.MeshBasicMaterial({ ...opts, depthWrite: stageDepthWrite }); stageMats.add(m); return m; };
   const addStage = (mesh, order = -20) => { mesh.renderOrder = order; scene.add(mesh); return mesh; };
 
   // 床：ドット風の板目テクスチャ
@@ -142,10 +141,19 @@ export function createStage(container) {
  * 座席が無い段は列定義の span を使う。
  * @param {Array<{track, positions:[{x,y,z}]}>} seats  layoutSeats() の戻り値
  */
+// 舞台側（床・ひな壇・指揮台）のマテリアル一覧と深度書き込みフラグ
+const stageMats = new Set();
+let stageDepthWrite = true;
+/** 舞台側の深度書き込みを切り替える（ボクセル = true、2D の板 = false）。main.js が絵の方式を変えた時に呼ぶ */
+export function setStageDepthWrite(on) {
+  stageDepthWrite = !!on;
+  for (const m of stageMats) m.depthWrite = stageDepthWrite;
+}
+
 export function buildRisers(seats) {
   if (!stageCtx) return;
   const { floorTex, stageMat, risers } = stageCtx;
-  risers.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
   risers.clear();
 
   // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする
