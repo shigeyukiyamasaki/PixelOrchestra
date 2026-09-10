@@ -48,7 +48,7 @@ const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]
 
 export const CONDUCTOR_Z = -3.2; // 指揮台の z（弦の最前列 z=-8 に寄せる。+z = 客席側。指揮台の奥行き 2.2 分だけ奥へ：2026-09-09）
 export const FLOOR_RADIUS = 20;  // ステージ円の半径
-export const FLOOR_CENTER_Z = -10; // ステージ円の中心 z（楽団の重心付近）
+export const FLOOR_CENTER_Z = -13; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
 export const FLOOR_DEPTH_SCALE = 0.8; // 奥行き方向の縮小率（楕円）
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
@@ -131,7 +131,7 @@ export function createStage(container) {
   buildRisers([]);
 
   // 指揮台
-  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#34302a' }));
+  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#c9a35a' }));
   podium.position.set(0, 0.15, CONDUCTOR_Z);
   addStage(podium, -20);
 
@@ -221,7 +221,7 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）
     const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
     thMin = -half; thMax = half;
-    const col = fam === 'percussion' ? '#56504a' : fam === 'brass' ? '#66605a' : '#76706a'; // 赤みを抑えた木の色（2026-09-10）
+    const col = fam === 'percussion' ? '#d4d4d4' : fam === 'brass' ? '#e2e2e2' : '#f0f0f0'; // 天面は床と同じ板目（白〜灰の倍率で奥ほど少し暗く。2026-09-10 ユーザー指定：床と同じ色味）
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
@@ -232,27 +232,27 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#2a2824', side: THREE.DoubleSide }),
+      stageMat({ color: '#a8894e', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#26241f', side: THREE.DoubleSide }),
+      stageMat({ color: '#9a7d46', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#22201b', side: THREE.DoubleSide }));
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#8f7440', side: THREE.DoubleSide }));
       const rm = (rIn + rOut) / 2;
       side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
       side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
       side.renderOrder = ro + 0.1; risers.add(side);
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#18160f' }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#7a6234' }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
   }
