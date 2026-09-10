@@ -272,9 +272,13 @@ export function legsStanding() {
   }, { depth: 6, z0: -3, side });
 }
 /** 座った脚（ボクセル用）：太もも（前へ 10）・すね（下へ 12）・靴。配置は puppet 側 */
-export function thigh() { return makePart(3, 3, 1.5, 3, (d) => { d.r(0, 0, 3, 3, C.coat2); }, { depth: 10, z0: 0 }); }
-export function shin()  { return makePart(3, 12, 1.5, 12, (d) => { d.r(0, 0, 3, 12, C.coat2); }, { depth: 3, z0: 0 }); }
-export function shoe()  { return makePart(4, 2, 2, 2, (d) => { d.r(0, 0, 4, 2, C.shoe); }, { depth: 6, z0: 0 }); }
+// 2 倍解像度（2026-09-10）。寸法は従来どおり（太もも 3×3×10、すね 3×12×3、靴 4×2×6 [px]）
+export function thigh() { return makePart(6, 6, 3, 6, (d) => { d.r(0, 0, 6, 6, C.coat2); d.r(0, 0, 1, 6, '#1a1a24'); d.r(5, 0, 1, 6, '#1a1a24'); }, { res: 2, depth: 20, z0: 0,
+  side: (d) => { d.r(0, 0, 20, 6, F); d.r(0, 0, 20, 1, F); }, top: (d) => { d.r(0, 0, 6, 20, F); } }); }
+export function shin()  { return makePart(6, 24, 3, 24, (d) => { d.r(0, 0, 6, 24, C.coat2); d.r(0, 0, 1, 24, '#1a1a24'); d.r(5, 0, 1, 24, '#1a1a24'); d.r(1, 22, 4, 2, C.coat2); }, { res: 2, depth: 6, z0: 0 }); }
+// 靴：つま先が細く丸い（上面図で絞る）。かかとは少し暗く
+export function shoe()  { return makePart(8, 4, 4, 4, (d) => { d.r(0, 0, 8, 4, C.shoe); d.r(0, 0, 8, 1, '#2a2a34'); }, { res: 2, depth: 12, z0: 0,
+  top: (d) => { d.r(0, 0, 8, 8, F); d.r(1, 8, 6, 2, F); d.r(2, 10, 4, 2, F); } }); }
 /** 座った脚（2D 板用・正面図）16×14、pivot = 足元中央 */
 export function legsSeatedSprite() {
   return makePart(16, 14, 8, 14, (d) => {
@@ -283,14 +287,17 @@ export function legsSeatedSprite() {
     d.r(3, 12, 4, 2, C.shoe); d.r(9, 12, 4, 2, C.shoe);    // 靴
   });
 }
-/** 椅子 12×25（背もたれ 12・座面 2・脚 11）、pivot = 床の後端中央。奥行き 12：背もたれは後ろ、脚は前後 2 本ずつ */
+/** 椅子 12×25 px（2 倍解像度 24×50 セル。背もたれ 12・座面 2・脚 11）、pivot = 床の後端中央。奥行き 12：背もたれは後ろ、脚は前後 2 本ずつ。
+ *  背もたれは枠＋縦桟 3 本（隙間あり）。2026-09-10 解像度アップ */
 export function chair() {
-  const side = (d) => { d.r(0, 0, 2, 12, F); d.r(0, 12, 12, 2, F); d.r(0, 14, 2, 11, F); d.r(10, 14, 2, 11, F); };
-  return makePart(12, 25, 6, 25, (d) => {
-    d.r(0, 0, 12, 12, '#4a3020'); d.r(1, 1, 10, 10, '#5a3a26'); // 背もたれ
-    d.r(0, 12, 12, 2, '#6a4630');                              // 座面
-    d.r(0, 14, 2, 11, '#3a2418'); d.r(10, 14, 2, 11, '#3a2418'); // 脚
-  }, { depth: 12, z0: 0, side });
+  const side = (d) => { d.r(0, 0, 3, 24, F); d.r(0, 24, 24, 4, F); d.r(0, 28, 4, 22, F); d.r(20, 28, 4, 22, F); };
+  return makePart(24, 50, 12, 50, (d) => {
+    d.r(0, 0, 24, 3, '#4a3020'); d.r(0, 0, 3, 24, '#4a3020'); d.r(21, 0, 3, 24, '#4a3020'); // 背もたれの枠（上・左右）
+    d.r(6, 3, 3, 21, '#5a3a26'); d.r(11, 3, 2, 21, '#5a3a26'); d.r(15, 3, 3, 21, '#5a3a26'); // 縦桟
+    d.r(0, 24, 24, 4, '#6a4630'); d.r(0, 24, 24, 1, '#7a5238');                            // 座面（上面は少し明るく）
+    d.r(0, 28, 4, 22, '#3a2418'); d.r(20, 28, 4, 22, '#3a2418');                          // 脚
+    d.r(4, 40, 16, 2, '#3a2418');                                                          // 脚の貫（横木）
+  }, { res: 2, depth: 24, z0: 0, side });
 }
 
 /** 頭（高解像度版・未採用）24×24 */
@@ -346,20 +353,20 @@ export function head(seed = 0, back = false) {
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
-export function upperArm() { // 5×11、pivot = 肩（上端から 1）。肩の下 10px = ARM_UPPER
-  return makePart(5, 11, 2, 1, (d) => { d.r(1, 0, 3, 11, C.coat); }, { depth: 3, z0: -1.5 });
+export function upperArm() { // 2 倍解像度 10×22 セル（3px 幅 × 肩の下 10px = ARM_UPPER）、pivot = 肩（上端から 1 セル）。両脇に陰の列
+  return makePart(10, 22, 5, 2, (d) => { d.r(2, 0, 6, 22, C.coat); d.r(2, 0, 1, 22, C.coat2); d.r(7, 0, 1, 22, C.coat2); }, { res: 2, depth: 6, z0: -3 });
 }
-/** 肩の球 5×5×5、pivot = 中心。上腕の根元に付けて、肩関節が前へ出た時に胴との隙間を埋める */
+/** 肩の球 5×5×5 px（2 倍解像度で円）、pivot = 中心。上腕の根元に付けて、肩関節が前へ出ても胴と腕の間が空かない */
 export function shoulderPad() {
-  return makePart(5, 5, 2, 2, (d) => { d.r(0, 1, 5, 3, C.coat); d.r(1, 0, 3, 5, C.coat); }, { depth: 5, z0: -2.5, side: (d) => { d.r(0, 1, 5, 3, F); d.r(1, 0, 3, 5, F); } });
+  return makePart(10, 10, 5, 5, (d) => { d.disc(5, 5, 4, C.coat); }, { res: 2, depth: 10, z0: -5, side: (d) => { d.disc(5, 5, 4, F); }, top: (d) => { d.disc(5, 5, 4, F); } });
 }
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
 /** 手首あり版：前腕（袖のみ）、pivot = 肘。手は別パーツ */
-export function foreArmNoHand() { // 2 倍解像度 10×17 セル（3px 幅 × 肘の下 7.5px = FORE_NOHAND）、pivot = 肘（上端から 1 セル）
-  return makePart(10, 17, 5, 2, (d) => { d.r(2, 0, 6, 17, C.coat); }, { res: 2, depth: 6, z0: -3 });
+export function foreArmNoHand() { // 2 倍解像度 10×17 セル（3px 幅 × 肘の下 7.5px = FORE_NOHAND）、pivot = 肘（上端から 1 セル）。両脇に陰の列
+  return makePart(10, 17, 5, 2, (d) => { d.r(2, 0, 6, 17, C.coat); d.r(2, 0, 1, 17, C.coat2); d.r(7, 0, 1, 17, C.coat2); }, { res: 2, depth: 6, z0: -3 });
 }
 /** 手 5×5、pivot = 手首（上端中央）。-y が指先 */
 export function hand() {

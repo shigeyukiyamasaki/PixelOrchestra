@@ -167,9 +167,9 @@ export function legsStandingFor(p) {
 }
 
 /** 座った女性のスカート：腰の上（太ももを覆う）＋膝から床へ垂れる前面。基本 px で配置（puppet 側で thigh と同じ位置に置く） */
-export function skirtSeated() {
-  const hip = makePart(16, 4, 8, 4, (d) => { d.r(0, 0, 16, 4, C.coat); }, { depth: 10, z0: 0, accent: 'skirtHip' });     // y 12..16, z 0..10
-  const front = makePart(16, 12, 8, 12, (d) => { d.r(0, 0, 16, 12, C.coat); }, { depth: 2, z0: 0, accent: 'skirtFront' }); // 膝から床へ
+export function skirtSeated() { // 2 倍解像度（2026-09-10）。寸法は従来どおり（腰 16×4×10、前面 16×12×2 [px]）。前面にひだの縦線
+  const hip = makePart(32, 8, 16, 8, (d) => { d.r(0, 0, 32, 8, C.coat); d.r(0, 0, 32, 1, C.coat2); }, { res: 2, depth: 20, z0: 0, accent: 'skirtHip' });     // y 12..16, z 0..10
+  const front = makePart(32, 24, 16, 24, (d) => { d.r(0, 0, 32, 24, C.coat); for (let x = 4; x < 32; x += 7) d.r(x, 2, 1, 22, C.coat2); }, { res: 2, depth: 4, z0: 0, accent: 'skirtFront' }); // 膝から床へ
   return { hip, front };
 }
 
