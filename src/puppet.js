@@ -159,23 +159,23 @@ const VARIANT = {
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   timpani:    { inst: { pos: [0, 15, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
-                p3: { strike: { L: { hit: [-6, 24, 10], rest: [-12, 32, 4], head: [-6, 15, 12] }, R: { hit: [6, 24, 10], rest: [12, 32, 4], head: [6, 15, 12] } } } },
-  // グランカッサ：打面は横向き（左右を向く）。奏者の右に置き、右手で横振りに打つ。視線は右の打面へ（2026-09-10 ユーザー指摘：向きが 90° 違う）
-  bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', gazeYaw: MIRROR * 0.5,
-                strike: { R: { hit: [4, 22], rest: [13, 31], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
-                p3: { pos: [13, 0, 5], rot3: [0, Math.PI / 2, 0], strike: { R: { hit: [12.5, 22, 5], rest: [6, 30, 3], head: [17, 22, 5] } }, fixedHand: { L: [-7, 18, 3] } } },
+                p3: { strike: { L: { hit: [-6, 23, 10], rest: [-10, 26, 5], head: [-6, 15, 12] }, R: { hit: [6, 23, 10], rest: [10, 26, 5], head: [6, 15, 12] } } } },
+  // グランカッサ：打面は横向き（左右を向く）。奏者の左に置き、左手で横振りに打つ。視線は左の打面へ（2026-09-10 ユーザー指定）
+  bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { L: 'bigmallet' }, singleArm: 'L', gazeYaw: MIRROR * -0.5,
+                strike: { L: { hit: [-4, 22], rest: [-13, 28], head: [2, 15] } }, fixedHand: { R: [12, 22] },
+                p3: { pos: [-13, 0, 5], rot3: [0, Math.PI / 2, 0], strike: { L: { hit: [-12.5, 22, 5], rest: [-5, 23, 2], head: [-17, 22, 5] } }, fixedHand: { R: [7, 18, 3] } } }, // 胸の高さで横振り
   snare:      { inst: { pos: [0, 17, 4], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
-                p3: { strike: { L: { hit: [-3, 25, 7], rest: [-9, 32, 3], head: [-3, 18, 9] }, R: { hit: [3, 25, 7], rest: [9, 32, 3], head: [3, 18, 9] } } } },
+                p3: { strike: { L: { hit: [-3, 21, 6], rest: [-5, 24, 4], head: [-3, 18, 10] }, R: { hit: [3, 21, 6], rest: [5, 24, 4], head: [3, 18, 10] } } } },
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, // 円盤の面（ローカル -y）を内側（±x）へ向ける
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } },
-                p3: { strike: { L: { hit: [-2, 27, 6], rest: [-12, 31, 2] }, R: { hit: [2, 27, 6], rest: [12, 31, 2] } } } },
+                p3: { strike: { L: { hit: [-2, 24, 6], rest: [-10, 26, 4] }, R: { hit: [2, 24, 6], rest: [10, 26, 4] } } } },
   xylophone:  { inst: { pos: [0, 8, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 22], rest: [-7, 29], head: [-3, 15] }, R: { hit: [3, 22], rest: [7, 29], head: [3, 15] } },
-                p3: { strike: { L: { hit: [-3, 22, 7], rest: [-7, 29, 3], head: [-3, 15, 9] }, R: { hit: [3, 22, 7], rest: [7, 29, 3], head: [3, 15, 9] } } } },
+                p3: { strike: { L: { hit: [-3, 21, 7], rest: [-6, 24, 5], head: [-3, 15, 9] }, R: { hit: [3, 21, 7], rest: [6, 24, 5], head: [3, 15, 9] } } } },
   marimba:    { inst: { pos: [0, 6, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 21], rest: [-7, 28], head: [-3, 14] }, R: { hit: [3, 21], rest: [7, 28], head: [3, 14] } },
-                p3: { strike: { L: { hit: [-3, 21, 8], rest: [-7, 28, 3], head: [-3, 14, 10] }, R: { hit: [3, 21, 8], rest: [7, 28, 3], head: [3, 14, 10] } } } },
+                p3: { strike: { L: { hit: [-3, 21, 8], rest: [-6, 24, 5], head: [-3, 14, 10] }, R: { hit: [3, 21, 8], rest: [6, 24, 5], head: [3, 14, 10] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
   piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
                 p3: { pos: [0, 0, 36], rot3: [0, Math.PI, 0], keys: { y: 14, spread: 12, gap: 4, z: 8 } } },
@@ -583,7 +583,7 @@ export class Puppet {
       if (onset && armOf(onset) === side) { vel = onset.velocity; s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
       if (next && armOf(next) === side && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * next.velocity; vel = Math.max(vel, next.velocity); if (spread) pn = normOf(next); }
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
-      const rest = [sp.rest[0] + dx, sp.rest[1] + 3 * vel, sp.rest[2] || 0];       // 強いほど高く構える
+      const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
       const target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * 0.6);
       // 手首：マレットは打点を向き、手首はそれより少し起きる（振りかぶりで返し、打つ瞬間に伸びる）
