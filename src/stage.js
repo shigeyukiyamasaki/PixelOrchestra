@@ -52,6 +52,7 @@ const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]
 
 export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
 export const CONDUCTOR_Z = -3.2; // 指揮台の z（弦の最前列 z=-8 に寄せる。+z = 客席側。指揮台の奥行き 2.2 分だけ奥へ：2026-09-09）
+export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を奥へ平行移動する量 [unit]（2026-09-10 ユーザー指定「少し奥へ」）
 export const FLOOR_RADIUS = 20;  // ステージ円の半径
 export const FLOOR_CENTER_Z = -13; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
 export const FLOOR_DEPTH_SCALE = 0.8; // 奥行き方向の縮小率（楕円）
@@ -131,6 +132,7 @@ export function createStage(container) {
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
   const risers = new THREE.Group();
+  risers.position.z = SEAT_SHIFT_Z; // 座席と一緒に奥へ
   scene.add(risers);
   stageCtx = { scene, floorTex, stageMat, addStage, risers, hemi, spots };
   buildRisers([]);
@@ -218,9 +220,10 @@ export function buildRisers(seats) {
     // この段（高さ h・半径帯）に座っている奏者の角度範囲
     let thMin = Infinity, thMax = -Infinity;
     for (const seat of seats) for (const p of seat.positions) {
-      const r = Math.hypot(p.x, p.z);
+      const pz = p.z - SEAT_SHIFT_Z; // 座席は奥へずらしてあるので戻して角度を測る
+      const r = Math.hypot(p.x, pz);
       if (Math.abs(p.y - row.h) > 0.01 || r < rIn - 0.5 || r > rOut + 0.5) continue;
-      const th = Math.atan2(p.x, -p.z);
+      const th = Math.atan2(p.x, -pz);
       thMin = Math.min(thMin, th); thMax = Math.max(thMax, th);
     }
     if (!Number.isFinite(thMin)) { thMin = -deg(row.span) / 2; thMax = deg(row.span) / 2; }
@@ -404,6 +407,8 @@ export function layoutSeats(tracks, footprintOf = null) {
       seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows, slots[i]) });
     });
   }
+  // 指揮者以外を奥へ平行移動（座席の角度計算は指揮者中心のまま、最後にずらす。ひな壇は buildRisers 側で同じ量ずらす）
+  for (const st of seats) for (const p of st.positions) p.z += SEAT_SHIFT_Z;
   return seats;
 }
 
