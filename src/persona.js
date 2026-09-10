@@ -208,11 +208,10 @@ export function coatFor(p, accent = '#c03030', standing = false) {
   const what = (x, y, z) => { // px（セル中心）→ 部位（null = 空）
     const ax = Math.abs(x);
     if (male) {
-      if (z > 3 && z <= 4) { // 胸の前 1px：ラペル（上が広く、腰へ向かって中央に寄る V 字）と蝶ネクタイ
+      if (z > 3 && z <= 4) { // 胸の前 1px：ラペル（V 字の開きに沿った幅 1.5px の折り返し。V の内側にはシャツが腰まで見える）と蝶ネクタイ
         if (box(ax, y, z, 0, 2, 10.5, 12, 3, 4)) return TIE;
-        const inner = y > 12 ? 2 : y > 11 ? 1.5 : y > 10 ? 1 : y > 9 ? 0.5 : 0;
-        const outer = y > 12 ? 5 : y > 11 ? 4.5 : y > 10 ? 4 : y > 9 ? 3 : 2;
-        if (y >= 8 && y <= 13 && ax >= inner && ax <= outer) return LAPEL;
+        const inner = y > 12 ? 3 : y > 10 ? 2.5 : y > 8 ? 2 : 1.5;                            // V の内側の縁（上が広く、腰で少し狭い）
+        if (y >= 6 && y <= 13 && ax >= inner && ax <= inner + 1.5) return LAPEL;
       }
       if (box(ax, y, z, 0, 0.5, 10.5, 12, 4, 5)) return TIE;                                   // 結び目
       if (box(ax, y, z, 0, 5, 12.5, 13.5, -4, -3) || box(ax, y, z, 5.5, 6, 12.5, 13.5, -3, 1)) return COAT; // 襟（後ろ・横）
