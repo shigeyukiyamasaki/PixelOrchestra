@@ -143,7 +143,7 @@ function settings() {
     spotElev: num('spotElev', 40),
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
-    toneMap: radioValue('toneMap') || 'reinhard',
+    toneMap: radioValue('toneMap') || 'highlight',
     exposure: num('exposure', 1),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
@@ -250,10 +250,24 @@ function footprintOf(track) {
 }
 
 // トーンマッピング（2026-09-10）：スポットを強くした時の白飛び・コントラストを抑える。切り替えるとマテリアルの再コンパイルが要る
-const TONE_MAPS = { none: THREE.NoToneMapping, reinhard: THREE.ReinhardToneMapping, aces: THREE.ACESFilmicToneMapping };
+// 「ハイライトのみ」：輝度 0.8 までは素通し（色も彩度もそのまま）、それ以上だけ 1.0 に漸近するよう圧縮。
+// 圧縮は輝度に対して行い RGB を同じ比率で縮めるので色相・彩度が変わらない（ACES は 1.0 以下でも彩度が落ちるという指摘への対応）
+THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+  'vec3 CustomToneMapping( vec3 color ) { return color; }',
+  `vec3 CustomToneMapping( vec3 color ) {
+    color *= toneMappingExposure;
+    float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+    const float knee = 0.8;
+    if ( l <= knee ) return color;
+    float t = l - knee;
+    float c = knee + ( 1.0 - knee ) * ( t / ( t + ( 1.0 - knee ) ) ); // knee で傾き 1 のまま接続し、1.0 に漸近
+    return color * ( c / l );
+  }`,
+);
+const TONE_MAPS = { none: THREE.NoToneMapping, highlight: THREE.CustomToneMapping, reinhard: THREE.ReinhardToneMapping, aces: THREE.ACESFilmicToneMapping };
 let toneMapApplied = null;
 function applyToneMapping(mode, exposure) {
-  const tm = TONE_MAPS[mode] ?? THREE.ReinhardToneMapping;
+  const tm = TONE_MAPS[mode] ?? THREE.CustomToneMapping;
   if (tm !== toneMapApplied) {
     renderer.toneMapping = tm;
     toneMapApplied = tm;
