@@ -142,8 +142,8 @@ const VARIANT = {
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
   // handDirs = 手首→指先の向き（楽器ローカル）。フルートは下から抱えて指は上へ、縦笛は左右から、金管は上から／横から
-  flute:      { inst: { pos: [-1, 31.5, 4], rot: -0.15 }, hands: { L: [6, -1], R: [13, -1] }, kind: 'flute', handDirs: { L: [0, 1, 0], R: [0, 1, 0] }, gazeDown: 0.05,
-                p3: { pos: [-1, 31.5, 5], rot3: [0, -0.35, -0.15], hands: { L: [6, -1, 1], R: [13, -1, 1] } } },
+  flute:      { inst: { pos: [-1, 31.5, 4], rot: -0.15 }, hands: { L: [6, -0.5], R: [13, -0.5] }, kind: 'flute', handDirs: { L: [0, 1, 0], R: [0, 1, 0] }, gazeDown: 0.05,
+                p3: { pos: [-1, 31.5, 5], rot3: [0, -0.35, -0.15], hands: { L: [6, -0.5, 1], R: [13, -0.5, 1] } } },
   oboe:       { inst: { pos: [0, 31.5, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.15,
                 p3: { pos: [0, 31.5, 5], rot3: [-0.75, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -13, 1] } } },
   clarinet:   { inst: { pos: [0, 31.5, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.15,
