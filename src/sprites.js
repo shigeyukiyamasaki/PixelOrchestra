@@ -537,7 +537,9 @@ export const INSTRUMENT = {
   //   ベル部：下の内管の端から横管で左へ 7.5px（頭の横）→ ネックパイプが後方（左肩の上）へ → 後端で U ターンして上へ → ベル管が前へ → ベル。
   //          ベル管は口より 1.25px 上、ベルの中心は口のすぐ上（縁はあご〜眉）。絵の x=14 がマウスピース（x<14 は後方）
   //   外管：別パーツで音程に応じて +x へ動く
+  //   スライド部はマウスピースの軸まわりに 60° ロールし、2 本の管が縦並びでなく斜め（ほぼ横並び）になる（2026-09-10 ユーザー提供の写真より）
   trombone: () => {
+    const root = new THREE.Group();
     const body = makePart(34, 20, 0, 13, (d) => {
       d.r(0, 12, 3, 2, C.silver);                                                             // マウスピース
       d.r(3, 13, 28, 1, C.gold2); d.r(3, 17, 28, 1, C.gold2);                                 // 内管（上・下。外管が伸びると露出）
@@ -552,7 +554,7 @@ export const INSTRUMENT = {
     }, { res: 2, depth: 24, z0: -18,
          side: (d) => { d.disc(18, 11, 6, F); d.r(17, 11, 2, 7, F); d.r(0, 16, 24, 2, F); },
          top: (d) => {
-           d.r(0, 17, 33, 2, F); d.r(16, 5, 2, 14, F);                                         // ネックパイプ・U ターン・ベル管（z 17-18）／横管（x 16-17, z 5-18）
+           d.r(0, 17, 33, 2, F); d.r(16, 9, 2, 10, F);                                         // ネックパイプ・U ターン・ベル管（z 17-18）／横管（x 16-17, z 9-18。ロール後の下の内管の端から）
            d.r(32, 16, 3, 4, F); d.r(35, 15, 3, 6, F); d.r(38, 13, 3, 10, F); d.r(41, 12, 5, 12, F); // ベル（中心 z 17.5）
          },
          carve: (x, y, z) => {
@@ -561,7 +563,8 @@ export const INSTRUMENT = {
            const R = x >= 41 ? 6 : x >= 38 ? 4 : x >= 35 ? 3 : 2; const r = R - 1.2; const dy = y - 11.5, dz = z - 17.5; return dy * dy + dz * dz < r * r; // ベルの穴
          } });
     bell.position.set(0, 0, 12 * VOX); // 絵の z=17.5 が取り付け後に奏者の左 7.5px（頭の横）になる位置
-    body.add(bell);
+    if (PART_STYLE !== 'sprite') body.rotation.x = -Math.PI / 3; // スライド部のロール：下の管が奏者の左（絵の +z）へ振れる
+    root.add(body, bell);
     // 外管 26×9（rows 11-19 に相当）：上下 2 本の管・先端の U 字・支柱。pivot = 左端・マウスピースの行（本体の x=6 に置く）
     const slide = makePart(26, 9, 0, 2, (d) => {
       d.r(0, 0, 24, 2, C.gold); d.r(0, 7, 24, 2, C.gold); d.r(22, 0, 3, 9, C.gold); d.r(24, 1, 1, 7, C.gold2); // 管・U 字
@@ -570,8 +573,9 @@ export const INSTRUMENT = {
     slide.position.set(6 * VOX, 0, 0);
     slide.userData.baseX = 6 * VOX;
     body.add(slide);
-    body.userData.slide = slide;
-    return body;
+    root.userData.slide = slide;
+    root.userData.size = body.userData.size;
+    return root;
   },
   // チューバ 32×44：上に開く大きなベル（中空）・巻いた胴・ピストン 4 本・左へ出るマウスパイプ。pivot = 底中央
   tuba: () => makePart(32, 44, 16, 44, (d) => {
