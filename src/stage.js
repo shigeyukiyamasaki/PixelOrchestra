@@ -131,7 +131,7 @@ export function createStage(container) {
   buildRisers([]);
 
   // 指揮台
-  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#c9a35a' }));
+  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#cd9f54' }));
   podium.position.set(0, 0.15, CONDUCTOR_Z);
   addStage(podium, -20);
 
@@ -232,27 +232,27 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#a8894e', side: THREE.DoubleSide }),
+      stageMat({ color: '#ac8548', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#9a7d46', side: THREE.DoubleSide }),
+      stageMat({ color: '#9e7940', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#8f7440', side: THREE.DoubleSide }));
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#93703a', side: THREE.DoubleSide }));
       const rm = (rIn + rOut) / 2;
       side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
       side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
       side.renderOrder = ro + 0.1; risers.add(side);
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#7a6234' }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#7e5e2e' }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
   }
@@ -279,13 +279,13 @@ function plankTexture() {
   const c = document.createElement('canvas');
   c.width = T * N; c.height = T * N;
   const g = c.getContext('2d');
-  g.fillStyle = '#e9c076'; g.fillRect(0, 0, T * N, T * N); // 板目：基調 #E9C076（2026-09-10 ユーザー指定）。材質の色は白にして絵の色をそのまま出す
+  g.fillStyle = '#edbd70'; g.fillRect(0, 0, T * N, T * N); // 板目：基調 #E9C076 にほんの少し赤み（2026-09-10 ユーザー指定）。材質の色は白にして絵の色をそのまま出す
   for (let ty = 0; ty < N; ty++) for (let tx = 0; tx < N; tx++) {
     const ox = tx * T, oy = ty * T;
     for (let y = 0; y < T; y += 8) {
-      g.fillStyle = y % 16 ? '#dcb46c' : '#f0cb86';
+      g.fillStyle = y % 16 ? '#e0b066' : '#f4c880';
       g.fillRect(ox, oy + y, T, 7);
-      g.fillStyle = '#b08e4e'; g.fillRect(ox, oy + y + 7, T, 1);
+      g.fillStyle = '#b48a48'; g.fillRect(ox, oy + y + 7, T, 1);
       g.fillRect(ox + (y * 5) % T, oy + y, 1, 7);
     }
   }
