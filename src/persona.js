@@ -169,9 +169,8 @@ export function torsoFor(p, accent = '#c03030') {
     d.r(6, 16, 20, 26, C.coat);                            // 上着 / ドレス
     d.r(4, 18, 2, 16, C.coat2); d.r(26, 18, 2, 16, C.coat2); // 肩の陰
     if (p.gender === 'm') {
-      d.r(12, 16, 8, 16, C.shirt);                         // シャツ
-      d.r(9, 16, 3, 6, C.coat2); d.r(20, 16, 3, 6, C.coat2); // 襟（ラペル）
-      d.r(10, 18, 12, 4, accent); d.r(15, 18, 2, 4, '#3a1a1a'); // 蝶ネクタイ
+      d.r(12, 16, 8, 16, C.shirt);                         // シャツ（ラペル・蝶ネクタイは coatFor の立体パーツ）
+      d.r(10, 18, 12, 4, accent); d.r(15, 18, 2, 4, '#3a1a1a'); // 蝶ネクタイ（下地。立体パーツで覆われる）
     } else {
       d.r(13, 16, 6, 4, skin); d.r(14, 20, 4, 2, skin);    // 襟ぐり（V ネック）
       d.r(6, 32, 20, 3, accent);                           // 腰の帯（トラック色）
@@ -180,7 +179,60 @@ export function torsoFor(p, accent = '#c03030') {
   };
   const side = (d) => { d.r(4, 10, 6, 6, F); d.r(0, 16, 12, 12, F); d.r(2, 28, 8, 14, F); };
   const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat, '#3a1a1a': C.coat, [C.coat2]: C.coat2 };
-  return makePart(32, 42, 16, 42, front, { res: 2, depth: 12, z0: -6, back, accent: `torso|${p.gender}|${accent}|${skin}`, side });
+  // 布の塊感：上着の部分だけ 2px 単位でわずかに暗い区画を混ぜる（髪の二色と同じ考え方。2026-09-11）
+  const isCloth = (x, y) => y >= 16 && x >= 6 && x <= 25 && !(p.gender === 'm' && x >= 12 && x <= 19 && y <= 31) && !(p.gender === 'f' && ((x >= 13 && x <= 18 && y <= 21) || (y >= 32 && y <= 34) || (x >= 14 && x <= 17 && y >= 22 && y <= 24)));
+  const colorOf = (x, y, z) => (isCloth(x, y) && clothHash(p.seed, x, y, z) < 0.25 ? CLOTH_DARK : null);
+  colorOf.toString = () => `cloth(${p.seed},${p.gender})`;
+  return makePart(32, 42, 16, 42, front, { res: 2, depth: 12, z0: -6, back, accent: `torso|${p.gender}|${accent}|${skin}|${p.seed}`, side, colorOf });
+}
+
+const CLOTH_DARK = '#16161f'; // 上着（#1b1b26）より少し暗い区画の色
+function clothHash(seed, x, y, z) { // 2 セル（1px）単位の区画ハッシュ 0..1
+  let n = Math.imul(((x >> 2) * 73856093) ^ ((y >> 2) * 19349663) ^ ((z >> 1) * 83492791) ^ (seed * 2654435761), 1) >>> 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0;
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * 上着の立体パーツ 14×24×10 px（1px 粒）、pivot = 腰の中央（胴と同じ位置に置く）。胴の箱（x ±5, z ±3（胸）/ ±2（腰）, y 0-13）の外側に張り出す特徴だけを持つ：
+ *   男性：ラペル（V 字に段々）・襟（首の後ろと横）・蝶ネクタイ（結び目が前へ突き出す）・燕尾（立奏のみ、腰から膝へ垂れる 2 枚）
+ *   女性：肩のキャップ袖・腰のベルト（トラック色、胴を一周）・胸のブローチ
+ * 「土台は箱、特徴は粗い別パーツで外へ盛る」（顔と髪と同じ考え方。2026-09-11）
+ */
+export function coatFor(p, accent = '#c03030', standing = false) {
+  const male = p.gender === 'm';
+  const box = (x, y, z, x0, x1, y0, y1, z0, z1) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
+  const TIE = 'tie', LAPEL = 'lapel', COAT = 'coat', ACC = 'acc';
+  const what = (x, y, z) => { // px（セル中心）→ 部位（null = 空）
+    const ax = Math.abs(x);
+    if (male) {
+      if (z > 3 && z <= 4) { // 胸の前 1px：ラペル（上が広く、腰へ向かって中央に寄る V 字）と蝶ネクタイ
+        if (box(ax, y, z, 0, 2, 10.5, 12, 3, 4)) return TIE;
+        const inner = y > 12 ? 2 : y > 11 ? 1.5 : y > 10 ? 1 : y > 9 ? 0.5 : 0;
+        const outer = y > 12 ? 5 : y > 11 ? 4.5 : y > 10 ? 4 : y > 9 ? 3 : 2;
+        if (y >= 8 && y <= 13 && ax >= inner && ax <= outer) return LAPEL;
+      }
+      if (box(ax, y, z, 0, 0.5, 10.5, 12, 4, 5)) return TIE;                                   // 結び目
+      if (box(ax, y, z, 0, 5, 12.5, 13.5, -4, -3) || box(ax, y, z, 5.5, 6, 12.5, 13.5, -3, 1)) return COAT; // 襟（後ろ・横）
+      if (standing && box(ax, y, z, 1, 5, -8, -0.5, -4, -3) && !(y < -6 && (ax < 1.5 || ax > 4.5))) return COAT; // 燕尾
+      return null;
+    }
+    if (box(ax, y, z, 5.5, 6, 11.5, 13.5, -2, 2)) return COAT;                                  // キャップ袖
+    if (y >= 4 && y < 5.5 && ((ax > 5 && ax <= 6 && Math.abs(z) <= 2) || (Math.abs(z) > 2 && Math.abs(z) <= 3 && ax <= 5))) return ACC; // ベルト
+    if (box(ax, y, z, 0, 1, 9.5, 11, 3, 4)) return ACC;                                        // ブローチ
+    return null;
+  };
+  const toPx = (cx, cy, cz) => [cx - 7 + 0.5, 15 - cy - 0.5, cz - 5 + 0.5];
+  const carve = (cx, cy, cz) => what(...toPx(cx, cy, cz)) === null;
+  carve.toString = () => `coat(${p.gender},${standing})`;
+  const colorOf = (cx, cy, cz) => {
+    const w = what(...toPx(cx, cy, cz));
+    if (w === TIE || w === ACC) return accent;
+    if (w === LAPEL) return C.coat2;
+    return clothHash(p.seed, cx * 2, cy * 2, cz * 2) < 0.25 ? CLOTH_DARK : C.coat;
+  };
+  colorOf.toString = () => `coatColor(${p.gender},${accent},${p.seed})`;
+  return makePart(14, 24, 7, 15, (d) => { d.r(0, 0, 14, 24, C.coat); }, { res: 1, depth: 10, z0: -5, accent: `coat|${p.gender}|${accent}|${standing}|${p.seed}`, carve, colorOf });
 }
 
 /** 立った脚 32×26（2 倍解像度）、pivot = 足元中央。男性：燕尾＋ズボン、女性：ロングスカート */

@@ -8,7 +8,7 @@
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
 import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
-import { makePersona, headFor, hairFor, torsoFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
+import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -241,6 +241,7 @@ export class Puppet {
       this.body = this.flat ? torsoSeated(o.color || '#c03030') : torsoFor(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
+      if (!this.flat) { const coat = coatFor(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）
       const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
@@ -265,6 +266,7 @@ export class Puppet {
       this.body = torsoFor(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;
       this.upper.add(this.body);
+      const coat = coatFor(P, o.color || '#c03030', true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
       this.rig.add(legsStandingFor(P));
     }
     if (!this.flat) this.group.scale.setScalar(P.height); // 身長の個体差（楽器・腕ごと相似）
