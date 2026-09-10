@@ -81,62 +81,80 @@ export function headFor(p) {
 }
 
 /**
- * 髪 14×20×16 px（1px 粒）、pivot = 首の付け根中央（頭と同じ）。顔の箱（x ±5, y 0-9, z ±4）の外側に 1px の殻＋頭頂の盛りとして置く。
- * 形は carve（体積関数）で決める：前髪（箱の前 z 4-5）・横（x ±5-6）・後ろ（z -5〜-4）・頭頂のドーム（y 9-12）＋髪型ごとの付属（ポニーテール・お団子）。
- * 参考画像のスタイル（顔は平面、髪は粗い立体。2026-09-11 ユーザー指定）
+ * 髪 14×21×16 px（1px 粒）、pivot = 首の付け根中央（頭と同じ）。顔の箱（x ±5, y 0-9, z ±4）の外側に 1px の殻＋頭頂の盛りとして置く。
+ * 形は carve（体積関数 keep）で決める：前髪（箱の前 z 4-5）・横（x ±5-6）・後ろ（z -5〜-4）・頭頂のドーム（y 9-12）＋髪型ごとの房・裾・付属。
+ * 参考画像のスタイル（顔は平面、髪は粗い立体。2026-09-11 ユーザー指定）。房の位置は seed で左右が入れ替わる
  */
 export function hairFor(p) {
-  const { hair, style } = p;
-  // 参考画像の「ゴツゴツ」：表面のすぐ外側に 1px の突起をまばらに出す（決定的なハッシュ。人物ごとに違う）
-  const h3 = (x, y, z) => { let n = Math.imul((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ (p.seed * 2654435761), 1) >>> 0; n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
-  const bumpy = (x, y, z) => h3(Math.floor((x + 20) / 2), Math.floor(y + 20), Math.floor((z + 20) / 2)) < 0.3; // 2×2px の塊単位でまばらに（粒が細かいと縮れ毛に見える）
-  const core = (x, y, z) => { // x, y, z = px（セル中心）
+  const { hair, style, gender } = p;
+  const flip = p.seed % 2 ? -1 : 1;                     // 房の左右
+  const box = (x, y, z, x0, x1, y0, y1, z0, z1) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
+  const male = gender === 'm';
+  const keep = (px, y, z) => {                          // px, y, z = px（セル中心）
+    const x = px * flip;                                // 以降は「flip 後」の座標で形を定義
     const ax = Math.abs(x), az = Math.abs(z);
     if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;                   // 顔の箱の内側は空（面が重ならないように）
-    if (style === 'bald') return ax > 5 && ax <= 6 && az <= 5 && y >= 5 && y <= 8   // 側頭部の帯
-                              || z < -4 && z >= -5 && ax <= 6 && y >= 5 && y <= 8; // 後頭部の帯
-    // 頭頂のドーム（3 段）
-    if (y > 9 && y <= 10 && ax <= 6 && az <= 5) return true;
-    if (y > 10 && y <= 11 && ax <= 5.5 && az <= 4.5) return true;
-    if (y > 11 && y <= 12 && ax <= 4 && az <= 3.5 && style !== 'bald') return true;
-    // 横（もみあげ〜耳を覆う）と後ろ：下端は髪型で決まる
-    const ySide = style === 'long' ? -5 : style === 'bob' ? 1 : 4;
-    const yBack = style === 'long' ? -5 : style === 'bob' ? 1 : 3;
-    if (ax > 5 && ax <= 6 && az <= 5 && y >= ySide && y <= 9) return true;
-    if (z < -4 && z >= -5 && ax <= 6 && y >= yBack && y <= 9) return true;
-    // 前髪（箱の前 1px）：房ごとに長さを変えて段々に
+    if (style === 'bald') return box(ax, y, z, 5.5, 6, 5, 8, -5, 5) || box(ax, y, z, 0, 6, 5, 8, -5, -4.5); // 側頭部・後頭部の帯だけ
+    // ---- 頭頂のドーム（3 段）----
+    if (box(ax, y, az, 0, 6, 9.5, 10, 0, 5) || box(ax, y, az, 0, 5.5, 10.5, 11, 0, 4.5) || box(ax, y, az, 0, 4, 11.5, 12, 0, 3.5)) return true;
+    // ---- 頭頂の房（髪型ごとに意図した段差）----
+    switch (style) {
+      case 'short':    if (box(x, y, z, -4.5, 0.5, 12.5, 13, 0.5, 4.5) || box(x, y, z, 1.5, 4.5, 12.5, 13, -3.5, 1.5)) return true; break; // 前左の房と中右の房
+      case 'sidepart': if (box(x, y, z, -5.5, 1.5, 12.5, 13, -1.5, 5) || box(x, y, z, -6.5, -5.5, 9.5, 12, -3.5, 5)) return true; break; // 流した側が厚い
+      case 'slick':    if (box(x, y, z, -3.5, 3.5, 12.5, 13, -4.5, -0.5) || box(ax, y, z, 0, 5, 6, 11, -6.5, -4.5)) return true; break;  // 後ろへ撫でつけた量感
+      case 'bob':      if (box(x, y, z, -4.5, 4.5, 12.5, 13, -3.5, 1.5)) return true; break;
+      case 'long':     if (box(x, y, z, -4.5, -0.5, 12.5, 13, -2.5, 2.5) || box(x, y, z, 1.5, 4.5, 12.5, 13, -1.5, 3.5)) return true; break;
+      case 'ponytail': if (box(x, y, z, -3.5, 3.5, 12.5, 13, -3.5, -0.5)) return true; break;
+      case 'bun':      if (box(ax, y, z, 0, 2.5, 12.5, 15, -4.5, -0.5) && !(y > 14 && (ax > 1.5 || z < -3.5 || z > -1.5))) return true; break; // お団子（角を落とす）
+    }
+    // ---- 横（もみあげ〜耳を覆う）と後ろ：下端は髪型で決まる ----
+    if (male) { // 男性：横は耳の上まで、耳の前にもみあげ
+      if (box(ax, y, z, 5.5, 6, 5, 9, -5, 5)) return true;
+      if (box(ax, y, z, 5.5, 6, style === 'slick' ? 4 : 3, 5, 2.5, 4.5)) return true;         // もみあげ
+      if (box(ax, y, z, 0, 6, 3, 9, -5, -4.5)) return true;                                     // 襟足
+    } else if (style === 'bob') {
+      const hem = z > 2 ? 2 : 1;                                                                // 裾：前は短く、横〜後ろは長く
+      if (box(ax, y, z, 5.5, 6, hem, 9, -5, 5) || box(ax, y, z, 0, 6, hem, 9, -5, -4.5)) return true;
+      if (box(ax, y, z, 6.5, 7, 1, 3, -5, 3) || box(ax, y, z, 0, 7, 1, 3, -6, -5.5)) return true; // 裾が外へ広がる
+    } else if (style === 'long') {
+      const col = Math.round(x + 7);                                                            // 裾の段差（列ごと）
+      const hemSide = (z >= 0 ? -3 : -5) + (col % 2);
+      const hemBack = -5 + (col % 3 === 0 ? 1 : 0);
+      if (box(ax, y, z, 5.5, 6, hemSide, 9, -5, 5)) return true;
+      if (box(ax, y, z, 0, 6, hemBack, 9, -5, -4.5)) return true;
+      if (box(ax, y, z, 0, 6.5, -5, 6, -6, -5.5)) return true;                                  // 後ろの量感
+    } else { // ポニーテール・お団子：横は耳の上まで
+      if (box(ax, y, z, 5.5, 6, 4, 9, -5, 5) || box(ax, y, z, 0, 6, 4, 9, -5, -4.5)) return true;
+    }
+    // ---- 前髪（箱の前 1px）：房ごとに長さを変えて段々に ----
     if (z > 4 && z <= 5 && ax <= 5 && y <= 9) {
-      const col = Math.floor(x + 5);                                              // 0..9
+      const col = Math.floor(x + 5);                                                            // 0..9（flip 後）
       let yF;
       switch (style) {
-        case 'short':    yF = [7, 6, 7, 6, 6, 7, 6, 7, 6, 7][col]; break;
-        case 'sidepart': yF = col < 6 ? [5, 5, 6, 6, 7, 8][col] : 9; break;         // 左に流す（右は額が出る）
-        case 'slick':    yF = 9; break;                                           // 前髪なし（撫でつけ）
-        case 'bob':      yF = 6; break;                                           // ぱっつん
-        case 'long':     yF = [6, 6, 7, 6, 6, 7, 6, 6, 7, 6][col]; break;
+        case 'short':    yF = [7, 6, 6, 7, 6, 6, 7, 6, 7, 7][col]; break;
+        case 'sidepart': yF = col < 6 ? [5, 5, 6, 6, 7, 8][col] : 9; break;                     // 左に流す（右は額が出る）
+        case 'slick':    yF = 9; break;                                                         // 前髪なし（撫でつけ）
+        case 'bob':      yF = [6, 6, 6, 6, 6, 6, 6, 6, 6, 6][col]; break;                       // ぱっつん
+        case 'long':     yF = [6, 6, 7, 6, 8, 8, 6, 7, 6, 6][col]; break;                       // 真ん中で分ける
         case 'ponytail': yF = [7, 7, 8, 7, 7, 8, 7, 7, 8, 7][col]; break;
-        case 'bun':      yF = col < 3 || col > 6 ? 7 : 9; break;                   // 真ん中を上げる
+        case 'bun':      yF = col < 2 || col > 7 ? 7 : 9; break;                                // 両端の後れ毛だけ
         default:         yF = 7;
       }
       return y >= yF;
     }
-    // 付属：ポニーテール（後ろへ垂れる束）・お団子（頭頂の後ろ）
-    if (style === 'ponytail' && z < -5 && z >= -8 && ax <= 1.5 && y >= 2 && y <= 8) return true;
-    if (style === 'bun' && y > 12 && y <= 15 && ax <= 2 && z <= 0 && z >= -4) return true;
+    // ---- 付属：ポニーテール（後ろへ垂れる束）----
+    if (style === 'ponytail') {
+      if (box(ax, y, z, 0, 2, 7, 8, -6, -5)) return true;                                       // 結び目
+      if (box(ax, y, z, 0, 1.5, 2, 7, -7, -5.5) || box(ax, y, z, 0, 1, 0, 2, -7, -6)) return true; // 束（先が細い）
+    }
     return false;
   };
-  // 突起：芯の外側 1px で、隣（内側・下）が芯ならまばらに残す（頭頂・横・後ろ。前髪の面は平らなまま）
-  const keep = (x, y, z) => {
-    if (core(x, y, z)) return true;
-    if (style === 'bald') return false;
-    if (y <= 9) return false;                                                    // 突起は頭頂だけ（横・後ろは平らな殻のまま）
-    return core(x, y - 1, z) && bumpy(x, y, z);
-  };
   const carve = (cx, cy, cz) => !keep(cx - 7 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5);
-  carve.toString = () => `hair(${style},${p.seed})`;
-  // 二色：まばらに少し暗い粒を混ぜる（髪の塊感）
+  carve.toString = () => `hair(${style},${gender},${flip})`;
+  // 二色：房単位（2px 幅）で少し暗い粒を混ぜる（髪の塊感）。人物ごとに違う
+  const h3 = (x, y, z) => { let n = Math.imul((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ (p.seed * 2654435761), 1) >>> 0; n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
   const dark = '#' + [1, 3, 5].map((i) => Math.round(parseInt(hair.slice(i, i + 2), 16) * 0.82).toString(16).padStart(2, '0')).join('');
-  const colorOf = (cx, cy, cz) => (h3(Math.floor(cx / 2) + 100, cy + 100, Math.floor(cz / 2) + 100) < 0.22 ? dark : null); // 2px 幅の房単位
+  const colorOf = (cx, cy, cz) => (h3(Math.floor(cx / 2) + 100, cy + 100, Math.floor(cz / 2) + 100) < 0.22 ? dark : null);
   colorOf.toString = () => `hairColor(${p.seed})`;
   return makePart(14, 21, 7, 16, (d) => { d.r(0, 0, 14, 21, hair); }, { res: 1, depth: 16, z0: -8, accent: `hair|${p.key}|${p.seed}`, carve, colorOf });
 }
