@@ -726,17 +726,17 @@ export function nameLabel(text, color = '#ffffff') {
   const m = document.createElement('canvas').getContext('2d');
   m.font = font;
   const tw = Math.ceil(m.measureText(text).width);
-  const pad = 4 * SS, mark = 3 * SS;               // 余白・左端のトラック色マーク
-  const w = Math.min(220 * SS, tw + pad * 2 + mark + 2 * SS), h = 18 * SS;
+  const pad = 4 * SS;                              // 余白
+  const w = Math.min(220 * SS, tw + pad * 2), h = 18 * SS;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
   g.font = font; g.textBaseline = 'middle';
-  g.fillStyle = color; g.fillRect(pad, h / 2 - mark, mark, mark * 2);            // トラック色の小さな四角
-  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)'; // 黒縁取り
-  g.strokeText(text, pad + mark + 2 * SS, h / 2 + SS * 0.5, w - pad * 2 - mark);
-  g.fillStyle = '#f4f4f4';
-  g.fillText(text, pad + mark + 2 * SS, h / 2 + SS * 0.5, w - pad * 2 - mark);
+  // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。黒縁取りで背景から浮かせる
+  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
+  g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
+  g.fillStyle = color;
+  g.fillText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
