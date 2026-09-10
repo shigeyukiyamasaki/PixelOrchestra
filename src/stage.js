@@ -9,7 +9,7 @@
 // 列の定義：r=指揮者からの半径（そのセクションの最前列）、h=ひな壇の高さ、span=列が占める角度幅 [deg]
 // 弦は 3 列（r 〜 r+2×ROW_GAP ≒ 8〜11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
 export const ROWS = {
-  strings:    { r: 8,    h: 0,    span: 150 },   // 弦 4 パート × 3 列 = 12 列分の弧が必要（r=8, 150° で弧長 ≒ 21）
+  strings:    { r: 8,    h: 0,    span: 160 },   // 弦 4 パート × 3 列 = 12 列分の弧が必要（r=8, 12 列で 146°）＋独奏 2 本分の余裕（2026-09-10）
   woodwind:   { r: 15,   h: 1.0,  span: 90 },
   brass:      { r: 19,   h: 2.0,  span: 100 },
   percussion: { r: 23,   h: 3.0,  span: 110 },
@@ -313,7 +313,9 @@ export function layoutSeats(tracks, footprintOf = null) {
   const slotOf = (tr) => {
     const f = footprintOf?.(tr);
     if (!f) return { gap: PUPPET_GAP, off: 0 };
-    const w = f.maxX - f.minX + 0.3;                              // 楽器を含む幅 + 余白
+    // 手持ち楽器（弓・バイオリン等）は隣と少し重なってよいので 0.3 の食い込みを許す。これが無いと弦の間隔が 1.87 に広がり、
+    // 独奏トラックが 1 つ増えただけで弦の扇が溢れて各セクションの人数が削られる（2026-09-10 ユーザー報告）
+    const w = f.maxX - f.minX - 0.3;
     return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2 };
   };
   const byFam = {};
@@ -342,10 +344,14 @@ export function layoutSeats(tracks, footprintOf = null) {
     const slots = list.map(slotOf);
     const angleOf = (cols, i) => (cols * slots[i].gap) / row.r; // 1トラックが占める角度 [rad]
     if (!row.beside && list.length > 1) {
-      for (let guard = 0; guard < 8; guard++) { // 中断条件付き
+      // 収まらない時は「横の人数が最も多いトラック」から 1 列ずつ減らす（全トラック一斉に減らすと独奏 1 本で全セクションが痩せる）
+      for (let guard = 0; guard < 16; guard++) { // 中断条件付き
         const total = sizes.reduce((a, s, i) => a + angleOf(s.cols, i), 0);
         if (total <= span + PUPPET_GAP / row.r || sizes.every((s) => s.cols <= 1)) break;
-        for (const s of sizes) if (s.cols > 1) s.cols--;
+        let k = -1;
+        sizes.forEach((s, i) => { if (s.cols > 1 && (k < 0 || s.cols >= sizes[k].cols)) k = i; });
+        if (k < 0) break;
+        sizes[k].cols--;
       }
     }
 
