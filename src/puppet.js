@@ -26,7 +26,11 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
 const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
-const INST_SCALE_VARIANT = { contrabass: 1.1, bassdrum: 1.5, trumpet: 0.9 }; // トランペットは実物比 0.72 × 他の金管と同じ 1.25 倍 = 0.9（2026-09-11。腕を伸ばす前は 0.65 にしていた） // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
+// 楽器ごとの倍率（ファミリーの既定を上書き）。基準は「実物の 1.25 倍」（2026-09-11 ユーザー確定。1px ≈ 4cm、指揮者 42.5px = 170cm で実測して揃えた）：
+//   弦：バイオリン/ヴィオラは 1.25 のまま、チェロ 1.4、コントラバス 1.3（実物 185cm。1.5 だと胴が体を隠すので幅基準で妥協）。木管：フルート 1.05・ピッコロ/オーボエ 1.0・クラリネット 1.05・ファゴット 1.25 のまま
+//   金管：ホルン 1.25 のまま・トランペット 0.9・トロンボーン 1.6（実物 120cm）・チューバ 1.35。鍵盤：ハープ 1.5（実物 175cm）・ピアノ 1.17・チェレスタ 1.2
+//   打楽器（打点が rig 座標なので別途調整が要る）は据え置き：グランカッサ 1.5（ユーザー指定）
+const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.4, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
@@ -138,8 +142,8 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [5, 0],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
-                p3: { pos: [-4.5, 1, 15], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 7.2, leftHandZ: 4.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 28], vib: [0, 1, 0], // 左手はあごの高さ（32 だと腕が伸び切る。2026-09-10）
+                p3: { pos: [-4.5, 1, 12], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 7.2, leftHandZ: 4.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
+  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 23], vib: [0, 1, 0], // 左手はあごの高さ（楽器 1.3 倍で 23×1.3≈30px。26 だと伸び切る。2026-09-11）
                 p3: { pos: [-9, 0, 9], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 9.2, leftHandZ: 5.5 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
@@ -195,12 +199,12 @@ const VARIANT = {
                 p3: { strike: { L: { hit: [-5, 25, 8], rest: [-6, 27, 8], head: [-3, 22, 16] }, R: { hit: [5, 25, 8], rest: [6, 27, 8], head: [3, 22, 16] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
   piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
-                p3: { pos: [0, 0, 36], rot3: [0, Math.PI, 0], keys: { y: 14, spread: 12, gap: 4, z: 8 } } },
+                p3: { pos: [0, 0, 43], rot3: [0, Math.PI, 0], keys: { y: 16.4, spread: 14, gap: 4, z: 10 } } }, // 1.17 倍：奥行き 30px×1.17 で鍵盤の縁が z≈8。鍵盤の高さ・音域幅も 1.17 倍、手は z 10（肘が畳まれないように前へ）
   celesta:    { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 16, spread: 7, gap: 3 },
-                p3: { pos: [0, 0, 14], rot3: [0, Math.PI, 0], keys: { y: 16, spread: 7, gap: 3, z: 6 } } },
+                p3: { pos: [0, 0, 20], rot3: [0, Math.PI, 0], keys: { y: 19.2, spread: 8.4, gap: 3, z: 10 } } }, // 1.2 倍：奥行き 10px×1.2 で鍵盤の縁が z≈8、手は z 10
   // ハープ：柱を前、短い弦（高音）を体側にして胸の前に置き、上部を奏者側へ少し倒す（y 回転を +0.7 に反転して右手が体を横切らないように。2026-09-10）
   harp:       { inst: { pos: [-9, 0, 4], rot: 0 }, harp: true,
-                p3: { pos: [3, 0, 11], rot3: [-0.12, 0.7, 0], harp: true } },
+                p3: { pos: [4, 0, 14], rot3: [-0.12, 0.7, 0], harp: true } },
   conductor:  { held: { R: 'baton' } },
 };
 
