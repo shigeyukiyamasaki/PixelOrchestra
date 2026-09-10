@@ -116,7 +116,9 @@ const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0, 0.0
 // チェロ系の弓の向き・弦から離れる向きは楽器の姿勢から：弓は楽器のローカル -x（右手→左）、弦の面の法線はローカル +z（正面）
 const CELLO_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
 const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
-const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.22, 0, 0.08)); // コントラバスは立奏で浅く寄りかける
+// コントラバスは立奏。体の左に立て、表板を右前へ約 34° 向け（Euler y=0.6）、上部を奏者側へ寄りかからせる（x=-0.32）。
+// 顔が楽器に隠れないよう体の左へずらす（2026-09-10 ユーザー指定：実際の構えのように横へ・角度をつける）
+const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.32, 0.6, 0.08));
 const BASS_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
@@ -129,7 +131,7 @@ const VARIANT = {
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
                 p3: { pos: [0.5, 1, 12], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 6.6, leftHandZ: 6.6 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む
   contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
-                p3: { pos: [2, 0, 7], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } }, // 立奏。体の前に立てかける（傾きは浅め）
+                p3: { pos: [-6, 0, 4], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 8.6, leftHandZ: 8.6 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
   // handDirs = 手首→指先の向き（楽器ローカル）。フルートは下から抱えて指は上へ、縦笛は左右から、金管は上から／横から
