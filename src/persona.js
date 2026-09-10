@@ -42,8 +42,10 @@ export function makePersona(seed) {
   const glasses = r() < (age === 'senior' ? 0.4 : 0.15);
   const beard = gender === 'm' && age !== 'young' && r() < (age === 'senior' ? 0.35 : 0.18);
   const height = (age === 'young' ? 0.95 : age === 'senior' ? 0.97 : 1.0) + (r() - 0.5) * 0.06 + (gender === 'm' ? 0.02 : -0.02);
+  // 体型（胴の横幅・厚みの倍率）：細身／標準／がっしり（2026-09-11。髪の房の左右反転と同じ「seed の個体差」）
+  const build = weighted(r, age === 'young' ? [[0.92, 45], [1.0, 45], [1.08, 10]] : [[0.92, 25], [1.0, 45], [1.1, 30]]);
   const key = `${gender}${age}${skin}${hair}${style}${glasses ? 'g' : ''}${beard ? 'b' : ''}`;
-  return { gender, age, skin, skin2, hair, style, glasses, beard, height, key, seed };
+  return { gender, age, skin, skin2, hair, style, glasses, beard, height, build, key, seed };
 }
 
 /**

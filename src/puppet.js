@@ -242,7 +242,7 @@ export class Puppet {
       this.body = this.flat ? torsoSeated(o.color || '#c03030') : torsoFor(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
-      if (!this.flat) { const coat = coatFor(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）
+      if (!this.flat) { const coat = coatFor(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
       const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
@@ -268,6 +268,7 @@ export class Puppet {
       this.body.position.y = 13 * PX;
       this.upper.add(this.body);
       const coat = coatFor(P, o.color || '#c03030', true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
+      this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
       this.rig.add(legsStandingFor(P));
     }
     if (!this.flat) this.group.scale.setScalar(P.height); // 身長の個体差（楽器・腕ごと相似）
