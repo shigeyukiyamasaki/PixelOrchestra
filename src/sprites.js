@@ -732,8 +732,8 @@ export function nameLabel(text, color = '#ffffff') {
   c.width = w; c.height = h;
   const g = c.getContext('2d');
   g.font = font; g.textBaseline = 'middle';
-  // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。黒縁取りで背景から浮かせる
-  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
+  // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。白縁取り（同日、黒→白）
+  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(255,255,255,0.95)';
   g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   g.fillStyle = color;
   g.fillText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
