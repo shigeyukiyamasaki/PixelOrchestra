@@ -145,8 +145,8 @@ function settings() {
     spotCone: num('spotCone', 30),
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
-    facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
-    partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
+    facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
+    partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
   };
 }
 
@@ -422,7 +422,6 @@ window.addEventListener('keydown', (e) => {
 for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
-for (const el of document.querySelectorAll('#panel input[type=radio][name="partStyle"]')) el.addEventListener('change', () => { if (engine) placePuppets(); }); // 絵の方式：奏者を作り直す
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
 });
