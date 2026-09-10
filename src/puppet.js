@@ -124,8 +124,9 @@ const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.15, 0.6, 0
 const BASS_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
-// グランカッサ：打面を左右向きにしてから（y 90°）、上部を奏者から遠い側（-x）へ 0.3 rad 傾ける（z 軸まわり、ワールド順）
-const BASSDRUM_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.3));
+// グランカッサ：打面を左右向きにしてから（y -90°：絵の正面＝手前の打面が奏者側 +x を向き、胴は pos.x から -x へ 8px）、
+// 上部を奏者から遠い側（-x）へ 0.15 rad 傾ける（z 軸まわり、ワールド順）
+const BASSDRUM_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
 
 const VARIANT = {
   // contactZ = 駒の上の弦の高さ、leftHandZ = 指板の表面＋弦（楽器ローカル px、表板の厚みは絵の depth から）。指先はここに置く
@@ -161,26 +162,29 @@ const VARIANT = {
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   timpani:    { inst: { pos: [0, 15, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
-                p3: { strike: { L: { hit: [-6, 23, 10], rest: [-10, 26, 5], head: [-6, 15, 12] }, R: { hit: [6, 23, 10], rest: [10, 26, 5], head: [6, 15, 12] } } } },
+                // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
+                p3: { strike: { L: { hit: [-7, 20, 3.5], rest: [-9, 22, 3], head: [-6, 15.5, 10.5] }, R: { hit: [7, 20, 3.5], rest: [9, 22, 3], head: [6, 15.5, 10.5] } } } },
   // グランカッサ：打面は横向き（左右を向く）で、上部を奏者から遠い側へ 17° 傾ける（手前の打面が奏者の方を向く。実際の据え置き台）。
   // 奏者のすぐ左前に置き、右手はマレットを左向きに水平に構えて胸の前で横に振る（マレットの頭が手前の打面に当たる）。
   // 視線は左の打面へ（2026-09-10 ユーザー指定：左に配置・右手で打つ。傾きの向きと貫通を修正）
   bassdrum:   { inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', gazeYaw: MIRROR * -0.5,
                 strike: { R: { hit: [4, 22], rest: [13, 28], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
-                // hit = 手の位置（マレット 16px が -x へ伸びて打面 x≈-9 に届く）、head = 太鼓の中心（マレットの向き）
-                p3: { pos: [-4, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [6, 20, 7], rest: [10, 24, 4], head: [-12, 19, 7] } }, fixedHand: { L: [-6, 16, 3] } } },
+                // 手前の打面は x≈-8（下）〜-10.5（高さ 20）。hit = 手（左腰の前）、head = マレットの頭の中心（半径 2.5 なので打面の 2.5px 手前）。
+                // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
+                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-6.5, 18, 3], rest: [0, 20, 3], head: [-8, 20, 12] } }, fixedHand: { L: [-7.5, 24, 5] } } }, // 左手は打面の上縁に添える（ミュート）
   snare:      { inst: { pos: [0, 17, 4], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
-                p3: { strike: { L: { hit: [-3, 21, 6], rest: [-5, 24, 4], head: [-3, 18, 10] }, R: { hit: [3, 21, 6], rest: [5, 24, 4], head: [3, 18, 10] } } } },
+                // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
+                p3: { strike: { L: { hit: [-4, 20, 3], rest: [-5, 22, 3], head: [-3, 18, 12] }, R: { hit: [4, 20, 3], rest: [5, 22, 3], head: [3, 18, 12] } } } },
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, // 円盤の面（ローカル -y）を内側（±x）へ向ける
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } },
                 p3: { strike: { L: { hit: [-2, 24, 6], rest: [-10, 26, 4] }, R: { hit: [2, 24, 6], rest: [10, 26, 4] } } } },
   xylophone:  { inst: { pos: [0, 8, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 22], rest: [-7, 29], head: [-3, 15] }, R: { hit: [3, 22], rest: [7, 29], head: [3, 15] } },
-                p3: { strike: { L: { hit: [-3, 21, 7], rest: [-6, 24, 5], head: [-3, 15, 9] }, R: { hit: [3, 21, 7], rest: [6, 24, 5], head: [3, 15, 9] } } } },
+                p3: { strike: { L: { hit: [-5, 21, 3], rest: [-6, 23, 3], head: [-3, 19, 9] }, R: { hit: [5, 21, 3], rest: [6, 23, 3], head: [3, 19, 9] } } } },
   marimba:    { inst: { pos: [0, 6, 4], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 21], rest: [-7, 28], head: [-3, 14] }, R: { hit: [3, 21], rest: [7, 28], head: [3, 14] } },
-                p3: { strike: { L: { hit: [-3, 21, 8], rest: [-6, 24, 5], head: [-3, 14, 10] }, R: { hit: [3, 21, 8], rest: [6, 24, 5], head: [3, 14, 10] } } } },
+                p3: { strike: { L: { hit: [-5, 24, 3], rest: [-6, 26, 3], head: [-3, 22, 10] }, R: { hit: [5, 24, 3], rest: [6, 26, 3], head: [3, 22, 10] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
   piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
                 p3: { pos: [0, 0, 36], rot3: [0, Math.PI, 0], keys: { y: 14, spread: 12, gap: 4, z: 8 } } },

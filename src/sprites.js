@@ -617,12 +617,12 @@ export const INSTRUMENT = {
   // シンバル 36×8：カップ・薄い円盤（上から見て丸い）・スタンド
   cymbal: () => makePart(36, 8, 18, 0, (d) => { d.r(14, 0, 8, 1, C.gold2); d.r(12, 1, 12, 1, C.gold); d.r(0, 2, 36, 3, C.gold); d.r(2, 4, 32, 1, C.gold2); d.r(17, 5, 2, 3, C.silver2); },
     { res: 2, depth: 36, z0: -18, side: (d) => { d.r(14, 0, 8, 1, F); d.r(12, 1, 12, 1, F); d.r(0, 2, 36, 3, F); d.r(17, 5, 2, 3, F); }, top: (d) => { d.disc(18, 18, 17, F); } }),
-  // マレット類（2倍解像度。頭は球）
-  mallet: () => makePart(6, 28, 3, 0, (d) => { d.r(2, 0, 2, 21, C.wood2); d.disc(3, 24, 3, C.ivory); },
-    { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 21, F); d.disc(3, 24, 3, F); }, top: (d) => { d.disc(3, 3, 3, F); } }),
-  bigmallet: () => makePart(10, 32, 5, 0, (d) => { d.r(4, 0, 2, 22, C.wood2); d.disc(5, 27, 5, C.white); d.r(3, 24, 1, 4, '#e6e6e6'); },
-    { res: 2, depth: 10, z0: -5, side: (d) => { d.r(4, 0, 2, 22, F); d.disc(5, 27, 5, F); }, top: (d) => { d.disc(5, 5, 5, F); } }),
-  stick: () => makePart(6, 28, 3, 0, (d) => { d.r(2, 0, 2, 26, C.wood); d.r(2, 26, 2, 2, '#c9a06a'); }, { res: 2, depth: 2, z0: -1 }),
+  // マレット類（2倍解像度。頭は球）。長さは実物比（ティンパニ/鍵盤 ≒ 36cm = 20px、大太鼓 ≒ 40cm = 22px、スティック ≒ 40cm = 22px）
+  mallet: () => makePart(6, 20, 3, 0, (d) => { d.r(2, 0, 2, 14, C.wood2); d.disc(3, 16, 3, C.ivory); },
+    { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 14, F); d.disc(3, 16, 3, F); }, top: (d) => { d.disc(3, 3, 3, F); } }),
+  bigmallet: () => makePart(10, 22, 5, 0, (d) => { d.r(4, 0, 2, 13, C.wood2); d.disc(5, 17, 5, C.white); d.r(3, 14, 1, 4, '#e6e6e6'); },
+    { res: 2, depth: 10, z0: -5, side: (d) => { d.r(4, 0, 2, 13, F); d.disc(5, 17, 5, F); }, top: (d) => { d.disc(5, 5, 5, F); } }),
+  stick: () => makePart(6, 22, 3, 0, (d) => { d.r(2, 0, 2, 20, C.wood); d.r(2, 20, 2, 2, '#c9a06a'); }, { res: 2, depth: 2, z0: -1 }),
   // シロフォン 56×28：明るい木の音板 16 枚（左が長い）・フレーム・脚。pivot = 底中央
   xylophone: () => makePart(56, 28, 28, 28, (d) => {
     d.r(6, 20, 4, 8, C.silver2); d.r(46, 20, 4, 8, C.silver2);                             // 脚
