@@ -19,7 +19,7 @@ const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
 const weighted = (r, pairs) => { const total = pairs.reduce((a, p) => a + p[1], 0); let x = r() * total; for (const [v, w] of pairs) { x -= w; if (x <= 0) return v; } return pairs[pairs.length - 1][0]; };
 
 // 肌：[肌, 影]
-const SKINS = [['#f4d3b3', '#dcb391'], ['#f1c9a5', '#d9a880'], ['#e3b48c', '#c8956c'], ['#c98f63', '#a9704a'], ['#8e5b3c', '#6f4329']];
+const SKINS = [['#f4d3b3', '#dcb391'], ['#f1c9a5', '#d9a880'], ['#e3b48c', '#c8956c'], ['#d9a57c', '#bb8560']]; // 褐色（#c98f63 / #8e5b3c）は外し、少し暗い肌まで（2026-09-10 ユーザー指定）
 // 髪色（若年〜壮年）
 const HAIR_YOUNG = [['#2b1b12', 30], ['#1a1a1e', 22], ['#5a3a1e', 20], ['#8a5a30', 10], ['#d9c27a', 10], ['#8c2e2e', 5], ['#6d4b31', 3]];
 // 髪色（高齢）
