@@ -335,8 +335,8 @@ export class Puppet {
     this.glow = glowDisc(o.color || '#ffffff');
     this.glow.position.y = 0.01;
     this.root.add(this.glow);
-    // 影：体・楽器・椅子は影を落とし、受ける（足元の光と板は除く）
-    if (!this.flat) this.root.traverse((m) => { if (m.isMesh && m !== this.glow) { m.castShadow = true; m.receiveShadow = true; } });
+    // 影：体・楽器・椅子は影を落とすが、受けない（床・ひな壇だけが受ける）。楽器や頭の影が胸に落ちて服が黒く潰れ、細かい面ではノイズに見えるため（2026-09-11 ユーザー指定）
+    if (!this.flat) this.root.traverse((m) => { if (m.isMesh && m !== this.glow) { m.castShadow = true; m.receiveShadow = false; } });
   }
 
   /**
