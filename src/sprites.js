@@ -532,19 +532,30 @@ export const INSTRUMENT = {
        side: (d) => { d.r(6, 4, 4, 22, F); d.disc(8, 19, 8, F); },
        top: (d) => { d.r(0, 6, 20, 4, F); d.r(16, 5, 4, 6, F); d.r(20, 3, 3, 10, F); d.r(23, 1, 3, 14, F); d.r(26, 0, 2, 16, F); },
        carve: (x, y, z) => { if (x < 20) return false; const R = x >= 26 ? 9 : x >= 23 ? 7 : 5; const r = R - 1.5; const dy = y - 19, dz = z - 7.5; return dy * dy + dz * dz < r * r; } }),
-  // トロンボーン 52×12：マウスピース・二重のスライド（右端が U 字）・ベル管・前に広がるベル
-  trombone: () => makePart(52, 12, 0, 6, (d) => {
-    d.r(0, 5, 3, 2, C.silver);                                                              // マウスピース
-    d.r(3, 5, 38, 2, C.gold);                                                               // ベル管
-    d.r(3, 3, 28, 1, C.gold2); d.r(3, 8, 28, 1, C.gold2);                                   // 内管
-    d.r(6, 2, 24, 2, C.gold); d.r(6, 8, 24, 2, C.gold); d.r(28, 2, 3, 8, C.gold);           // 外管（スライド）・先端の U 字
-    d.r(7, 2, 1, 8, C.silver); d.r(4, 3, 1, 6, C.silver);                                   // 支柱
-    d.r(40, 4, 3, 4, C.gold); d.r(43, 3, 3, 6, C.gold); d.r(46, 1, 3, 10, C.gold); d.r(49, 0, 3, 12, C.gold); d.r(51, 0, 1, 12, C.gold2); // ベル
-    d.r(30, 5, 14, 1, '#f3d27a');
-  }, { res: 2, depth: 12, z0: -6,
-       side: (d) => { d.disc(6, 6, 6, F); d.r(4, 2, 4, 8, F); },
-       top: (d) => { d.r(0, 5, 41, 2, F); d.r(3, 3, 28, 6, F); d.r(40, 4, 3, 4, F); d.r(43, 3, 3, 6, F); d.r(46, 1, 3, 10, F); d.r(49, 0, 3, 12, F); },
-       carve: (x, y, z) => { if (x < 42) return false; const R = x >= 49 ? 6 : x >= 46 ? 5 : 3; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } }),
+  // トロンボーン 52×12：マウスピース・内管・ベル管・前に広がるベル。外管（スライド）は別パーツで、音程に応じて +x へ動く（puppet.js が userData.slide を動かす）
+  trombone: () => {
+    const body = makePart(52, 12, 0, 6, (d) => {
+      d.r(0, 5, 3, 2, C.silver);                                                              // マウスピース
+      d.r(3, 5, 38, 2, C.gold);                                                               // ベル管
+      d.r(3, 3, 28, 1, C.gold2); d.r(3, 8, 28, 1, C.gold2);                                   // 内管（スライドが伸びると露出する）
+      d.r(4, 3, 1, 6, C.silver);                                                              // 支柱（マウスピース側）
+      d.r(40, 4, 3, 4, C.gold); d.r(43, 3, 3, 6, C.gold); d.r(46, 1, 3, 10, C.gold); d.r(49, 0, 3, 12, C.gold); d.r(51, 0, 1, 12, C.gold2); // ベル
+      d.r(30, 5, 14, 1, '#f3d27a');
+    }, { res: 2, depth: 12, z0: -6,
+         side: (d) => { d.disc(6, 6, 6, F); d.r(4, 2, 4, 8, F); },
+         top: (d) => { d.r(0, 5, 41, 2, F); d.r(3, 3, 28, 6, F); d.r(40, 4, 3, 4, F); d.r(43, 3, 3, 6, F); d.r(46, 1, 3, 10, F); d.r(49, 0, 3, 12, F); },
+         carve: (x, y, z) => { if (x < 42) return false; const R = x >= 49 ? 6 : x >= 46 ? 5 : 3; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } });
+    // 外管 26×8：上下 2 本の管・先端の U 字・支柱。pivot = 左端中央（本体の x=6・中心行に置く）
+    const slide = makePart(26, 8, 0, 4, (d) => {
+      d.r(0, 0, 24, 2, C.gold); d.r(0, 6, 24, 2, C.gold); d.r(22, 0, 3, 8, C.gold); d.r(24, 1, 1, 6, C.gold2); // 管・U 字
+      d.r(1, 0, 1, 8, C.silver);                                                               // 支柱
+    }, { res: 2, depth: 4, z0: -2 });
+    slide.position.set(6 * VOX, 0, 0);
+    slide.userData.baseX = 6 * VOX;
+    body.add(slide);
+    body.userData.slide = slide;
+    return body;
+  },
   // チューバ 32×44：上に開く大きなベル（中空）・巻いた胴・ピストン 4 本・左へ出るマウスパイプ。pivot = 底中央
   tuba: () => makePart(32, 44, 16, 44, (d) => {
     d.r(4, 0, 24, 2, C.gold2); d.r(5, 2, 22, 4, C.gold); d.r(8, 6, 16, 4, C.gold); d.r(10, 10, 12, 4, C.gold); // ベル（上向き）・喉

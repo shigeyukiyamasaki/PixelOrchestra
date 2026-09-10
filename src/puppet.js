@@ -540,7 +540,11 @@ export class Puppet {
     }
     // 手：楽器ローカル点 → rig 座標。指の動き（音の変わり目で少し動く）、トロンボーンは音程でスライド
     const finger = onset ? (((onset.index * 7) % 3) - 1) * 0.6 * Math.exp(-age * 7) : 0;
-    if (cfg.slide) this._slide = approach(this._slide, (1 - pitchNorm) * 6, 10, dt);
+    if (cfg.slide) {
+      this._slide = approach(this._slide, (1 - pitchNorm) * 6, 10, dt); // 高い音ほど手前（1 ポジション側）、低い音ほど伸ばす [基本 px]
+      const sl = inst?.userData.slide;
+      if (sl) sl.position.x = sl.userData.baseX + this._slide * PX; // 外管も一緒に動かす（右手と同じ量）
+    }
     const hands = p3?.hands || cfg.hands;
     for (const side of ['L', 'R']) {
       const h = hands[side];
