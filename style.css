@@ -69,6 +69,10 @@ details > *:not(summary) { margin-left: 2px; }
 .ctl select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .ctl input[type=number] { width: 100px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .chk { display: block; margin: 6px 0; }
+/* パネル内の小グループ（例：照明 → スポットライト）。枠で「この属性はこの光源のもの」と分かるようにする */
+fieldset.sub { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0 4px; padding: 4px 10px 8px; min-width: 0; }
+fieldset.sub > legend { color: var(--accent); font-size: 12px; padding: 0 4px; opacity: 0.9; }
+fieldset.sub .ctl { margin: 6px 0; }
 #resetCam { margin-top: 8px; }
 
 table.tracks { width: 100%; border-collapse: collapse; font-size: 12px; }
