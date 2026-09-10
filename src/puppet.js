@@ -151,8 +151,8 @@ const VARIANT = {
   bassoon:    { inst: { pos: [4, 0.5, 4], rot: 0.35 }, hands: { L: [0.5, 24], R: [0.5, 16] }, kind: 'bassoon', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.1,
                 // 体の右前に置き、上部を左へ倒す。ベルは頭より上、ボーカル（別パーツ）が口の左横へ届く。位置・傾きは胴・頭に入り込まない組み合わせを数値探索で選定（2026-09-10）
                 p3: { pos: [6, 1.5, 15], rot3: [-0.15, 0, 0.35], hands: { L: [-1.5, 22, 1], R: [1.5, 13, 1] } } },
-  // トランペット：右手はピストンの上に指を前下がりに置く（手首が後ろ上に来て肘が約 90° に曲がる。2026-09-10 ユーザー指定）
-  trumpet:    { inst: { pos: [1, 32.5, 4], rot: -0.15 }, hands: { L: [6, -1], R: [8, 1] }, kind: 'bell', handDirs: { L: [0, 0, -1], R: [0.8, -0.6, 0] }, gazeDown: 0.0,
+  // トランペット：右手は下からピストンに指を置き、上腕を前へ出して肘を曲げる（pole=前。2026-09-10 ユーザー指定）
+  trumpet:    { inst: { pos: [1, 32.5, 4], rot: -0.15 }, hands: { L: [6, -1], R: [8, 1] }, kind: 'bell', handDirs: { L: [0, 0, -1], R: [0.3, 0.95, 0] }, gazeDown: 0.0, pole: { R: [0.2, 0.1, 1] },
                 p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [6, -1, 1.5], R: [8, 1, -1.5] } } },
   horn:       { inst: { pos: [2, 24, 4], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn', handDirs: { L: [0, -1, 0], R: [1, 0, 0] }, gazeDown: 0.05,
                 p3: { pos: [3, 24, 4], rot3: [0, 0.8, 0], hands: { L: [-3, 2, 1], R: [5, -4, -1] } } },
@@ -356,7 +356,7 @@ export class Puppet {
 
   // ---- 手の配置：目標へ滑らかに寄せてから 3D IK（rate が大きいほど即応。Infinity で即時）----
   // handDir（rig 空間）を渡すと手首あり：手首＝目標 − handDir×手の長さ、前腕は手首へ、手は handDir を向く
-  setHand(side, target, dt, rate = 30, handDir = null) {
+  setHand(side, target, dt, rate = 30, handDir = null, pole = null) {
     const cur = this.hand[side];
     const tz = this.flat ? 3 : (target[2] ?? 0);
     if (rate === Infinity) { cur[0] = target[0]; cur[1] = target[1]; cur[2] = tz; }
@@ -374,7 +374,7 @@ export class Puppet {
     }
     const S = this._shoulder(side, S0, goal, ARM_UPPER + fore - 0.05); // 肩関節：届かない時だけ肩を目標側へ出す
     this.arm[side].position.set(S[0] * PX, S[1] * PX, S[2] * PX);
-    const ik = solveIK3(S, goal, ARM_UPPER, fore, this.flat ? POLE_FLAT[side] : POLE[side]);
+    const ik = solveIK3(S, goal, ARM_UPPER, fore, this.flat ? POLE_FLAT[side] : (pole || POLE[side])); // pole = 肘を出す向き（楽器別に上書き可）
     this.arm[side].quaternion.copy(ik.q1);
     this.fore[side].quaternion.copy(ik.q1).invert().multiply(ik.q2); // 前腕は上腕の子：ローカル回転 = q1⁻¹ · q2
     this.foreQ[side].copy(ik.q2);
@@ -603,7 +603,7 @@ export class Puppet {
         _b.set(inst.scale.x < 0 ? -d0[0] : d0[0], d0[1], d0[2]).applyQuaternion(inst.quaternion);
         hd = [_b.x, _b.y, _b.z];
       }
-      this.setHand(side, p, dt, 25, hd);
+      this.setHand(side, p, dt, 25, hd, cfg.pole?.[side]); // pole：肘を出す向き（rig 座標）
     }
     this.headPivot.rotation.z += -0.1 * energy + 0.08 * this._breath; // 息継ぎで少し上を向く
     this._spineGaze(st, dt, 0.1 * energy - 0.06 * this._breath, cfg.gazeDown ?? 0.05, 0); // 息継ぎで少し反り、吹くと前傾
