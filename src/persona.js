@@ -43,12 +43,13 @@ export function makePersona(seed) {
   const beard = gender === 'm' && age !== 'young' && r() < (age === 'senior' ? 0.35 : 0.18);
   const height = (age === 'young' ? 0.95 : age === 'senior' ? 0.97 : 1.0) + (r() - 0.5) * 0.06 + (gender === 'm' ? 0.02 : -0.02);
   const key = `${gender}${age}${skin}${hair}${style}${glasses ? 'g' : ''}${beard ? 'b' : ''}`;
-  return { gender, age, skin, skin2, hair, style, glasses, beard, height, key };
+  return { gender, age, skin, skin2, hair, style, glasses, beard, height, key, seed };
 }
 
 /**
- * 頭 24×30（2 倍解像度）、pivot = 首の付け根中央 (12, 24)。rows 24-29 は首より下（ロングヘアの分）。奥行き 16。
- * 老若男女：髪型・髪色・眼鏡・ひげ・しわ・頬・口紅
+ * 頭 24×30（2 倍解像度）、pivot = 首の付け根中央 (12, 24)。顔は箱の前面（平ら）：幅 10px（x 2-21）・高さ 9px（rows 6-23）・奥行き 8px。
+ * 髪は別パーツ hairFor()（1px 粒の立体）で、この箱の上・横・後ろに被せる（2026-09-11 ユーザー指定：顔は平面・髪は立体）。
+ * 老若男女：眼鏡・ひげ・しわ・頬・口紅
  */
 export function headFor(p) {
   const { skin, skin2, hair, style } = p;
@@ -56,75 +57,88 @@ export function headFor(p) {
   const browW = p.gender === 'm' ? 4 : 3;
   const bald = style === 'bald';
   const front = (d) => {
-    // 顔（あご下端 row 23）
-    d.r(4, 6, 16, 18, skin);
-    d.p(4, 6, null); d.p(19, 6, null); d.p(4, 23, null); d.p(19, 23, null);
-    d.r(5, 22, 1, 2, skin2); d.r(18, 22, 1, 2, skin2);
-    // 頭頂：髪または地肌（bald）
-    if (bald) { d.r(4, 2, 16, 4, skin); d.r(5, 1, 14, 1, skin); d.r(6, 0, 12, 1, skin); }
-    else { d.r(2, 2, 20, 8, hair); d.r(3, 1, 18, 1, hair); d.r(4, 0, 16, 1, hair); }
-    // 髪型
-    switch (style) {
-      case 'short':    d.r(2, 10, 2, 4, hair); d.r(20, 10, 2, 4, hair); break;
-      case 'sidepart': d.r(2, 10, 2, 4, hair); d.r(20, 10, 2, 4, hair); d.r(11, 10, 9, 2, hair); d.r(14, 12, 6, 1, hair); break;
-      case 'slick':    d.r(2, 9, 20, 1, hair); break;
-      case 'bald':     d.r(2, 8, 3, 7, hair); d.r(19, 8, 3, 7, hair); d.r(2, 7, 20, 1, hair); break; // 側頭部だけ
-      case 'bob':      d.r(2, 10, 3, 11, hair); d.r(19, 10, 3, 11, hair); d.r(4, 10, 16, 2, hair); d.r(5, 12, 4, 1, hair); break;
-      case 'long':     d.r(1, 10, 4, 20, hair); d.r(19, 10, 4, 20, hair); d.r(4, 10, 6, 2, hair); d.r(14, 10, 6, 2, hair); break;
-      case 'ponytail': d.r(2, 10, 2, 5, hair); d.r(20, 10, 2, 5, hair); d.r(4, 10, 16, 1, hair); break;
-      case 'bun':      d.r(2, 10, 2, 5, hair); d.r(20, 10, 2, 5, hair); d.r(8, 0, 8, 2, hair); d.r(7, 1, 10, 1, hair); break;
-    }
-    // 耳
-    d.r(2, 12, 2, 4, skin); d.r(20, 12, 2, 4, skin); d.p(2, 14, skin2); d.p(21, 14, skin2);
+    d.r(2, 6, 20, 18, skin);                                  // 顔の箱の前面（あご下端 row 23）
+    d.r(2, 12, 2, 4, skin2); d.r(20, 12, 2, 4, skin2);        // 耳（横の髪で隠れる。禿げは見える）
     // 眉・目・鼻・口
-    d.r(7, 12, browW, 1, hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair); d.r(17 - browW, 12, browW, 1, hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair);
-    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye); // 目は黒だけ（ハイライト無し。2026-09-10 ユーザー指定）
+    const browC = hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair;
+    d.r(7, 12, browW, 1, browC); d.r(17 - browW, 12, browW, 1, browC);
+    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye);        // 目は黒だけ（ハイライト無し。2026-09-10 ユーザー指定）
     d.p(12, 17, skin2);
     d.r(10, 19, 4, 1, lips);
-    if (p.age === 'young' || p.gender === 'f') { d.p(6, 17, '#e8a99a'); d.p(17, 17, '#e8a99a'); }
+    if (p.age === 'young' || p.gender === 'f') { d.r(5, 17, 2, 1, '#e8a99a'); d.r(17, 17, 2, 1, '#e8a99a'); } // 頬
     if (p.age === 'senior') { d.p(7, 17, skin2); d.p(16, 17, skin2); d.r(9, 21, 1, 1, skin2); d.r(14, 21, 1, 1, skin2); if (bald || style === 'slick') d.r(8, 8, 8, 1, skin2); } // しわ
     if (p.beard) { d.r(6, 20, 12, 4, hair); d.r(7, 18, 3, 1, hair); d.r(14, 18, 3, 1, hair); d.r(10, 19, 4, 1, lips); }
     if (p.glasses) { // 眼鏡：上の縁と左右の枠だけ（下の縁は省いて目を隠さない）＋ブリッジ
       const g = '#2a2a30';
       d.r(6, 13, 6, 1, g); d.r(12, 13, 6, 1, g);
       d.r(6, 14, 1, 2, g); d.r(11, 14, 1, 2, g); d.r(12, 14, 1, 2, g); d.r(17, 14, 1, 2, g);
-      d.p(2, 13, g); d.p(3, 13, g); d.p(20, 13, g); d.p(21, 13, g); // つる
+      d.r(2, 13, 4, 1, g); d.r(18, 13, 4, 1, g);             // つる
     }
   };
-  // 側面図（幅 16 = 奥行き、右端が正面）：後頭部は丸く、鼻が少し出る。髪型で後ろの形が変わる
-  const side = (d) => {
-    d.r(3, 0, 10, 1, F); d.r(1, 1, 13, 1, F); d.r(0, 2, 15, 8, F);
-    d.r(1, 10, 14, 10, F); d.r(2, 20, 12, 2, F); d.r(4, 22, 9, 2, F);
-    d.r(15, 15, 1, 3, F);                                   // 鼻
-    d.r(0, 10, 2, 6, F);                                    // 後頭部
-    if (style === 'long') d.r(0, 10, 4, 20, F);             // 後ろに垂れる髪
-    if (style === 'bob') d.r(0, 10, 3, 11, F);
-    if (style === 'ponytail') d.r(0, 6, 3, 16, F);          // 束ねた髪が後ろへ
-    if (style === 'bun') d.r(1, 0, 5, 6, F);                // お団子（後頭部の上）
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); }; // 箱＋鼻
+  const backMap = { [C.eye]: skin, '#ffffff': skin, [lips]: skin, [skin2]: skin, '#e8a99a': skin, '#2a2a30': skin, '#8a8a8a': skin, [hair]: skin };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side });
+}
+
+/**
+ * 髪 14×20×16 px（1px 粒）、pivot = 首の付け根中央（頭と同じ）。顔の箱（x ±5, y 0-9, z ±4）の外側に 1px の殻＋頭頂の盛りとして置く。
+ * 形は carve（体積関数）で決める：前髪（箱の前 z 4-5）・横（x ±5-6）・後ろ（z -5〜-4）・頭頂のドーム（y 9-12）＋髪型ごとの付属（ポニーテール・お団子）。
+ * 参考画像のスタイル（顔は平面、髪は粗い立体。2026-09-11 ユーザー指定）
+ */
+export function hairFor(p) {
+  const { hair, style } = p;
+  // 参考画像の「ゴツゴツ」：表面のすぐ外側に 1px の突起をまばらに出す（決定的なハッシュ。人物ごとに違う）
+  const h3 = (x, y, z) => { let n = Math.imul((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ (p.seed * 2654435761), 1) >>> 0; n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  const bumpy = (x, y, z) => h3(Math.floor((x + 20) / 2), Math.floor(y + 20), Math.floor((z + 20) / 2)) < 0.3; // 2×2px の塊単位でまばらに（粒が細かいと縮れ毛に見える）
+  const core = (x, y, z) => { // x, y, z = px（セル中心）
+    const ax = Math.abs(x), az = Math.abs(z);
+    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;                   // 顔の箱の内側は空（面が重ならないように）
+    if (style === 'bald') return ax > 5 && ax <= 6 && az <= 5 && y >= 5 && y <= 8   // 側頭部の帯
+                              || z < -4 && z >= -5 && ax <= 6 && y >= 5 && y <= 8; // 後頭部の帯
+    // 頭頂のドーム（3 段）
+    if (y > 9 && y <= 10 && ax <= 6 && az <= 5) return true;
+    if (y > 10 && y <= 11 && ax <= 5.5 && az <= 4.5) return true;
+    if (y > 11 && y <= 12 && ax <= 4 && az <= 3.5 && style !== 'bald') return true;
+    // 横（もみあげ〜耳を覆う）と後ろ：下端は髪型で決まる
+    const ySide = style === 'long' ? -5 : style === 'bob' ? 1 : 4;
+    const yBack = style === 'long' ? -5 : style === 'bob' ? 1 : 3;
+    if (ax > 5 && ax <= 6 && az <= 5 && y >= ySide && y <= 9) return true;
+    if (z < -4 && z >= -5 && ax <= 6 && y >= yBack && y <= 9) return true;
+    // 前髪（箱の前 1px）：房ごとに長さを変えて段々に
+    if (z > 4 && z <= 5 && ax <= 5 && y <= 9) {
+      const col = Math.floor(x + 5);                                              // 0..9
+      let yF;
+      switch (style) {
+        case 'short':    yF = [7, 6, 7, 6, 6, 7, 6, 7, 6, 7][col]; break;
+        case 'sidepart': yF = col < 6 ? [5, 5, 6, 6, 7, 8][col] : 9; break;         // 左に流す（右は額が出る）
+        case 'slick':    yF = 9; break;                                           // 前髪なし（撫でつけ）
+        case 'bob':      yF = 6; break;                                           // ぱっつん
+        case 'long':     yF = [6, 6, 7, 6, 6, 7, 6, 6, 7, 6][col]; break;
+        case 'ponytail': yF = [7, 7, 8, 7, 7, 8, 7, 7, 8, 7][col]; break;
+        case 'bun':      yF = col < 3 || col > 6 ? 7 : 9; break;                   // 真ん中を上げる
+        default:         yF = 7;
+      }
+      return y >= yF;
+    }
+    // 付属：ポニーテール（後ろへ垂れる束）・お団子（頭頂の後ろ）
+    if (style === 'ponytail' && z < -5 && z >= -8 && ax <= 1.5 && y >= 2 && y <= 8) return true;
+    if (style === 'bun' && y > 12 && y <= 15 && ax <= 2 && z <= 0 && z >= -4) return true;
+    return false;
   };
-  const backMap = bald ? { [C.eye]: skin, '#ffffff': skin, [lips]: skin, [skin2]: skin }
-                       : { [skin]: hair, [skin2]: hair, [C.eye]: hair, '#ffffff': hair, [lips]: hair, '#e8a99a': hair, '#2a2a30': hair, '#8a8a8a': hair };
-  // 丸み：頭部（rows 0-23）を超楕円（3 乗）で削って角を落とす。鼻・耳は中央付近なので残る。首より下の髪は削らない
-  const carve = (x, y, z) => {
-    if (y >= 24) return false;
-    const dx = (x + 0.5 - 12) / 12.6, dy = (y + 0.5 - 12) / 12.6, dz = (z + 0.5 - 8) / 8.8;
-    // 上下左右は 3 乗（角丸の四角）、前後は 2 乗（顔の面と後頭部が丸く膨らむ。2026-09-10 ユーザー指定）
-    return Math.abs(dx) ** 3 + Math.abs(dy) ** 3 + dz * dz > 1;
+  // 突起：芯の外側 1px で、隣（内側・下）が芯ならまばらに残す（頭頂・横・後ろ。前髪の面は平らなまま）
+  const keep = (x, y, z) => {
+    if (core(x, y, z)) return true;
+    if (style === 'bald') return false;
+    if (y <= 9) return false;                                                    // 突起は頭頂だけ（横・後ろは平らな殻のまま）
+    return core(x, y - 1, z) && bumpy(x, y, z);
   };
-  // 頭の後ろ半分（z < 8）は、額〜あご（rows 10-23）の列でも髪色にする（角を丸めた側面に額の肌が出て禿げて見えるのを防ぐ。2026-09-10 ユーザー指摘）。
-  // 耳（x 2-3 / 20-21, rows 12-15）とあご下（rows ≥ 20 の中央）は肌のまま。薄毛は側頭部の帯（rows 8-15）だけ髪
-  const colorOf = (x, y, z) => {
-    if (y >= 24) return null;
-    if (!bald && (x <= 5 || x >= 18) && y >= 10 && y <= 11) return hair; // こめかみ：前後どこでも髪（生え際）
-    const earCol = (x <= 3 || x >= 20) && y >= 12 && y <= 15;
-    if (earCol) return z >= 5 ? null : hair;               // 耳の列：耳より後ろ（z < 5）は髪（耳の高さに肌の横線が出ないように）
-    if (z >= 8) return null;
-    if (bald) return y >= 8 && y <= 15 ? hair : null;
-    if (y >= 10 && y <= 19) return hair;
-    if (y >= 20 && (x <= 5 || x >= 18)) return hair;   // あごの横（うなじ側）
-    return null;
-  };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side, carve, colorOf });
+  const carve = (cx, cy, cz) => !keep(cx - 7 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5);
+  carve.toString = () => `hair(${style},${p.seed})`;
+  // 二色：まばらに少し暗い粒を混ぜる（髪の塊感）
+  const dark = '#' + [1, 3, 5].map((i) => Math.round(parseInt(hair.slice(i, i + 2), 16) * 0.82).toString(16).padStart(2, '0')).join('');
+  const colorOf = (cx, cy, cz) => (h3(Math.floor(cx / 2) + 100, cy + 100, Math.floor(cz / 2) + 100) < 0.22 ? dark : null); // 2px 幅の房単位
+  colorOf.toString = () => `hairColor(${p.seed})`;
+  return makePart(14, 21, 7, 16, (d) => { d.r(0, 0, 14, 21, hair); }, { res: 1, depth: 16, z0: -8, accent: `hair|${p.key}|${p.seed}`, carve, colorOf });
 }
 
 /**

@@ -8,7 +8,7 @@
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
 import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
-import { makePersona, headFor, torsoFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
+import { makePersona, headFor, hairFor, torsoFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -273,6 +273,7 @@ export class Puppet {
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
     this.head = this.flat ? head(this.seed, false) : headFor(P);
     this.headPivot.add(this.head);
+    if (!this.flat) { this.hair = hairFor(P); this.headPivot.add(this.hair); } // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）
     this.upper.add(this.headPivot);
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）。手首ありなら 肘 → 前腕 → 手首 → 手 の 3 関節
