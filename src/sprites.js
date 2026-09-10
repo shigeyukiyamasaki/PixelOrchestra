@@ -517,7 +517,7 @@ export const INSTRUMENT = {
     d.r(9, 36, 6, 1, C.ivory);                                             // 駒
     d.r(11, 37, 2, 10, '#3a3a44'); d.r(10, 46, 4, 6, C.black);              // 弦・テールピース
     d.r(11, 52, 2, 8, C.silver);                                           // エンドピン
-  }, { res: 2, depth: 12, z0: 0, side: (d) => { d.r(4, 0, 4, 12, F); d.r(2, 10, 8, 4, F); d.r(0, 14, 12, 34, F); d.r(2, 48, 8, 4, F); d.r(5, 52, 2, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 4), [0, 57, 6], 'y'),
+  }, { res: 2, depth: 8, z0: 0, side: (d) => { d.r(2, 0, 4, 12, F); d.r(1, 10, 6, 4, F); d.r(0, 14, 8, 34, F); d.r(1, 48, 6, 4, F); d.r(3, 52, 2, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 4), [0, 57, 4], 'y'), // 厚み 12 → 8 セル（34cm → 22cm。2026-09-11 ユーザー指摘）
   // コントラバス 28×76（2倍解像度）。渦巻き・ネック・ふくらみ・くびれ・f 字孔・駒（row 38 = 基本 y 19）・エンドピン。立奏用
   contrabass: () => withScroll(makePart(28, 76, 14, 76, (d) => {
     d.r(11, 4, 6, 14, C.wood2);                                            // ネック（糸巻きは別パーツ）
@@ -529,7 +529,7 @@ export const INSTRUMENT = {
     d.r(10, 38, 8, 1, C.ivory);                                            // 駒
     d.r(13, 39, 2, 14, '#3a3a44'); d.r(12, 53, 4, 10, C.black);             // 弦・テールピース
     d.r(13, 64, 2, 12, C.silver);                                          // エンドピン
-  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(6, 4, 4, 14, F); d.r(2, 16, 12, 6, F); d.r(0, 22, 16, 41, F); d.r(7, 64, 2, 12, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 5), [0, 72, 8], 'y'),
+  }, { res: 2, depth: 14, z0: 0, side: (d) => { d.r(5, 4, 4, 14, F); d.r(2, 16, 10, 6, F); d.r(0, 22, 14, 41, F); d.r(6, 64, 2, 12, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 5), [0, 72, 7], 'y'), // 厚み 16 → 14 セル（42cm → 37cm。2026-09-11）
   // 弓・指揮棒は 2 倍解像度グリッドで細く（断面 1×1 / 0.5×0.5 基本 px）
   // 弓 52×2（2 倍解像度＝26px。40 から 1.3 倍に延長、2026-09-10 ユーザー指定）。pivot = フロッグ（手元）
   bow: () => makePart(52, 2, 2, 1, (d) => { d.r(0, 0, 52, 1, C.wood2); d.r(2, 1, 48, 1, C.ivory); d.r(0, 0, 3, 2, C.black); }, { res: 2, depth: 2, z0: -1 }),
