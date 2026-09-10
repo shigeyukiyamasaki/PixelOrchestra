@@ -486,15 +486,27 @@ export const INSTRUMENT = {
     d.r(2, 8, 4, 1, C.silver2); d.r(2, 16, 4, 1, C.silver2); d.r(2, 24, 4, 1, C.silver2); d.r(2, 32, 4, 1, C.silver2); // 継ぎ目
   }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(3, 0, 2, 4, F); d.r(2, 4, 4, 28, F); d.r(1, 32, 6, 4, F); d.r(0, 36, 8, 4, F); },
        top: (d) => { d.disc(4, 4, 3, F); }, carve: WW_BELL_HOLE }),
-  // ファゴット 10×68：長い主管（上にベル）・平行するウィングジョイント・下のブーツ・ボーカル（銀の曲管）とリード。pivot = 底中央
-  bassoon: () => makePart(10, 68, 4, 68, (d) => {
-    d.r(2, 0, 4, 68, C.wood); d.r(1, 0, 6, 4, C.coat2);                                    // 主管・ベル（黒いキャップ）
-    d.r(6, 14, 3, 48, C.wood2);                                                             // ウィングジョイント
-    d.r(1, 58, 8, 10, C.wood2); d.r(2, 66, 6, 2, C.black);                                  // ブーツ
-    d.r(3, 6, 1, 50, '#6e3a1c');                                                            // 艶
-    d.r(7, 10, 2, 5, C.silver); d.r(5, 8, 3, 2, C.silver); d.r(3, 6, 2, 2, C.silver); d.p(2, 5, C.silver); d.r(1, 3, 1, 3, C.ivory); // ボーカル・リード
-    for (let y = 20; y < 56; y += 6) { d.r(5, y, 2, 1, C.silver); d.p(1, y + 3, C.silver); } // キー
-  }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(2, 0, 4, 68, F); d.r(1, 58, 6, 10, F); } }),
+  // ファゴット 10×68：長い主管（上にベル）・平行するウィングジョイント（上端は全高の 2/3。ここからボーカルが出る）・下のブーツ。pivot = 底中央
+  // ボーカル（銀の曲管）とリードは別パーツで、ウィングジョイントの上端から奏者側（-z）へ曲がって伸びる（リードはてっぺんではない。2026-09-10 ユーザー指摘）
+  bassoon: () => {
+    const body = makePart(10, 68, 4, 68, (d) => {
+      d.r(2, 0, 4, 68, C.wood); d.r(1, 0, 6, 4, C.coat2);                                    // 主管・ベル（黒いキャップ）
+      d.r(6, 22, 3, 40, C.wood2);                                                             // ウィングジョイント（rows 22-62）
+      d.r(1, 58, 8, 10, C.wood2); d.r(2, 66, 6, 2, C.black);                                  // ブーツ
+      d.r(3, 6, 1, 50, '#6e3a1c');                                                            // 艶
+      d.r(6, 22, 3, 1, C.silver);                                                             // ウィングジョイント上端の金具
+      for (let y = 26; y < 56; y += 6) { d.r(5, y, 2, 1, C.silver); d.p(1, y + 3, C.silver); } // キー
+    }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(2, 0, 4, 68, F); d.r(1, 58, 6, 10, F); } });
+    // ボーカル 12×8（2倍解像度）：右下（ウィングの上端）から左上（リード）へ。描画の +x を奏者側（-z）へ向けて取り付ける
+    const bocal = makePart(12, 8, 11, 7, (d) => {
+      d.line(11, 7, 3, 1, C.silver); d.line(11, 6, 3, 0, C.silver); d.line(10, 7, 2, 1, C.silver); // 曲管（太さ 2）
+      d.r(0, 0, 3, 2, C.ivory); d.p(2, 1, C.black);                                            // リード・糸巻き
+    }, { res: 2, depth: 2, z0: -1 });
+    bocal.position.set(3.5 * VOX, 46 * VOX, 0);
+    if (PART_STYLE !== 'sprite') bocal.rotation.y = Math.PI / 2; // +x → -z（奏者の口へ）。2D の板では左へ伸ばしたまま
+    body.add(bocal);
+    return body;
+  },
   // トランペット 36×12（2倍解像度）。マウスピース・リードパイプ・ピストン 3 本・下の U 管・ベルの広がり
   trumpet: () => makePart(36, 12, 0, 6, (d) => {
     d.r(0, 5, 3, 2, C.silver);                                             // マウスピース
