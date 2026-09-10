@@ -11,7 +11,7 @@ export const PX = 0.075; // 基本グリッドの 1ピクセル = 0.075 world un
 export const VOX = PX / 2; // ボクセル 1 個 = 基本グリッドの半分（2 倍解像度の絵の 1 ドット）。res:1 のパーツは 1 ドット = 2×2 ボクセル
 
 export const C = {
-  coat: '#1b1b26', coat2: '#2b2b3c', shirt: '#f4f4f4', skin: '#f1c9a5', skin2: '#d9a880',
+  coat: '#1b1b26', coat2: '#2b2b3c', shirt: '#f4f4f4', skin: '#efbea7', skin2: '#d79c82',
   shoe: '#0c0c10', wood: '#8a4b2a', wood2: '#5a2e14', gold: '#e2b348', gold2: '#a7791c',
   silver: '#d5dbe2', silver2: '#8d97a3', black: '#101016', white: '#ffffff',
   copper: '#b8703a', copper2: '#7e4a22', head: '#efe7d5', eye: '#111111', ivory: '#f6f1dc',
