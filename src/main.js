@@ -133,6 +133,7 @@ function settings() {
     rollMode: radioValue('rollMode') === 'wall' ? 'wall' : 'overhead',
     showLandLine: $('showLandLine').checked,
     rollOpacity: num('rollOpacity', 0.85),
+    rollGlow: num('rollGlow', 0),
     showGlow: $('showGlow').checked,
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
@@ -462,6 +463,7 @@ function animate() {
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);
     roll.setOpacity(s.rollOpacity);
+    roll.setGlow(s.rollGlow);
     wall.visible = s.showRoll && s.rollMode === 'wall';
     if (s.showRoll) roll.update(t, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 

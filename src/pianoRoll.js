@@ -17,6 +17,28 @@ const DEFAULT_OVERHEAD_HEIGHT = 7;
 const DEFAULT_SEMITONE_W = 0.22;
 const COLUMN_EXTRA_MAX = 5;   // 列幅の上限 = 奏者の並び幅 + これ [unit]。超える音域は半音幅を詰めて収める
 
+// グロー用のぼけた板（中心が明るく縁へ向かって透明）。ノートの形に沿った矩形のぼかし
+let _haloTex = null;
+function haloTexture() {
+  if (_haloTex) return _haloTex;
+  const N = 64;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const g = c.getContext('2d');
+  const img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = Math.abs(x + 0.5 - N / 2) / (N / 2), dy = Math.abs(y + 0.5 - N / 2) / (N / 2); // 0..1
+    const d = Math.max(dx, dy);                        // 矩形距離（ノートの形に沿う）
+    const a = Math.pow(Math.max(0, 1 - d), 2);         // 中心 1 → 縁 0（二乗で中心寄りに集める）
+    const k = (y * N + x) * 4;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * a);
+  }
+  g.putImageData(img, 0, 0);
+  _haloTex = new THREE.CanvasTexture(c);
+  _haloTex.minFilter = THREE.LinearFilter; _haloTex.magFilter = THREE.LinearFilter;
+  return _haloTex;
+}
+
 export class PianoRoll {
   constructor(scene, engine, camera) {
     this.scene = scene;
@@ -38,10 +60,17 @@ export class PianoRoll {
     this.mesh = new THREE.InstancedMesh(geo, mat, this.notes.length);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.group.add(this.mesh);
+    // グロー（2026-09-10）：各ノートの周りに、ぼけた光の板を加算合成で重ねる（ノートより一回り大きい・後処理のブルームは使わない）
+    this.haloMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: haloTexture(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), this.notes.length);
+    this.haloMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.haloMesh.renderOrder = 5;
+    this.group.add(this.haloMesh);
+    this.glow = 0;
     // 初期状態は全ノート非表示（identity のままだと原点に 1×1 の板が出る）
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < this.notes.length; i++) { this.mesh.setMatrixAt(i, zero); this.mesh.setColorAt(i, new THREE.Color(0)); }
+    for (let i = 0; i < this.notes.length; i++) { this.mesh.setMatrixAt(i, zero); this.mesh.setColorAt(i, new THREE.Color(0)); this.haloMesh.setMatrixAt(i, zero); this.haloMesh.setColorAt(i, new THREE.Color(0)); }
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.haloMesh.instanceMatrix.needsUpdate = true;
 
     this._color = new THREE.Color();
     this._white = new THREE.Color(1, 1, 1);
@@ -132,7 +161,9 @@ export class PianoRoll {
     const zeroM = this._m.identity().scale(this._scl.set(0, 0, 0));
 
     // 前フレームで表示していたものを一旦消す（表示範囲外になったものを確実に隠す）
-    for (const i of this._lastVisible) mesh.setMatrixAt(i, zeroM);
+    const halo = this.haloMesh, glow = this.glow;
+    halo.visible = glow > 0;
+    for (const i of this._lastVisible) { mesh.setMatrixAt(i, zeroM); halo.setMatrixAt(i, zeroM); }
     this._lastVisible.clear();
 
     // 頭上モード：列ごとにカメラの方位へ向ける（円筒ビルボード）。着弾ラインも同じ向き
@@ -189,6 +220,13 @@ export class PianoRoll {
       this._scl.set(w, clipTop - clipBottom, 1);
       this._m.compose(this._pos, quat, this._scl);
       mesh.setMatrixAt(i, this._m);
+      if (glow > 0) { // 光の板：ノートの幅 × 1.5 × グロー分だけ四方に広げる
+        const pad = w * 1.5 * glow;
+        this._pos.set(x, clipBottom - pad, z);
+        this._scl.set(w + 2 * pad, clipTop - clipBottom + 2 * pad, 1);
+        this._m.compose(this._pos, quat, this._scl);
+        halo.setMatrixAt(i, this._m);
+      }
 
       // 色：未来 = トラック色、発音中 = 明るく、直後 = 白フラッシュ
       const c = this._color.copy(this.trackColors.get(n.track));
@@ -199,14 +237,18 @@ export class PianoRoll {
         c.multiplyScalar(0.55 + 0.45 * n.velocity);
       }
       mesh.setColorAt(i, c);
+      if (glow > 0) halo.setColorAt(i, c);
       this._lastVisible.add(i);
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (glow > 0) { halo.instanceMatrix.needsUpdate = true; if (halo.instanceColor) halo.instanceColor.needsUpdate = true; }
   }
 
   setVisible(v) { this.group.visible = v; }
   setOpacity(v) { this.mesh.material.opacity = Math.max(0, Math.min(1, v)); }
+  /** グローの強さ（0 で無し。1 で幅の 1.5 倍の広がり・不透明度 0.5、2 で広がり 3 倍・0.75） */
+  setGlow(g) { this.glow = Math.max(0, g); this.haloMesh.material.opacity = Math.min(1, 0.5 * Math.min(this.glow, 1) + 0.25 * Math.max(0, this.glow - 1)); }
 
   dispose() {
     this.scene.remove(this.group);
