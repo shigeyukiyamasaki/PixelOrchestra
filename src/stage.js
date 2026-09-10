@@ -51,7 +51,7 @@ function rowKeyOf(track) {
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
 export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
-export const CONDUCTOR_Z = -3.2; // 指揮台の z（弦の最前列 z=-8 に寄せる。+z = 客席側。指揮台の奥行き 2.2 分だけ奥へ：2026-09-09）
+export const CONDUCTOR_Z = -2.1; // 指揮台（2.2 角）と指揮者の z。+z = 客席側。-3.2 から指揮台の半分（1.1）手前へ（2026-09-10 ユーザー指定）
 export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を奥へ平行移動する量 [unit]（2026-09-10 ユーザー指定「少し奥へ」）
 export const FLOOR_RADIUS = 20;  // ステージ円の半径
 export const FLOOR_CENTER_Z = -13; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
