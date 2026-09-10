@@ -8,6 +8,7 @@
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
 import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair } from './sprites.js';
+import { makePersona, headFor, torsoFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -205,6 +206,7 @@ export class Puppet {
     this.variant = o.isConductor ? 'conductor' : o.variant;
     this.cfg = VARIANT[this.variant] || VARIANT.violin;
     this.seed = o.seed || 0;
+    this.persona = makePersona(this.seed);             // 老若男女（seed から決定的。2026-09-10）
     this.phase = (this.seed * 1.618) % 6.283;          // 個体差（揺れの位相）
     this.scaleVar = 0.9 + ((this.seed * 7) % 5) * 0.05; // 個体差（振り幅）
     this.delay = 0;
@@ -228,8 +230,9 @@ export class Puppet {
 
     // 座る／立つ：打楽器と指揮者以外は椅子に座る（2026-09-09 ユーザー指定）。上半身の高さは立ち姿と同じにし、脚だけ差し替える
     this.seated = !o.isConductor && this.family !== 'percussion' && this.variant !== 'contrabass'; // コントラバスは立奏（2026-09-10）
+    const P = this.persona;
     if (this.seated) {
-      this.body = torsoSeated(o.color || '#c03030');
+      this.body = this.flat ? torsoSeated(o.color || '#c03030') : torsoFor(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
       const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
@@ -242,21 +245,27 @@ export class Puppet {
           const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); this.rig.add(sh);          // すね：太ももの先から床へ
           const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); this.rig.add(so);          // 靴：前へ
         }
+        if (P.gender === 'f') { // ロングスカート：腰の上を覆い、膝から床へ垂れる
+          const sk = skirtSeated();
+          sk.hip.position.set(0, 12 * PX, 0); this.rig.add(sk.hip);
+          sk.front.position.set(0, 0, 10 * PX); this.rig.add(sk.front);
+        }
       }
     } else if (this.flat) {
       this.body = body(o.color || '#c03030');
       this.upper.add(this.body);
     } else {
       // 立奏（打楽器・コントラバス・指揮者）：腰から上を spine の下に、脚は rig に直付け。揺れ・呼吸は上半身だけ（2026-09-10 ユーザー指定）
-      this.body = torsoSeated(o.color || '#c03030');
+      this.body = torsoFor(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;
       this.upper.add(this.body);
-      this.rig.add(legsStanding());
+      this.rig.add(legsStandingFor(P));
     }
+    if (!this.flat) this.group.scale.setScalar(P.height); // 身長の個体差（楽器・腕ごと相似）
 
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
-    this.head = head(this.seed, false);
+    this.head = this.flat ? head(this.seed, false) : headFor(P);
     this.headPivot.add(this.head);
     this.upper.add(this.headPivot);
 
@@ -275,7 +284,7 @@ export class Puppet {
       if (this.hasWrist) {
         f.add(foreArmNoHand());
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
-        h.add(hand()); f.add(h);
+        h.add(this.flat ? hand() : handFor(P)); f.add(h);
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
         f.add(foreArm());
