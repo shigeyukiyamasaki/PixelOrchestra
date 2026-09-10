@@ -2,7 +2,7 @@
  * PixelOrchestra — pianoRoll.js
  * 最終更新: 2026-09-09 / v0.2 / 生成元: PixelOrchestra
  *
- * 滝型ピアノロール。2 モード：
+ * 滝型ピアノロール（ノートは円筒。2026-09-11）。2 モード：
  *   overhead: 各奏者（トラック）の真上からノートが降ってきて足元で着弾する（既定。体は貫通）
  *   wall:     後方の壁を上から下へ流れる（横軸 = 音程・全トラック共通）
  * どちらも InstancedMesh 1つで全ノートを描く。
@@ -40,6 +40,28 @@ function haloTexture() {
   return _haloTex;
 }
 
+// 円筒ノートの陰影（2026-09-11 ユーザー指定：帯 → 円筒）。照明に頼らず、円周方向 u の 0.5（カメラ側）を明るく、両端（縁）を暗くするグラデーションを色に掛ける。
+// 列はカメラの方位へ向くビルボードなので、常に見える側が明るく丸く見える
+let _shadeTex = null;
+function cylinderShadeTexture() {
+  if (_shadeTex) return _shadeTex;
+  const N = 64;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = 1;
+  const g = c.getContext('2d');
+  const img = g.createImageData(N, 1);
+  for (let x = 0; x < N; x++) {
+    const u = (x + 0.5) / N;
+    const k = Math.max(0, Math.cos((u - 0.5) * Math.PI)); // 0.5 で 1、両端で 0
+    const v = Math.round(255 * (0.35 + 0.65 * Math.pow(k, 0.8)));
+    img.data[x * 4] = img.data[x * 4 + 1] = img.data[x * 4 + 2] = v; img.data[x * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  _shadeTex = new THREE.CanvasTexture(c);
+  _shadeTex.minFilter = THREE.LinearFilter; _shadeTex.magFilter = THREE.LinearFilter;
+  return _shadeTex;
+}
+
 export class PianoRoll {
   constructor(scene, engine, camera) {
     this.scene = scene;
@@ -54,15 +76,18 @@ export class PianoRoll {
     this.pitchLo = lo;
     this.semitoneW = WALL_WIDTH / (hi - lo + 1);
 
-    // ノート：底辺が pivot の 1×1 平面
-    const geo = new THREE.PlaneGeometry(1, 1);
+    // ノート：底面が pivot の直径 1・高さ 1 の円筒（scale.x = 幅 = 直径、scale.y = 長さ）。thetaStart = π で u=0.5 が +z（カメラ側）
+    const geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 14, 1, false, Math.PI);
     geo.translate(0, 0.5, 0);
-    const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+    const mat = new THREE.MeshBasicMaterial({ map: cylinderShadeTexture(), transparent: true, opacity: 0.82 });
     this.mesh = new THREE.InstancedMesh(geo, mat, this.notes.length);
+    // グロー用：底辺が pivot の 1×1 平面（ビルボード）
+    const haloGeo = new THREE.PlaneGeometry(1, 1);
+    haloGeo.translate(0, 0.5, 0);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.group.add(this.mesh);
     // グロー（2026-09-10）：各ノートの周りに、ぼけた光の板を加算合成で重ねる（ノートより一回り大きい・後処理のブルームは使わない）
-    this.haloMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: haloTexture(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), this.notes.length);
+    this.haloMesh = new THREE.InstancedMesh(haloGeo, new THREE.MeshBasicMaterial({ map: haloTexture(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), this.notes.length);
     this.haloMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.haloMesh.renderOrder = 5;
     this.group.add(this.haloMesh);
