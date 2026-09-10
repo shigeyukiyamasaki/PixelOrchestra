@@ -211,6 +211,14 @@ export function applyWoodVariation(root, seed) {
   });
 }
 
+// 太鼓のラグ／チューニングねじ：中心からの角度が n 等分の位置（±half セル幅）にあるか（2026-09-11）
+function lugAngle(dx, dz, n, half) {
+  const r = Math.hypot(dx, dz); if (r < 1e-6) return false;
+  const a = Math.atan2(dz, dx), step = 2 * Math.PI / n;
+  const k = Math.round(a / step);
+  return Math.abs(a - k * step) * r <= half;
+}
+
 // ---------------- 人物パーツ ----------------
 
 /**
@@ -588,7 +596,7 @@ export const INSTRUMENT = {
     d.r(8, 8, 2, 2, C.gold); d.r(8, 9, 16, 2, C.gold); d.r(22, 8, 2, 2, C.gold); // 下の U 管
     for (let i = 0; i < 3; i++) { d.r(12 + i * 3, 1, 2, 9, C.gold2); d.r(12 + i * 3, 0, 2, 1, C.silver); } // ピストン
     d.r(25, 4, 3, 4, C.gold); d.r(28, 3, 2, 6, C.gold); d.r(30, 1, 2, 10, C.gold); d.r(32, 0, 3, 12, C.gold); d.r(35, 0, 1, 12, C.gold2); // ベル
-    d.r(26, 5, 8, 1, '#f3d27a');                                            // ハイライト
+    d.r(26, 4, 8, 2, '#f3d27a');                                            // ハイライト（1px の帯。線でなく面で。2026-09-11）
   }, { res: 2, depth: 12, z0: -6,
        side: (d) => { d.disc(6, 6, 6, F); d.r(5, 4, 2, 4, F); },                                  // 断面は円（ベルが丸く見える）
        top: (d) => { d.r(0, 5, 25, 2, F); d.r(8, 4, 16, 4, F); d.r(12, 3, 8, 6, F); d.r(25, 4, 3, 4, F); d.r(28, 3, 2, 6, F); d.r(30, 1, 2, 10, F); d.r(32, 0, 4, 12, F); }, // 管は細く、ベルは正面と同じ広がり
@@ -601,7 +609,7 @@ export const INSTRUMENT = {
     d.r(6, 10, 9, 6, C.gold2); d.r(6, 9, 2, 2, C.silver); d.r(9, 9, 2, 2, C.silver); d.r(12, 9, 2, 2, C.silver); // ロータリーとレバー
     d.r(0, 12, 8, 2, C.gold); d.r(0, 12, 2, 2, C.silver);                                   // マウスパイプ・マウスピース
     d.r(16, 16, 4, 6, C.gold); d.r(20, 14, 3, 10, C.gold); d.r(23, 12, 3, 14, C.gold); d.r(26, 10, 2, 18, C.gold2); // ベル
-    d.r(17, 18, 8, 1, '#f3d27a');
+    d.r(17, 17, 8, 2, '#f3d27a');                                                          // ハイライト（1px の帯）
   }, { res: 2, depth: 16, z0: -4,
        side: (d) => { d.r(6, 4, 4, 22, F); d.disc(8, 19, 8, F); },
        top: (d) => { d.r(0, 6, 20, 4, F); d.r(16, 5, 4, 6, F); d.r(20, 3, 3, 10, F); d.r(23, 1, 3, 14, F); d.r(26, 0, 2, 16, F); },
@@ -658,7 +666,7 @@ export const INSTRUMENT = {
     d.r(6, 22, 20, 1, C.gold2); d.r(6, 31, 20, 1, C.gold2);                                 // 管の継ぎ目
     d.r(11, 18, 10, 12, C.gold2); for (let x = 10; x <= 19; x += 3) d.r(x, 16, 2, 2, C.silver); // ピストンとボタン
     d.r(3, 25, 8, 2, C.gold); d.r(0, 24, 3, 3, C.silver);                                   // マウスパイプ・マウスピース
-    d.r(6, 18, 1, 20, '#f3d27a');
+    d.r(6, 18, 2, 20, '#f3d27a');                                                          // ハイライト（1px の帯）
   }, { res: 2, depth: 20, z0: -4,
        side: (d) => { d.r(2, 0, 16, 2, F); d.r(3, 2, 14, 4, F); d.r(5, 6, 10, 4, F); d.r(6, 10, 8, 4, F); d.r(2, 14, 16, 28, F); d.r(4, 42, 12, 2, F); },
        top: (d) => { d.disc(16, 10, 12, F); d.r(4, 4, 24, 12, F); d.r(0, 6, 6, 6, F); },
@@ -667,27 +675,32 @@ export const INSTRUMENT = {
   // ---- 打楽器（2倍解像度。太鼓・シンバルは上から見て丸い）----
   // ティンパニ 56×32：皮・フープ・銅の椀・脚・ペダル。pivot = 皮の中央
   timpani: () => makePart(56, 32, 28, 0, (d) => {
+    d.r(0, 5, 56, 8, C.silver2);                                                            // チューニングねじの下地（carve で 8 本だけ残す。2026-09-11）
     d.r(4, 0, 48, 4, C.head); d.r(2, 4, 52, 2, C.silver);                                   // 皮・フープ
     d.r(2, 6, 52, 8, C.copper); d.r(5, 14, 46, 6, C.copper); d.r(10, 20, 36, 4, C.copper2); d.r(18, 24, 20, 3, C.copper2); // 椀
     d.r(8, 8, 3, 10, '#d08c50');                                                            // 艶
     d.r(10, 26, 3, 6, C.silver2); d.r(43, 26, 3, 6, C.silver2); d.r(26, 27, 4, 5, C.silver2); // 脚
     d.r(24, 30, 8, 2, C.black);                                                             // ペダル
   }, { res: 2, depth: 56, z0: 0,
-       side: (d) => { d.r(4, 0, 48, 4, F); d.r(2, 4, 52, 2, F); d.r(2, 6, 52, 8, F); d.r(5, 14, 46, 6, F); d.r(10, 20, 36, 4, F); d.r(18, 24, 20, 3, F); d.r(10, 26, 3, 6, F); d.r(43, 26, 3, 6, F); d.r(26, 27, 4, 5, F); },
+       side: (d) => { d.r(4, 0, 48, 4, F); d.r(2, 4, 52, 2, F); d.r(0, 5, 56, 8, F); d.r(2, 6, 52, 8, F); d.r(5, 14, 46, 6, F); d.r(10, 20, 36, 4, F); d.r(18, 24, 20, 3, F); d.r(10, 26, 3, 6, F); d.r(43, 26, 3, 6, F); d.r(26, 27, 4, 5, F); },
        top: (d) => { d.disc(28, 28, 27, F); },
-       // 行ごとの半径で真円に削る（皮 24・フープ 26・椀 26→23→18→10。3 面の交差だけだと角の丸い四角になる）
-       carve: (x, y, z) => { if (y >= 26) return false; const R = y < 4 ? 24 : y < 14 ? 26 : y < 20 ? 23 : y < 24 ? 18 : 10; return Math.hypot(x - 27.5, z - 27.5) > R + 0.5; } }),
+       // 行ごとの半径で真円に削る（皮 24・フープ 26・椀 26→23→18→10。3 面の交差だけだと角の丸い四角になる）。
+       // 椀の外（R 26〜27.5、rows 5-12）はチューニングねじ 8 本の位置だけ残す（1px 張り出す粗い部品。2026-09-11）
+       carve: (x, y, z) => { if (y >= 26) return false; const r = Math.hypot(x - 27.5, z - 27.5); if (y >= 5 && y < 13 && r > 26.5) return !(r <= 27.6 && lugAngle(x - 27.5, z - 27.5, 8, 1.4)); const R = y < 4 ? 24 : y < 14 ? 26 : y < 20 ? 23 : y < 24 ? 18 : 10; return r > R + 0.5; },
+       colorOf: (x, y, z) => (y >= 5 && y < 13 && Math.hypot(x - 27.5, z - 27.5) > 26.5 ? C.silver2 : null) }),
   // スネア 32×20：皮・フープ・クロームの胴とラグ・脚
   snare: () => makePart(32, 20, 16, 0, (d) => {
+    d.r(0, 6, 32, 8, C.silver2);                                                            // ラグの下地（carve で 8 本だけ残す。2026-09-11）
     d.r(4, 0, 24, 3, C.head); d.r(2, 3, 28, 2, C.silver);
-    d.r(3, 5, 26, 10, C.silver); for (let x = 5; x < 30; x += 7) d.r(x, 6, 2, 8, C.silver2); // 胴・ラグ
+    d.r(3, 5, 26, 10, C.silver);                                                            // 胴（ラグは立体で外に張り出す）
     d.r(2, 15, 28, 2, C.silver);
     d.r(10, 17, 2, 3, C.silver2); d.r(20, 17, 2, 3, C.silver2); d.r(15, 17, 2, 3, C.silver2);
   }, { res: 2, depth: 32, z0: 0,
-       side: (d) => { d.r(4, 0, 24, 3, F); d.r(2, 3, 28, 2, F); d.r(3, 5, 26, 10, F); d.r(2, 15, 28, 2, F); d.r(10, 17, 2, 3, F); d.r(20, 17, 2, 3, F); },
+       side: (d) => { d.r(4, 0, 24, 3, F); d.r(2, 3, 28, 2, F); d.r(0, 6, 32, 8, F); d.r(3, 5, 26, 10, F); d.r(2, 15, 28, 2, F); d.r(10, 17, 2, 3, F); d.r(20, 17, 2, 3, F); },
        top: (d) => { d.disc(16, 16, 15, F); },
-       // 行ごとの半径で真円に削る（皮 12・フープ 14・胴 13）
-       carve: (x, y, z) => { if (y >= 17) return false; const R = y < 3 ? 12 : y < 5 ? 14 : y < 15 ? 13 : 14; return Math.hypot(x - 15.5, z - 15.5) > R + 0.5; } }),
+       // 行ごとの半径で真円に削る（皮 12・フープ 14・胴 13）。胴の外（R 13.5〜15、rows 6-13）はラグ 8 本の位置だけ残す
+       carve: (x, y, z) => { if (y >= 17) return false; const r = Math.hypot(x - 15.5, z - 15.5); if (y >= 6 && y < 14 && r > 13.5) return !(r <= 15.2 && lugAngle(x - 15.5, z - 15.5, 8, 1.2)); const R = y < 3 ? 12 : y < 5 ? 14 : y < 15 ? 13 : 14; return r > R + 0.5; },
+       colorOf: (x, y, z) => (y >= 6 && y < 14 && Math.hypot(x - 15.5, z - 15.5) > 13.5 ? C.silver2 : null) }),
   // シンバル 36×8：カップ・薄い円盤（上から見て丸い）・スタンド
   cymbal: () => makePart(36, 8, 18, 0, (d) => { d.r(14, 0, 8, 1, C.gold2); d.r(12, 1, 12, 1, C.gold); d.r(0, 2, 36, 3, C.gold); d.r(2, 4, 32, 1, C.gold2); d.r(17, 5, 2, 3, C.silver2); },
     { res: 2, depth: 36, z0: -18, side: (d) => { d.r(14, 0, 8, 1, F); d.r(12, 1, 12, 1, F); d.r(0, 2, 36, 3, F); d.r(17, 5, 2, 3, F); }, top: (d) => { d.disc(18, 18, 17, F); } }),
@@ -716,8 +729,10 @@ export const INSTRUMENT = {
     d.disc(26, 26, 25, C.wood2);                                                            // 胴
     d.disc(26, 26, 21, C.head); d.ring(26, 26, 12, '#e4dcc8');                              // 皮
     d.ring(26, 26, 22, C.silver); d.ring(26, 26, 23, C.silver);                             // フープ
-    for (let a = 0; a < 10; a++) { const x = 26 + Math.round(24 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(24 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 2, 2, C.gold2); } // ラグ
-  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 1, 16, 50, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); } }),
+    for (let a = 0; a < 10; a++) { const x = 26 + Math.round(25 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(25 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 3, 3, C.gold2); } // ラグ（胴の縁から 1 セル外へ張り出す）
+  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); },
+       // 皮（R ≤ 21）は前後とも 2 セル奥へ引っ込め、フープ（R 22-23）が張り出して見える（2026-09-11）
+       carve: (x, y, z) => Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1) }),
 
   // ---- 鍵盤・ハープ（2倍解像度）----
   // チェレスタ 52×60：小さなアップライト型。上部パネル・鍵盤（手前に張り出す）・脚・ペダル。pivot = 底中央
