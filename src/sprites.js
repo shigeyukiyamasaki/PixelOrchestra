@@ -532,23 +532,31 @@ export const INSTRUMENT = {
        side: (d) => { d.r(6, 4, 4, 22, F); d.disc(8, 19, 8, F); },
        top: (d) => { d.r(0, 6, 20, 4, F); d.r(16, 5, 4, 6, F); d.r(20, 3, 3, 10, F); d.r(23, 1, 3, 14, F); d.r(26, 0, 2, 16, F); },
        carve: (x, y, z) => { if (x < 20) return false; const R = x >= 26 ? 9 : x >= 23 ? 7 : 5; const r = R - 1.5; const dy = y - 19, dz = z - 7.5; return dy * dy + dz * dz < r * r; } }),
-  // トロンボーン 52×12：マウスピース・内管・ベル管・前に広がるベル。外管（スライド）は別パーツで、音程に応じて +x へ動く（puppet.js が userData.slide を動かす）
+  // トロンボーン：本物の構造どおり 3 パーツ。ベル部（チューニング管の U ターン → ベル管 → 顔の近くで広がるベル）は上段で、スライド部より
+  // 奏者の左へ 2px ずらす。スライド部（マウスピース → 上の内管 → 先端 → 下の内管 → 奏者側の縦管）は下段。外管は別パーツで音程に応じて +x へ動く。
+  // ベルの縁とスライド第 1 ポジションの先端はほぼ同じ前後位置（2026-09-10 ユーザー指摘：ベルは顔の近く）。pivot = マウスピース。座標は 34×20 の絵で共通
   trombone: () => {
-    const body = makePart(52, 12, 0, 6, (d) => {
-      d.r(0, 5, 3, 2, C.silver);                                                              // マウスピース
-      d.r(3, 5, 38, 2, C.gold);                                                               // ベル管
-      d.r(3, 3, 28, 1, C.gold2); d.r(3, 8, 28, 1, C.gold2);                                   // 内管（スライドが伸びると露出する）
-      d.r(4, 3, 1, 6, C.silver);                                                              // 支柱（マウスピース側）
-      d.r(40, 4, 3, 4, C.gold); d.r(43, 3, 3, 6, C.gold); d.r(46, 1, 3, 10, C.gold); d.r(49, 0, 3, 12, C.gold); d.r(51, 0, 1, 12, C.gold2); // ベル
-      d.r(30, 5, 14, 1, '#f3d27a');
+    const body = makePart(34, 20, 0, 13, (d) => {
+      d.r(0, 12, 3, 2, C.silver);                                                             // マウスピース
+      d.r(3, 13, 28, 1, C.gold2); d.r(3, 17, 28, 1, C.gold2);                                 // 内管（上・下。外管が伸びると露出）
+      d.r(2, 4, 2, 14, C.gold);                                                               // 奏者側の縦管（下の内管 → ベル管へ）
+    }, { res: 2, depth: 12, z0: -6, side: (d) => { d.r(4, 0, 4, 20, F); }, top: (d) => { d.r(0, 5, 32, 2, F); d.r(2, 5, 2, 4, F); } });
+    const bell = makePart(34, 12, 0, 13, (d) => {
+      d.r(0, 0, 10, 2, C.gold); d.r(0, 0, 2, 6, C.gold); d.r(8, 0, 2, 6, C.gold);             // チューニング管（U ターン）
+      d.r(2, 4, 17, 2, C.gold);                                                               // ベル管
+      d.r(18, 3, 3, 4, C.gold); d.r(21, 2, 3, 6, C.gold); d.r(24, 1, 3, 8, C.gold); d.r(27, 0, 3, 12, C.gold); d.r(30, 0, 2, 12, C.gold2); // ベル
+      d.r(3, 4, 14, 1, '#f3d27a');
     }, { res: 2, depth: 12, z0: -6,
-         side: (d) => { d.disc(6, 6, 6, F); d.r(4, 2, 4, 8, F); },
-         top: (d) => { d.r(0, 5, 41, 2, F); d.r(3, 3, 28, 6, F); d.r(40, 4, 3, 4, F); d.r(43, 3, 3, 6, F); d.r(46, 1, 3, 10, F); d.r(49, 0, 3, 12, F); },
-         carve: (x, y, z) => { if (x < 42) return false; const R = x >= 49 ? 6 : x >= 46 ? 5 : 3; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } });
-    // 外管 26×8：上下 2 本の管・先端の U 字・支柱。pivot = 左端中央（本体の x=6・中心行に置く）
-    const slide = makePart(26, 8, 0, 4, (d) => {
-      d.r(0, 0, 24, 2, C.gold); d.r(0, 6, 24, 2, C.gold); d.r(22, 0, 3, 8, C.gold); d.r(24, 1, 1, 6, C.gold2); // 管・U 字
-      d.r(1, 0, 1, 8, C.silver);                                                               // 支柱
+         side: (d) => { d.disc(6, 6, 6, F); },
+         top: (d) => { d.r(0, 5, 20, 2, F); d.r(18, 4, 3, 4, F); d.r(21, 3, 3, 6, F); d.r(24, 1, 3, 10, F); d.r(27, 0, 5, 12, F); },
+         // ベルの穴：x ≥ 20 で外径 R(x) より内側を中空に
+         carve: (x, y, z) => { if (x < 20) return false; const R = x >= 27 ? 6 : x >= 24 ? 4 : x >= 21 ? 3 : 2; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } });
+    bell.position.set(0, 0, 4 * VOX); // 絵の +z（取り付け後は奏者の左）へ 2px
+    body.add(bell);
+    // 外管 26×9（rows 11-19 に相当）：上下 2 本の管・先端の U 字・支柱。pivot = 左端・マウスピースの行（本体の x=6 に置く）
+    const slide = makePart(26, 9, 0, 2, (d) => {
+      d.r(0, 0, 24, 2, C.gold); d.r(0, 7, 24, 2, C.gold); d.r(22, 0, 3, 9, C.gold); d.r(24, 1, 1, 7, C.gold2); // 管・U 字
+      d.r(1, 0, 1, 9, C.silver);                                                                // 支柱
     }, { res: 2, depth: 4, z0: -2 });
     slide.position.set(6 * VOX, 0, 0);
     slide.userData.baseX = 6 * VOX;
