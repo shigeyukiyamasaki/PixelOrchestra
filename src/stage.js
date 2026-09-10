@@ -17,9 +17,11 @@ export const ROWS = {
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
   contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40 },
   // 鍵盤群は数が多いと奥行き 3 段に並べる（2026-09-10 ユーザー指定）：鍵盤打楽器（シロフォン/マリンバ）→ ハープ/チェレスタ → ピアノ。
-  // 使われている段だけ手前から詰める。3 段目は金管の扇に隣接（角度は金管の端、半径は金管とほぼ同じ）。楽器が大きいので段の間隔は広め
-  keyboard:   { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
-                depthOf: (v) => (v === 'xylophone' || v === 'marimba' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 2: 'brass' } },
+  // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
+  // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
+  // 2 段目（r 19.5）・3 段目（r 22.5）は金管の扇の端に隣接
+  keyboard:   { r: 16.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
+                depthOf: (v) => (v === 'xylophone' || v === 'marimba' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
