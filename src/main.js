@@ -131,7 +131,7 @@ function settings() {
     noteWidth: num('noteWidth', 0.22),
     showRoll: $('showRoll').checked,
     rollMode: radioValue('rollMode') === 'wall' ? 'wall' : 'overhead',
-    showLandLine: $('showLandLine').checked,
+    showLandLine: false, // 着地点のラインは不要（2026-09-10 ユーザー確定。UI 撤去）
     rollOpacity: num('rollOpacity', 0.85),
     rollGlow: num('rollGlow', 0),
     showGlow: $('showGlow').checked,
