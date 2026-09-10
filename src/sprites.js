@@ -497,13 +497,13 @@ export const INSTRUMENT = {
       d.r(6, 22, 3, 1, C.silver);                                                             // ウィングジョイント上端の金具
       for (let y = 26; y < 56; y += 6) { d.r(5, y, 2, 1, C.silver); d.p(1, y + 3, C.silver); } // キー
     }, { res: 2, depth: 8, z0: -4, side: (d) => { d.r(2, 0, 4, 68, F); d.r(1, 58, 6, 10, F); } });
-    // ボーカル 12×8（2倍解像度）：右下（ウィングの上端）から左上（リード）へ。描画の +x を奏者側（-z）へ向けて取り付ける
+    // ボーカル 12×8（2倍解像度）：右下（ウィングの上端 = pivot）から左上（リード）へ。描画の -x を奏者側（-z）へ向けて取り付ける
     const bocal = makePart(12, 8, 11, 7, (d) => {
       d.line(11, 7, 3, 1, C.silver); d.line(11, 6, 3, 0, C.silver); d.line(10, 7, 2, 1, C.silver); // 曲管（太さ 2）
       d.r(0, 0, 3, 2, C.ivory); d.p(2, 1, C.black);                                            // リード・糸巻き
     }, { res: 2, depth: 2, z0: -1 });
     bocal.position.set(3.5 * VOX, 46 * VOX, 0);
-    if (PART_STYLE !== 'sprite') bocal.rotation.y = Math.PI / 2; // +x → -z（奏者の口へ）。2D の板では左へ伸ばしたまま
+    if (PART_STYLE !== 'sprite') bocal.rotation.y = -Math.PI / 2; // 絵は pivot から -x へ伸びる → -x を -z（奏者の口）へ向ける。2D の板では左へ伸ばしたまま
     body.add(bocal);
     return body;
   },
