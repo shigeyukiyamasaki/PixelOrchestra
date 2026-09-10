@@ -447,7 +447,8 @@ export class Puppet {
     const wantConductor = (!active.length && (age > 0.5 || (next && toNext < 1.0)));
     this._gaze = approach(this._gaze ?? 0, wantConductor ? 0 : 1, 4, dt);
     this.headPivot.rotation.y += gazeYaw * this._gaze;
-    this.headPivot.rotation.x += gazeDown * this._gaze;
+    // 前傾しても顔は起こす（腰の前傾を首で打ち消す）。gazeDown は「楽器を見る」分だけ足す
+    this.headPivot.rotation.x += -this._lean * 0.9 + gazeDown * this._gaze;
   }
 
   /**
@@ -540,10 +541,10 @@ export class Puppet {
 
     // 腰：強いほど前傾（楽器へ入り込む）、弓の進行方向へわずかに傾く。視線：弾いている間は楽器の方（あご楽器は左下、チェロ系は下）
     this.spine.rotation.z += MIRROR * 0.03 * this.bowDir * clamp(energy, 0, 1);
-    this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.12 : 0.25, cfg.chin ? MIRROR * -0.35 : 0);
-    if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、少し下を向き、頭がわずかに下がる
+    // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
+    this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
+    if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、頭がわずかに下がる
       this.headPivot.rotation.z += 0.32 + 0.08 * energy;
-      if (!this.flat) this.headPivot.rotation.x += 0.18;
       this.headPivot.position.y = (HEAD_Y_PX - 0.8) * PX;
     } else {
       this.headPivot.rotation.z += -0.1 * energy;
