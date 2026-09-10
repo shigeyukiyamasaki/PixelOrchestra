@@ -353,8 +353,10 @@ export function head(seed = 0, back = false) {
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
-export function upperArm() { // 2 倍解像度 10×22 セル（3px 幅 × 肩の下 10px = ARM_UPPER）、pivot = 肩（上端から 1 セル）。両脇に陰の列
-  return makePart(10, 22, 5, 2, (d) => { d.r(2, 0, 6, 22, C.coat); d.r(2, 0, 1, 22, C.coat2); d.r(7, 0, 1, 22, C.coat2); }, { res: 2, depth: 6, z0: -3 });
+// 腕の断面を円にする削り（2026-09-11 ユーザー指定：ブロック感をなくす）。半径 r0（上端）→ r1（下端）に細くなる。x 中心 5、z 中心 4（depth 8）
+const roundArm = (r0, r1, h) => (x, y, z) => { const r = r0 + (r1 - r0) * (y / (h - 1)); const dx = x + 0.5 - 5, dz = z + 0.5 - 4; return dx * dx + dz * dz > r * r; };
+export function upperArm() { // 2 倍解像度 10×22 セル（肩の下 10px = ARM_UPPER）、pivot = 肩（上端から 1 セル）。断面は円、肩側 r3.3 → 肘側 r2.7 セル
+  return makePart(10, 22, 5, 2, (d) => { d.r(0, 0, 10, 22, C.coat); }, { res: 2, depth: 8, z0: -4, carve: roundArm(3.3, 2.7, 22) });
 }
 /** 肩の球 5×5×5 px（2 倍解像度で円）、pivot = 中心。上腕の根元に付けて、肩関節が前へ出ても胴と腕の間が空かない */
 export function shoulderPad() {
@@ -365,8 +367,8 @@ export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
 /** 手首あり版：前腕（袖のみ）、pivot = 肘。手は別パーツ */
-export function foreArmNoHand() { // 2 倍解像度 10×17 セル（3px 幅 × 肘の下 7.5px = FORE_NOHAND）、pivot = 肘（上端から 1 セル）。両脇に陰の列
-  return makePart(10, 17, 5, 2, (d) => { d.r(2, 0, 6, 17, C.coat); d.r(2, 0, 1, 17, C.coat2); d.r(7, 0, 1, 17, C.coat2); }, { res: 2, depth: 6, z0: -3 });
+export function foreArmNoHand() { // 2 倍解像度 10×17 セル（肘の下 7.5px = FORE_NOHAND）、pivot = 肘（上端から 1 セル）。断面は円、肘側 r2.9 → 手首側 r2.3 セル
+  return makePart(10, 17, 5, 2, (d) => { d.r(0, 0, 10, 17, C.coat); }, { res: 2, depth: 8, z0: -4, carve: roundArm(2.9, 2.3, 17) });
 }
 /** 手 5×5、pivot = 手首（上端中央）。-y が指先 */
 export function hand() {
