@@ -17,7 +17,7 @@ export const ROWS = {
   percussion: { r: 23,   h: 3.0,  span: 110 },
   // コントラバス（右）と鍵盤群（左：ハープ/ピアノ/チェレスタ/シロフォン/マリンバ）は、木管の扇のすぐ外側に隣接して床に立つ
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
-  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40 },
+  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65 }, // 前後の間隔は他の弦と同じ（2026-09-10）
   // 鍵盤群は数が多いと奥行き 3 段に並べる（2026-09-10 ユーザー指定）：鍵盤打楽器（シロフォン/マリンバ）→ ハープ/チェレスタ → ピアノ。
   // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
@@ -124,7 +124,7 @@ export function createStage(container) {
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
   // 円の縁は外側 25% でなだらかに透明にする（alphaMap の放射状グラデーション。2026-09-10）
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#ffffff', alphaMap: radialAlphaTexture(0.75), transparent: true }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#e6e6e6', alphaMap: radialAlphaTexture(0.75), transparent: true }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = FLOOR_CENTER_Z;
   floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
@@ -230,7 +230,7 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）
     const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
     thMin = -half; thMax = half;
-    const col = fam === 'percussion' ? '#d4d4d4' : fam === 'brass' ? '#e2e2e2' : '#f0f0f0'; // 天面は床と同じ板目（白〜灰の倍率で奥ほど少し暗く。2026-09-10 ユーザー指定：床と同じ色味）
+    const col = fam === 'percussion' ? '#bfbfbf' : fam === 'brass' ? '#cbcbcb' : '#d8d8d8'; // 天面は床と同じ板目（白〜灰の倍率で奥ほど少し暗く。2026-09-10 ユーザー指定：床と同じ色味。同日「少し暗く」で 10% 減）
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
@@ -241,20 +241,20 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#937648', side: THREE.DoubleSide }),
+      stageMat({ color: '#846a41', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#876b40', side: THREE.DoubleSide }),
+      stageMat({ color: '#7a603a', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#7d633b', side: THREE.DoubleSide }));
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
       const rm = (rIn + rOut) / 2;
       side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
       side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
@@ -384,7 +384,7 @@ export function layoutSeats(tracks, footprintOf = null) {
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
-          const positions = gridPositions({ r: row.r, h: row.h }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
+          const positions = gridPositions({ r: row.r, h: row.h, rowGap: row.rowGap }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
