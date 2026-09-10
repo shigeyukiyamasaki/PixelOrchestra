@@ -27,7 +27,7 @@ const $ = (id) => {
 
 // ---------- ステージ ----------
 const stage = createStage($('view'));
-const { scene, camera, renderer, controls, wall } = stage;
+const { scene, camera, renderer, controls, wall, setShadows } = stage;
 
 let engine = null;
 let roll = null;
@@ -137,6 +137,9 @@ function settings() {
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
+    showShadows: $('showShadows').checked,
+    shadowOpacity: num('shadowOpacity', 0.45),
+    sunAngle: num('sunAngle', 330),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
   };
@@ -227,7 +230,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, Puppet };
+window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
@@ -422,6 +425,7 @@ function animate() {
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
+    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', opacity: s.shadowOpacity, sunAngle: s.sunAngle });
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);

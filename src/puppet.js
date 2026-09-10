@@ -308,6 +308,8 @@ export class Puppet {
     this.glow = glowDisc(o.color || '#ffffff');
     this.glow.position.y = 0.01;
     this.root.add(this.glow);
+    // 影：体・楽器・椅子は影を落とし、受ける（足元の光と板は除く）
+    if (!this.flat) this.root.traverse((m) => { if (m.isMesh && m !== this.glow) { m.castShadow = true; m.receiveShadow = true; } });
   }
 
   /**
