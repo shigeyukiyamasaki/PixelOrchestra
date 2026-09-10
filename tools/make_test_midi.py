@@ -68,6 +68,9 @@ def notes_for(part):
             for i in range(2): ev.append((b0 + i * 2 * BEAT, 2 * BEAT - 40, root - 12, v(90)))
         elif part == 'cb':
             ev.append((b0, 4 * BEAT - 40, root - 24, v(90)))
+        elif part == 'picc':  # 後半、旋律の 1 オクターブ上で装飾
+            if bar >= 12:
+                for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 30, root + 36 + chord[(i * 2) % 3], v(80)))
         elif part == 'fl':  # 旋律
             if bar >= 2:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT - 60, root + 24 + chord[(i * 2) % 3], v(85)))
@@ -128,7 +131,7 @@ def notes_for(part):
 # (トラック名, プログラム番号, チャンネル, part)
 PARTS = [
     ('Violin I', 40, 0, 'vn1'), ('Violin II', 40, 1, 'vn2'), ('Viola', 41, 2, 'va'), ('Cello', 42, 3, 'vc'), ('Contrabass', 43, 4, 'cb'),
-    ('Flute', 73, 5, 'fl'), ('Oboe', 68, 6, 'ob'), ('Clarinet', 71, 7, 'cl'), ('Bassoon', 70, 8, 'fg'),
+    ('Piccolo', 72, 5, 'picc'), ('Flute', 73, 5, 'fl'), ('Oboe', 68, 6, 'ob'), ('Clarinet', 71, 7, 'cl'), ('Bassoon', 70, 8, 'fg'),
     ('Horn', 60, 10, 'hn'), ('Trumpets_HW', 56, 11, 'tp'), ('Trumpets_CB', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'), ('Tuba', 58, 12, 'tuba'),
     ('Timpani', 47, 13, 'timp'), ('Gran Cassa', 116, 9, 'gc'), ('Snare Drum', 116, 9, 'snare'), ('Cymbals', 116, 9, 'cym'),
     ('Xylophone_HW', 13, 15, 'xylo'), ('Marimba', 12, 15, 'mar'), ('Celeste_BBC', 8, 15, 'cel'), ('Piano', 0, 15, 'pf'), ('Harp', 46, 14, 'hp'),

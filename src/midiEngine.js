@@ -17,6 +17,7 @@ export const VARIANTS = {
   viola:      { family: 'strings',    label: 'ヴィオラ' },
   cello:      { family: 'strings',    label: 'チェロ' },
   contrabass: { family: 'strings',    label: 'コントラバス' },
+  piccolo:    { family: 'woodwind',   label: 'ピッコロ' },
   flute:      { family: 'woodwind',   label: 'フルート' },
   oboe:       { family: 'woodwind',   label: 'オーボエ' },
   clarinet:   { family: 'woodwind',   label: 'クラリネット' },
@@ -120,7 +121,7 @@ const INSTRUMENT_KEYWORDS = [
 // MIDIOrchestra の楽器 ID → PixelOrchestra のバリアント（絵・動きの単位）
 // 専用スプライトが無いものは近い見た目・同じ動きのものに寄せる（TODO: 鍵盤打楽器のスプライト追加）
 const ORCH_ID_TO_VARIANT = {
-  englishhorn: 'oboe', piccolo: 'flute', flute: 'flute', oboe: 'oboe', bassclarinet: 'clarinet', clarinet: 'clarinet', bassoon: 'bassoon',
+  englishhorn: 'oboe', piccolo: 'piccolo', flute: 'flute', oboe: 'oboe', bassclarinet: 'clarinet', clarinet: 'clarinet', bassoon: 'bassoon',
   horn: 'horn', trumpet: 'trumpet', trombone: 'trombone', tuba: 'tuba', flugelhorn: 'trumpet',
   violin1: 'violin', violin2: 'violin', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
@@ -170,7 +171,8 @@ function variantFromProgram(family, program) {
       if (program === 41) return 'viola';
       return 'violin';
     case 'woodwind':
-      if (program === 72 || program === 73) return 'flute';
+      if (program === 72) return 'piccolo';
+      if (program === 73) return 'flute';
       if (program === 70) return 'bassoon';
       if (program === 68 || program === 69) return 'oboe';
       return 'clarinet';
