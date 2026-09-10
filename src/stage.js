@@ -7,9 +7,11 @@
  */
 
 // 列の定義：r=指揮者からの半径（そのセクションの最前列）、h=ひな壇の高さ、span=列が占める角度幅 [deg]
-// 弦は 3 列（r 〜 r+2×ROW_GAP ≒ 8〜11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
+// 弦は 3 列（r 7 / 9.4 / 11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
 export const ROWS = {
-  strings:    { r: 8,    h: 0,    span: 160 },   // 弦 4 パート × 3 列 = 12 列分の弧が必要（r=8, 12 列で 146°）＋独奏 2 本分の余裕（2026-09-10）
+  // 弦：1 列目を指揮者に寄せ（r 8→7）、列の間隔を広げる（rowGap 2.4。3 列目は 11.8 のまま）。2026-09-10 ユーザー指定「前後 3 列が詰まりすぎ」
+  // 12 列分の弧が r=7 では 167° 必要なので span を 170 に
+  strings:    { r: 7,    h: 0,    span: 170, rowGap: 2.4 },
   woodwind:   { r: 15,   h: 1.0,  span: 90 },
   brass:      { r: 19,   h: 2.0,  span: 100 },
   percussion: { r: 23,   h: 3.0,  span: 110 },
@@ -409,8 +411,9 @@ export function layoutSeats(tracks, footprintOf = null) {
 // slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit] }
 function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0 }) {
   const positions = [];
+  const rowGap = row.rowGap ?? ROW_GAP;
   for (let k = 0; k < rows; k++) {
-    const r = row.r + k * ROW_GAP;
+    const r = row.r + k * rowGap;
     const stagger = (k % 2) * 0.5;
     for (let j = 0; j < cols; j++) {
       const th = center + (slot.off + (j - (cols - 1) / 2 + stagger) * slot.gap) / row.r;
