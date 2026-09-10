@@ -117,7 +117,7 @@ export function createStage(container) {
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8a7a6a' }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8e8676' }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = FLOOR_CENTER_Z;
   floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
@@ -130,7 +130,7 @@ export function createStage(container) {
   buildRisers([]);
 
   // 指揮台
-  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#3a2c22' }));
+  const podium = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.3, 2.2), stageMat({ color: '#34302a' }));
   podium.position.set(0, 0.15, CONDUCTOR_Z);
   addStage(podium, -20);
 
@@ -220,7 +220,7 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）
     const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
     thMin = -half; thMax = half;
-    const col = fam === 'percussion' ? '#5a4c40' : fam === 'brass' ? '#6a5a4c' : '#7a6a5a';
+    const col = fam === 'percussion' ? '#56504a' : fam === 'brass' ? '#66605a' : '#76706a'; // 赤みを抑えた木の色（2026-09-10）
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
@@ -231,27 +231,27 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#2e2620', side: THREE.DoubleSide }),
+      stageMat({ color: '#2a2824', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#2a221c', side: THREE.DoubleSide }),
+      stageMat({ color: '#26241f', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#241d18', side: THREE.DoubleSide }));
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#22201b', side: THREE.DoubleSide }));
       const rm = (rIn + rOut) / 2;
       side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
       side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
       side.renderOrder = ro + 0.1; risers.add(side);
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#1a140f' }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#18160f' }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
   }
@@ -261,11 +261,11 @@ function plankTexture() {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = '#b09070'; g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#ab9c7c'; g.fillRect(0, 0, 64, 64); // 板目：赤みを抑えた黄土色（2026-09-10）
   for (let y = 0; y < 64; y += 8) {
-    g.fillStyle = y % 16 ? '#a08060' : '#b89878';
+    g.fillStyle = y % 16 ? '#9c8c6a' : '#b4a488';
     g.fillRect(0, y, 64, 7);
-    g.fillStyle = '#7a5a40'; g.fillRect(0, y + 7, 64, 1);
+    g.fillStyle = '#75654c'; g.fillRect(0, y + 7, 64, 1);
     g.fillRect((y * 5) % 64, y, 1, 7);
   }
   const tex = new THREE.CanvasTexture(c);
