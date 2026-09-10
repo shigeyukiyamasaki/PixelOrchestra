@@ -26,7 +26,7 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
 const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
-const INST_SCALE_VARIANT = { contrabass: 1.1, bassdrum: 1.5, trumpet: 0.65 }; // トランペットは 1.25 だと全長 1.7unit（実物の 2 倍）でピストンが遠く右腕が伸び切る → 0.65（≒ 59cm）で肘が曲がる（2026-09-10） // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
+const INST_SCALE_VARIANT = { contrabass: 1.1, bassdrum: 1.5, trumpet: 0.9 }; // トランペットは実物比 0.72 × 他の金管と同じ 1.25 倍 = 0.9（2026-09-11。腕を伸ばす前は 0.65 にしていた） // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
