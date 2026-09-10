@@ -258,6 +258,15 @@ export function torsoSeated(accent = '#c03030') {
     d.r(5, 9, 6, 2, accent);
   }, { depth: 6, z0: -3, back, accent, side });
 }
+/** 立った脚 16×13、pivot = 足元中央。body() の rows 21-34 と同じ絵（燕尾・ズボン・靴）。腰から上（torsoSeated）と分けて、揺れを上半身だけにする */
+export function legsStanding() {
+  const side = (d) => { d.r(1, 0, 4, 11, C.coat2); d.r(0, 11, 6, 2, C.shoe); };
+  return makePart(16, 13, 8, 13, (d) => {
+    d.r(3, 0, 4, 4, C.coat); d.r(9, 0, 4, 4, C.coat);       // 燕尾
+    d.r(4, 0, 3, 11, C.coat2); d.r(9, 0, 3, 11, C.coat2);   // ズボン
+    d.r(3, 11, 4, 2, C.shoe); d.r(9, 11, 4, 2, C.shoe);     // 靴
+  }, { depth: 6, z0: -3, side });
+}
 /** 座った脚（ボクセル用）：太もも（前へ 10）・すね（下へ 12）・靴。配置は puppet 側 */
 export function thigh() { return makePart(3, 3, 1.5, 3, (d) => { d.r(0, 0, 3, 3, C.coat2); }, { depth: 10, z0: 0 }); }
 export function shin()  { return makePart(3, 12, 1.5, 12, (d) => { d.r(0, 0, 3, 12, C.coat2); }, { depth: 3, z0: 0 }); }
