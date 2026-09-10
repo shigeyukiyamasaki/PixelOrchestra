@@ -118,7 +118,7 @@ export function createStage(container) {
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
   // 円の縁は外側 25% でなだらかに透明にする（alphaMap の放射状グラデーション。2026-09-10）
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8e8676', alphaMap: radialAlphaTexture(0.75), transparent: true }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#ffffff', alphaMap: radialAlphaTexture(0.75), transparent: true }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = FLOOR_CENTER_Z;
   floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
@@ -279,13 +279,13 @@ function plankTexture() {
   const c = document.createElement('canvas');
   c.width = T * N; c.height = T * N;
   const g = c.getContext('2d');
-  g.fillStyle = '#ab9c7c'; g.fillRect(0, 0, T * N, T * N); // 板目：赤みを抑えた黄土色（2026-09-10）
+  g.fillStyle = '#e9c076'; g.fillRect(0, 0, T * N, T * N); // 板目：基調 #E9C076（2026-09-10 ユーザー指定）。材質の色は白にして絵の色をそのまま出す
   for (let ty = 0; ty < N; ty++) for (let tx = 0; tx < N; tx++) {
     const ox = tx * T, oy = ty * T;
     for (let y = 0; y < T; y += 8) {
-      g.fillStyle = y % 16 ? '#9c8c6a' : '#b4a488';
+      g.fillStyle = y % 16 ? '#dcb46c' : '#f0cb86';
       g.fillRect(ox, oy + y, T, 7);
-      g.fillStyle = '#75654c'; g.fillRect(ox, oy + y + 7, T, 1);
+      g.fillStyle = '#b08e4e'; g.fillRect(ox, oy + y + 7, T, 1);
       g.fillRect(ox + (y * 5) % T, oy + y, 1, 7);
     }
   }
