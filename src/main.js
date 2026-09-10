@@ -143,6 +143,8 @@ function settings() {
     spotElev: num('spotElev', 40),
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
+    toneMap: radioValue('toneMap') || 'reinhard',
+    exposure: num('exposure', 1),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
   };
@@ -245,6 +247,19 @@ function footprintOf(track) {
     footprintCache.set(key, p.measureFootprint());
   }
   return footprintCache.get(key);
+}
+
+// トーンマッピング（2026-09-10）：スポットを強くした時の白飛び・コントラストを抑える。切り替えるとマテリアルの再コンパイルが要る
+const TONE_MAPS = { none: THREE.NoToneMapping, reinhard: THREE.ReinhardToneMapping, aces: THREE.ACESFilmicToneMapping };
+let toneMapApplied = null;
+function applyToneMapping(mode, exposure) {
+  const tm = TONE_MAPS[mode] ?? THREE.ReinhardToneMapping;
+  if (tm !== toneMapApplied) {
+    renderer.toneMapping = tm;
+    toneMapApplied = tm;
+    scene.traverse((o) => { if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true; } });
+  }
+  renderer.toneMappingExposure = exposure;
 }
 
 function placePuppets() {
@@ -429,6 +444,7 @@ function animate() {
 
     labels.visible = s.showNames;
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
+    applyToneMapping(s.toneMap, s.exposure);
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);
