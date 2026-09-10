@@ -346,8 +346,8 @@ export function head(seed = 0, back = false) {
 }
 
 /** 上腕 5×9、pivot = 肩（上端中央）。肘は下端 (2, 9) */
-export function upperArm() {
-  return makePart(5, 9, 2, 1, (d) => { d.r(1, 0, 3, 9, C.coat); }, { depth: 3, z0: -1.5 });
+export function upperArm() { // 5×11、pivot = 肩（上端から 1）。肩の下 10px = ARM_UPPER
+  return makePart(5, 11, 2, 1, (d) => { d.r(1, 0, 3, 11, C.coat); }, { depth: 3, z0: -1.5 });
 }
 /** 肩の球 5×5×5、pivot = 中心。上腕の根元に付けて、肩関節が前へ出た時に胴との隙間を埋める */
 export function shoulderPad() {
@@ -357,9 +357,9 @@ export function shoulderPad() {
 export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
 }
-/** 手首あり版：前腕（袖のみ）5×7、pivot = 肘。手は別パーツ */
-export function foreArmNoHand() {
-  return makePart(5, 7, 2, 1, (d) => { d.r(1, 0, 3, 7, C.coat); }, { depth: 3, z0: -1.5 });
+/** 手首あり版：前腕（袖のみ）、pivot = 肘。手は別パーツ */
+export function foreArmNoHand() { // 2 倍解像度 10×17 セル（3px 幅 × 肘の下 7.5px = FORE_NOHAND）、pivot = 肘（上端から 1 セル）
+  return makePart(10, 17, 5, 2, (d) => { d.r(2, 0, 6, 17, C.coat); }, { res: 2, depth: 6, z0: -3 });
 }
 /** 手 5×5、pivot = 手首（上端中央）。-y が指先 */
 export function hand() {

@@ -13,8 +13,9 @@ import { makePersona, headFor, torsoFor, legsStandingFor, skirtSeated, handFor }
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
-const ARM_UPPER = 8, ARM_FORE = 8; // 2関節腕の長さ [px]（上腕・前腕＋手）
-const FORE_NOHAND = 6, HAND_LEN = 4; // 手首あり版：前腕 6 ＋ 手 4（合計は同じ）
+// 2 関節腕の長さ [px]。上腕 10・前腕 7.5・手 4（2026-09-10 ユーザー指示で 8/6/4 から約 20% 延長：頭が大きく楽器が 1.25 倍なので口元・指板・ピストンが届く範囲の端に来ていた）
+const ARM_UPPER = 10, FORE_NOHAND = 7.5, HAND_LEN = 4;
+const ARM_FORE = FORE_NOHAND + HAND_LEN; // 手首なし版（2D 板・非使用）の前腕＋手
 // 肩の位置：上着の上端の角（x=±5.5, y=25.5）。以前の (±6, 30) は体の外側かつ上で、腕が胴から離れて見えた（2026-09-09 修正）
 const SHOULDER = { L: [-5.5, 25.5, 0], R: [5.5, 25.5, 0] };
 // 肩関節（鎖骨）：胸の中心 (0, 25.5) から肩までを 1 本の骨として、腕が届かない時だけ目標の方へ回す（最大 SHOULDER_MAX）。
@@ -137,7 +138,7 @@ const VARIANT = {
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
                 p3: { pos: [-4.5, 1, 15], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 7.2, leftHandZ: 4.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
+  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 28], vib: [0, 1, 0], // 左手はあごの高さ（32 だと腕が伸び切る。2026-09-10）
                 p3: { pos: [-9, 0, 9], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 9.2, leftHandZ: 5.5 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
@@ -148,9 +149,9 @@ const VARIANT = {
   piccolo:    { inst: { pos: [-1, 31.5, 4], rot: -0.15 }, hands: { L: [4, -0.5], R: [8, -0.5] }, kind: 'flute', handDirs: { L: [0, 1, 0], R: [0, 1, 0] }, gazeDown: 0.05,
                 p3: { pos: [-1, 31.5, 5], rot3: [0, -0.35, -0.15], hands: { L: [4, -0.5, 1], R: [8, -0.5, 1] } } },
   oboe:       { inst: { pos: [0, 31.5, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.15,
-                p3: { pos: [0, 31.5, 5], rot3: [-0.75, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -13, 1] } } },
+                p3: { pos: [0, 31.5, 5], rot3: [-0.5, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -12, 1] } } }, // 前傾 29°・右手は下管の上寄り（右腕が伸び切らない。2026-09-10）
   clarinet:   { inst: { pos: [0, 31.5, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.15,
-                p3: { pos: [0, 31.5, 5], rot3: [-0.75, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -13, 1] } } },
+                p3: { pos: [0, 31.5, 5], rot3: [-0.5, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -12, 1] } } }, // 前傾 29°・右手は下管の上寄り（右腕が伸び切らない。2026-09-10）
   bassoon:    { inst: { pos: [4, 0.5, 4], rot: 0.35 }, hands: { L: [0.5, 24], R: [0.5, 16] }, kind: 'bassoon', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.1,
                 // 体の右前に置き、上部を左へ倒す。ベルは頭より上、ボーカル（別パーツ）が口の左横へ届く。位置・傾きは胴・頭に入り込まない組み合わせを数値探索で選定（2026-09-10）
                 p3: { pos: [6, 1.5, 15], rot3: [-0.15, 0, 0.35], hands: { L: [-1.5, 22, 1], R: [1.5, 13, 1] } } },
@@ -177,7 +178,7 @@ const VARIANT = {
                 strike: { R: { hit: [4, 22], rest: [13, 28], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
                 // 手前の打面は x≈-8（下）〜-10.5（高さ 20）。hit = 手（左腰の前）、head = マレットの頭の中心（半径 2.5 なので打面の 2.5px 手前）。
                 // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
-                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-6.5, 14, 8], rest: [5, 19, 8], head: [-8, 24, 10] } }, fixedHand: { L: [-7.5, 24, 8] } } }, // 構えは右へ 11.5・上へ 5（大きく振りかぶる） // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
+                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10] } }, fixedHand: { L: [-9, 20, 10] } } }, // 構えは右へ 11.5・上へ 5（大きく振りかぶる） // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
   snare:      { inst: { pos: [0, 17, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
@@ -196,8 +197,9 @@ const VARIANT = {
                 p3: { pos: [0, 0, 36], rot3: [0, Math.PI, 0], keys: { y: 14, spread: 12, gap: 4, z: 8 } } },
   celesta:    { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 16, spread: 7, gap: 3 },
                 p3: { pos: [0, 0, 14], rot3: [0, Math.PI, 0], keys: { y: 16, spread: 7, gap: 3, z: 6 } } },
+  // ハープ：柱を前、短い弦（高音）を体側にして胸の前に置き、上部を奏者側へ少し倒す（y 回転を +0.7 に反転して右手が体を横切らないように。2026-09-10）
   harp:       { inst: { pos: [-9, 0, 4], rot: 0 }, harp: true,
-                p3: { pos: [-8, 0, 6], rot3: [0, -0.9, 0.15], harp: true } },
+                p3: { pos: [3, 0, 11], rot3: [-0.12, 0.7, 0], harp: true } },
   conductor:  { held: { R: 'baton' } },
 };
 
@@ -674,8 +676,8 @@ export class Puppet {
         const y = keys.y + 3 - 1.5 * s + 1.0 * ant;
         this.setHand(side, [x, y, keys.z ?? 0], dt, s > 0.5 ? Infinity : 14, [0, -0.4 - 0.3 * s, 1]);
       } else { // ハープ：高い音ほど短い弦（右側）。はじくと手が弦から 1.5px 離れる。座標は楽器ローカル（pivot 基準）。指は弦へ
-        const lx = -4 + pn * 11 + sign * 2;
-        const ly = side === 'L' ? 25 : 18;
+        const lx = -3 + pn * 8 + (side === 'L' ? -3 : 2);  // 左手は柱側（長い弦）へ、右手は体側（短い弦）。幅 8 は右腕が低音側で伸び切らない範囲
+        const ly = side === 'L' ? 19 : 15;                    // 胸の高さ（肩の高さだと肘が折り畳まれる）
         const p = this.inst ? instPoint(this.inst, lx + 1.5 * s, ly + 0.5 * ant, this.flat ? 0 : sign * 1.5) : [lx - 9, ly, 0];
         let hd = null;
         if (this.inst && !this.flat) { _b.set(0, 0, -sign).applyQuaternion(this.inst.quaternion); hd = [_b.x, _b.y, _b.z]; }
