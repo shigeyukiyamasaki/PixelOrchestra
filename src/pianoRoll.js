@@ -3,7 +3,7 @@
  * 最終更新: 2026-09-09 / v0.2 / 生成元: PixelOrchestra
  *
  * 滝型ピアノロール。2 モード：
- *   overhead: 各奏者（トラック）の頭上にノートが降ってきて頭の上で着弾する（既定）
+ *   overhead: 各奏者（トラック）の真上からノートが降ってきて足元で着弾する（既定。体は貫通）
  *   wall:     後方の壁を上から下へ流れる（横軸 = 音程・全トラック共通）
  * どちらも InstancedMesh 1つで全ノートを描く。
  */
@@ -11,7 +11,8 @@ import { WALL_Z, WALL_WIDTH, WALL_HEIGHT, WALL_BASE_Y } from './stage.js';
 import { PX } from './sprites.js';
 
 const FLASH_SEC = 0.12;       // 着弾後に明るく光る時間
-export const HEAD_Y = 52 * PX; // 頭上の着弾高さ（体 34px + 頭 12px + パート名ラベルの余白）
+export const HEAD_Y = 52 * PX; // パート名ラベルの高さ（体 34px + 頭 12px + 余白）
+export const LAND_Y = 0.02;    // 着弾の高さ＝足元（床のすぐ上）。ノートは奏者の体を貫通して足元で発音し、足元の光と同期する（2026-09-10 ユーザー指定）
 // 頭上ロールの見える高さ [unit] と半音あたりの幅 [unit] は UI スライダーから毎フレーム渡される（update の opts）
 const DEFAULT_OVERHEAD_HEIGHT = 7;
 const DEFAULT_SEMITONE_W = 0.22;
@@ -131,9 +132,9 @@ export class PianoRoll {
         new THREE.PlaneGeometry(1, 0.05),
         new THREE.MeshBasicMaterial({ color: seat.track.color, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
       );
-      line.position.set(cx, ps[0].y + HEAD_Y, cz);
+      line.position.set(cx, ps[0].y + LAND_Y, cz);
       this.overheadGroup.add(line);
-      this.columns.set(seat.track, { x: cx, y: ps[0].y + HEAD_Y, z: cz, spread, width: 1, yaw: 0, quat: new THREE.Quaternion(), line });
+      this.columns.set(seat.track, { x: cx, y: ps[0].y + LAND_Y, z: cz, spread, width: 1, yaw: 0, quat: new THREE.Quaternion(), line });
     }
   }
 
