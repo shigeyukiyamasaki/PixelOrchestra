@@ -143,7 +143,6 @@ function settings() {
     spotElev: num('spotElev', 40),
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
-    toneMap: radioValue('toneMap') || 'highlight',
     exposure: num('exposure', 1),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
@@ -249,8 +248,8 @@ function footprintOf(track) {
   return footprintCache.get(key);
 }
 
-// トーンマッピング（2026-09-10）：スポットを強くした時の白飛び・コントラストを抑える。切り替えるとマテリアルの再コンパイルが要る
-// 「ハイライトのみ」：輝度 0.8 までは素通し（色も彩度もそのまま）、それ以上だけ 1.0 に漸近するよう圧縮。
+// トーンマッピング（2026-09-10）：スポットを強くした時の白飛びを抑える。「ハイライトのみ」固定（2026-09-10 ユーザー確定。Reinhard/ACES は彩度が落ちるので廃止）
+// 輝度 0.8 までは素通し（色も彩度もそのまま）、それ以上だけ 1.0 に漸近するよう圧縮。
 // 圧縮は輝度に対して行い RGB を同じ比率で縮めるので色相・彩度が変わらない（ACES は 1.0 以下でも彩度が落ちるという指摘への対応）
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   'vec3 CustomToneMapping( vec3 color ) { return color; }',
@@ -264,17 +263,8 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
     return color * ( c / l );
   }`,
 );
-const TONE_MAPS = { none: THREE.NoToneMapping, highlight: THREE.CustomToneMapping, reinhard: THREE.ReinhardToneMapping, aces: THREE.ACESFilmicToneMapping };
-let toneMapApplied = null;
-function applyToneMapping(mode, exposure) {
-  const tm = TONE_MAPS[mode] ?? THREE.CustomToneMapping;
-  if (tm !== toneMapApplied) {
-    renderer.toneMapping = tm;
-    toneMapApplied = tm;
-    scene.traverse((o) => { if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true; } });
-  }
-  renderer.toneMappingExposure = exposure;
-}
+renderer.toneMapping = THREE.CustomToneMapping;
+function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 function placePuppets() {
   setPartStyle(settings().partStyle);
@@ -458,7 +448,7 @@ function animate() {
 
     labels.visible = s.showNames;
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
-    applyToneMapping(s.toneMap, s.exposure);
+    applyToneMapping(s.exposure);
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);

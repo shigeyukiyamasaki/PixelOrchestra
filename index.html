@@ -68,13 +68,7 @@
       <label class="ctl" title="スポットの仰角 [度]。舞台中心から見た光源の高さ。小さいほど低い位置から浅い角度で当たり影が長い、90 で真上"><span>仰角 <b data-value-for="spotElev">40</b></span><input type="range" id="spotElev" min="10" max="90" step="5" value="40"></label>
       <label class="ctl" title="2 灯の左右の開き [度]。客席正面から左右に何度ずつ離れた位置に置くか。0 で正面 1 灯分、90 で真横"><span>左右の開き <b data-value-for="spotSpread">30</b></span><input type="range" id="spotSpread" min="0" max="90" step="5" value="30"></label>
       <label class="ctl" title="光の円錐の広がり（半頂角）[度]。小さいと中央だけ、大きいと舞台全体"><span>広がり <b data-value-for="spotCone">30</b></span><input type="range" id="spotCone" min="10" max="60" step="2" value="30"></label>
-      <div class="ctl radio" title="明るい部分を白飛び手前で圧縮してコントラストを抑える。なし：そのまま（飛ぶ）／ハイライトのみ：輝度 0.8 までは色も彩度もそのまま、それ以上だけ圧縮（おすすめ）／Reinhard：全域を素直に圧縮／ACES：映画風（少し彩度が落ち暖色に寄る）"><span>トーンマッピング</span>
-        <label><input type="radio" name="toneMap" value="none"> なし</label>
-        <label><input type="radio" name="toneMap" value="highlight" checked> ハイライトのみ</label>
-        <label><input type="radio" name="toneMap" value="reinhard"> Reinhard</label>
-        <label><input type="radio" name="toneMap" value="aces"> ACES</label>
-      </div>
-      <label class="ctl" title="露出（全体の明るさ）。トーンマッピングあり時に効く"><span>露出 <b data-value-for="exposure">1</b></span><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1"></label>
+      <label class="ctl" title="露出（全体の明るさ）。明るい部分（輝度 0.8 以上）は白飛びしないよう自動で圧縮される（色・彩度は保つ）"><span>露出 <b data-value-for="exposure">1</b></span><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1"></label>
     </details>
 
     <details open>
@@ -98,6 +92,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260912n"></script>
+  <script type="module" src="src/main.js?v=20260912o"></script>
 </body>
 </html>
