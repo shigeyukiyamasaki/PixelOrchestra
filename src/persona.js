@@ -78,7 +78,7 @@ export function headFor(p) {
     d.r(2, 12, 2, 4, skin); d.r(20, 12, 2, 4, skin); d.p(2, 14, skin2); d.p(21, 14, skin2);
     // 眉・目・鼻・口
     d.r(7, 12, browW, 1, hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair); d.r(17 - browW, 12, browW, 1, hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair);
-    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye); d.p(8, 14, '#ffffff'); d.p(14, 14, '#ffffff');
+    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye); // 目は黒だけ（ハイライト無し。2026-09-10 ユーザー指定）
     d.p(12, 17, skin2);
     d.r(10, 19, 4, 1, lips);
     if (p.age === 'young' || p.gender === 'f') { d.p(6, 17, '#e8a99a'); d.p(17, 17, '#e8a99a'); }
@@ -104,7 +104,13 @@ export function headFor(p) {
   };
   const backMap = bald ? { [C.eye]: skin, '#ffffff': skin, [lips]: skin, [skin2]: skin }
                        : { [skin]: hair, [skin2]: hair, [C.eye]: hair, '#ffffff': hair, [lips]: hair, '#e8a99a': hair, '#2a2a30': hair, '#8a8a8a': hair };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side });
+  // 丸み：頭部（rows 0-23）を超楕円（4 乗）で削って角を落とす。鼻・耳は中央付近なので残る。首より下の髪は削らない
+  const carve = (x, y, z) => {
+    if (y >= 24) return false;
+    const dx = (x + 0.5 - 12) / 12.4, dy = (y + 0.5 - 12) / 12.4, dz = (z + 0.5 - 8) / 8.6;
+    return dx ** 4 + dy ** 4 + dz ** 4 > 1;
+  };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side, carve });
 }
 
 /**
