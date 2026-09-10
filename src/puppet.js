@@ -179,7 +179,7 @@ const VARIANT = {
                 p3: { strike: { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } } } }, // 構えは打点より 4.5 上（振り上げ） // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, // 円盤の面（ローカル -y）を内側（±x）へ向ける
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } },
-                p3: { strike: { L: { hit: [-2, 24, 12], rest: [-9, 25, 10] }, R: { hit: [2, 24, 12], rest: [9, 25, 10] } } } }, // 握り z 10〜12（手首 ≒ 7〜9）で合わせる
+                p3: { strike: { L: { hit: [-2, 20, 15], rest: [-9, 21, 13] }, R: { hit: [2, 20, 15], rest: [9, 21, 13] } } } }, // 胸の前 13〜15px で合わせる（顔を挟まない。2026-09-10）
   xylophone:  { inst: { pos: [0, 8, 8], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 22], rest: [-7, 29], head: [-3, 15] }, R: { hit: [3, 22], rest: [7, 29], head: [3, 15] } },
                 p3: { strike: { L: { hit: [-5, 22, 8], rest: [-6, 24, 8], head: [-3, 18.5, 15.5] }, R: { hit: [5, 22, 8], rest: [6, 24, 8], head: [3, 18.5, 15.5] } } } }, // 握り z 8（手首 ≒ 5）
@@ -310,6 +310,20 @@ export class Puppet {
     this.root.add(this.glow);
   }
 
+  /**
+   * 楽器を含む横方向の占有範囲 [unit]（root 基準、+x = 奏者の左）。配置の間隔決めに使う。
+   * update() 前でも正しい鏡像（rig.scale.x = MIRROR）で測る
+   */
+  measureFootprint() {
+    this.rig.scale.set(MIRROR, 1, 1);
+    this.root.updateMatrixWorld(true);
+    let minX = -0.55, maxX = 0.55; // 体の幅（±7px）
+    if (this.inst) {
+      const box = new THREE.Box3().setFromObject(this.inst);
+      if (Number.isFinite(box.min.x)) { minX = Math.min(minX, box.min.x); maxX = Math.max(maxX, box.max.x); }
+    }
+    return { minX, maxX };
+  }
   /** カメラの方を向く。2D の板は完全に正対（見下ろしても潰れない）、立体は水平回転のみ */
   faceCamera(cam) {
     if (this.flat) { this.group.quaternion.copy(cam.quaternion); return; }

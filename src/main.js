@@ -229,12 +229,24 @@ function buildScene(midi, { keepTime = false } = {}) {
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
 window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, Puppet };
 
+// 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
+// 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
+const footprintCache = new Map();
+function footprintOf(track) {
+  const key = `${track.variant}|${settings().partStyle}`;
+  if (!footprintCache.has(key)) {
+    const p = new Puppet({ family: track.family, variant: track.variant, color: '#ffffff', seed: 0 });
+    footprintCache.set(key, p.measureFootprint());
+  }
+  return footprintCache.get(key);
+}
+
 function placePuppets() {
   setPartStyle(settings().partStyle);
   for (const p of puppets) scene.remove(p.puppet.root);
   puppets = [];
   if (conductor && conductor.style !== settings().partStyle) { scene.remove(conductor.root); conductor = null; } // 方式が変わったら作り直す
-  const seats = layoutSeats(engine.tracks);
+  const seats = layoutSeats(engine.tracks, footprintOf);
   let seed = 1;
   for (const seat of seats) {
     seat.positions.forEach((pos) => {

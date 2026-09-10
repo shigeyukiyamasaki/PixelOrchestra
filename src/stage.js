@@ -219,7 +219,20 @@ function plankTexture() {
  * トラック配列 → 座席位置リスト
  * @returns {Array<{track, positions:[{x,y,z}], puppets:number}>}
  */
-export function layoutSeats(tracks) {
+/**
+ * @param {Array} tracks
+ * @param {(track) => {minX:number, maxX:number} | null} [footprintOf]
+ *   奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左 = 角度が増す向き）。楽器が大きいトラックは
+ *   自動的に間隔を広げ、占有範囲の中心が座席の中心に来るよう奏者をずらす（2026-09-10 ユーザー指定：大きな楽器の隣に隙間を空ける）
+ */
+export function layoutSeats(tracks, footprintOf = null) {
+  // トラックごとの奏者 1 人分の間隔 [unit] と、座席中心からの横ずらし [unit]
+  const slotOf = (tr) => {
+    const f = footprintOf?.(tr);
+    if (!f) return { gap: PUPPET_GAP, off: 0 };
+    const w = f.maxX - f.minX + 0.3;                              // 楽器を含む幅 + 余白
+    return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2 };
+  };
   const byFam = {};
   for (const tr of tracks) (byFam[rowKeyOf(tr)] ||= []).push(tr);
   const seats = [];
@@ -243,11 +256,12 @@ export function layoutSeats(tracks) {
     // 各トラックの人数（横×奥行き）。列の角度幅に収まらない時は横の人数を均等に減らす
     const sizes = list.map((tr) => sizeOf(tr));
     const span = deg(row.span);
-    const angleOf = (cols) => (cols * PUPPET_GAP) / row.r; // 1トラックが占める角度 [rad]
+    const slots = list.map(slotOf);
+    const angleOf = (cols, i) => (cols * slots[i].gap) / row.r; // 1トラックが占める角度 [rad]
     if (!row.beside && list.length > 1) {
       for (let guard = 0; guard < 8; guard++) { // 中断条件付き
-        const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
-        if (total <= span + angleOf(1) || sizes.every((s) => s.cols <= 1)) break;
+        const total = sizes.reduce((a, s, i) => a + angleOf(s.cols, i), 0);
+        if (total <= span + PUPPET_GAP / row.r || sizes.every((s) => s.cols <= 1)) break;
         for (const s of sizes) if (s.cols > 1) s.cols--;
       }
     }
@@ -268,15 +282,15 @@ export function layoutSeats(tracks) {
       [...levels.entries()].sort((a, b) => a[0] - b[0]).forEach(([k0, idxs], k) => {
         // レベルごとに隣接先を変えられる（3 段目は金管の端）。基準列が無ければ木管の端
         const edge = (row.besideAt?.[k0] && edgeOf(row.besideAt[k0])) ?? edge0;
-        const total = idxs.reduce((a, i) => a + angleOf(sizes[i].cols), 0);
+        const total = idxs.reduce((a, i) => a + angleOf(sizes[i].cols, i), 0);
         let cursor = row.side > 0 ? edge + gap : edge - gap - total;
         const rowK = { r: row.r + k * levelGap, h: row.h };
         for (const i of idxs) {
-          const c = cursor + angleOf(sizes[i].cols) / 2; cursor += angleOf(sizes[i].cols);
+          const c = cursor + angleOf(sizes[i].cols, i) / 2; cursor += angleOf(sizes[i].cols, i);
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
-          const positions = gridPositions({ r: row.r, h: row.h }, c, sizes[i].cols, sizes[i].rows).map((p) => {
+          const positions = gridPositions({ r: row.r, h: row.h }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
@@ -286,30 +300,31 @@ export function layoutSeats(tracks) {
       continue;
     } else {
       const n = list.length;
-      const total = sizes.reduce((a, s) => a + angleOf(s.cols), 0);
-      const gap = n > 1 ? Math.max(0, Math.min((span - total) / (n - 1), angleOf(1) * 0.5)) : 0; // トラック間の余白
+      const total = sizes.reduce((a, s, i) => a + angleOf(s.cols, i), 0);
+      const gap = n > 1 ? Math.max(0, Math.min((span - total) / (n - 1), (PUPPET_GAP / row.r) * 0.5)) : 0; // トラック間の余白
       let cursor = -(total + gap * (n - 1)) / 2;
-      centers = sizes.map((s) => { const c = cursor + angleOf(s.cols) / 2; cursor += angleOf(s.cols) + gap; return c; });
+      centers = sizes.map((s, i) => { const c = cursor + angleOf(s.cols, i) / 2; cursor += angleOf(s.cols, i) + gap; return c; });
     }
 
     list.forEach((tr, i) => {
       const { cols, rows } = sizes[i];
       const center = centers[i];
       centerAngle.set(tr, center);
-      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows) });
+      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows, slots[i]) });
     });
   }
   return seats;
 }
 
 // 中心角 center を軸に cols × rows の格子で座らせる。奥の列ほど半径が大きい。偶数列は半人分ずらす（重なり防止・自然な見た目）
-function gridPositions(row, center, cols, rows) {
+// slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit] }
+function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0 }) {
   const positions = [];
   for (let k = 0; k < rows; k++) {
     const r = row.r + k * ROW_GAP;
     const stagger = (k % 2) * 0.5;
     for (let j = 0; j < cols; j++) {
-      const th = center + (j - (cols - 1) / 2 + stagger) * (PUPPET_GAP / row.r);
+      const th = center + (slot.off + (j - (cols - 1) / 2 + stagger) * slot.gap) / row.r;
       positions.push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th), row: k });
     }
   }
