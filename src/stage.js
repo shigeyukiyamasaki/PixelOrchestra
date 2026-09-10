@@ -117,7 +117,8 @@ export function createStage(container) {
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8e8676' }));
+  // 円の縁は外側 25% でなだらかに透明にする（alphaMap の放射状グラデーション。2026-09-10）
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#8e8676', alphaMap: radialAlphaTexture(0.75), transparent: true }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = FLOOR_CENTER_Z;
   floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
@@ -257,21 +258,39 @@ export function buildRisers(seats) {
   }
 }
 
-function plankTexture() {
+// 中心 1 → 半径 inner までは不透明、外周で 0 になる放射状のアルファ（円ジオメトリの UV は外接正方形に 0..1）
+function radialAlphaTexture(inner = 0.75) {
+  const N = 256;
   const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
+  c.width = N; c.height = N;
   const g = c.getContext('2d');
-  g.fillStyle = '#ab9c7c'; g.fillRect(0, 0, 64, 64); // 板目：赤みを抑えた黄土色（2026-09-10）
-  for (let y = 0; y < 64; y += 8) {
-    g.fillStyle = y % 16 ? '#9c8c6a' : '#b4a488';
-    g.fillRect(0, y, 64, 7);
-    g.fillStyle = '#75654c'; g.fillRect(0, y + 7, 64, 1);
-    g.fillRect((y * 5) % 64, y, 1, 7);
+  const grad = g.createRadialGradient(N / 2, N / 2, (N / 2) * inner, N / 2, N / 2, N / 2);
+  grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#000');
+  g.fillStyle = grad; g.fillRect(0, 0, N, N);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+// 板目テクスチャ。12×12 枚分をキャンバスに描き込む（repeat は使わない：alphaMap は map の UV 変換を共有するので、
+// repeat を使うと縁ぼかしの alphaMap まで 12 倍に繰り返されて床が消える）
+function plankTexture() {
+  const T = 64, N = 12;
+  const c = document.createElement('canvas');
+  c.width = T * N; c.height = T * N;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ab9c7c'; g.fillRect(0, 0, T * N, T * N); // 板目：赤みを抑えた黄土色（2026-09-10）
+  for (let ty = 0; ty < N; ty++) for (let tx = 0; tx < N; tx++) {
+    const ox = tx * T, oy = ty * T;
+    for (let y = 0; y < T; y += 8) {
+      g.fillStyle = y % 16 ? '#9c8c6a' : '#b4a488';
+      g.fillRect(ox, oy + y, T, 7);
+      g.fillStyle = '#75654c'; g.fillRect(ox, oy + y + 7, T, 1);
+      g.fillRect(ox + (y * 5) % T, oy + y, 1, 7);
+    }
   }
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(12, 12);
   return tex;
 }
 
