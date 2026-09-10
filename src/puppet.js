@@ -23,7 +23,7 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 楽器の大きさ（体との比率）。弦・木管・金管は実物に近い比率まで大きく（2026-09-10 ユーザー指定）。
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
-const INST_SCALE_VARIANT = { contrabass: 1.1 }; // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
+const INST_SCALE_VARIANT = { contrabass: 1.1, bassoon: 1.0 }; // ファゴットは 1.25 だと座奏でリードが口より上に行く（実物比 0.79 で 34px が妥当） // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
@@ -132,7 +132,7 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 17 }, leftHand: [5, 0],
                 p3: { pos: [-6, 27, 6], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 14, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 10 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
-                p3: { pos: [0.5, 1, 12], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 7.2, leftHandZ: 4.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む
+                p3: { pos: [0.5, 1, 15], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 10, vib: [0, 1, 0], contactZ: 7.2, leftHandZ: 4.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む
   contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 9 }, leftHand: [0, 32], vib: [0, 1, 0],
                 p3: { pos: [-9, 0, 9], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 9, vib: [0, 1, 0], contactZ: 9.2, leftHandZ: 5.5 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
@@ -145,7 +145,8 @@ const VARIANT = {
   clarinet:   { inst: { pos: [0, 31.5, 4], rot: -0.1 }, hands: { L: [0.5, -7], R: [0.5, -13] }, kind: 'reed', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.15,
                 p3: { pos: [0, 31.5, 5], rot3: [-0.75, 0, 0], hands: { L: [-1.5, -7, 1], R: [1.5, -13, 1] } } },
   bassoon:    { inst: { pos: [4, 0.5, 4], rot: 0.35 }, hands: { L: [0.5, 24], R: [0.5, 16] }, kind: 'bassoon', handDirs: { L: [1, 0, 0], R: [-1, 0, 0] }, gazeDown: 0.1,
-                p3: { pos: [5, 0, 8], rot3: [-0.35, 0, 0.35], hands: { L: [-1.5, 24, 0], R: [1.5, 16, 0] } } },
+                // 体の右前に置き、上部を左へ倒す（リードが口の左横に来る）。位置・傾きは胴・頭に入り込まない組み合わせを数値探索で選定（2026-09-10）
+                p3: { pos: [6, 2, 12], rot3: [-0.15, 0, 0.35], hands: { L: [-1.5, 24, 0], R: [1.5, 16, 0] } } },
   trumpet:    { inst: { pos: [1, 32.5, 4], rot: -0.15 }, hands: { L: [6, -1], R: [8, 1] }, kind: 'bell', handDirs: { L: [0, 0, -1], R: [0, -1, 0] }, gazeDown: 0.0,
                 p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [6, -1, 1.5], R: [8, 1, -1.5] } } },
   horn:       { inst: { pos: [2, 24, 4], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn', handDirs: { L: [0, -1, 0], R: [1, 0, 0] }, gazeDown: 0.05,
