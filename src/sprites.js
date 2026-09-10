@@ -62,12 +62,13 @@ const partCache = new Map();
  *   側面図のキャンバスは 幅 = depth（奥行き、左が背面 z0）・高さ = h、y は正面図と同じ行。
  * opts.top: 上面図の描画関数（省略可）。幅 = w（x は正面図と同じ列）・高さ = depth（上が背面 z0）。3 面削り出し。
  * opts.carve: (x, y, z) => true で削る（ベルの穴・太鼓の中など、面図では表せない中空用）。x=列, y=行(上が0), z=0..depth-1
+ * opts.colorOf: (x, y, z) => '#rrggbb' | null。ボクセルごとの色の上書き（頭の後ろ半分を髪色にする等）
  */
 export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   const res = opts.res ?? 1;
   if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw, res);
   const depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
-  const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${(opts.top || '').toString()}|${(opts.carve || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
+  const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${(opts.top || '').toString()}|${(opts.carve || '').toString()}|${(opts.colorOf || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
   let geo = partCache.get(key);
   if (!geo) {
     const c = document.createElement('canvas');
@@ -92,7 +93,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
     }
     // グリッド単位 → 世界サイズ（res:1 は 1 ドット = 2×2 ボクセル、res:2 = 1 ボクセル、res:4 = 半ボクセル）
     const cell = PX / res;
-    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null);
+    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null, opts.colorOf || null);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -125,7 +126,7 @@ function makePartSprite(w, h, pivotX, pivotY, draw, res = 1) {
 
 // ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
 // cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null) {
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null, colorOf = null) {
   const d = img.data;
   const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
   const sd = sideImg ? sideImg.data : null;
@@ -152,9 +153,12 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
   // 正面から見えない奥のボクセルの色：同じ行で一番手前の塗りの色（側面図で削った時の断面色）
   for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
     if (!filledFront(px, py)) continue;
-    const rgb = colorAt(px, py), rgbBack = backColor(px, py);
+    const rgbCol = colorAt(px, py), rgbBack = backColor(px, py);
     for (let z = 0; z < depth; z++) {
       if (!filled(px, py, z)) continue;
+      // ボクセルごとの色の上書き（例：頭の後ろ半分は髪色）。'#rrggbb' を返すとその色、null なら正面図の色
+      let rgb = rgbCol;
+      if (colorOf) { const c = colorOf(px, py, z); if (c) { const v = parseInt(c.slice(1), 16); rgb = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]; } }
       const x0 = px - pivotX, x1 = x0 + 1;
       const y1 = pivotY - py, y0 = y1 - 1;
       const zb = z0 + z, zf = zb + 1;

@@ -111,7 +111,20 @@ export function headFor(p) {
     // 上下左右は 3 乗（角丸の四角）、前後は 2 乗（顔の面と後頭部が丸く膨らむ。2026-09-10 ユーザー指定）
     return Math.abs(dx) ** 3 + Math.abs(dy) ** 3 + dz * dz > 1;
   };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side, carve });
+  // 頭の後ろ半分（z < 8）は、額〜あご（rows 10-23）の列でも髪色にする（角を丸めた側面に額の肌が出て禿げて見えるのを防ぐ。2026-09-10 ユーザー指摘）。
+  // 耳（x 2-3 / 20-21, rows 12-15）とあご下（rows ≥ 20 の中央）は肌のまま。薄毛は側頭部の帯（rows 8-15）だけ髪
+  const colorOf = (x, y, z) => {
+    if (y >= 24) return null;
+    if (!bald && (x <= 5 || x >= 18) && y >= 10 && y <= 11) return hair; // こめかみ：前後どこでも髪（生え際）
+    if (z >= 8) return null;
+    const ear = (x <= 3 || x >= 20) && y >= 12 && y <= 15;
+    if (ear) return null;
+    if (bald) return y >= 8 && y <= 15 ? hair : null;
+    if (y >= 10 && y <= 19) return hair;
+    if (y >= 20 && (x <= 5 || x >= 18)) return hair;   // あごの横（うなじ側）
+    return null;
+  };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side, carve, colorOf });
 }
 
 /**
