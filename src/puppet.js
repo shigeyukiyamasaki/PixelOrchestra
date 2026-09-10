@@ -164,7 +164,7 @@ const VARIANT = {
   timpani:    { inst: { pos: [0, 15, 8], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
-                p3: { strike: { L: { hit: [-7, 15, 11], rest: [-9, 16.5, 10], head: [-6, 15.5, 19] }, R: { hit: [7, 15, 11], rest: [9, 16.5, 10], head: [6, 15.5, 19] } } } }, // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
+                p3: { strike: { L: { hit: [-7, 15, 11], rest: [-9, 21, 8], head: [-6, 15.5, 19] }, R: { hit: [7, 15, 11], rest: [9, 21, 8], head: [6, 15.5, 19] } } } }, // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
   // グランカッサ：打面は横向き（左右を向く）で、上部を奏者から遠い側へ 17° 傾ける（手前の打面が奏者の方を向く。実際の据え置き台）。
   // 奏者のすぐ左前に置き、右手はマレットを左向きに水平に構えて胸の前で横に振る（マレットの頭が手前の打面に当たる）。
   // 視線は左の打面へ（2026-09-10 ユーザー指定：左に配置・右手で打つ。傾きの向きと貫通を修正）
@@ -172,11 +172,11 @@ const VARIANT = {
                 strike: { R: { hit: [4, 22], rest: [13, 28], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
                 // 手前の打面は x≈-8（下）〜-10.5（高さ 20）。hit = 手（左腰の前）、head = マレットの頭の中心（半径 2.5 なので打面の 2.5px 手前）。
                 // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
-                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-6.5, 14, 8], rest: [0, 16, 8], head: [-8, 24, 10] } }, fixedHand: { L: [-7.5, 24, 8] } } }, // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
+                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-6.5, 14, 8], rest: [5, 19, 8], head: [-8, 24, 10] } }, fixedHand: { L: [-7.5, 24, 8] } } }, // 構えは右へ 11.5・上へ 5（大きく振りかぶる） // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
   snare:      { inst: { pos: [0, 17, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
-                p3: { strike: { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 17, 9], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 17, 9], head: [1, 18, 16] } } } }, // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
+                p3: { strike: { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } } } }, // 構えは打点より 4.5 上（振り上げ） // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, // 円盤の面（ローカル -y）を内側（±x）へ向ける
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } },
                 p3: { strike: { L: { hit: [-2, 24, 12], rest: [-9, 25, 10] }, R: { hit: [2, 24, 12], rest: [9, 25, 10] } } } }, // 握り z 10〜12（手首 ≒ 7〜9）で合わせる
@@ -598,7 +598,12 @@ export class Puppet {
       const target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * 0.6);
       // 手首：マレットは打点を向き、手首はそれより少し起きる（振りかぶりで返し、打つ瞬間に伸びる）
       let aim = null;
-      if (sp.head) { const headPt = [sp.head[0] + dx, sp.head[1], sp.head[2] || 0]; aim = [headPt[0] - target[0], headPt[1] - target[1], headPt[2] - target[2]]; }
+      if (sp.head) {
+        // 振り上げ中は先端も持ち上がる（手首を返す）：構えの高さ差の 1.5 倍を、打つ瞬間 (s=1) に向けて 0 へ
+        const liftTip = (1 - s) * Math.max(0, rest[1] - hit[1]) * 1.5;
+        const headPt = [sp.head[0] + dx, sp.head[1] + liftTip, sp.head[2] || 0];
+        aim = [headPt[0] - target[0], headPt[1] - target[1], headPt[2] - target[2]];
+      }
       else if (cfg.heldAngle) aim = [Math.cos(cfg.heldAngle[side]), Math.sin(cfg.heldAngle[side]), 0];
       let hd = null;
       if (aim) { const a = v3(aim).normalize(); const w = 0.55 - 0.35 * s; hd = [a.x, a.y * (1 - w) + w * -0.2, a.z]; } // 打つ瞬間ほどマレットと一直線に
