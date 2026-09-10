@@ -68,29 +68,21 @@ export function createStage(container) {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 22, 34);
 
-  // 照明（2026-09-10 段階 1：舞台も含めて全部ライトで照らす）。床・ひな壇・奏者は同じライトで陰影がつき、影は「光が届かない所」として出る
+  // 照明（2026-09-10 段階 1：舞台も含めて全部ライトで照らす。屋内想定なので太陽光は無し）。
+  // 床・ひな壇・奏者は同じライトで陰影がつき、影は「光が届かない所」として出る
   //   環境光（半球）：跳ね返り光の近似。影の中の明るさを決める（setShadows の ambient）
-  //   太陽光（平行光）：全体の主光源。影付き。向きは sunAngle で回す
-  //   スポットライト 2 灯：客席側の上手・下手の高い位置から舞台を照らす舞台照明。影付き・縁ぼかし
-  const hemi = new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.6);
+  //   スポットライト 2 灯：客席側の上手・下手から舞台中央を照らす舞台照明。影付き・縁ぼかし。仰角・左右の開き・円錐の広がりは setShadows で
+  const hemi = new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.7);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight('#fff4e0', 0.7);
-  sun.position.set(-16, 40, 28);
-  sun.target.position.set(0, 0, -12);
-  scene.add(sun, sun.target);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 });
-  sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
   const spots = [];
-  for (const sx of [-18, 18]) {
-    const sp = new THREE.SpotLight('#fff1d6', 1.2, 90, deg(30), 0.5, 1.0);
-    sp.position.set(sx, 26, 18);
-    sp.target.position.set(sx * 0.3, 0, -12);
+  for (const side of [-1, 1]) {
+    const sp = new THREE.SpotLight('#fff1d6', 1.6, 110, deg(30), 0.5, 1.0);
+    sp.userData.side = side;
+    sp.target.position.set(0, 0, -12);
     sp.castShadow = true;
-    sp.shadow.mapSize.set(1024, 1024);
+    sp.shadow.mapSize.set(2048, 2048);
     sp.shadow.bias = -0.0006; sp.shadow.normalBias = 0.03;
-    sp.shadow.camera.near = 2; sp.shadow.camera.far = 90;
+    sp.shadow.camera.near = 2; sp.shadow.camera.far = 110;
     scene.add(sp, sp.target);
     spots.push(sp);
   }
@@ -132,7 +124,7 @@ export function createStage(container) {
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
   const risers = new THREE.Group();
   scene.add(risers);
-  stageCtx = { scene, floorTex, stageMat, addStage, risers, sun, hemi, spots };
+  stageCtx = { scene, floorTex, stageMat, addStage, risers, hemi, spots };
   buildRisers([]);
 
   // 指揮台
@@ -161,26 +153,29 @@ export function createStage(container) {
 }
 
 // 照明の状態。setShadows で切り替える（名前は互換のため）
-let lightState = { enabled: true, angle: null };
+let lightState = { enabled: true, elev: null, spread: null, cone: null };
+const SPOT_R = 40; // スポットライトと舞台中心 (0,0,-12) の距離 [unit]
 /**
- * @param {{enabled?:boolean, ambient?:number, spot?:number, sunAngle?:number}} o
- *   enabled: 影を落とすか（太陽光・スポット）  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
- *   sunAngle: 太陽光の向き [deg]（0 = 客席側（+z）から、90 = 上手（+x）から）。省略時は変えない
+ * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number}} o
+ *   enabled: 影を落とすか  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
+ *   spotElev: スポットの仰角 [deg]（舞台中心から見た光源の高さ。90 で真上）  spotSpread: 左右の開き [deg]（2 灯が客席正面から左右に何度ずつ離れるか）
+ *   spotCone: 円錐の広がり [deg]（半頂角）
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
-  const { sun, hemi, spots } = stageCtx;
+  const { hemi, spots } = stageCtx;
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
     lightState.enabled = !!o.enabled;
-    sun.castShadow = lightState.enabled;
     for (const sp of spots) sp.castShadow = lightState.enabled;
   }
   if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
-  if (Number.isFinite(o.sunAngle) && o.sunAngle !== lightState.angle) {
-    lightState.angle = o.sunAngle;
-    const a = (o.sunAngle * Math.PI) / 180, R = 32, H = 40;
-    sun.position.set(R * Math.sin(a), H, -12 + R * Math.cos(a)); // target (0,0,-12) を中心に回す
+  if (Number.isFinite(o.spotCone) && o.spotCone !== lightState.cone) { lightState.cone = o.spotCone; for (const sp of spots) sp.angle = deg(o.spotCone); }
+  const elev = Number.isFinite(o.spotElev) ? o.spotElev : lightState.elev, spread = Number.isFinite(o.spotSpread) ? o.spotSpread : lightState.spread;
+  if (Number.isFinite(elev) && Number.isFinite(spread) && (elev !== lightState.elev || spread !== lightState.spread)) {
+    lightState.elev = elev; lightState.spread = spread;
+    const e = deg(elev), a = deg(spread);
+    for (const sp of spots) sp.position.set(sp.userData.side * SPOT_R * Math.cos(e) * Math.sin(a), SPOT_R * Math.sin(e), -12 + SPOT_R * Math.cos(e) * Math.cos(a));
   }
 }
 

@@ -138,9 +138,11 @@ function settings() {
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
     showShadows: $('showShadows').checked,
-    ambient: num('ambient', 0.6),
-    spotIntensity: num('spotIntensity', 1.2),
-    sunAngle: num('sunAngle', 330),
+    ambient: num('ambient', 0.7),
+    spotIntensity: num('spotIntensity', 1.6),
+    spotElev: num('spotElev', 40),
+    spotSpread: num('spotSpread', 30),
+    spotCone: num('spotCone', 30),
     facing: radioValue('facing') === 'camera' ? 'camera' : 'conductor',
     partStyle: radioValue('partStyle') === 'sprite' ? 'sprite' : 'voxel',
   };
@@ -426,7 +428,7 @@ function animate() {
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
-    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, sunAngle: s.sunAngle });
+    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);
