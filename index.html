@@ -62,9 +62,10 @@
 
     <details open>
       <summary>照明</summary>
-      <label class="chk" title="太陽光の影を床・ひな壇・奏者に落とす（ボクセルの時だけ）"><input type="checkbox" id="showShadows" checked> 影を落とす</label>
-      <label class="ctl" title="影の濃さ"><span>濃さ <b data-value-for="shadowOpacity">0.45</b></span><input type="range" id="shadowOpacity" min="0" max="1" step="0.05" value="0.45"></label>
-      <label class="ctl" title="光の向き [度]。0 = 客席の正面から、90 = 上手（右）から、180 = 舞台の奥から、270 = 下手（左）から"><span>光の向き <b data-value-for="sunAngle">330</b></span><input type="range" id="sunAngle" min="0" max="360" step="5" value="330"></label>
+      <label class="chk" title="太陽光・スポットライトの影を床・ひな壇・奏者に落とす（ボクセルの時だけ）"><input type="checkbox" id="showShadows" checked> 影を落とす</label>
+      <label class="ctl" title="環境光（跳ね返り光の近似）の強さ。影の中の明るさが変わる。小さいほど影が濃い"><span>環境光 <b data-value-for="ambient">0.6</b></span><input type="range" id="ambient" min="0" max="1.5" step="0.05" value="0.6"></label>
+      <label class="ctl" title="客席側の上手・下手から舞台を照らすスポットライト 2 灯の強さ"><span>スポット <b data-value-for="spotIntensity">1.2</b></span><input type="range" id="spotIntensity" min="0" max="3" step="0.1" value="1.2"></label>
+      <label class="ctl" title="太陽光の向き [度]。0 = 客席の正面から、90 = 上手（右）から、180 = 舞台の奥から、270 = 下手（左）から"><span>太陽光の向き <b data-value-for="sunAngle">330</b></span><input type="range" id="sunAngle" min="0" max="360" step="5" value="330"></label>
     </details>
 
     <details open>
@@ -88,6 +89,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260912j"></script>
+  <script type="module" src="src/main.js?v=20260912k"></script>
 </body>
 </html>

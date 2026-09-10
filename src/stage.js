@@ -68,18 +68,32 @@ export function createStage(container) {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 22, 34);
 
-  // ライト：ボクセルの面ごとの陰影用（舞台側は MeshBasicMaterial なので影響しない）
-  scene.add(new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.95));
-  const sun = new THREE.DirectionalLight('#fff4e0', 0.55);
-  sun.position.set(-16, 40, 28); // 客席側の上手斜め上から（向きは setShadows の sunAngle で回す）
+  // 照明（2026-09-10 段階 1：舞台も含めて全部ライトで照らす）。床・ひな壇・奏者は同じライトで陰影がつき、影は「光が届かない所」として出る
+  //   環境光（半球）：跳ね返り光の近似。影の中の明るさを決める（setShadows の ambient）
+  //   太陽光（平行光）：全体の主光源。影付き。向きは sunAngle で回す
+  //   スポットライト 2 灯：客席側の上手・下手の高い位置から舞台を照らす舞台照明。影付き・縁ぼかし
+  const hemi = new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.6);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight('#fff4e0', 0.7);
+  sun.position.set(-16, 40, 28);
   sun.target.position.set(0, 0, -12);
   scene.add(sun, sun.target);
-  // 影（2026-09-10）：太陽光の影を床・ひな壇の天面（ShadowMaterial の受け皿）と奏者の体に落とす。
-  // 舞台側は MeshBasicMaterial のままなので、受け皿を 0.005 上に重ねて影だけ描く（明るさは変えない）
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 });
   sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
+  const spots = [];
+  for (const sx of [-18, 18]) {
+    const sp = new THREE.SpotLight('#fff1d6', 1.2, 90, deg(30), 0.5, 1.0);
+    sp.position.set(sx, 26, 18);
+    sp.target.position.set(sx * 0.3, 0, -12);
+    sp.castShadow = true;
+    sp.shadow.mapSize.set(1024, 1024);
+    sp.shadow.bias = -0.0006; sp.shadow.normalBias = 0.03;
+    sp.shadow.camera.near = 2; sp.shadow.camera.far = 90;
+    scene.add(sp, sp.target);
+    spots.push(sp);
+  }
 
   const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -102,8 +116,9 @@ export function createStage(container) {
   //   2D の板：深度を書かない（depthWrite:false, 先に描く）。奏者の板は足元を軸にカメラへ正対するため、見下ろすと板の上半分が
   //   後方へ倒れ込み、後列の（高い）ひな壇に深度で隠されるから。描く順（renderOrder）が前後関係になる（床 → 後列 → 前列 → 指揮台）
   //   ボクセル：通常どおり深度を書く。深度を書かないと後ろから見た時に前列のひな壇が後列を塗り潰す（2026-09-10 ユーザー指摘）
-  const stageMat = (opts) => { const m = new THREE.MeshBasicMaterial({ ...opts, depthWrite: stageDepthWrite }); stageMats.add(m); return m; };
-  const addStage = (mesh, order = -20) => { mesh.renderOrder = order; scene.add(mesh); return mesh; };
+  // 材質はライトに反応する Lambert（床・ひな壇の明るさは照明で決まり、影を受ける）
+  const stageMat = (opts) => { const m = new THREE.MeshLambertMaterial({ ...opts, depthWrite: stageDepthWrite }); stageMats.add(m); return m; };
+  const addStage = (mesh, order = -20) => { mesh.renderOrder = order; mesh.receiveShadow = true; scene.add(mesh); return mesh; };
 
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
@@ -113,14 +128,11 @@ export function createStage(container) {
   floor.position.z = FLOOR_CENTER_Z;
   floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
   addStage(floor, -40);
-  const floorShadow = new THREE.Mesh(floor.geometry, new THREE.ShadowMaterial({ opacity: 0.45 }));
-  floorShadow.rotation.copy(floor.rotation); floorShadow.position.copy(floor.position); floorShadow.position.y += 0.005; floorShadow.scale.copy(floor.scale);
-  floorShadow.receiveShadow = true; floorShadow.renderOrder = -39; scene.add(floorShadow); shadowCatchers.add(floorShadow);
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
   const risers = new THREE.Group();
   scene.add(risers);
-  stageCtx = { scene, floorTex, stageMat, addStage, risers, sun };
+  stageCtx = { scene, floorTex, stageMat, addStage, risers, sun, hemi, spots };
   buildRisers([]);
 
   // 指揮台
@@ -148,22 +160,25 @@ export function createStage(container) {
   return { scene, camera, renderer, controls, resize, wall, setShadows };
 }
 
-// 影の受け皿（床・ひな壇の天面）。setShadows で表示と濃さを切り替える
-const shadowCatchers = new Set();
-let shadowState = { enabled: true, opacity: 0.45, angle: null };
+// 照明の状態。setShadows で切り替える（名前は互換のため）
+let lightState = { enabled: true, angle: null };
 /**
- * @param {{enabled?:boolean, opacity?:number, sunAngle?:number}} o
- *   sunAngle: 光の向き [deg]（0 = 客席側（+z）から、90 = 上手（+x）から）。省略時は変えない
+ * @param {{enabled?:boolean, ambient?:number, spot?:number, sunAngle?:number}} o
+ *   enabled: 影を落とすか（太陽光・スポット）  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
+ *   sunAngle: 太陽光の向き [deg]（0 = 客席側（+z）から、90 = 上手（+x）から）。省略時は変えない
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
-  const { sun } = stageCtx;
-  if (o.enabled !== undefined) shadowState.enabled = !!o.enabled;
-  if (Number.isFinite(o.opacity)) shadowState.opacity = o.opacity;
-  sun.castShadow = shadowState.enabled;
-  for (const m of shadowCatchers) { m.visible = shadowState.enabled; m.material.opacity = shadowState.opacity; }
-  if (Number.isFinite(o.sunAngle) && o.sunAngle !== shadowState.angle) {
-    shadowState.angle = o.sunAngle;
+  const { sun, hemi, spots } = stageCtx;
+  if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
+    lightState.enabled = !!o.enabled;
+    sun.castShadow = lightState.enabled;
+    for (const sp of spots) sp.castShadow = lightState.enabled;
+  }
+  if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
+  if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
+  if (Number.isFinite(o.sunAngle) && o.sunAngle !== lightState.angle) {
+    lightState.angle = o.sunAngle;
     const a = (o.sunAngle * Math.PI) / 180, R = 32, H = 40;
     sun.position.set(R * Math.sin(a), H, -12 + R * Math.cos(a)); // target (0,0,-12) を中心に回す
   }
@@ -186,7 +201,7 @@ export function setStageDepthWrite(on) {
 export function buildRisers(seats) {
   if (!stageCtx) return;
   const { floorTex, stageMat, risers } = stageCtx;
-  risers.traverse((o) => { if (shadowCatchers.has(o)) { shadowCatchers.delete(o); o.material.dispose(); return; } o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
+  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
   risers.clear();
 
   // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする
@@ -215,24 +230,21 @@ export function buildRisers(seats) {
     const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), stageMat({ map: floorTex, color: col }));
     top.rotation.x = -Math.PI / 2;
     top.position.y = row.h;
-    top.renderOrder = ro + 0.2; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
-    const topShadow = new THREE.Mesh(top.geometry, new THREE.ShadowMaterial({ opacity: shadowState.opacity }));
-    topShadow.rotation.copy(top.rotation); topShadow.position.y = row.h + 0.005; topShadow.receiveShadow = true;
-    topShadow.visible = shadowState.enabled; topShadow.renderOrder = ro + 0.25; risers.add(topShadow); shadowCatchers.add(topShadow);
+    top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
       stageMat({ color: '#2e2620', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
-    front.renderOrder = ro; risers.add(front);
+    front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
       stageMat({ color: '#2a221c', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
-    back.renderOrder = ro; risers.add(back);
+    back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
     // 両端の側面（扇の切り口）
     for (const th of [thMin, thMax]) {
       const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#241d18', side: THREE.DoubleSide }));
