@@ -21,7 +21,7 @@ const weighted = (r, pairs) => { const total = pairs.reduce((a, p) => a + p[1], 
 // 肌：[肌, 影]
 const SKINS = [['#f4d3b3', '#dcb391'], ['#f1c9a5', '#d9a880'], ['#e3b48c', '#c8956c'], ['#d9a57c', '#bb8560']]; // 褐色（#c98f63 / #8e5b3c）は外し、少し暗い肌まで（2026-09-10 ユーザー指定）
 // 髪色（若年〜壮年）
-const HAIR_YOUNG = [['#2b1b12', 30], ['#1a1a1e', 22], ['#5a3a1e', 20], ['#8a5a30', 10], ['#d9c27a', 10], ['#8c2e2e', 5], ['#6d4b31', 3]];
+const HAIR_YOUNG = [['#2b1b12', 32], ['#1a1a1e', 26], ['#5a3a1e', 22], ['#8a5a30', 12], ['#6d4b31', 8]]; // 赤毛・金髪は無し（2026-09-10 ユーザー指定）
 // 髪色（高齢）
 const HAIR_SENIOR = [['#c9c9c9', 45], ['#e8e8e8', 35], ['#8a8a8a', 20]];
 
@@ -108,7 +108,8 @@ export function headFor(p) {
   const carve = (x, y, z) => {
     if (y >= 24) return false;
     const dx = (x + 0.5 - 12) / 12.6, dy = (y + 0.5 - 12) / 12.6, dz = (z + 0.5 - 8) / 8.8;
-    return Math.abs(dx) ** 3 + Math.abs(dy) ** 3 + Math.abs(dz) ** 3 > 1; // 3 乗（4 乗より一段丸く。2026-09-10）
+    // 上下左右は 3 乗（角丸の四角）、前後は 2 乗（顔の面と後頭部が丸く膨らむ。2026-09-10 ユーザー指定）
+    return Math.abs(dx) ** 3 + Math.abs(dy) ** 3 + dz * dz > 1;
   };
   return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side, carve });
 }
