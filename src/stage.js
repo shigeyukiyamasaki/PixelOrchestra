@@ -101,7 +101,7 @@ export function createStage(container) {
   container.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.target.set(0.5, 7, -11.5);
+  controls.target.set(0, 2.3, -12);  // 中心点＝楽団の重心（z -12）× 座った奏者の頭の高さ。マウス回転の軸もここ（2026-09-11）
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 5;
