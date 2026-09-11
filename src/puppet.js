@@ -739,11 +739,16 @@ export class Puppet {
     const e = ph * ph;                                              // 次の拍点へ加速して到着（イクタス）
     const bounce = ph < 0.3 ? Math.sin(Math.PI * ph / 0.3) * 2.5 : 0; // 到着直後の跳ね
     const px = lerp(from[0], to[0], e), py = lerp(from[1], to[1], e) + bounce;
-    this.setHand('R', [C[0] + px * amp, C[1] + py * amp, C[2]], dt, Infinity);
-    // 指揮棒：肘→手首の延長線上（前腕の -y 方向）。2D 板は面内なので少し上向きに補正
-    _a.set(0, -1, 0).applyQuaternion(this.foreQ.R);
-    if (this.flat) _a.y += 0.35;
-    this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x');
+    // 右手：前フレームの前腕の向き（肘→手首）に沿わせ、手の甲の向きも前腕のねじれに合わせる（手首が回らない）。
+    // 指揮棒は手に固定（手の -y 方向＝指先の延長に +x を向ける定数回転）。2026-09-11 ユーザー指摘（手首がくるくる回っていた）
+    const fdir = new THREE.Vector3(0, -1, 0).applyQuaternion(this.foreQ.R);
+    const fup = new THREE.Vector3(0, 0, 1).applyQuaternion(this.foreQ.R);
+    this.setHand('R', [C[0] + px * amp, C[1] + py * amp, C[2]], dt, Infinity, this.flat ? null : [fdir.x, fdir.y, fdir.z], null, this.flat ? null : [fup.x, fup.y, fup.z]);
+    const baton = this.held.R;
+    if (baton) {
+      if (this.flat) { _a.set(0, -1, 0).applyQuaternion(this.foreQ.R); _a.y += 0.35; this.aimHeldDir('R', [_a.x, _a.y, _a.z], 'x'); }
+      else if (!baton.userData.fixed) { baton.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2); baton.userData.fixed = true; }
+    }
     // 左手：強い時は鏡像で同調、弱い時は胸の前で控える
     const mirror = [-C[0] - px * amp * 0.7, C[1] + py * amp * 0.6, C[2]];
     const restL = this.flat ? [-5, 24, 3] : [-5, 22, 7];
