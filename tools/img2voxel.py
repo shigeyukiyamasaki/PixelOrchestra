@@ -2,8 +2,8 @@
 """
 画像 → ボクセル用ドットデータ（JS）変換
 Usage:
-  python3 tools/img2voxel.py 入力画像 出力.js 名前 [幅セル数]
-    例: python3 tools/img2voxel.py ~/Desktop/tenchi.jpg src/logoData.js tenchi 96
+  python3 tools/img2voxel.py 入力画像 出力.js 名前 [幅セル数] [白フチの太さセル数]
+    例: python3 tools/img2voxel.py ~/Desktop/tenchi.jpg src/logoData.js tenchi 282 5
 
 やること:
   1. 余白（白）を切り落とす
@@ -87,13 +87,42 @@ def convert(src, width_cells):
     return rows
 
 
+def add_outline(rows, thickness):
+    """本体（'.' 以外）の外側に、太さ thickness セルの白フチ 'w' を均等に付ける。
+    元画像の不揃いな白フチは本体の一部として扱い、その外側を等距離で囲む（2026-09-12 ユーザー指定）"""
+    if thickness <= 0:
+        return rows
+    pad = thickness + 1
+    W, H = len(rows[0]), len(rows)
+    W2, H2 = W + pad * 2, H + pad * 2
+    grid = [['.'] * W2 for _ in range(H2)]
+    for y in range(H):
+        for x in range(W):
+            grid[y + pad][x + pad] = rows[y][x]
+    # 本体からの距離（BFS・8 近傍ではなく円形にするため距離の 2 乗で判定）
+    core = [(x, y) for y in range(H2) for x in range(W2) if grid[y][x] != '.']
+    t2 = thickness * thickness
+    for y in range(H2):
+        for x in range(W2):
+            if grid[y][x] != '.':
+                continue
+            for cx, cy in core:
+                dx, dy = cx - x, cy - y
+                if dx * dx + dy * dy <= t2:
+                    grid[y][x] = 'w'
+                    break
+    return [''.join(r) for r in grid]
+
+
 def main():
     if len(sys.argv) < 4:
         print(__doc__)
         sys.exit(1)
     src, out, name = sys.argv[1], sys.argv[2], sys.argv[3]
     width = int(sys.argv[4]) if len(sys.argv) > 4 else 96
+    outline = int(sys.argv[5]) if len(sys.argv) > 5 else 0
     rows = convert(os.path.expanduser(src), width)
+    rows = add_outline(rows, outline)
     body = (
         '/*\n * PixelOrchestra — %s\n * %s から自動生成（tools/img2voxel.py）。手で編集しない\n */\n'
         'export const %s = {\n  palette: %s,\n  rows: [\n%s\n  ],\n};\n'
