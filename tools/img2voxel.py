@@ -88,23 +88,38 @@ def convert(src, width_cells):
 
 
 def add_outline(rows, thickness):
-    """本体（'.' 以外）の外側に、太さ thickness セルの白フチ 'w' を均等に付ける。
-    元画像の不揃いな白フチは本体の一部として扱い、その外側を等距離で囲む（2026-09-12 ユーザー指定）"""
+    """白フチを付け直す：元画像の白（不揃いなフチ・文字内部の白線）は全部消し、
+    本体（紺・青）の外側に太さ thickness セルの白を均等に回す。囲まれた内側には入れない（外から届く所だけ）。
+    2026-09-12 ユーザー指定（外縁だけ／内側の白は全部消す）"""
     if thickness <= 0:
         return rows
     pad = thickness + 1
     W, H = len(rows[0]), len(rows)
     W2, H2 = W + pad * 2, H + pad * 2
+    # 元の白は落として、紺・青だけを本体として置き直す
     grid = [['.'] * W2 for _ in range(H2)]
     for y in range(H):
         for x in range(W):
-            grid[y + pad][x + pad] = rows[y][x]
-    # 本体からの距離（BFS・8 近傍ではなく円形にするため距離の 2 乗で判定）
+            c = rows[y][x]
+            if c in ('n', 'b'):
+                grid[y + pad][x + pad] = c
+    # 外側（キャンバスの縁から本体に遮られずに届く空白）を塗り分ける
+    outside = [[False] * W2 for _ in range(H2)]
+    stack = [(0, 0)]
+    outside[0][0] = True
+    while stack:
+        x, y = stack.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < W2 and 0 <= ny < H2 and not outside[ny][nx] and grid[ny][nx] == '.':
+                outside[ny][nx] = True
+                stack.append((nx, ny))
+    # 本体からの距離が thickness 以内の「外側」を白にする（円形にするため距離の 2 乗で判定）
     core = [(x, y) for y in range(H2) for x in range(W2) if grid[y][x] != '.']
     t2 = thickness * thickness
     for y in range(H2):
         for x in range(W2):
-            if grid[y][x] != '.':
+            if grid[y][x] != '.' or not outside[y][x]:
                 continue
             for cx, cy in core:
                 dx, dy = cx - x, cy - y
