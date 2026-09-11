@@ -109,7 +109,8 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 #camWin { left: 350px; top: 64px; }
 
 /* スライダー横の数値入力欄（直接入力＋右側の上下矢印。標準のスピンボタンは小さいので自前で描く） */
-.numwrap { display: inline-flex; align-items: stretch; margin-left: 6px; }
+.numwrap { display: inline-flex; align-items: stretch; margin-left: auto; } /* 右端へ寄せる（2026-09-11 ユーザー指定） */
+.ctl:not(.radio) > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ctl input.num { width: 52px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
   background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 .ctl input.num:focus { outline: none; border-color: var(--accent); }
