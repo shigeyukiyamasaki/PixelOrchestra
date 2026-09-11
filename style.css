@@ -97,3 +97,13 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
   #panelRightToggle { right: 12px; }
   body:not(.panel-right-hidden) #panel { display: none; } /* 狭い画面では片方ずつ */
 }
+
+/* 独立した小窓（カメラ）。ドラッグで移動できる */
+.win { position: fixed; z-index: 4; width: 260px; background: rgba(22, 22, 42, 0.86); border: 1px solid var(--line); border-radius: 10px;
+  backdrop-filter: blur(6px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); }
+.win.hidden { display: none; }
+.win-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 12px; cursor: move; user-select: none;
+  color: var(--accent); font-weight: 600; border-bottom: 1px solid var(--line); }
+.win-head button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+.win-body { padding: 6px 12px 10px; }
+#camWin { left: 350px; top: 64px; }
