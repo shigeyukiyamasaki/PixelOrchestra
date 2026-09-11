@@ -546,9 +546,8 @@ export class Puppet {
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
     const handR = [C[0] - d[0] * s + n[0] * this.lift, C[1] - d[1] * s + n[1] * this.lift, C[2] - d[2] * s + n[2] * this.lift];
-    // 手首あり：右手は弓の上から被さる（手首→指先 ≒ 下向き＋弦の面へ少し＋弓の進行方向へ少し）。手首が弓の上に来るので腕が届く
-    const rightHandDir = this.hasWrist ? [-0.5 * n[0] + d[0] * 0.25 * this.bowDir, -0.75 - 0.5 * n[1] + d[1] * 0.25 * this.bowDir, -0.5 * n[2] + d[2] * 0.25 * this.bowDir] : null;
-    this.setHand('R', handR, dt, Infinity, rightHandDir);
+    // 手首あり：右手は手首を折らず、腕の延長線上で弓の手元を持つ（handDir 省略＝肩→指先の向き）。甲は弦の面の法線側（手のひらが弓に被さる）。2026-09-11 ユーザー指摘（手首が折れ曲がっていた）
+    this.setHand('R', handR, dt, Infinity, null, null, this.hasWrist ? n : null);
     this.aimHeldDir('R', d, 'x');
 
     // 左手：指板の位置。長い音ではビブラート（弦に沿って 5.5Hz）
