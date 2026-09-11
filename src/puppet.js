@@ -120,7 +120,7 @@ const VIOLIN_AXIS = [-0.55, -0.32, 0.77];   // あごから渦巻きへ（左・
 const VIOLIN_UP = [0.15, 0.9, 0.35];        // 弦の面の法線（上・やや前）
 const VIOLIN_Q = quatFromAxes(VIOLIN_AXIS, VIOLIN_UP, '-x'); // 鏡像スプライトなので渦巻きはローカル -x
 const VIOLIN_BOW = (() => { const b = new THREE.Vector3().crossVectors(v3(VIOLIN_UP), v3(VIOLIN_AXIS)).normalize(); if (b.x > 0) b.negate(); return [b.x, b.y, b.z]; })(); // 手元→先端（右手から左へ）
-const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.4, 0, 0.2)); // 約 23° 後ろへ傾けて上部を胸に寄りかからせ、11° 左へ倒してネックを頭の横に出す（1.4 倍にしたので 29° → 23°。2026-09-11）
+const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0, 0.25)); // 約 29° 後ろへ寝かせて上部を胸に寄りかからせ、14° 左へ倒してネックを頭の横に出す（下側は右足側・前へ。2026-09-11 ユーザー指定）
 // チェロ系の弓の向き・弦から離れる向きは楽器の姿勢から：弓は楽器のローカル -x（右手→左）、弦の面の法線はローカル +z（正面）
 const CELLO_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
 const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(CELLO_Q); return [v.x, v.y, v.z]; })();
@@ -142,7 +142,7 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [-2, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [5, 0],
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 12], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 駒は高解像度の絵の row 36（基本 y=12）
-                p3: { pos: [-4.5, 1, 15], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 3.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
+                p3: { pos: [-3, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 3.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
   contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 19], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 23], vib: [0, 1, 0], // 左手はあごの高さ（楽器 1.3 倍で 23×1.3≈30px。26 だと伸び切る。2026-09-11）
                 p3: { pos: [-9, 0, 9], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 8.2, leftHandZ: 5.0 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
