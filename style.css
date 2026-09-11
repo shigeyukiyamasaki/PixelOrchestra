@@ -26,15 +26,15 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .offset { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
 .offset input[type=number] { width: 64px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 #panel, #panelRight { position: fixed; top: 64px; max-height: calc(100dvh - 76px); overflow-y: auto;
-  background: rgba(22, 22, 42, 0.72); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
-  backdrop-filter: blur(6px); transition: transform 0.2s; }
-#panel { left: 12px; width: 320px; }
+  background: rgba(22, 22, 42, 0.62); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px;
+  backdrop-filter: blur(6px); transition: transform 0.2s; } /* 透明度は 0.72 → 0.62（2026-09-12 ユーザー指定） */
+#panel { left: 12px; width: 250px; }  /* 幅は 320 → 250（同日） */
 #panelRight { right: 12px; width: 340px; }
-body.panel-hidden #panel { transform: translateX(-360px); }
+body.panel-hidden #panel { transform: translateX(-290px); }
 body.panel-right-hidden #panelRight { transform: translateX(380px); }
 #panelToggle, #panelRightToggle { position: fixed; top: 64px; z-index: 2; width: 34px; height: 34px; border-radius: 8px;
   border: 1px solid var(--line); background: rgba(22, 22, 42, 0.85); color: var(--text); cursor: pointer; transition: left 0.2s, right 0.2s; }
-#panelToggle { left: 344px; }
+#panelToggle { left: 274px; }
 body.panel-hidden #panelToggle { left: 12px; }
 #panelRightToggle { right: 364px; }
 body.panel-right-hidden #panelRightToggle { right: 12px; }
@@ -108,8 +108,8 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 
 /* スライダー横の数値入力欄（直接入力＋右側の上下矢印。標準のスピンボタンは小さいので自前で描く） */
 .numwrap { display: inline-flex; align-items: stretch; margin-left: auto; } /* 右端へ寄せる（2026-09-11 ユーザー指定） */
-.ctl:not(.radio) > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ctl input.num { width: 52px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
+.ctl:not(.radio) > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; } /* 幅 250 でラベルが折り返さないように */
+.ctl input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
   background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 .ctl input.num:focus { outline: none; border-color: var(--accent); }
 .ctl input.num::-webkit-inner-spin-button, .ctl input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
