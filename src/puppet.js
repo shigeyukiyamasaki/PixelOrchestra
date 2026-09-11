@@ -192,7 +192,7 @@ const VARIANT = {
                 strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
                 p3: { strike: { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } } } }, // 構えは打点より 4.5 上（振り上げ） // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
-  cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, // 円盤の面（ローカル -y）を内側（±x）へ向ける
+  cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, bothArms: true, flourish: true, // 円盤の面（ローカル -y）を内側（±x）へ向ける。両手同時に中央で合わせ、強い音では腕を大きく回す（2026-09-11）
                 strike: { L: { hit: [-2, 27], rest: [-12, 31] }, R: { hit: [2, 27], rest: [12, 31] } },
                 p3: { strike: { L: { hit: [-2, 20, 15], rest: [-9, 21, 13] }, R: { hit: [2, 20, 15], rest: [9, 21, 13] } } } }, // 胸の前 13〜15px で合わせる（顔を挟まない。2026-09-10）
   xylophone:  { inst: { pos: [0, 8, 8], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
@@ -654,6 +654,7 @@ export class Puppet {
     const strike = p3?.strike || cfg.strike;
     const fixedHand = p3?.fixedHand || cfg.fixedHand;
     const armOf = (n) => (cfg.singleArm ? cfg.singleArm : (n.index % 2 ? 'L' : 'R'));
+    const both = !!cfg.bothArms; // シンバル：両手を同時に中央で合わせる（2026-09-11 ユーザー指定）
     const tr = st.track;
     const normOf = (n) => (n.midi - (tr?.minPitch ?? 60)) / Math.max(1, (tr?.maxPitch ?? 72) - (tr?.minPitch ?? 60));
     const spread = cfg.pitchSpread || 0; // 鍵盤打楽器：音程で叩く位置が横に動く（次の音へ向かって移動）
@@ -661,12 +662,22 @@ export class Puppet {
       const sp = strike?.[side];
       if (!sp) { if (fixedHand?.[side]) this.setHand(side, fixedHand[side], dt, 10); continue; }
       let s = 0, ant = 0, vel = 0.5, pn = pitchNorm;
-      if (onset && armOf(onset) === side) { vel = onset.velocity; s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
-      if (next && armOf(next) === side && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * next.velocity; vel = Math.max(vel, next.velocity); if (spread) pn = normOf(next); }
+      if (onset && (both || armOf(onset) === side)) { vel = onset.velocity; s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
+      if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * next.velocity; vel = Math.max(vel, next.velocity); if (spread) pn = normOf(next); }
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
-      const target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
+      let target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
+      // シンバルの大きな一打：合わせた後に両手を上に上げて大きく腕を回す（強さに応じた振り幅、約 0.9 秒で構えへ戻る。2026-09-11 ユーザー指定）
+      if (both && onset && cfg.flourish) {
+        const amp = clamp((onset.velocity - 0.3) / 0.5, 0, 1);                   // 弱い音（vel < 0.3）では回さず、0.8 以上で最大
+        const T = 0.9, pf = (age - 0.05) / T;
+        if (amp > 0 && pf > 0 && pf < 1) {
+          const sign = side === 'L' ? -1 : 1, sw = Math.sin(pf * Math.PI);
+          const up = 18 * amp, out = 8 * amp;
+          target = [lerp(hit[0], rest[0], pf) + sign * out * sw, lerp(hit[1], rest[1], pf) + up * sw, lerp(hit[2], rest[2], pf) - 2 * sw * amp];
+        }
+      }
       // 手首：マレットは打点を向き、手首はそれより少し起きる（振りかぶりで返し、打つ瞬間に伸びる）
       let aim = null;
       if (sp.head) {
