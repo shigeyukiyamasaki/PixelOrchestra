@@ -30,6 +30,8 @@ const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'mar
 //   弦：バイオリン/ヴィオラは 1.25 のまま、チェロ 1.25（絵の胴が横に太いので 1.4 だと大きく見える。2026-09-11）、コントラバス 1.3（実物 185cm。1.5 だと胴が体を隠すので幅基準で妥協）。木管：フルート 1.05・ピッコロ/オーボエ 1.0・クラリネット 1.05・ファゴット 1.25 のまま
 //   金管：ホルン 1.25 のまま・トランペット 0.9・トロンボーン 1.6（実物 120cm）・チューバ 1.35。鍵盤：ハープ 1.5（実物 175cm）・ピアノ 1.17・チェレスタ 1.2
 //   打楽器（打点が rig 座標なので別途調整が要る）は据え置き：グランカッサ 1.5（ユーザー指定）
+// 楽器ごとの奏者の身長倍率（楽器は同じ大きさのまま。コントラバス奏者は少し背が高い。2026-09-11 ユーザー指定）
+const PLAYER_TALL = { contrabass: 1.08 };
 const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
@@ -143,7 +145,7 @@ const VARIANT = {
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
                 p3: { pos: [0, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 3.5 }, legSpread: 6.5 }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 23.5], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 23], vib: [0, 1, 0], // 左手はあごの高さ（楽器 1.3 倍で 23×1.3≈30px。26 だと伸び切る。2026-09-11）
+  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 21], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 23], vib: [0, 1, 0], // 左手はあごの高さ（楽器 1.3 倍で 23×1.3≈30px。26 だと伸び切る。2026-09-11）
                 p3: { pos: [-9, 0, 9], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 8.2, leftHandZ: 5.0 } }, // 立奏。体の左に立てかけ、斜めに構える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
@@ -276,7 +278,7 @@ export class Puppet {
       this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
       this.rig.add(legsStandingFor(P));
     }
-    if (!this.flat) this.group.scale.setScalar(P.height); // 身長の個体差（楽器・腕ごと相似）
+    if (!this.flat) this.group.scale.setScalar(P.height * (PLAYER_TALL[this.variant] ?? 1)); // 身長の個体差（楽器・腕ごと相似）＋楽器別の身長倍率
 
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
@@ -323,7 +325,7 @@ export class Puppet {
       if (this.p3 && this.p3.quat) m.quaternion.copy(this.p3.quat);
       else if (this.p3 && this.p3.rot3) m.quaternion.setFromEuler(new THREE.Euler(...this.p3.rot3));
       else m.quaternion.setFromEuler(new THREE.Euler(0, 0, this.cfg.inst.rot));
-      const sc = INST_SCALE_VARIANT[this.variant] ?? INST_SCALE[this.family] ?? 1;
+      const sc = (INST_SCALE_VARIANT[this.variant] ?? INST_SCALE[this.family] ?? 1) / (PLAYER_TALL[this.variant] ?? 1); // 奏者を大きくする分、楽器は相殺して同じ大きさに
       m.scale.set(this.cfg.inst.mirror ? -sc : sc, sc, sc);
       m.userData.baseQ = m.quaternion.clone();
       this.inst = m;
