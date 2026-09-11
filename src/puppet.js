@@ -49,9 +49,9 @@ const v3 = (arr) => new THREE.Vector3(arr[0], arr[1], arr[2] || 0);
  * 「ボーンの軸（ローカル -y）を dir に向け、ローカル +z をなるべく rig +z に保つ」回転
  * （腕・手持ち物のスプライトは pivot から -y 方向に伸び、+z が正面）
  */
-function quatFromBoneDir(dir, out) {
+function quatFromBoneDir(dir, out, up = null) {
   const y = _a.copy(dir).normalize().negate();   // local -y → dir
-  const zHint = _b.set(0, 0, 1);
+  const zHint = up ? _b.set(up[0], up[1], up[2]) : _b.set(0, 0, 1); // up = ローカル +z（手の甲側）を向けたい向きのヒント（省略時は rig の前）
   let z = _c.copy(zHint).addScaledVector(y, -zHint.dot(y));
   if (z.lengthSq() < 1e-6) z = _c.set(1, 0, 0).addScaledVector(y, -y.x);
   z.normalize();
@@ -372,7 +372,7 @@ export class Puppet {
 
   // ---- 手の配置：目標へ滑らかに寄せてから 3D IK（rate が大きいほど即応。Infinity で即時）----
   // handDir（rig 空間）を渡すと手首あり：手首＝目標 − handDir×手の長さ、前腕は手首へ、手は handDir を向く
-  setHand(side, target, dt, rate = 30, handDir = null, pole = null) {
+  setHand(side, target, dt, rate = 30, handDir = null, pole = null, handUp = null) {
     const cur = this.hand[side];
     const tz = this.flat ? 3 : (target[2] ?? 0);
     if (rate === Infinity) { cur[0] = target[0]; cur[1] = target[1]; cur[2] = tz; }
@@ -394,8 +394,8 @@ export class Puppet {
     this.arm[side].quaternion.copy(ik.q1);
     this.fore[side].quaternion.copy(ik.q1).invert().multiply(ik.q2); // 前腕は上腕の子：ローカル回転 = q1⁻¹ · q2
     this.foreQ[side].copy(ik.q2);
-    if (this.hasWrist) { // 手：手首から目標へ向く（rig 基準の回転 → 前腕の子としてのローカル回転）
-      const qh = quatFromBoneDir(this._handDir, new THREE.Quaternion());
+    if (this.hasWrist) { // 手：手首から目標へ向く（rig 基準の回転 → 前腕の子としてのローカル回転）。handUp があれば手の甲の向きをそれに合わせる（管の角度に手の角度を合わせる）
+      const qh = quatFromBoneDir(this._handDir, new THREE.Quaternion(), handUp);
       this.handGrp[side].quaternion.copy(ik.q2).invert().multiply(qh);
       this.handQ[side].copy(qh);
       // 腕が届かない時（IK が肩→手首の距離で頭打ち）でも、手持ち物は目標位置（弦の上・打点）に置く：
@@ -613,13 +613,15 @@ export class Puppet {
       if (side === 'R') { lx += (cfg.slide ? this._slide : 0); ly += finger * 0.3; }
       else { lx += finger * 0.3; }
       const p = inst ? instPoint(inst, lx, ly, lz) : [SHOULDER[side][0], 20, 0];
-      let hd = null;
+      let hd = null, up = null;
       if (inst && cfg.handDirs) { // 手首→指先の向き：楽器ローカル → rig（鏡像スプライトなら x を反転）
         const d0 = cfg.handDirs[side];
         _b.set(inst.scale.x < 0 ? -d0[0] : d0[0], d0[1], d0[2]).applyQuaternion(inst.quaternion);
         hd = [_b.x, _b.y, _b.z];
+        _b.set(0, 0, 1).applyQuaternion(inst.quaternion); // 管の前面の法線：手の甲をこちらへ向け、管の傾きに手の角度を合わせる（2026-09-11 ユーザー指定）
+        up = [_b.x, _b.y, _b.z];
       }
-      this.setHand(side, p, dt, 25, hd, cfg.pole?.[side]); // pole：肘を出す向き（rig 座標）
+      this.setHand(side, p, dt, 25, hd, cfg.pole?.[side], up); // pole：肘を出す向き（rig 座標）
     }
     this.headPivot.rotation.z += -0.1 * energy + 0.08 * this._breath; // 息継ぎで少し上を向く
     this._spineGaze(st, dt, 0.1 * energy - 0.06 * this._breath, cfg.gazeDown ?? 0.05, 0); // 息継ぎで少し反り、吹くと前傾
