@@ -118,7 +118,31 @@ for (const id of ['panel', 'topbar', 'camWin']) document.getElementById(id)?.add
 function refreshValueLabels() {
   for (const el of document.querySelectorAll('#panel input[type=range][id], #camWin input[type=range][id]')) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
-    if (lab) lab.textContent = el.value;
+    if (!lab) continue;
+    if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = el.value; } // 数値入力欄（編集中は上書きしない）
+    else lab.textContent = el.value;
+  }
+}
+// スライダーの値表示を数値入力欄に置き換える（直接入力できる。Enter/フォーカス外しで確定、範囲外はスライダーの範囲に丸める。2026-09-11 ユーザー指定）
+function makeValueInputs() {
+  for (const el of document.querySelectorAll('#panel input[type=range][id], #camWin input[type=range][id]')) {
+    const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
+    if (!lab) continue;
+    const num = document.createElement('input');
+    num.type = 'number'; num.className = 'num'; num.dataset.valueFor = el.id;
+    num.min = el.min; num.max = el.max; num.step = el.step || 'any'; num.value = el.value;
+    num.title = '数値を直接入力（Enter で確定）';
+    const commit = () => {
+      if (num.value === '') { num.value = el.value; return; }
+      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), parseFloat(num.value)));
+      if (Number.isNaN(v)) { num.value = el.value; return; }
+      el.value = v; num.value = el.value;
+      el.dispatchEvent(new Event('input', { bubbles: true })); // スライダーを動かしたのと同じ経路（保存・反映）
+    };
+    num.addEventListener('change', commit);
+    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commit(); num.blur(); } e.stopPropagation(); }); // Space 等をショートカットに取られない
+    num.addEventListener('keyup', (e) => e.stopPropagation());
+    lab.replaceWith(num);
   }
 }
 function settings() {
@@ -545,6 +569,7 @@ async function loadFromUrl() {
   }
 }
 
+makeValueInputs();
 loadSettings();
 refreshValueLabels();
 applyCameraSliders(); // 保存されたカメラ座標を復元

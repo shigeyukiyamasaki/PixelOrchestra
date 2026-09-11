@@ -107,3 +107,9 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 .win-head button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
 .win-body { padding: 6px 12px 10px; }
 #camWin { left: 350px; top: 64px; }
+
+/* スライダー横の数値入力欄（直接入力できる。スピンボタンは幅を食うので隠す） */
+.ctl input.num { width: 62px; margin-left: 6px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
+  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-radius: 4px; -moz-appearance: textfield; }
+.ctl input.num:focus { outline: none; border-color: var(--accent); }
+.ctl input.num::-webkit-inner-spin-button, .ctl input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
