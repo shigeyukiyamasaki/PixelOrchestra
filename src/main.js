@@ -424,7 +424,7 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
 $('resetCam').addEventListener('click', () => {
-  camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
+  camera.position.set(0, 7.5, 17); controls.target.set(0.5, 7, -11.5); controls.update(); // 既定のカメラ（2026-09-11 ユーザー指定）
   syncCameraSliders();
 });
 

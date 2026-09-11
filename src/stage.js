@@ -72,7 +72,7 @@ export function createStage(container) {
   scene.fog = new THREE.Fog('#0b0b16', 55, 110);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-  camera.position.set(0, 22, 34);
+  camera.position.set(0, 7.5, 17);   // 既定のカメラ（2026-09-11 ユーザー指定。以前は (0, 22, 34)）
 
   // 照明（2026-09-10 段階 1：舞台も含めて全部ライトで照らす。屋内想定なので太陽光は無し）。
   // 床・ひな壇・奏者は同じライトで陰影がつき、影は「光が届かない所」として出る
@@ -101,7 +101,7 @@ export function createStage(container) {
   container.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 3, -12);
+  controls.target.set(0.5, 7, -11.5);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 5;
