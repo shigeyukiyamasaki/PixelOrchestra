@@ -142,7 +142,24 @@ function makeValueInputs() {
     num.addEventListener('change', commit);
     num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commit(); num.blur(); } e.stopPropagation(); }); // Space 等をショートカットに取られない
     num.addEventListener('keyup', (e) => e.stopPropagation());
-    lab.replaceWith(num);
+    // 右側の上下矢印（1 ステップずつ増減。押しっぱなしで連続）
+    const wrap = document.createElement('span'); wrap.className = 'numwrap';
+    const spin = document.createElement('span'); spin.className = 'numspin';
+    const step = parseFloat(el.step) || 1;
+    const bump = (dir) => {
+      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), (parseFloat(num.value) || 0) + dir * step));
+      el.value = v; num.value = el.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    for (const [dir, glyph, title] of [[1, '▲', '増やす'], [-1, '▼', '減らす']]) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = glyph; b.title = title; b.tabIndex = -1;
+      let timer = null, repeat = null;
+      const stop = () => { clearTimeout(timer); clearInterval(repeat); timer = repeat = null; };
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); bump(dir); timer = setTimeout(() => { repeat = setInterval(() => bump(dir), 60); }, 400); });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+      spin.appendChild(b);
+    }
+    lab.replaceWith(wrap); wrap.append(num, spin);
   }
 }
 function settings() {

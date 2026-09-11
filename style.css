@@ -108,8 +108,16 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 .win-body { padding: 6px 12px 10px; }
 #camWin { left: 350px; top: 64px; }
 
-/* スライダー横の数値入力欄（直接入力できる。スピンボタンは幅を食うので隠す） */
-.ctl input.num { width: 62px; margin-left: 6px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
-  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-radius: 4px; -moz-appearance: textfield; }
+/* スライダー横の数値入力欄（直接入力＋右側の上下矢印。標準のスピンボタンは小さいので自前で描く） */
+.numwrap { display: inline-flex; align-items: stretch; margin-left: 6px; }
+.ctl input.num { width: 52px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
+  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 .ctl input.num:focus { outline: none; border-color: var(--accent); }
 .ctl input.num::-webkit-inner-spin-button, .ctl input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.numspin { display: flex; flex-direction: column; width: 15px; }
+.numspin button { flex: 1 1 50%; padding: 0; font-size: 8px; line-height: 1; color: var(--muted); cursor: pointer;
+  background: var(--panel2); border: 1px solid var(--line); }
+.numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
+.numspin button:last-child { border-radius: 0 0 4px 0; }
+.numspin button:hover { color: var(--accent); border-color: var(--accent); }
+.numspin button:active { background: var(--line); }
