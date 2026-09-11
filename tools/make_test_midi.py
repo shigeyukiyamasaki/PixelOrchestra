@@ -28,9 +28,12 @@ def track_chunk(events):
 
 def meta(tp, payload): return b'\xff' + bytes([tp]) + vlq(len(payload)) + payload
 
-# 進行（各小節のルート・和音）：C - Am - F - G を 6 周（24 小節 @ 96bpm = 60 秒）。段階的に楽器が増えて tutti へ
-#   A: 0-7 弦＋木管＋ハープ/チェレスタ  B: 8-15 金管・ティンパニ・鍵盤打楽器・ピアノ  C: 16-23 tutti（シンバル・スネア）→ 最後は全員で全音符
+# 進行（各小節のルート・和音）：C - Am - F - G を 6 周（24 小節 @ 96bpm = 60 秒）。全パートが最初から鳴る（2026-09-11。以前は段階的に楽器が増えていた）→ 最後は全員で全音符
 PROG = [(60, [0, 4, 7]), (57, [0, 3, 7]), (53, [0, 4, 7]), (55, [0, 4, 7])] * 6
+# 強弱パターン（小節ごとの倍率）とパートごとの位相ずらし。全パートが最初から鳴り、強弱は混在（2026-09-11）
+DYN_PATTERN = [0.5, 0.95, 0.7, 1.0, 0.55, 0.85, 0.65, 1.0]
+DYN_PHASE = {'vn1': 0, 'vn2': 1, 'va': 2, 'vc': 3, 'cb': 4, 'picc': 5, 'fl': 6, 'ob': 7, 'cl': 1, 'fg': 3, 'hn': 2, 'tp': 5, 'tb': 6, 'tuba': 4,
+             'timp': 0, 'gc': 2, 'snare': 4, 'cym': 6, 'xylo': 1, 'mar': 3, 'cel': 5, 'pf': 7, 'hp': 2}
 BARS = len(PROG)
 BEAT = PPQ
 FINAL = BARS - 1  # 最終小節：全員で全音符
@@ -48,8 +51,9 @@ def notes_for(part):
     ev = []
     for bar, (root, chord) in enumerate(PROG):
         b0 = bar * 4 * BEAT
-        dyn = 0.55 + 0.45 * (bar / (BARS - 1))  # だんだん強く
-        v = lambda base: max(20, min(127, int(base * dyn + random.randint(-6, 6))))
+        # 強弱：小節ごとに pp〜ff を行き来し、パートごとに位相をずらして混在させる（2026-09-11 ユーザー指定：満遍なく入り混じり）
+        dyn = DYN_PATTERN[(bar + DYN_PHASE.get(part, 0)) % len(DYN_PATTERN)]
+        v = lambda base: max(20, min(127, int(base * dyn + random.randint(-12, 12))))
         if bar == FINAL:
             if part in FINAL_PITCH: ev.append((b0, 4 * BEAT - 40, FINAL_PITCH[part](root, chord), v(110)))
             elif part == 'timp': ev.append((b0, 4 * BEAT - 40, root - 24, v(120)))
@@ -69,61 +73,61 @@ def notes_for(part):
         elif part == 'cb':
             ev.append((b0, 4 * BEAT - 40, root - 24, v(90)))
         elif part == 'picc':  # 後半、旋律の 1 オクターブ上で装飾
-            if bar >= 12:
+            if True:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 30, root + 36 + chord[(i * 2) % 3], v(80)))
         elif part == 'fl':  # 旋律
-            if bar >= 2:
+            if True:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT - 60, root + 24 + chord[(i * 2) % 3], v(85)))
         elif part == 'ob':
-            if bar >= 3:
+            if True:
                 ev.append((b0, 2 * BEAT, root + 12 + chord[1], v(80))); ev.append((b0 + 2 * BEAT, 2 * BEAT, root + 12 + chord[2], v(80)))
         elif part == 'cl':
-            if bar >= 1:
+            if True:
                 for i in range(2): ev.append((b0 + i * 2 * BEAT, 2 * BEAT - 40, root + chord[2], v(75)))
         elif part == 'fg':
-            if bar >= 1:
+            if True:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, root - 12 + chord[0], v(80)))
         elif part == 'hn':
-            if bar >= 8:
+            if True:
                 ev.append((b0, 4 * BEAT - 40, root - 5 + chord[1], v(90)))
         elif part == 'tp':
-            if bar >= 10:
+            if True:
                 for i in (0, 2, 3): ev.append((b0 + i * BEAT, BEAT // 2, root + 12 + chord[0], v(100)))
         elif part == 'tb':
-            if bar >= 10:
+            if True:
                 ev.append((b0, 2 * BEAT - 40, root - 12 + chord[0], v(95))); ev.append((b0 + 2 * BEAT, 2 * BEAT - 40, root - 12 + chord[2], v(95)))
         elif part == 'timp':
-            if bar >= 8: ev.append((b0, BEAT // 2, root - 24, v(110)))
-            if bar >= 12: ev.append((b0 + 2 * BEAT, BEAT // 2, root - 24, v(95)))
-            if bar >= 16:
+            ev.append((b0, BEAT // 2, root - 24, v(110)))
+            ev.append((b0 + 2 * BEAT, BEAT // 2, root - 24, v(95)))
+            if True:
                 for i in range(4): ev.append((b0 + 3 * BEAT + i * BEAT // 4, BEAT // 8, root - 24, v(100)))
         elif part == 'gc':  # グランカッサ：小節頭＋後半は3拍目も
-            if bar >= 8: ev.append((b0, BEAT // 2, 36, v(115)))
-            if bar >= 16: ev.append((b0 + 2 * BEAT, BEAT // 2, 36, v(100)))
+            ev.append((b0, BEAT // 2, 36, v(115)))
+            ev.append((b0 + 2 * BEAT, BEAT // 2, 36, v(100)))
         elif part == 'xylo':  # 16分の走句（高音）
-            if bar >= 9 and bar % 2 == 1:
+            if bar % 2 == 1:
                 for i in range(8): ev.append((b0 + 2 * BEAT + i * BEAT // 4, BEAT // 8, root + 24 + chord[i % 3] + (12 if i >= 4 else 0), v(90)))
         elif part == 'cel':   # 和音の分散
-            if bar >= 2:
+            if True:
                 for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, root + 24 + chord[i % 3], v(70)))
         elif part == 'hp':
-            if bar >= 2:
+            if True:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2, root + 12 + chord[i % 3] + 12 * (i // 4), v(70)))
         elif part == 'tuba':  # 小節頭と3拍目のバス
-            if bar >= 12:
+            if True:
                 for i in (0, 2): ev.append((b0 + i * BEAT, BEAT - 40, root - 24, v(95)))
         elif part == 'snare':  # 2・4拍目＋後半はロール気味の16分
-            if bar >= 14:
+            if True:
                 for i in (1, 3): ev.append((b0 + i * BEAT, BEAT // 4, 38, v(85)))
-            if bar >= 18:
+            if True:
                 for i in range(4): ev.append((b0 + 3 * BEAT + i * BEAT // 4, BEAT // 8, 38, v(75)))
         elif part == 'cym':  # 4小節ごとの頭でクラッシュ
-            if bar >= 16 and bar % 4 == 0: ev.append((b0, 2 * BEAT, 49, v(110)))
+            if bar % 4 == 0: ev.append((b0, 2 * BEAT, 49, v(110)))
         elif part == 'mar':  # 8分の分散和音（中音域）
-            if bar >= 8:
+            if True:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + chord[i % 3] + (12 if i % 2 else 0), v(80)))
         elif part == 'pf':  # 小節頭の和音＋4拍目の低音
-            if bar >= 6:
+            if True:
                 for n in chord: ev.append((b0, 2 * BEAT - 40, root + n, v(90)))
                 ev.append((b0 + 3 * BEAT, BEAT - 40, root - 12, v(85)))
     return ev
