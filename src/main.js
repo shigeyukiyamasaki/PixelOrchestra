@@ -8,8 +8,9 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
+import { TENCHI } from './logoData.js';
 import { PianoRoll } from './pianoRoll.js';
 
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
@@ -35,6 +36,13 @@ let puppets = [];       // { puppet, track }
 let conductor = null;
 let labels = new THREE.Group(); // パート名ラベル
 scene.add(labels);
+
+// ロゴ（画像 → ボクセル）。配置は仮置き：舞台の後方に立てる（2026-09-12。置き場所は後で決める）
+const logo = dotPart(TENCHI, { depth: 16, res: 4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' } });
+logo.position.set(0, 7, -26);
+logo.scale.setScalar(1.5);
+scene.add(logo);
+window.__logo = logo; // 位置合わせ用
 let midiFileName = '';
 let currentMidi = null;
 

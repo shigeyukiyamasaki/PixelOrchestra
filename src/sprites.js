@@ -219,6 +219,25 @@ function lugAngle(dx, dz, n, half) {
   return Math.abs(a - k * step) * r <= half;
 }
 
+/**
+ * ドットデータ（tools/img2voxel.py が画像から生成）→ ボクセルのパーツ。pivot = 底辺の中央。
+ * data = { palette: { 記号: '#rrggbb' }, rows: ['....', ...] }。'.'（パレットに無い記号）は空セル。
+ * 裏面は濃い色に置き換えて、後ろから見た時にのっぺりしないようにする（2026-09-12）
+ */
+export function dotPart(data, { depth = 6, res = 1, name = 'dots', back = null } = {}) {
+  const rows = data.rows, W = rows[0].length, H = rows.length;
+  const draw = (d) => {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = data.palette[rows[y][x]];
+      if (c) d.p(x, y, c);
+    }
+  };
+  return makePart(W, H, W / 2, H, draw, {
+    res, depth, z0: -depth / 2, back,
+    key: `dot|${name}|${W}x${H}|${depth}|${res}|${back ? Object.entries(back).join() : ''}`,
+  });
+}
+
 // ---------------- 人物パーツ ----------------
 
 /**
