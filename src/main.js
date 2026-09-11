@@ -425,7 +425,31 @@ $('panelToggle').addEventListener('click', () => document.body.classList.toggle(
 $('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 22, 34); controls.target.set(0, 3, -12); controls.update();
+  syncCameraSliders();
 });
+
+// ---------- カメラ座標スライダー（MIDIOrchestra を参考に。2026-09-11）----------
+// スライダー → カメラ、マウス操作（OrbitControls）→ スライダー の双方向。値は他の設定と同じく自動保存される
+const CAM_IDS = ['camX', 'camY', 'camZ', 'tgtX', 'tgtY', 'tgtZ'];
+let camSyncing = false;
+function syncCameraSliders() { // カメラ → スライダー
+  camSyncing = true;
+  const p = camera.position, t = controls.target;
+  const vals = { camX: p.x, camY: p.y, camZ: p.z, tgtX: t.x, tgtY: t.y, tgtZ: t.z };
+  for (const id of CAM_IDS) $(id).value = vals[id].toFixed(1);
+  refreshValueLabels();
+  camSyncing = false;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSettings, 400);
+}
+function applyCameraSliders() { // スライダー → カメラ
+  const v = (id) => parseFloat($(id).value);
+  camera.position.set(v('camX'), v('camY'), v('camZ'));
+  controls.target.set(v('tgtX'), v('tgtY'), v('tgtZ'));
+  controls.update();
+}
+for (const id of CAM_IDS) $(id).addEventListener('input', () => { if (!camSyncing) applyCameraSliders(); });
+controls.addEventListener('change', () => { if (!camSyncing) syncCameraSliders(); });
 
 function setStatus(msg) { $('status').textContent = msg; }
 function fmtTime(s) { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; }
@@ -498,5 +522,6 @@ async function loadFromUrl() {
 
 loadSettings();
 refreshValueLabels();
+applyCameraSliders(); // 保存されたカメラ座標を復元
 animate();
 loadFromUrl();
