@@ -121,8 +121,10 @@ def notes_for(part):
                 for i in (1, 3): ev.append((b0 + i * BEAT, BEAT // 4, 38, v(85)))
             if True:
                 for i in range(4): ev.append((b0 + 3 * BEAT + i * BEAT // 4, BEAT // 8, 38, v(75)))
-        elif part == 'cym':  # 4小節ごとの頭でクラッシュ
-            if bar % 4 == 0: ev.append((b0, 2 * BEAT, 49, v(110)))
+        elif part == 'cym':  # 小節頭に交互に強・弱のクラッシュ、偶数小節は 3 拍目にも弱い一打（最初から強弱が混ざる。2026-09-11）
+            strong = bar % 2 == 0
+            ev.append((b0, 2 * BEAT, 49, max(20, min(127, (112 if strong else 40) + random.randint(-8, 8)))))
+            if strong: ev.append((b0 + 2 * BEAT, BEAT, 49, max(20, min(127, 34 + random.randint(-6, 6)))))
         elif part == 'mar':  # 8分の分散和音（中音域）
             if True:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + chord[i % 3] + (12 if i % 2 else 0), v(80)))
