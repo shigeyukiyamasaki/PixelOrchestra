@@ -546,9 +546,16 @@ export class Puppet {
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
     const handR = [C[0] - d[0] * s + n[0] * this.lift, C[1] - d[1] * s + n[1] * this.lift, C[2] - d[2] * s + n[2] * this.lift];
-    // 手首あり：右手の向きは弓の座標系で固定（指は弓の先端方向 d に沿い、少し弦の面へ -n）。弓と手が一体で動き、手首も折れない。
-    // 甲は弦の面の法線側（手のひらが弓に被さる）。2026-09-11 ユーザー指摘（手首が折れていた／弓が手の中で動いていた）
-    const rightHandDir = this.hasWrist ? [0.85 * d[0] - 0.35 * n[0], 0.85 * d[1] - 0.35 * n[1], 0.85 * d[2] - 0.35 * n[2]] : null;
+    // 手首あり：右手は前腕と一直線で、弓は手に対して直角に握る（実際の持ち方。2026-09-11 ユーザー確定 A）。
+    // 手の向き＝前フレームの前腕の向き（肘→手首）から弓の方向 d の成分を除いたもの（弓と常に直角、前腕の延長に沿う。1 フレーム遅れで収束）。甲は弦の面の法線側（手のひらが弓に被さる）
+    let rightHandDir = null;
+    if (this.hasWrist) {
+      const a = new THREE.Vector3(0, -1, 0).applyQuaternion(this.foreQ.R);
+      a.addScaledVector(v3(d), -a.dot(v3(d)));
+      if (a.lengthSq() < 1e-4) a.set(-n[0], -n[1], -n[2]);
+      a.normalize();
+      rightHandDir = [a.x, a.y, a.z];
+    }
     this.setHand('R', handR, dt, Infinity, rightHandDir, null, this.hasWrist ? n : null);
     this.aimHeldDir('R', d, 'x');
 
