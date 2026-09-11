@@ -32,6 +32,7 @@ const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'mar
 //   打楽器（打点が rig 座標なので別途調整が要る）は据え置き：グランカッサ 1.5（ユーザー指定）
 // 楽器ごとの奏者の身長倍率（楽器は同じ大きさのまま。コントラバス奏者は少し背が高い。2026-09-11 ユーザー指定）
 const PLAYER_TALL = { contrabass: 1.08 };
+const PERC_UP = [0, 1, 0]; // 打楽器の手・マレットの甲の向きヒント（真上）
 const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
@@ -441,10 +442,10 @@ export class Puppet {
     return at(hi);
   }
   /** 手に持った物の向き（rig 空間の方向ベクトル）。primary: 'x'（弓・指揮棒）| 'ny'（マレット：-y が先端） */
-  aimHeldDir(side, dir, primary = 'x') {
+  aimHeldDir(side, dir, primary = 'x', up = null) {
     const m = this.held[side];
     if (!m) return;
-    const q = primary === 'x' ? quatFromXDir(v3(dir), _q) : quatFromBoneDir(v3(dir), _q);
+    const q = primary === 'x' ? quatFromXDir(v3(dir), _q) : quatFromBoneDir(v3(dir), _q, up);
     m.quaternion.copy(this.handQ[side]).invert().multiply(q); // 手持ち物の親（手 or 前腕）の回転を打ち消す
   }
   /** 楽器の動的な回転（ローカル軸まわり）を基準姿勢に加える */
@@ -637,6 +638,7 @@ export class Puppet {
         _b.set(inst.scale.x < 0 ? -d0[0] : d0[0], d0[1], d0[2]).applyQuaternion(inst.quaternion);
         hd = [_b.x, _b.y, _b.z];
         _b.set(0, 0, 1).applyQuaternion(inst.quaternion); // 管の前面の法線：手の甲をこちらへ向け、管の傾きに手の角度を合わせる（2026-09-11 ユーザー指定）
+        if (Math.abs(_b.x * hd[0] + _b.y * hd[1] + _b.z * hd[2]) > 0.85) _b.set(0, 1, 0).applyQuaternion(inst.quaternion); // 指の向きと平行だと甲の向きが不定になり手首が回る → 管の上方向を使う（トロンボーン/ピッコロの右手）
         up = [_b.x, _b.y, _b.z];
       }
       this.setHand(side, p, dt, 25, hd, cfg.pole?.[side], up); // pole：肘を出す向き（rig 座標）
@@ -681,8 +683,9 @@ export class Puppet {
       else if (cfg.heldAngle) aim = [Math.cos(cfg.heldAngle[side]), Math.sin(cfg.heldAngle[side]), 0];
       let hd = null;
       if (aim) { const a = v3(aim).normalize(); const w = 0.55 - 0.35 * s; hd = [a.x, a.y * (1 - w) + w * -0.2, a.z]; } // 打つ瞬間ほどマレットと一直線に
-      this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, hd);
-      if (aim) this.aimHeldDir(side, aim, 'ny');
+      // 甲の向きのヒントは真上（マレットが真前を向く時に前向きのヒントと平行になって手首・マレットが裏返るのを防ぐ。2026-09-11）
+      this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, hd, null, PERC_UP);
+      if (aim) this.aimHeldDir(side, aim, 'ny', PERC_UP);
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);
     }
     const sNow = this._strikeMax ?? 0; this._strikeMax = 0;
@@ -710,14 +713,14 @@ export class Puppet {
       if (keys) { // ピアノ/チェレスタ：鍵盤の上。音程で左右、押鍵で 1.5px 沈む、直前に 1px 浮く。指は鍵盤へ（前方・やや下）
         const x = (pn - 0.5) * 2 * keys.spread + sign * keys.gap;
         const y = keys.y + 3 - 1.5 * s + 1.0 * ant;
-        this.setHand(side, [x, y, keys.z ?? 0], dt, s > 0.5 ? Infinity : 14, [0, -0.4 - 0.3 * s, 1]);
+        this.setHand(side, [x, y, keys.z ?? 0], dt, s > 0.5 ? Infinity : 14, [0, -0.4 - 0.3 * s, 1], null, PERC_UP); // 甲は真上（指の向きが前向きなので、前向きのヒントだと不定になり手首が裏返る。2026-09-11）
       } else { // ハープ：高い音ほど短い弦（右側）。はじくと手が弦から 1.5px 離れる。座標は楽器ローカル（pivot 基準）。指は弦へ
         const lx = -3 + pn * 8 + (side === 'L' ? -3 : 2);  // 左手は柱側（長い弦）へ、右手は体側（短い弦）。幅 8 は右腕が低音側で伸び切らない範囲
         const ly = side === 'L' ? 19 : 15;                    // 胸の高さ（肩の高さだと肘が折り畳まれる）
         const p = this.inst ? instPoint(this.inst, lx + 1.5 * s, ly + 0.5 * ant, this.flat ? 0 : sign * 1.5) : [lx - 9, ly, 0];
         let hd = null;
         if (this.inst && !this.flat) { _b.set(0, 0, -sign).applyQuaternion(this.inst.quaternion); hd = [_b.x, _b.y, _b.z]; }
-        this.setHand(side, p, dt, s > 0.5 ? Infinity : 14, hd);
+        this.setHand(side, p, dt, s > 0.5 ? Infinity : 14, hd, null, PERC_UP); // ハープも甲は真上
       }
     }
     this.headPivot.rotation.z += -0.06 * st.energy;
