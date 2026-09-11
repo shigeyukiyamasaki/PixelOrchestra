@@ -19,7 +19,6 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 #topbar .spacer { flex: 0 0 8px; }
 #topbar .seek { flex: 1 1 160px; min-width: 120px; margin: 0; }
 #topbar .time { margin-left: 0; }
-#topbar #resetCam { white-space: nowrap; }
 .filebtn { position: relative; display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
   padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 .filebtn:hover { border-color: var(--accent); }
@@ -73,7 +72,6 @@ details > *:not(summary) { margin-left: 2px; }
 fieldset.sub { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0 4px; padding: 4px 10px 8px; min-width: 0; }
 fieldset.sub > legend { color: var(--accent); font-size: 12px; padding: 0 4px; opacity: 0.9; }
 fieldset.sub .ctl { margin: 6px 0; }
-#resetCam { margin-top: 8px; }
 
 table.tracks { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.tracks th { text-align: left; color: var(--muted); font-weight: normal; padding: 2px 4px; }
@@ -122,3 +120,6 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 .numspin button:last-child { border-radius: 0 0 4px 0; }
 .numspin button:hover { color: var(--accent); border-color: var(--accent); }
 .numspin button:active { background: var(--line); }
+.win-body button.wide { width: 100%; margin-top: 8px; padding: 5px 0; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
+.win-body button.wide:hover { border-color: var(--accent); color: var(--accent); }

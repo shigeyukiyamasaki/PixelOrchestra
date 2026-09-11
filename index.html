@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260916e">
+  <link rel="stylesheet" href="style.css?v=20260916f">
 </head>
 <body>
   <div id="view"></div>
@@ -28,7 +28,6 @@
     <span id="timeLabel" class="time" title="現在位置 / 曲の長さ、♩= 現在のテンポ">0:00 / 0:00</span>
     <input type="range" id="seek" min="0" max="1000" value="0" class="seek" title="再生位置">
     <button id="camWinToggle" title="カメラ座標の小窓を表示/非表示">📷 カメラ</button>
-    <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
   </header>
 
   <aside id="panel">
@@ -99,6 +98,7 @@
         <label class="ctl" title="高さ"><span>Y <b data-value-for="tgtY">2.3</b></span><input type="range" id="tgtY" min="-5" max="25" step="0.1" value="2.3"></label>
         <label class="ctl" title="前後"><span>Z <b data-value-for="tgtZ">-12</b></span><input type="range" id="tgtZ" min="-45" max="25" step="0.5" value="-12"></label>
       </fieldset>
+      <button id="resetCam" class="wide" title="視点を初期位置に戻す">視点リセット</button>
     </div>
   </div>
 
