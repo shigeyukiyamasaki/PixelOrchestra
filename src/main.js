@@ -442,13 +442,21 @@ function syncCameraSliders() { // カメラ → スライダー
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
 }
-function applyCameraSliders() { // スライダー → カメラ
+function applyCameraSliders(movedId = null) { // スライダー → カメラ
   const v = (id) => parseFloat($(id).value);
+  if (movedId && movedId.startsWith('cam')) {
+    // 位置のスライダー：カメラと中心点を同じ量だけ平行移動（中心点を固定したまま位置だけ動かすと回転に見える。2026-09-11 ユーザー指摘）
+    const d = new THREE.Vector3(v('camX') - camera.position.x, v('camY') - camera.position.y, v('camZ') - camera.position.z);
+    camera.position.add(d); controls.target.add(d);
+    controls.update();
+    syncCameraSliders();
+    return;
+  }
   camera.position.set(v('camX'), v('camY'), v('camZ'));
   controls.target.set(v('tgtX'), v('tgtY'), v('tgtZ'));
   controls.update();
 }
-for (const id of CAM_IDS) $(id).addEventListener('input', () => { if (!camSyncing) applyCameraSliders(); });
+for (const id of CAM_IDS) $(id).addEventListener('input', () => { if (!camSyncing) applyCameraSliders(id); });
 controls.addEventListener('change', () => { if (!camSyncing) syncCameraSliders(); });
 
 function setStatus(msg) { $('status').textContent = msg; }
