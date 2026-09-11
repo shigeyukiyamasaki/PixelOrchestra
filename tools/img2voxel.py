@@ -18,10 +18,11 @@ from PIL import Image
 
 # パレット：記号 → 色。'.' は透明（背景）
 PALETTE = {
-    'w': '#f2f6fa',  # 白フチ
-    'n': '#163450',  # 濃紺の輪郭
-    'b': '#1f7fc0',  # 明るい青（本体）
+    'w': '#f2f6fa',  # 外縁の白フチ
+    'n': '#163450',  # 濃紺（本体・上）
+    'b': '#1f7fc0',  # 青（本体・下）
     'd': '#12689d',  # 青の影
+    'i': '#e6edf4',  # 文字の内側を埋める白（少し奥に置く板。2026-09-12 ユーザー指定）
 }
 BG_LUM = 232  # これより明るく彩度が低いセルは背景（透明）とみなす
 
@@ -126,6 +127,11 @@ def add_outline(rows, thickness):
                 if dx * dx + dy * dy <= t2:
                     grid[y][x] = 'w'
                     break
+    # 囲まれた内側（外から届かない空白）は 'i'：あとで少し奥に白い板として置く
+    for y in range(H2):
+        for x in range(W2):
+            if grid[y][x] == '.' and not outside[y][x]:
+                grid[y][x] = 'i'
     return [''.join(r) for r in grid]
 
 

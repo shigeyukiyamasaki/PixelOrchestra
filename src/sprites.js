@@ -224,18 +224,29 @@ function lugAngle(dx, dz, n, half) {
  * data = { palette: { 記号: '#rrggbb' }, rows: ['....', ...] }。'.'（パレットに無い記号）は空セル。
  * 裏面は濃い色に置き換えて、後ろから見た時にのっぺりしないようにする（2026-09-12）
  */
-export function dotPart(data, { depth = 6, res = 1, name = 'dots', back = null } = {}) {
+export function dotPart(data, { depth = 6, res = 1, name = 'dots', back = null, inner = null } = {}) {
   const rows = data.rows, W = rows[0].length, H = rows.length;
-  const draw = (d) => {
+  const skip = new Set(inner ? inner.chars.split('') : []);
+  const drawOf = (want) => (d) => {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = data.palette[rows[y][x]];
-      if (c) d.p(x, y, c);
+      const ch = rows[y][x], c = data.palette[ch];
+      if (c && skip.has(ch) === want) d.p(x, y, c);
     }
   };
-  return makePart(W, H, W / 2, H, draw, {
+  const main = makePart(W, H, W / 2, H, drawOf(false), {
     res, depth, z0: -depth / 2, back,
-    key: `dot|${name}|${W}x${H}|${depth}|${res}|${back ? Object.entries(back).join() : ''}`,
+    key: `dot|${name}|${W}x${H}|${depth}|${res}|${back ? Object.entries(back).join() : ''}|${inner ? inner.chars : ''}`,
   });
+  if (!inner) return main;
+  // 内側を埋める板（本体より奥に引っ込める）。本体が出っ張って見える
+  const innerMesh = makePart(W, H, W / 2, H, drawOf(true), {
+    res, depth: inner.depth ?? 4, z0: inner.z0 ?? (-depth / 2),
+    key: `dotIn|${name}|${W}x${H}|${inner.depth}|${inner.z0}|${res}`,
+  });
+  const g = new THREE.Group();
+  g.add(main, innerMesh);
+  g.userData.size = main.userData.size;
+  return g;
 }
 
 // ---------------- 人物パーツ ----------------

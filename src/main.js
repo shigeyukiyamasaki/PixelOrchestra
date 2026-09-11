@@ -38,8 +38,9 @@ let labels = new THREE.Group(); // パート名ラベル
 scene.add(labels);
 
 // ロゴ（画像 → ボクセル）。配置は仮置き：舞台の後方に立てる（2026-09-12。置き場所は後で決める）
-const logo = dotPart(TENCHI, { depth: 16, res: 4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' } });
-logo.position.set(0, 7, -26);
+const logo = dotPart(TENCHI, { depth: 16, res: 4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' },
+  inner: { chars: 'i', depth: 8, z0: -8 } }); // 文字の内側は 8 セル奥に引っ込めた白い板（紺・青が出っ張る）
+logo.position.set(0, 7, -12);
 logo.scale.setScalar(1.5);
 scene.add(logo);
 window.__logo = logo; // 位置合わせ用
