@@ -473,7 +473,10 @@ window.addEventListener('keydown', (e) => {
 // ファイル選択後はフォーカスを外す（残っているとスペースがファイルダイアログに取られる）
 for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 $('panelToggle').addEventListener('click', () => document.body.classList.toggle('panel-hidden'));
-$('panelRightToggle').addEventListener('click', () => document.body.classList.toggle('panel-right-hidden'));
+$('panelRightToggle').addEventListener('click', () => {
+  document.body.classList.toggle('panel-right-hidden');
+  stage.resize(); // トラック一覧はプレビューの外なので、開閉でプレビューの幅が変わる（2026-09-12）
+});
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 6, 10.5); controls.target.set(0, 4, -12); controls.update(); // 既定のカメラ（2026-09-11 ユーザー指定）
   syncCameraSliders();

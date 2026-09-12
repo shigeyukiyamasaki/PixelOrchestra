@@ -158,6 +158,7 @@ export function createStage(container) {
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(container); // パネルの開閉でプレビューの幅が変わった時も追従（2026-09-12）
   resize();
 
   return { scene, camera, renderer, controls, resize, wall, setShadows };
