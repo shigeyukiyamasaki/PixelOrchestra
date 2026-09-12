@@ -541,18 +541,18 @@ export class Puppet {
    * チェロ・コントラバスのように楽器を動かさないものは cfg.rest.bowHand / leftHand で手だけ下ろす
    */
   _restPose(st, dt, t) {
-    this._rest = this._rest ?? 0;
     const cfg = this.cfg, rest = cfg.rest;
     if (!rest || this.flat) { this._rest = 0; return; }
+    const first = this._rest == null; // 最初のフレーム：出だしから出番が遠いなら、構えずに下ろした状態で始める
     const { onset, next, active, toNext } = st;
     const gap = next ? (onset ? next.time - onset.end : Infinity) : Infinity; // この休みの長さ
     const lead = next ? toNext : Infinity;                                     // 次の音までの残り（最後の音の後は無限）
     // 音が止んだ時刻を控えて、そこから REST_HOLD 秒経つまでは構えたまま待つ（シークで巻き戻った時は取り直す）
     if (active.length) this._silentAt = null;
-    else if (this._silentAt == null || this._silentAt > t) this._silentAt = t;
+    else if (this._silentAt == null || this._silentAt > t) this._silentAt = first ? t - REST_HOLD : t;
     const held = this._silentAt == null ? 0 : t - this._silentAt;
     const want = (!active.length && held >= REST_HOLD && gap >= REST_GAP && lead > REST_LEAD) ? 1 : 0;
-    this._rest = approach(this._rest, want, 2.2, dt);
+    this._rest = first ? want : approach(this._rest, want, 2.2, dt); // 出だしは補間せず即その姿勢
     const r = this._rest;
     const inst = this.inst;
     if (!inst || !rest.pos) return;
