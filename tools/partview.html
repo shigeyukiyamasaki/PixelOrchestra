@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>パーツ単体ビューア — Pixel Orchestra</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14213d; color: #e8ecf5;
+               font-family: "Hiragino Sans", "Yu Gothic", sans-serif; overflow: hidden; }
+  #view { position: absolute; inset: 0; }
+  #ui { position: absolute; left: 12px; top: 12px; background: rgba(16,22,40,.82);
+        border: 1px solid #3b4668; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.9; }
+  #ui h1 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #9fb4e8; }
+  select { font-size: 13px; padding: 2px 4px; }
+  label { display: block; }
+  #hint { position: absolute; right: 12px; bottom: 10px; font-size: 12px; color: #8ea0c8; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="ui">
+  <h1>パーツ単体ビューア</h1>
+  <select id="part"></select>
+  <div id="parts"></div>
+</div>
+<div id="hint">ドラッグ＝回転／ホイール＝ズーム／右ドラッグ＝移動</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script type="module">
+// 楽器パーツを 1 つだけ取り出して、子メッシュ単位で表示／非表示を切り替えながら見るための確認用ページ。
+// 「どのメッシュがこの形なのか」を切り分ける時に使う（2026-09-12 追加）。
+// 使い方: http://localhost:8766/tools/partview.html?part=trombone
+import { INSTRUMENT } from '../src/sprites.js';
+
+const view = document.getElementById('view');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14213d);
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(1, 1.6, 1.2); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.25); dl2.position.set(-1, 0.4, -1); scene.add(dl2);
+scene.add(new THREE.GridHelper(6, 24, 0x44507a, 0x2a3356));
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(devicePixelRatio);
+view.appendChild(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 200);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.minDistance = 0.05;
+
+const sel = document.getElementById('part');
+for (const name of Object.keys(INSTRUMENT)) {
+  const o = document.createElement('option');
+  o.value = o.textContent = name;
+  sel.appendChild(o);
+}
+const q = new URLSearchParams(location.search);
+sel.value = INSTRUMENT[q.get('part')] ? q.get('part') : 'trombone';
+
+let obj = null;
+function build() {
+  if (obj) scene.remove(obj);
+  obj = INSTRUMENT[sel.value]();
+  scene.add(obj);
+  // 子メッシュのチェックボックス（どれがどの形かを消しながら特定する）
+  const box = document.getElementById('parts');
+  box.innerHTML = '';
+  const meshes = [];
+  obj.traverse((m) => { if (m.isMesh) meshes.push(m); });
+  meshes.forEach((m, i) => {
+    const s = m.userData.size;
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    // ?only=2 のようにメッシュ番号を指定すると、そのメッシュだけ表示して開く
+    const only = q.get('only');
+    cb.type = 'checkbox'; cb.checked = only == null || only.split(',').includes(String(i));
+    m.visible = cb.checked;
+    cb.onchange = () => { m.visible = cb.checked; };
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(` ${i}: ${s ? `${s.w}×${s.h}×${s.depth}` : 'mesh'}`));
+    box.appendChild(lab);
+  });
+  // 全体が画面に収まる位置へカメラを置く
+  const b = new THREE.Box3().setFromObject(obj);
+  const c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+  const r = Math.max(sz.x, sz.y, sz.z);
+  controls.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(r * 1.6, r * 0.8, r * 1.6));
+  controls.update();
+}
+sel.onchange = build;
+build();
+// 確認用：外から視点を動かせるようにしておく（window.__pv.look([x,y,z]) で方向を指定）
+window.__pv = { scene, camera, controls, build, get obj() { return obj; },
+  look(dir) { const b = new THREE.Box3().setFromObject(obj); const c = b.getCenter(new THREE.Vector3()),
+    s = b.getSize(new THREE.Vector3()); const r = Math.max(s.x, s.y, s.z);
+    controls.target.copy(c);
+    camera.position.copy(c).add(new THREE.Vector3(...dir).normalize().multiplyScalar(r * 1.5));
+    controls.update(); } };
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  if (w < 2 || h < 2) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+</script>
+</body>
+</html>
