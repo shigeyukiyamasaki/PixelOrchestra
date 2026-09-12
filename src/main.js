@@ -40,10 +40,8 @@ scene.add(labels);
 // ロゴ（画像 → ボクセル）。配置は仮置き：舞台の後方に立てる（2026-09-12。置き場所は後で決める）
 const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#1c6a9e': '#125275', '#1a5378': '#12405e', '#f2f6fa': '#9fb4c4' },
   inner: { chars: 'i', depth: 3, z0: -3 } }); // 内側は本体より 3 セル奥 // 文字の内側は 8 セル奥に引っ込めた白い板（紺・青が出っ張る）
-logo.position.set(0, 7, -12);
-logo.scale.setScalar(1.0);
 scene.add(logo);
-window.__logo = logo; // 位置合わせ用
+window.__logo = logo; // 位置合わせ用（位置・大きさは「タイトル」の設定から）
 
 let midiFileName = '';
 let currentMidi = null;
@@ -197,6 +195,8 @@ function settings() {
     spotCone: num('spotCone', 30),
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
+    showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
+    titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
     partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
   };
@@ -543,6 +543,9 @@ function animate() {
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
+    logo.visible = s.showTitle;
+    logo.position.set(s.titleX, s.titleY, s.titleZ);
+    logo.scale.setScalar(s.titleScale);
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.rollMode, s.showLandLine);
