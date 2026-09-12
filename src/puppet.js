@@ -124,7 +124,8 @@ const VIOLIN_UP = [0.15, 0.9, 0.35];        // 弦の面の法線（上・やや
 const VIOLIN_Q = quatFromAxes(VIOLIN_AXIS, VIOLIN_UP, '-x'); // 鏡像スプライトなので渦巻きはローカル -x
 const VIOLIN_BOW = (() => { const b = new THREE.Vector3().crossVectors(v3(VIOLIN_UP), v3(VIOLIN_AXIS)).normalize(); if (b.x > 0) b.negate(); return [b.x, b.y, b.z]; })(); // 手元→先端（右手から左へ）
 // 長い休みで楽器を下ろす（2026-09-12 ユーザー指定）。REST_GAP 秒以上の休みで下ろし、次の音の REST_LEAD 秒前に構え直す
-const REST_GAP = 4.0, REST_LEAD = 1.5;
+// 音が止んですぐには下ろさず、REST_HOLD 秒そのまま構えて待つ
+const REST_GAP = 4.0, REST_LEAD = 1.5, REST_HOLD = 1.0;
 // あご楽器の下ろし：膝の上に水平に置く（渦巻きは体の左前、表板は上）
 const VIOLIN_REST_Q = quatFromAxes([-0.85, -0.1, 0.5], [0, 1, 0], '-x');
 const CELLO_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0, 0.25)); // 約 29° 後ろへ寝かせて上部を胸に寄りかからせ、14° 左へ倒してネックを頭の横に出す（下側は右足側・前へ。2026-09-11 ユーザー指定）
@@ -512,7 +513,7 @@ export class Puppet {
     this.headPivot.rotation.x = 0;
 
     // 長い休みでは楽器を下ろす（構え ⇄ 下ろしを補間）。手は楽器に付いて動く（2026-09-12 ユーザー指定）
-    this._restPose(st, dt);
+    this._restPose(st, dt, t);
 
     switch (this.family) {
       case 'strings': this._strings(st, ctx); break;
@@ -535,18 +536,22 @@ export class Puppet {
 
   /**
    * 長い休みで楽器を下ろす。0 = 構え、1 = 下ろし。
-   * 休み（前の音の終わり〜次の音）が REST_GAP 秒以上あり、次の音まで REST_LEAD 秒より前なら下ろす。
+   * 休み（前の音の終わり〜次の音）が REST_GAP 秒以上あり、音が止んで REST_HOLD 秒経ち、次の音まで REST_LEAD 秒より前なら下ろす。
    * cfg.rest.pos/quat|rot3 があれば楽器の姿勢を補間（手は instPoint で追従）。
    * チェロ・コントラバスのように楽器を動かさないものは cfg.rest.bowHand / leftHand で手だけ下ろす
    */
-  _restPose(st, dt) {
+  _restPose(st, dt, t) {
     this._rest = this._rest ?? 0;
     const cfg = this.cfg, rest = cfg.rest;
     if (!rest || this.flat) { this._rest = 0; return; }
     const { onset, next, active, toNext } = st;
     const gap = next ? (onset ? next.time - onset.end : Infinity) : Infinity; // この休みの長さ
     const lead = next ? toNext : Infinity;                                     // 次の音までの残り（最後の音の後は無限）
-    const want = (!active.length && gap >= REST_GAP && lead > REST_LEAD) ? 1 : 0;
+    // 音が止んだ時刻を控えて、そこから REST_HOLD 秒経つまでは構えたまま待つ（シークで巻き戻った時は取り直す）
+    if (active.length) this._silentAt = null;
+    else if (this._silentAt == null || this._silentAt > t) this._silentAt = t;
+    const held = this._silentAt == null ? 0 : t - this._silentAt;
+    const want = (!active.length && held >= REST_HOLD && gap >= REST_GAP && lead > REST_LEAD) ? 1 : 0;
     this._rest = approach(this._rest, want, 2.2, dt);
     const r = this._rest;
     const inst = this.inst;
