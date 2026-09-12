@@ -116,9 +116,13 @@
 
     <details open>
       <summary>スペクトラム</summary>
-      <label class="chk" title="読み込んだ音声の周波数を、タイトルの周りに円形のバーで出す"><input type="checkbox" id="showSpectrum"> 表示する</label>
+      <label class="chk" title="読み込んだ音声の周波数を、タイトルの周りにバーで出す"><input type="checkbox" id="showSpectrum"> 表示する</label>
+      <div class="ctl radio" title="円：タイトルを囲む円の上に並べる。ロゴに沿う：ロゴの輪郭から外向きに線が出る"><span>形</span>
+        <label><input type="radio" name="specMode" value="circle" checked> 円</label>
+        <label><input type="radio" name="specMode" value="logo"> ロゴに沿う</label>
+      </div>
       <label class="ctl" title="バーの本数"><span>本数 <b data-value-for="specBars">64</b></span><input type="range" id="specBars" min="16" max="160" step="4" value="64"></label>
-      <label class="ctl" title="円の半径（タイトルの中心から）"><span>半径 <b data-value-for="specRadius">4</b></span><input type="range" id="specRadius" min="1" max="15" step="0.25" value="4"></label>
+      <label class="ctl" title="円の半径（タイトルの中心から）。「ロゴに沿う」では使わない"><span>半径 <b data-value-for="specRadius">4</b></span><input type="range" id="specRadius" min="1" max="15" step="0.25" value="4"></label>
       <label class="ctl" title="音が大きい時のバーの長さ"><span>長さ <b data-value-for="specHeight">2.5</b></span><input type="range" id="specHeight" min="0.2" max="10" step="0.1" value="2.5"></label>
       <label class="ctl" title="バーの太さ（隣との間隔に対する割合）"><span>太さ <b data-value-for="specWidth">1</b></span><input type="range" id="specWidth" min="0.2" max="3" step="0.1" value="1"></label>
       <label class="ctl" title="明るさ（加算合成なので重なると明るくなる）"><span>濃度 <b data-value-for="specOpacity">0.9</b></span><input type="range" id="specOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
@@ -139,6 +143,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260917o"></script>
+  <script type="module" src="src/main.js?v=20260917q"></script>
 </body>
 </html>

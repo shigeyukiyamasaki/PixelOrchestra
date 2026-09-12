@@ -8,7 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
 import { Spectrum } from './spectrum.js';
@@ -45,6 +45,7 @@ scene.add(logo);
 window.__logo = logo; // 位置合わせ用（位置・大きさ・濃度は「タイトル」の設定から）
 let logoOpacity = 1;
 const spectrum = new Spectrum(scene); // タイトルの周りのスペクトラム（2026-09-12）
+spectrum.setShape(TENCHI, PX / 1.4); // ロゴの輪郭（dotPart と同じ res 1.4 のセル幅）
 
 let midiFileName = '';
 let currentMidi = null;
@@ -205,6 +206,7 @@ function settings() {
     showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
+    specMode: radioValue('specMode') === 'logo' ? 'logo' : 'circle',
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
     partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
@@ -573,7 +575,7 @@ function animate() {
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);
     spectrum.setVisible(s.showSpectrum);
-    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor });
+    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor, mode: s.specMode });
     spectrum.setTransform(logo.position, s.titleScale);
     spectrum.update();
     if (s.titleOpacity !== logoOpacity) { // 透過（1 未満なら透明扱いにして奥のものが透ける）
