@@ -678,7 +678,10 @@ export const INSTRUMENT = {
            if (x < 34 - BB) return false;
            const R = x >= 41 - BB ? 6 : x >= 38 - BB ? 4 : x >= 35 - BB ? 3 : 2; const r = R - 1.2; const dy = y - 11.5, dz = z - 17.5; return dy * dy + dz * dz < r * r; // ベルの穴
          } });
-    bell.position.set(0, 0, 12 * VOX); // 絵の z=17.5 が取り付け後に奏者の左 7.5px（頭の横）になる位置
+    // ベル管が左手の握り位置（楽器ローカル z=3px）を通るように寄せる。
+    // 12*VOX（＝6px）だと管が握りの 3px 外側を通り、左手が宙に浮いて見えた（2026-09-12 ユーザー指摘）。
+    // 同時にベル全体が顔へ 3px 近づく
+    bell.position.set(0, 0, 6 * VOX);
     if (PART_STYLE !== 'sprite') body.rotation.x = -Math.PI / 3; // スライド部のロール：下の管が奏者の左（絵の +z）へ振れる
     root.add(body, bell);
     // 外管 22×5：上下 2 本の管・先端の U 字・支柱。pivot = 左端・上の管の行（本体の x=6 に置く）。
