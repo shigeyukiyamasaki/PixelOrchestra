@@ -526,6 +526,7 @@ function animate() {
   const now = performance.now();
   const dt = Math.min(0.1, (now - lastPerf) / 1000);
   lastPerf = now;
+  stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();
 
   if (engine && conductor && roll) {

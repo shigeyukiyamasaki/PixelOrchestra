@@ -151,17 +151,20 @@ export function createStage(container) {
   wall.position.set(0, WALL_BASE_Y + WALL_HEIGHT / 2, WALL_Z - 0.05);
   scene.add(wall);
 
+  // 描画サイズはプレビュー要素の大きさに合わせる。毎フレーム呼ばれるので、変わった時だけ設定する。
+  // レイアウトが決まる前（0×0）に設定すると aspect が NaN になり以後ずっと真っ黒になるため、その時は何もしない
+  // （2026-09-12：ページを開いた時に稀に表示されない不具合。読み込み順やブラウザによってタイミングが変わる）
+  let lastW = 0, lastH = 0;
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
-    // レイアウトが決まる前（0×0）に設定すると aspect が NaN になり、以後ずっと真っ黒のままになる。
-    // その場合は何もせず、ResizeObserver が正しい大きさを知らせてくるのを待つ（2026-09-12：稀に表示されない不具合）
-    if (w < 2 || h < 2) return;
+    if (w < 2 || h < 2 || (w === lastW && h === lastH)) return;
+    lastW = w; lastH = h;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
-  new ResizeObserver(resize).observe(container); // パネルの開閉でプレビューの幅が変わった時も追従（2026-09-12）
+  new ResizeObserver(resize).observe(container);
   resize();
 
   return { scene, camera, renderer, controls, resize, wall, setShadows };
