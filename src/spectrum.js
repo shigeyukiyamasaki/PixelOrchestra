@@ -89,7 +89,7 @@ export class Spectrum {
       }
     }
     // 外側に接する本体セル＝輪郭。外向きの法線は「空いている方向」の平均
-    const pts = [];
+    let pts = [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (!solid(x, y)) continue;
       let nx = 0, ny = 0, touch = 0;
@@ -102,11 +102,28 @@ export class Spectrum {
       const len = Math.hypot(nx, ny) || 1;
       pts.push({ x: (x - W / 2 + 0.5) * cell, y: (H - y - 0.5) * cell, nx: nx / len, ny: ny / len });
     }
-    // 輪郭を一周する順に並べ替える（中心から見た角度順）。周波数の低い順が輪郭を一周するように見える
+    // 向きはロゴの輪郭の法線ではなく「ロゴの中心から外へ」に統一する（2026-09-12 ユーザー指定：方向がバラバラに見えるため）。
+    // 並びも中心から見た角度順にして、輪郭を一周する形にする
     let cx = 0, cy = 0;
     for (const p of pts) { cx += p.x; cy += p.y; }
     cx /= pts.length || 1; cy /= pts.length || 1;
-    pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+    for (const p of pts) {
+      const dx = p.x - cx, dy = p.y - cy, len = Math.hypot(dx, dy) || 1;
+      p.nx = dx / len; p.ny = dy / len;
+      p.a = Math.atan2(dy, dx);
+    }
+    pts.sort((a, b) => a.a - b.a);
+    // 同じ方向に複数の輪郭点があると重なるので、角度で間引いて一番外側だけ残す
+    const keep = [];
+    for (const p of pts) {
+      const last = keep[keep.length - 1];
+      if (last && Math.abs(p.a - last.a) < 0.004) {
+        if (Math.hypot(p.x - cx, p.y - cy) > Math.hypot(last.x - cx, last.y - cy)) keep[keep.length - 1] = p;
+        continue;
+      }
+      keep.push(p);
+    }
+    pts = keep;
     this.shape = pts;
     this.shapeSpan = pts.length * cell; // 輪郭のおおよその長さ（セル 1 つ分ずつ）
     this._build();
