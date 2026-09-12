@@ -11,6 +11,7 @@ import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
+import { TENCHI_DOTS } from './logoDotsData.js';
 import { PianoRoll } from './pianoRoll.js';
 
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
@@ -44,6 +45,13 @@ logo.position.set(0, 7, -12);
 logo.scale.setScalar(1.0);
 scene.add(logo);
 window.__logo = logo; // 位置合わせ用
+
+// 比較用（2026-09-12）：同じ文字を太ゴシックから起こしたドット絵版。上に並べて見比べる
+const logoB = dotPart(TENCHI_DOTS, { depth: 6, res: 1.4, name: 'tenchiDots', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' },
+  inner: { chars: 'i', depth: 3, z0: -3 } });
+logoB.position.set(0, 10.5, -12);
+scene.add(logoB);
+window.__logoB = logoB;
 let midiFileName = '';
 let currentMidi = null;
 
