@@ -587,7 +587,11 @@ export class Puppet {
     if (onset && onset.index !== this.lastOnsetIndex) { // 新しいノート：ストロークの方向と長さ
       this.lastOnsetIndex = onset.index;
       const range = sMax - sMin;
-      const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * onset.velocity) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
+      // ストロークの長さは velocity ではなく energy で決める（2026-09-12 ユーザー指定）。
+      // velocity を固定して CC で表情を付けるトラック（1st Vn の CC11 等）では velocity では変化せず、
+      // 「強弱の反応」スライダーも velocity には掛からないので効かなかった。energy なら両方に乗る。
+      // 弓が長く動けば上体の傾き（sNorm）も自動的に大きくなる
+      const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * clamp(energy, 0, 3)) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
       let dir = -this.bowDir;
       let target = this.bowPos + dir * len;
       if (target > sMax || target < sMin) { dir = -dir; target = clamp(this.bowPos + dir * len, sMin, sMax); }
