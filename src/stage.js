@@ -153,6 +153,9 @@ export function createStage(container) {
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
+    // レイアウトが決まる前（0×0）に設定すると aspect が NaN になり、以後ずっと真っ黒のままになる。
+    // その場合は何もせず、ResizeObserver が正しい大きさを知らせてくるのを待つ（2026-09-12：稀に表示されない不具合）
+    if (w < 2 || h < 2) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();

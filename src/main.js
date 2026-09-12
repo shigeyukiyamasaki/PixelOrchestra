@@ -94,7 +94,7 @@ function seek(t) {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camWin input[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
 // ラジオボタンは name をキーに、選択中の value を保存
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
@@ -120,13 +120,13 @@ function loadSettings() {
   }
 }
 let saveTimer = null;
-for (const id of ['panel', 'topbar', 'camWin']) document.getElementById(id)?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
 function refreshValueLabels() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camWin input[type=range][id]')) {
+  for (const el of document.querySelectorAll('#panel input[type=range][id]')) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
     if (!lab) continue;
     if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = el.value; } // 数値入力欄（編集中は上書きしない）
@@ -135,7 +135,7 @@ function refreshValueLabels() {
 }
 // スライダーの値表示を数値入力欄に置き換える（直接入力できる。Enter/フォーカス外しで確定、範囲外はスライダーの範囲に丸める。2026-09-11 ユーザー指定）
 function makeValueInputs() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camWin input[type=range][id]')) {
+  for (const el of document.querySelectorAll('#panel input[type=range][id]')) {
     const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
     if (!lab) continue;
     const num = document.createElement('input');
@@ -509,23 +509,6 @@ function applyCameraSliders(movedId = null) { // スライダー → カメラ
   controls.update();
 }
 for (const id of CAM_IDS) $(id).addEventListener('input', () => { if (!camSyncing) applyCameraSliders(id); });
-// 小窓の開閉・ドラッグ移動（位置と開閉状態は localStorage に保存）
-const CAMWIN_KEY = 'pixelOrchestra.camWin.v1';
-{
-  const win = $('camWin');
-  let st = {};
-  try { st = JSON.parse(localStorage.getItem(CAMWIN_KEY) || '{}'); } catch {}
-  if (st.left != null) { win.style.left = st.left + 'px'; win.style.top = st.top + 'px'; }
-  if (st.hidden) win.classList.add('hidden');
-  const save = () => { try { localStorage.setItem(CAMWIN_KEY, JSON.stringify({ left: win.offsetLeft, top: win.offsetTop, hidden: win.classList.contains('hidden') })); } catch {} };
-  $('camWinToggle').addEventListener('click', () => { win.classList.toggle('hidden'); save(); });
-  $('camWinClose').addEventListener('click', () => { win.classList.add('hidden'); save(); });
-  const head = $('camWinHead');
-  let drag = null;
-  head.addEventListener('pointerdown', (e) => { if (e.target.tagName === 'BUTTON') return; drag = { dx: e.clientX - win.offsetLeft, dy: e.clientY - win.offsetTop }; head.setPointerCapture(e.pointerId); });
-  head.addEventListener('pointermove', (e) => { if (!drag) return; win.style.left = Math.max(0, Math.min(window.innerWidth - 60, e.clientX - drag.dx)) + 'px'; win.style.top = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - drag.dy)) + 'px'; });
-  head.addEventListener('pointerup', () => { if (drag) { drag = null; save(); } });
-}
 controls.addEventListener('change', () => { if (!camSyncing) syncCameraSliders(); });
 
 function setStatus(msg) { $('status').textContent = msg; }
