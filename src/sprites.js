@@ -682,9 +682,10 @@ export const INSTRUMENT = {
     bell.position.set(0, 0, 12 * VOX); // 絵の z=17.5 が取り付け後に奏者の左 7.5px（頭の横）になる位置
     if (PART_STYLE !== 'sprite') body.rotation.x = -Math.PI / 3; // スライド部のロール：下の管が奏者の左（絵の +z）へ振れる
     root.add(body, bell);
-    // 外管 26×9（rows 11-19 に相当）：上下 2 本の管・先端の U 字・支柱。pivot = 左端・マウスピースの行（本体の x=6 に置く）
-    const slide = makePart(26, 9, 0, 2, (d) => {
-      d.r(0, 0, 24, 2, C.gold); d.r(0, 7, 24, 2, C.gold); d.r(22, 0, 3, 9, C.gold); d.r(24, 1, 1, 7, C.gold2); // 管・U 字
+    // 外管 22×9（rows 11-19 に相当）：上下 2 本の管・先端の U 字・支柱。pivot = 左端・マウスピースの行（本体の x=6 に置く）
+    // 26 だと一番手前へ引いた時に U 字がベルの先（24）より前に出て、正面から見ると板が浮いて見える（2026-09-12 ユーザー指摘）
+    const slide = makePart(22, 9, 0, 2, (d) => {
+      d.r(0, 0, 20, 2, C.gold); d.r(0, 7, 20, 2, C.gold); d.r(18, 0, 3, 9, C.gold); d.r(20, 1, 1, 7, C.gold2); // 管・U 字
       d.r(1, 0, 1, 9, C.silver);                                                                // 支柱
     }, { res: 2, depth: 4, z0: -2 });
     slide.position.set(6 * VOX, 0, 0);
