@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, CONDUCTOR_Z, PODIUM_H } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -235,6 +235,7 @@ function settings() {
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
     labelSize: num('labelSize', 1), labelSource: radioValue('labelSource') === 'variant' ? 'variant' : 'name', // パート名（2026-09-12）
+    floorStyle: $('floorStyle')?.value === 'grass' ? 'grass' : 'plank', // 床の絵（板目／草原）
     showShadows: $('showShadows').checked,
     ambient: num('ambient', 0.7),
     spotIntensity: num('spotIntensity', 1.6),
@@ -613,6 +614,7 @@ function animate() {
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur });
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
+    setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);

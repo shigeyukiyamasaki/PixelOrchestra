@@ -145,10 +145,8 @@ export function createStage(container) {
   sh.lineTo(X, yEdge);
   sh.absarc(0, cy, R, Math.atan2(yEdge - cy, X), Math.atan2(yEdge - cy, -X), false);
   sh.lineTo(-X, -FLOOR_Z_FRONT);
-  const floorMap = floorTex.clone(); floorMap.needsUpdate = true;
-  floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
-  floorMap.repeat.set(1 / 40, 1 / 32); // ShapeGeometry の UV は座標そのままなので、板目の大きさを楕円だった頃と揃える
-  const floor = new THREE.Mesh(new THREE.ShapeGeometry(sh, 64), stageMat({ map: floorMap, color: '#e6e6e6' }));
+  const floorMat = stageMat({ map: floorMapOf(floorTex), color: '#e6e6e6' });
+  const floor = new THREE.Mesh(new THREE.ShapeGeometry(sh, 64), floorMat);
   floor.rotation.x = -Math.PI / 2;
   addStage(floor, -40);
 
@@ -156,7 +154,7 @@ export function createStage(container) {
   const risers = new THREE.Group();
   risers.position.z = SEAT_SHIFT_Z; // 座席と一緒に奥へ
   scene.add(risers);
-  stageCtx = { scene, floorTex, stageMat, addStage, risers, hemi, spots };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, hemi, spots, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -201,6 +199,27 @@ const SPOT_R = 40; // スポットライトと舞台中心 (0,0,-12) の距離 [
  *   spotElev: スポットの仰角 [deg]（舞台中心から見た光源の高さ。90 で真上）  spotSpread: 左右の開き [deg]（2 灯が客席正面から左右に何度ずつ離れるか）
  *   spotCone: 円錐の広がり [deg]（半頂角）  spotBlur: 輪郭のぼけ（0 でくっきり、1 で中心から外へなだらかに消える）
  */
+// 床用のテクスチャ（ShapeGeometry の UV は座標そのままなので、40×32 unit に 1 枚になるよう繰り返しを設定）
+function floorMapOf(tex) {
+  const m = tex.clone(); m.needsUpdate = true;
+  m.wrapS = m.wrapT = THREE.RepeatWrapping;
+  m.repeat.set(1 / 40, 1 / 32);
+  return m;
+}
+
+/** 床とひな壇の天面の見た目を切り替える（'plank' = 板目 / 'grass' = 草原）。2026-09-13 ユーザー指定 */
+export function setFloorStyle(style) {
+  if (!stageCtx) return;
+  if (style === 'grass' && !stageCtx.grassTex) stageCtx.grassTex = grassTexture();
+  const tex = style === 'grass' ? stageCtx.grassTex : stageCtx.floorTex;
+  if (tex === stageCtx.groundTex) return;
+  stageCtx.groundTex = tex;
+  stageCtx.floorMat.map?.dispose();
+  stageCtx.floorMat.map = floorMapOf(tex);
+  stageCtx.floorMat.needsUpdate = true;
+  buildRisers(stageCtx.seats);   // ひな壇の天面も同じ地面の絵にする
+}
+
 export function setShadows(o = {}) {
   if (!stageCtx) return;
   const { hemi, spots } = stageCtx;
@@ -236,8 +255,9 @@ export function setStageDepthWrite(on) {
 
 export function buildRisers(seats) {
   if (!stageCtx) return;
-  const { floorTex, stageMat, risers } = stageCtx;
-  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
+  stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
+  const { groundTex, stageMat, risers } = stageCtx;
+  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
   // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする。
@@ -271,21 +291,21 @@ export function buildRisers(seats) {
     const matC = (o) => { const m = stageMat(o); if (clip) m.clippingPlanes = clip; return m; };
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
-    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: floorTex, color: col }));
+    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: groundTex, color: col }));
     top.rotation.x = -Math.PI / 2;
     top.position.y = row.h;
     top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ color: '#846a41', side: THREE.DoubleSide }),
+      matC({ map: rockMap(rIn * (thMax - thMin), row.h), color: '#846a41', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ color: '#7a603a', side: THREE.DoubleSide }),
+      matC({ map: rockMap(rOut * (thMax - thMin), row.h), color: '#7a603a', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
@@ -295,14 +315,14 @@ export function buildRisers(seats) {
       const z1 = -Math.sqrt(Math.max(0, rIn * rIn - cx * cx));   // 内径との交点
       const z2 = -Math.sqrt(Math.max(0, rOut * rOut - cx * cx)); // 外径との交点
       for (const sx of [-cx, cx]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ map: rockMap(Math.abs(z2 - z1), row.h), color: '#715935', side: THREE.DoubleSide }));
         side.position.set(sx, row.h / 2, (z1 + z2) / 2);
         side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
         side.renderOrder = ro + 0.1; risers.add(side);
       }
     } else {
       for (const th of [thMin, thMax]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ map: rockMap(rOut - rIn, row.h), color: '#715935', side: THREE.DoubleSide }));
         const rm = (rIn + rOut) / 2;
         side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
         side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
@@ -332,6 +352,98 @@ function radialAlphaTexture(inner = 0.75) {
 
 // 板目テクスチャ。12×12 枚分をキャンバスに描き込む（repeat は使わない：alphaMap は map の UV 変換を共有するので、
 // repeat を使うと縁ぼかしの alphaMap まで 12 倍に繰り返されて床が消える）
+// 草原（スーパーファミコン風）：色数を絞り、1 ドット = GRASS_DOT px の粒で描く。
+// 地色にディザで濃淡を撒き、その上に「房」（3〜4 ドットの縦線を数本まとめたもの）と小さな花を置く。
+// 乱数は固定シードなので、読み込むたびに模様が変わることはない
+function grassTexture() {
+  const S = 768, DOT = 4;            // 板目と同じ 768px（床では 40×32 unit に 1 枚）
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const g = c.getContext('2d');
+  const BASE = '#4f9a3e', DARK = '#3b7c2f', LIGHT = '#66b44b', HI = '#86cc63', SOIL = '#6b8f3a';
+  let seed = 20260913 >>> 0;
+  const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x * DOT, y * DOT, DOT, DOT); };
+  const N = S / DOT;                  // ドット数（192×192）
+
+  g.fillStyle = BASE; g.fillRect(0, 0, S, S);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {   // 地色のディザ（市松＋乱数で粒立ち）
+    const r = rnd();
+    if (r < 0.10) px(x, y, DARK);
+    else if (r < 0.20) px(x, y, LIGHT);
+    else if (r < 0.22) px(x, y, SOIL);
+  }
+  for (let i = 0; i < 260; i++) {     // 房：縦 2〜3 ドットの線を 2〜4 本、少しずらして並べる
+    const bx = Math.floor(rnd() * N), by = Math.floor(rnd() * N);
+    const blades = 2 + Math.floor(rnd() * 3);
+    for (let b = 0; b < blades; b++) {
+      const x = (bx + b * 2 + Math.floor(rnd() * 2)) % N;
+      const h = 2 + Math.floor(rnd() * 2);
+      for (let k = 0; k < h; k++) px(x, (by - k + N) % N, k === h - 1 ? HI : LIGHT);
+      px(x, (by + 1) % N, DARK);      // 根元の影
+    }
+  }
+  for (let i = 0; i < 40; i++) {      // 小さな花（1 ドット＋周りを少し明るく）
+    const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
+    px(x, y, rnd() < 0.5 ? '#f2e9a8' : '#efc0d8');
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+// 岩肌（スーパーファミコン風）：グレースケールで描き、材質の色（土色）を掛けて染める。
+// 四辺が繋がるように、はみ出した分を反対側へも描いて敷き詰められるようにする
+let rockTex = null;
+function rockTexture() {
+  if (rockTex) return rockTex;
+  const S = 128, DOT = 2;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const g = c.getContext('2d');
+  const N = S / DOT;
+  let seed = 913 >>> 0;
+  const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(((x % N) + N) % N * DOT, ((y % N) + N) % N * DOT, DOT, DOT); };
+  const rect = (x, y, w, h, col) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, col); };
+
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {          // ざらつき
+    const r = rnd();
+    if (r < 0.16) px(x, y, '#e2e2e2');
+    else if (r < 0.24) px(x, y, '#cfcfcf');
+  }
+  for (let i = 0; i < 26; i++) {                                     // 岩の面（大きめの明暗の塊）
+    const w = 4 + Math.floor(rnd() * 10), h = 3 + Math.floor(rnd() * 7);
+    const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
+    rect(x, y, w, h, rnd() < 0.5 ? '#eaeaea' : '#d5d5d5');
+    rect(x, y + h, w, 1, '#a9a9a9');                                 // 下側に影
+    rect(x, y, 1, h, '#f4f4f4');                                     // 左に光
+  }
+  for (let i = 0; i < 14; i++) {                                     // ひび（折れ線）
+    let x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
+    const len = 6 + Math.floor(rnd() * 14);
+    for (let k = 0; k < len; k++) {
+      px(x, y, '#9c9c9c');
+      if (rnd() < 0.5) x += rnd() < 0.5 ? 1 : -1; else y += rnd() < 0.5 ? 1 : -1;
+    }
+  }
+  rockTex = new THREE.CanvasTexture(c);
+  rockTex.magFilter = THREE.NearestFilter; rockTex.minFilter = THREE.NearestFilter;
+  rockTex.wrapS = rockTex.wrapT = THREE.RepeatWrapping;
+  return rockTex;
+}
+
+// 岩肌を指定の大きさで敷くためのテクスチャ（1 タイル = ROCK_TILE unit）
+const ROCK_TILE = 2.2;
+function rockMap(uLen, vLen) {
+  const m = rockTexture().clone(); m.needsUpdate = true;
+  m.wrapS = m.wrapT = THREE.RepeatWrapping;
+  m.repeat.set(Math.max(1, Math.round(uLen / ROCK_TILE)), Math.max(1, Math.round(vLen / ROCK_TILE)));
+  m.__disposable = true;          // 作り直しのたびに捨てる（天面の地面テクスチャは共有なので捨てない。r128 の Texture に userData は無い）
+  return m;
+}
+
 function plankTexture() {
   const T = 64, N = 12;
   const c = document.createElement('canvas');

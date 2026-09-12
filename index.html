@@ -81,6 +81,9 @@
       <label class="ctl row" title="背景の上端の色"><span>上の色</span><input type="color" id="bgTop" value="#0b0b16"></label>
       <label class="ctl row" title="背景の下端の色"><span>下の色</span><input type="color" id="bgBottom" value="#0b0b16"></label>
       <label class="ctl" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
+      <label class="ctl row" title="床とひな壇の天面の絵"><span>床</span>
+        <select id="floorStyle"><option value="plank">板目</option><option value="grass">草原</option></select>
+      </label>
     </details>
     <details open>
       <summary>照明</summary>
@@ -143,6 +146,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260920i"></script>
+  <script type="module" src="src/main.js?v=20260920k"></script>
 </body>
 </html>
