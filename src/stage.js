@@ -68,7 +68,9 @@ const deg = (d) => (d * Math.PI) / 180;
 // 打楽器の後ろに置く、奏者のいないひな壇（キャラクター等を置く想定。2026-09-13 ユーザー指定）。
 // ここに足すだけで段が増える。r = 中心からの半径、h = 高さ、span = 扇の開き [deg]
 export const BACK_ROWS = [
-  { r: 27, h: 4.0, span: 77 },   // 開き 110° の 70%（床のフェードが始まる外周に端がかからないように。2026-09-13 ユーザー指定）
+  // clipX を指定すると、扇形の切り口ではなく x = ±clipX の垂直面で切る（2026-09-13 ユーザー指定）。
+  // span は clipX より外まで届く広さにしておき、実際の端は clipX が決める
+  { r: 27, h: 4.0, span: 130, clipX: 18 },
 ];
 const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
@@ -104,6 +106,7 @@ export function createStage(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.localClippingEnabled = true; // ひな壇を垂直面で切る（BACK_ROWS の clipX）
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.BasicShadowMap; // ドット絵に合わせて硬い影
   container.appendChild(renderer.domElement);
@@ -251,36 +254,52 @@ export function buildRisers(seats) {
     const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
     thMin = -half; thMax = half;
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
+    // clipX 指定の段は x = ±clipX の垂直面で切る。扇の弧は clipX の外まで作っておき、はみ出しをクリップで落とす
+    const cx = row.clipX;
+    const clip = cx ? [new THREE.Plane(new THREE.Vector3(-1, 0, 0), cx), new THREE.Plane(new THREE.Vector3(1, 0, 0), cx)] : null;
+    const matC = (o) => { const m = stageMat(o); if (clip) m.clippingPlanes = clip; return m; };
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
-    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), stageMat({ map: floorTex, color: col }));
+    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: floorTex, color: col }));
     top.rotation.x = -Math.PI / 2;
     top.position.y = row.h;
     top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#846a41', side: THREE.DoubleSide }),
+      matC({ color: '#846a41', side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      stageMat({ color: '#7a603a', side: THREE.DoubleSide }),
+      matC({ color: '#7a603a', side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
-    // 両端の側面（扇の切り口）
-    for (const th of [thMin, thMax]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
-      const rm = (rIn + rOut) / 2;
-      side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
-      side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
-      side.renderOrder = ro + 0.1; risers.add(side);
+    // 両端の側面。clipX 指定なら x = ±clipX の垂直な切り口（内径・外径との交点で幅が決まる）、
+    // そうでなければ従来どおり扇の切り口
+    if (cx) {
+      const z1 = -Math.sqrt(Math.max(0, rIn * rIn - cx * cx));   // 内径との交点
+      const z2 = -Math.sqrt(Math.max(0, rOut * rOut - cx * cx)); // 外径との交点
+      for (const sx of [-cx, cx]) {
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
+        side.position.set(sx, row.h / 2, (z1 + z2) / 2);
+        side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
+        side.renderOrder = ro + 0.1; risers.add(side);
+      }
+    } else {
+      for (const th of [thMin, thMax]) {
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ color: '#715935', side: THREE.DoubleSide }));
+        const rm = (rIn + rOut) / 2;
+        side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
+        side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
+        side.renderOrder = ro + 0.1; risers.add(side);
+      }
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), stageMat({ color: '#6b5430' }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), matC({ color: '#6b5430' }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
   }
