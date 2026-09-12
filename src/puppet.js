@@ -645,7 +645,11 @@ export class Puppet {
     this.setHand('L', this._restHand([L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], cfg.rest?.leftHand), dt, 20, lhd, cfg.chin ? [0.6, -1, -0.2] : null, lup);
 
     // 腰：強いほど前傾（楽器へ入り込む）、弓の進行方向へわずかに傾く。視線：弾いている間は楽器の方（あご楽器は左下、チェロ系は下）
-    this.spine.rotation.z += MIRROR * 0.03 * this.bowDir * energy; // ここで 1 に切っていると「強弱の反応」が効かなかった（2026-09-12 修正）
+    // 弓の進行方向への傾きは「上げ弓/下げ弓の符号」ではなく「弓が今どこを通っているか」で作る。
+    // 符号だと音が変わる 1 フレームで上体が反転してワープして見えた（2026-09-12 ユーザー指摘）。
+    // bowPos はストローク中を連続的に動くので、この形なら段差が原理的に出ず、上体の揺れが弓と同期する
+    const sNorm = clamp((this.bowPos - (sMin + sMax) / 2) / ((sMax - sMin) / 2 || 1), -1, 1);
+    this.spine.rotation.z += MIRROR * 0.03 * sNorm * energy;
     // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
     this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
     if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、頭がわずかに下がる（下ろしている間は解く）
