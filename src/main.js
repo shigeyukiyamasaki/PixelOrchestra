@@ -188,6 +188,7 @@ function settings() {
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
+    labelSize: num('labelSize', 1), labelSource: radioValue('labelSource') === 'variant' ? 'variant' : 'name', // パート名（2026-09-12）
     showShadows: $('showShadows').checked,
     ambient: num('ambient', 0.7),
     spotIntensity: num('spotIntensity', 1.6),
@@ -358,6 +359,7 @@ function placePuppets() {
 
 // パート名ラベル：トラックごとに奏者グループの中央・頭の少し上（フォント読み込み後にも作り直す）
 let lastSeats = [];
+let labelSizeApplied = 1, labelSourceApplied = 'name';
 function rebuildLabels() {
   labels.traverse((o) => { if (o.material) { o.material.map?.dispose(); o.material.dispose(); } });
   labels.clear();
@@ -365,7 +367,9 @@ function rebuildLabels() {
     const ps = seat.positions;
     const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length;
     const cz = ps.reduce((a, p) => a + p.z, 0) / ps.length;
-    const sp = nameLabel(seat.track.name, seat.track.color);
+    const s = settings();
+    const text = s.labelSource === 'variant' ? (VARIANTS[seat.track.variant]?.label || seat.track.name) : seat.track.name;
+    const sp = nameLabel(text, seat.track.color, s.labelSize);
     sp.position.set(cx, ps[0].y + HEAD_Y - 0.55, cz);
     labels.add(sp);
   }
@@ -541,6 +545,10 @@ function animate() {
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
+    if (s.labelSize !== labelSizeApplied || s.labelSource !== labelSourceApplied) { // 大きさ・表示する名前が変わったらラベルを作り直す
+      labelSizeApplied = s.labelSize; labelSourceApplied = s.labelSource;
+      rebuildLabels();
+    }
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);

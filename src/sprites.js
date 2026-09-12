@@ -810,7 +810,7 @@ export const INSTRUMENT = {
  * 小さなキャンバスに描いて最近傍拡大するので文字もドット絵風になる。
  */
 export const LABEL_FONT = 'DotGothic16'; // ドットフォント（Google Fonts。index.html で読み込み）
-export function nameLabel(text, color = '#ffffff') {
+export function nameLabel(text, color = '#ffffff', size = 1) {
   const SS = 3;                                    // 高解像度で描いて縮小（縁取りを滑らかに）
   const fontPx = 12 * SS;
   const font = `${fontPx}px "${LABEL_FONT}", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif`;
@@ -831,7 +831,7 @@ export function nameLabel(text, color = '#ffffff') {
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set((w / SS) * 0.032, (h / SS) * 0.032, 1); // 1px ≒ 0.032 unit（以前の 0.045 より小さく）
+  sp.scale.set((w / SS) * 0.032 * size, (h / SS) * 0.032 * size, 1); // 1px ≒ 0.032 unit ×「パート名」の大きさ（2026-09-12）
   sp.renderOrder = 10;
   return sp;
 }
