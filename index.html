@@ -8,10 +8,27 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260917e">
+  <link rel="stylesheet" href="style.css?v=20260917g">
 </head>
 <body>
-  <div id="stageArea"><div id="view"></div></div>
+  <div id="stageArea">
+  <div id="camBar">
+      <fieldset class="sub" title="カメラの位置（座標）。動かすと中心点も一緒に平行移動する（回転しない）。マウスで回した時もここに反映される">
+        <legend>カメラ位置</legend>
+        <div class="row3"><label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="camX">0</b></span><input type="range" id="camX" min="-45" max="45" step="0.5" value="0"></label>
+        <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="camY">6</b></span><input type="range" id="camY" min="0.5" max="50" step="0.5" value="6"></label>
+        <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="camZ">10.5</b></span><input type="range" id="camZ" min="-45" max="70" step="0.5" value="10.5"></label></div>
+      </fieldset>
+      <fieldset class="sub" title="カメラが向く中心点（注視点）。ここを動かすと向きが変わる。マウス操作の回転の中心にもなる">
+        <legend>カメラ中心点</legend>
+        <div class="row3"><label class="ctl" title="左右"><span>X <b data-value-for="tgtX">0</b></span><input type="range" id="tgtX" min="-30" max="30" step="0.5" value="0"></label>
+        <label class="ctl" title="高さ"><span>Y <b data-value-for="tgtY">4</b></span><input type="range" id="tgtY" min="-5" max="25" step="0.1" value="4"></label>
+        <label class="ctl" title="前後"><span>Z <b data-value-for="tgtZ">-12</b></span><input type="range" id="tgtZ" min="-45" max="25" step="0.5" value="-12"></label></div>
+      </fieldset>
+      <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
+  </div>
+    <div id="view"></div>
+  </div>
 
   <button id="panelToggle" title="表示設定パネルの表示/非表示">☰</button>
 
@@ -32,22 +49,6 @@
   <aside id="panel">
     <div class="cols">
       <div class="col">
-    <details open>
-      <summary>カメラ</summary>
-      <fieldset class="sub" title="カメラの位置（座標）。動かすと中心点も一緒に平行移動する（回転しない）。マウスで回した時もここに反映される">
-        <legend>位置</legend>
-        <label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="camX">0</b></span><input type="range" id="camX" min="-45" max="45" step="0.5" value="0"></label>
-        <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="camY">6</b></span><input type="range" id="camY" min="0.5" max="50" step="0.5" value="6"></label>
-        <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="camZ">10.5</b></span><input type="range" id="camZ" min="-45" max="70" step="0.5" value="10.5"></label>
-      </fieldset>
-      <fieldset class="sub" title="カメラが向く中心点（注視点）。ここを動かすと向きが変わる。マウス操作の回転の中心にもなる">
-        <legend>中心点</legend>
-        <label class="ctl" title="左右"><span>X <b data-value-for="tgtX">0</b></span><input type="range" id="tgtX" min="-30" max="30" step="0.5" value="0"></label>
-        <label class="ctl" title="高さ"><span>Y <b data-value-for="tgtY">4</b></span><input type="range" id="tgtY" min="-5" max="25" step="0.1" value="4"></label>
-        <label class="ctl" title="前後"><span>Z <b data-value-for="tgtZ">-12</b></span><input type="range" id="tgtZ" min="-45" max="25" step="0.5" value="-12"></label>
-      </fieldset>
-      <button id="resetCam" class="wide" title="視点を初期位置に戻す">視点リセット</button>
-    </details>
     <details open>
       <summary>ピアノロール</summary>
       <label class="chk" title="流れ落ちるピアノロールを表示する"><input type="checkbox" id="showRoll" checked> 表示する</label>
@@ -130,6 +131,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260917k"></script>
+  <script type="module" src="src/main.js?v=20260917l"></script>
 </body>
 </html>
