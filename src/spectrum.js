@@ -41,7 +41,7 @@ export class Spectrum {
     this.ctx = null; this.analyser = null; this.source = null; this.data = null;
     this.prev = null;
     this.bars = 0;
-    this.opts = { bars: 64, radius: 4, height: 2.5, opacity: 0.9, color: '#9fd8ff', width: 1, taper: 1, mode: 'circle' };
+    this.opts = { bars: 64, radius: 4, height: 2.5, opacity: 0.9, color: '#9fd8ff', width: 1, mode: 'circle' };
     this.shape = null; this.shapeSpan = 0;
   }
 
@@ -133,8 +133,7 @@ export class Spectrum {
   setOptions(o) {
     const prev = { ...this.opts };
     Object.assign(this.opts, o);
-    if (this.bars !== this.opts.bars || prev.bars !== this.opts.bars || prev.mode !== this.opts.mode
-        || prev.width !== this.opts.width || prev.taper !== this.opts.taper) this._build();
+    if (this.bars !== this.opts.bars || prev.bars !== this.opts.bars || prev.mode !== this.opts.mode || prev.width !== this.opts.width) this._build();
     const col = new THREE.Color(this.opts.color);
     this.group.traverse((m) => { if (m.isMesh) { m.material.opacity = this.opts.opacity; m.material.color.copy(col); } });
   }
@@ -180,7 +179,7 @@ export class Spectrum {
       } else {
         pivot.rotation.z = -(i / n) * Math.PI * 2; // ロゴと同じ面（xy）に円を作る
       }
-      const bar = new THREE.Mesh(this._barGeometry(w), mat()); // 幅 w・長さ 1 の板。長さは scale.y で伸ばす
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(w, 1), mat()); // 幅 w・長さ 1 の板。長さは scale.y で伸ばす
       pivot.add(bar);
       this.group.add(pivot);
     }
@@ -195,23 +194,6 @@ export class Spectrum {
       if (d < bestD) { bestD = d; best = p; }
     }
     return best;
-  }
-
-  /** 根本（内側）が太く先端が細い板。taper = 1 で均一、大きいほど根本が太い（2026-09-12 ユーザー指定） */
-  _barGeometry(w) {
-    const geo = new THREE.PlaneGeometry(1, 1);
-    const pos = geo.attributes.position;
-    const root = w * (this.opts.taper ?? 1) / 2, tip = w / 2;
-    const uv = geo.attributes.uv;
-    const k = tip / root; // 根本側は UV を中心へ寄せて、光の芯の太さを一定に保つ（太いだけで折れて見えないように）
-    for (let i = 0; i < pos.count; i++) {
-      const isRoot = pos.getY(i) < 0; // ローカル -y が根本（ロゴ側）
-      pos.setX(i, Math.sign(pos.getX(i)) * (isRoot ? root : tip));
-      if (isRoot && uv) uv.setX(i, 0.5 + (uv.getX(i) - 0.5) * k);
-    }
-    pos.needsUpdate = true;
-    if (uv) uv.needsUpdate = true;
-    return geo;
   }
 
   setVisible(v) { this.group.visible = v; }

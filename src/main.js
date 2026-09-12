@@ -205,7 +205,7 @@ function settings() {
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
     showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
-    specWidth: num('specWidth', 1), specTaper: num('specTaper', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
+    specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     specMode: radioValue('specMode') === 'logo' ? 'logo' : 'circle',
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
@@ -575,7 +575,7 @@ function animate() {
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);
     spectrum.setVisible(s.showSpectrum);
-    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, taper: s.specTaper, opacity: s.specOpacity, color: s.specColor, mode: s.specMode });
+    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor, mode: s.specMode });
     spectrum.setTransform(logo.position, s.titleScale);
     spectrum.update();
     if (s.titleOpacity !== logoOpacity) { // 透過（1 未満なら透明扱いにして奥のものが透ける）
