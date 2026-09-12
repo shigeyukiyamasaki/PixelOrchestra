@@ -125,6 +125,7 @@ export class Spectrum {
     }
     pts = keep;
     this.shape = pts;
+    this.shapeCx = cx; this.shapeCy = cy;
     this.shapeSpan = pts.length * cell; // 輪郭のおおよその長さ（セル 1 つ分ずつ）
     this._build();
   }
@@ -154,12 +155,28 @@ export class Spectrum {
       map: this.tex, color: new THREE.Color(this.opts.color), transparent: true, opacity: this.opts.opacity,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
+    // ロゴに沿う時：角度を等分して各方向の輪郭までの距離を求め、隣同士で均す
+    // （文字の凹凸で根本がジグザグになると、線が折れて見えるため。2026-09-12 ユーザー指摘）
+    let radii = null, cx = 0, cy = 0;
+    if (useShape) {
+      cx = this.shapeCx; cy = this.shapeCy;
+      const raw = [];
+      for (let i = 0; i < n; i++) {
+        const p = this._shapeAt(-Math.PI + (i + 0.5) * 2 * Math.PI / n);
+        raw.push(Math.hypot(p.x - cx, p.y - cy));
+      }
+      radii = raw.map((_, i) => {
+        let sum = 0;
+        for (let k = -2; k <= 2; k++) sum += raw[(i + k + n * 2) % n];
+        return sum / 5;
+      });
+    }
     for (let i = 0; i < n; i++) {
       const pivot = new THREE.Group();
       if (useShape) { // 角度を等分し、その方向の輪郭上に根本を置く（外向きに立てる）
-        const p = this._shapeAt(-Math.PI + (i + 0.5) * 2 * Math.PI / n);
-        pivot.position.set(p.x, p.y, 0);
-        pivot.rotation.z = p.a - Math.PI / 2; // 板の +y をロゴの中心からの放射方向へ
+        const a = -Math.PI + (i + 0.5) * 2 * Math.PI / n;
+        pivot.position.set(cx + Math.cos(a) * radii[i], cy + Math.sin(a) * radii[i], 0);
+        pivot.rotation.z = a - Math.PI / 2; // 板の +y をロゴの中心からの放射方向へ
       } else {
         pivot.rotation.z = -(i / n) * Math.PI * 2; // ロゴと同じ面（xy）に円を作る
       }
