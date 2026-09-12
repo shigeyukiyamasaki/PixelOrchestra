@@ -649,7 +649,7 @@ export class Puppet {
     // 符号だと音が変わる 1 フレームで上体が反転してワープして見えた（2026-09-12 ユーザー指摘）。
     // bowPos はストローク中を連続的に動くので、この形なら段差が原理的に出ず、上体の揺れが弓と同期する
     const sNorm = clamp((this.bowPos - (sMin + sMax) / 2) / ((sMax - sMin) / 2 || 1), -1, 1);
-    this.spine.rotation.z += MIRROR * 0.03 * sNorm * energy;
+    this.spine.rotation.z += MIRROR * 0.06 * sNorm * energy; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
     // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
     this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
     if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、頭がわずかに下がる（下ろしている間は解く）
