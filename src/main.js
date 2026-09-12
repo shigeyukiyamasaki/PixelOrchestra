@@ -11,6 +11,7 @@ import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
+import { Spectrum } from './spectrum.js';
 import { PianoRoll } from './pianoRoll.js';
 
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
@@ -43,6 +44,7 @@ const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7
 scene.add(logo);
 window.__logo = logo; // 位置合わせ用（位置・大きさ・濃度は「タイトル」の設定から）
 let logoOpacity = 1;
+const spectrum = new Spectrum(scene); // タイトルの周りのスペクトラム（2026-09-12）
 
 let midiFileName = '';
 let currentMidi = null;
@@ -74,6 +76,7 @@ function play() {
   clock.perfStart = performance.now();
   if (audioLoaded) {
     audio.currentTime = Math.max(0, clock.t - audioOffsetSec());
+    spectrum.connect(audio); // 再生の操作の中で音声をつなぐ（自動再生の制限のため）
     audio.play().catch((e) => console.warn('audio.play 失敗:', e));
   }
   $('playBtn').textContent = '❚❚ 一時停止';
@@ -199,6 +202,9 @@ function settings() {
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
+    showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
+    specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
+    specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
     partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
@@ -294,7 +300,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet };
+window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
@@ -566,6 +572,10 @@ function animate() {
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);
+    spectrum.setVisible(s.showSpectrum);
+    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor });
+    spectrum.setTransform(logo.position, s.titleScale);
+    spectrum.update();
     if (s.titleOpacity !== logoOpacity) { // 透過（1 未満なら透明扱いにして奥のものが透ける）
       logoOpacity = s.titleOpacity;
       logo.traverse((m) => { if (m.isMesh) { m.material.opacity = logoOpacity; m.material.transparent = logoOpacity < 1; m.material.depthWrite = logoOpacity >= 1; m.material.needsUpdate = true; } });
