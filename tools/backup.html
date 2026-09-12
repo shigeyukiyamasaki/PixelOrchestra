@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>設定のバックアップ — Pixel Orchestra</title>
+<style>
+  body { margin: 0; padding: 24px; background: #14213d; color: #e8ecf5; line-height: 1.8;
+         font-family: "Hiragino Sans", "Yu Gothic", sans-serif; font-size: 14px; }
+  h1 { font-size: 16px; margin: 0 0 12px; color: #9fb4e8; }
+  button { font-size: 14px; padding: 6px 14px; margin-right: 8px; }
+  #log { margin-top: 16px; white-space: pre-wrap; background: #101830; border: 1px solid #35406a;
+         border-radius: 6px; padding: 12px; max-height: 60vh; overflow: auto; }
+  .ok { color: #7fd88f; } .ng { color: #f08a8a; }
+</style>
+</head>
+<body>
+<h1>設定のバックアップ</h1>
+<p>このブラウザの localStorage（Pixel Orchestra の設定）を、開発サーバー上の
+  <code>backup/&lt;名前&gt;.json</code> に書き出します。ブラウザごとに 1 回ずつ実行してください。</p>
+<p>名前：<input id="name" size="16"> <button id="save">保存する</button>
+  <button id="show">中身を見るだけ</button></p>
+<div id="log">—</div>
+
+<script>
+// localStorage はブラウザごとに隔離されているので、共有する前にブラウザ別の控えを取るためのページ。
+// 使い方: http://localhost:8766/tools/backup.html?name=arc （名前は自動で入る）
+const KEYS = [
+  'pixelOrchestra.settings.v1',
+  'pixelOrchestra.families.v1',
+  'midiOrchestra_pitchFilters',
+  'pixelOrchestra.dynSources.v1',
+  'pixelOrchestra.mergeInto.v1',
+];
+const log = document.getElementById('log');
+const nameEl = document.getElementById('name');
+nameEl.value = (new URLSearchParams(location.search).get('name') || '').replace(/[^A-Za-z0-9_.-]/g, '') || 'browser';
+
+// 指定キーに限らず localStorage 全部を控える（取りこぼし防止）
+function dump() {
+  const all = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    const raw = localStorage.getItem(k);
+    try { all[k] = JSON.parse(raw); } catch { all[k] = raw; }
+  }
+  return all;
+}
+function summary(all) {
+  const lines = [`localStorage のキー ${Object.keys(all).length} 件`];
+  for (const k of Object.keys(all)) {
+    const known = KEYS.includes(k) ? '★' : '  ';
+    const v = all[k];
+    const n = v && typeof v === 'object' ? `${Object.keys(v).length} 項目` : `${String(v).length} 文字`;
+    lines.push(`${known} ${k} … ${n}`);
+  }
+  return lines.join('\n');
+}
+
+document.getElementById('show').onclick = () => { log.textContent = summary(dump()); };
+document.getElementById('save').onclick = async () => {
+  const all = dump();
+  const name = nameEl.value.replace(/[^A-Za-z0-9_.-]/g, '') || 'browser';
+  try {
+    const res = await fetch(`/backup/${name}.json`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(all, null, 2),
+    });
+    log.innerHTML = res.ok
+      ? `<span class="ok">保存しました → backup/${name}.json</span>\n\n${summary(all)}`
+      : `<span class="ng">保存できませんでした（HTTP ${res.status}）。開発サーバーを再起動してください</span>`;
+  } catch (e) {
+    log.innerHTML = `<span class="ng">保存できませんでした（${e.message}）。python3 tools/serve.py で起動しているか確認してください</span>`;
+  }
+};
+log.textContent = summary(dump());
+</script>
+</body>
+</html>

@@ -21,6 +21,48 @@ const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
 
+// ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
+// localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
+// settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
+// 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
+// サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
+const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY];
+const SYNC_URL = 'settings.json';
+let syncTimer = null;
+
+async function pullSettings() {
+  try {
+    const res = await fetch(`${SYNC_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return false;                                   // まだ置いていない → localStorage のまま
+    const all = await res.json();
+    let n = 0;
+    for (const k of SYNC_KEYS) {
+      if (all[k] == null) continue;
+      localStorage.setItem(k, JSON.stringify(all[k]));           // 以降の読み込みは全部 localStorage 経由なので、ここで上書きするだけでよい
+      n++;
+    }
+    if (n) console.log(`[設定共有] settings.json から ${n} 件読み込みました`);
+    return true;
+  } catch { return false; }                                      // サーバー無し・オフライン等
+}
+
+function pushSettings() {                                        // 変更のたびに呼ぶ（まとめ書き）
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    const all = {};
+    for (const k of SYNC_KEYS) {                                   // 未設定のキーは書かない（ファイルを読みやすく保つ）
+      const raw = localStorage.getItem(k);
+      if (raw == null) continue;
+      try { all[k] = JSON.parse(raw); } catch { /* 壊れていたら送らない */ }
+    }
+    fetch(SYNC_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(all, null, 2) })
+      .catch(() => {});                                          // 書けなくても致命的ではない（localStorage には入っている）
+  }, 600);
+}
+
+// 起動時に読み込む。ここで待つので、以降の loadSettings() 等はサーバーの値を見る
+await pullSettings();
+
 const $ = (id) => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id} が見つかりません（HTML と JS の id 不一致）`);
@@ -107,7 +149,7 @@ function saveSettings() {
   const data = {};
   for (const el of SETTING_IDS()) data[el.id] = el.type === 'checkbox' ? el.checked : el.value;
   for (const name of RADIO_NAMES()) data[name] = radioValue(name);
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) { console.warn('設定保存失敗:', e); }
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); pushSettings(); } catch (e) { console.warn('設定保存失敗:', e); }
 }
 function loadSettings() {
   let data = {};
@@ -225,7 +267,7 @@ function saveFamilyOverride(name, key, family) {
   let all = {};
   try { all = JSON.parse(localStorage.getItem(FAMILY_KEY) || '{}'); } catch { all = {}; }
   (all[name] ||= {})[key] = family;
-  try { localStorage.setItem(FAMILY_KEY, JSON.stringify(all)); } catch (e) { console.warn('割当保存失敗:', e); }
+  try { localStorage.setItem(FAMILY_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('割当保存失敗:', e); }
 }
 
 // 音域フィルター（キースイッチ除外）：トラック名 → {pitchMin, pitchMax}
@@ -235,7 +277,7 @@ function loadPitchFilters() {
 function savePitchFilter(trackName, pitchMin, pitchMax) {
   const all = loadPitchFilters();
   if (pitchMin <= 0 && pitchMax >= 127) delete all[trackName]; else all[trackName] = { pitchMin, pitchMax };
-  try { localStorage.setItem(PITCH_FILTER_KEY, JSON.stringify(all)); } catch (e) { console.warn('音域保存失敗:', e); }
+  try { localStorage.setItem(PITCH_FILTER_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('音域保存失敗:', e); }
 }
 
 // 強弱の情報源（velocity / CC1 / CC11）：トラック名 → source
@@ -245,7 +287,7 @@ function loadDynSources() {
 function saveDynSource(trackName, source) {
   const all = loadDynSources();
   if (source === 'auto') delete all[trackName]; else all[trackName] = source;
-  try { localStorage.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
+  try { localStorage.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
 }
 
 // トラック統合：トラック名 → 'auto' | 'none' | 統合先トラック名
@@ -255,7 +297,7 @@ function loadMerges() {
 function saveMerge(trackName, value) {
   const all = loadMerges();
   if (value === 'auto') delete all[trackName]; else all[trackName] = value;
-  try { localStorage.setItem(MERGE_KEY, JSON.stringify(all)); } catch (e) { console.warn('統合設定保存失敗:', e); }
+  try { localStorage.setItem(MERGE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('統合設定保存失敗:', e); }
 }
 
 // ---------- MIDI 読み込み ----------

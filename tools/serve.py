@@ -15,7 +15,7 @@ ES module の import（./sprites.js 等）はキャッシュバスターを付�
   - 標準の protocol_version は HTTP/1.0 ＝ keep-alive 無しで、ファイル 1 本ごとに新しい接続を張る。
     HTTP/1.1 にして接続を使い回し、そもそも同時接続数を減らす。
 """
-import sys, os
+import sys, os, re, json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -28,11 +28,34 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split('?')[0] == '/favicon.ico':  # 無いので 404 を出さず黙って空返し
-            self.send_response(204)
-            self.send_header('Content-Length', '0')
-            self.end_headers()
+            self._empty(204)
             return
         super().do_GET()
+
+    # ブラウザ間で設定を共有するための保存口（2026-09-12 追加）。
+    # localStorage はブラウザごとに隔離されていて同期できないので、ここにファイルとして置く。
+    # 受け付けるのは /settings.json と /backup/<名前>.json だけ（名前は英数と . _ - のみ＝パス抜け対策）。
+    def do_POST(self):
+        path = self.path.split('?')[0]
+        if path != '/settings.json' and not re.fullmatch(r'/backup/[A-Za-z0-9_.-]{1,40}\.json', path):
+            self._empty(404)
+            return
+        body = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        try:
+            json.loads(body.decode('utf-8'))       # 壊れた JSON は保存しない（設定が飛ぶのを防ぐ）
+        except Exception:
+            self._empty(400)
+            return
+        dest = os.path.join(os.getcwd(), path.lstrip('/'))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, 'wb') as f:
+            f.write(body)
+        self._empty(204)
+
+    def _empty(self, code):
+        self.send_response(code)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
 
     def log_message(self, fmt, *args):  # 静かに
         pass

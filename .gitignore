@@ -4,3 +4,7 @@ node_modules/
 *.mp3
 *.wav
 *.m4a
+
+# 設定の共有ファイル（ブラウザ間で同期する作業状態。個人ごとに変わるので追跡しない）
+settings.json
+backup/
