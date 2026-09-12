@@ -298,14 +298,14 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ map: rockMap(rIn * (thMax - thMin), row.h), color: '#846a41', side: THREE.DoubleSide }),
+      matC({ map: rockMap(rIn * (thMax - thMin), row.h), color: wallColor('#846a41'), side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ map: rockMap(rOut * (thMax - thMin), row.h), color: '#7a603a', side: THREE.DoubleSide }),
+      matC({ map: rockMap(rOut * (thMax - thMin), row.h), color: wallColor('#7a603a'), side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
@@ -315,14 +315,14 @@ export function buildRisers(seats) {
       const z1 = -Math.sqrt(Math.max(0, rIn * rIn - cx * cx));   // 内径との交点
       const z2 = -Math.sqrt(Math.max(0, rOut * rOut - cx * cx)); // 外径との交点
       for (const sx of [-cx, cx]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ map: rockMap(Math.abs(z2 - z1), row.h), color: '#715935', side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ map: rockMap(Math.abs(z2 - z1), row.h), color: wallColor('#715935'), side: THREE.DoubleSide }));
         side.position.set(sx, row.h / 2, (z1 + z2) / 2);
         side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
         side.renderOrder = ro + 0.1; risers.add(side);
       }
     } else {
       for (const th of [thMin, thMax]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ map: rockMap(rOut - rIn, row.h), color: '#715935', side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ map: rockMap(rOut - rIn, row.h), color: wallColor('#715935'), side: THREE.DoubleSide }));
         const rm = (rIn + rOut) / 2;
         side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
         side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
@@ -450,8 +450,35 @@ function rockTexture() {
   return rockTex;
 }
 
+// 【確認用】?wall=<画像URL> を付けると、壁を描画ではなくその画像のループにする（2026-09-13 ユーザー依頼）。
+// 画像は色をそのまま出したいので、材質の色は白にする
+const WALL_IMG = new URLSearchParams(location.search).get('wall');
+let wallImgTex = null;
+if (WALL_IMG) {
+  // 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
+  wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
+    t.needsUpdate = true;
+    if (stageCtx && stageCtx.seats) buildRisers(stageCtx.seats);
+  });
+  wallImgTex.magFilter = THREE.NearestFilter; wallImgTex.minFilter = THREE.NearestFilter;
+  wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
+}
+export const wallColor = (c) => (WALL_IMG ? '#ffffff' : c);
+
 // 岩肌を実寸で敷くためのテクスチャ（伸縮させないので repeat は端数のまま。端で切れるだけ）
 function rockMap(uLen, vLen) {
+  if (wallImgTex) {
+    // 画像モード：画像も 1 unit = ROCK_DPU ドットの実寸で敷く（伸縮させない）。
+    // 縦は絵の上端（草との境目）を壁の上端に合わせ、足りない下側は切る
+    const m = wallImgTex.clone(); m.needsUpdate = true;
+    m.wrapS = m.wrapT = THREE.RepeatWrapping;
+    const img = wallImgTex.image;
+    const tw = (img ? img.width : ROCK_N) / ROCK_DPU, th = (img ? img.height : ROCK_N) / ROCK_DPU;
+    m.repeat.set(uLen / tw, vLen / th);
+    m.offset.set(0, 1 - vLen / th);
+    m.__disposable = true;
+    return m;
+  }
   const m = rockTexture().clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
   m.repeat.set(uLen / ROCK_TILE, vLen / ROCK_TILE);
