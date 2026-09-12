@@ -207,6 +207,18 @@ function floorMapOf(tex) {
   return m;
 }
 
+// ひな壇の天面用のテクスチャ。RingGeometry の UV は外径の正方形を [0,1] に写すので、
+// そのまま貼ると段の半径によって粒の大きさが変わってしまう（2026-09-13 ユーザー指摘）。
+// 床と同じ「40×32 unit に 1 枚」の実寸になるよう繰り返しを設定し、原点も床に合わせる
+function ringMapOf(tex, rOut) {
+  const m = tex.clone(); m.needsUpdate = true;
+  m.wrapS = m.wrapT = THREE.RepeatWrapping;
+  m.repeat.set(2 * rOut / 40, 2 * rOut / 32);
+  m.offset.set(-rOut / 40, -rOut / 32);
+  m.__disposable = true;            // 作り直しのたびに捨てる（元の共有テクスチャは触らない）
+  return m;
+}
+
 /** 床とひな壇の天面の見た目を切り替える（'plank' = 板目 / 'grass' = 草原）。2026-09-13 ユーザー指定 */
 export function setFloorStyle(style) {
   if (!stageCtx) return;
@@ -291,7 +303,7 @@ export function buildRisers(seats) {
     const matC = (o) => { const m = stageMat(o); if (clip) m.clippingPlanes = clip; return m; };
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
-    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: groundTex, color: col }));
+    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: ringMapOf(groundTex, rOut), color: col }));
     top.rotation.x = -Math.PI / 2;
     top.position.y = row.h;
     top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
