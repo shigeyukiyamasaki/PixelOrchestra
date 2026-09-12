@@ -54,8 +54,11 @@ export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
 export const CONDUCTOR_Z = -2.1; // 指揮台（2.2 角）と指揮者の z。+z = 客席側。-3.2 から指揮台の半分（1.1）手前へ（2026-09-10 ユーザー指定）
 export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を奥へ平行移動する量 [unit]（2026-09-10 ユーザー指定「少し奥へ」）
 export const FLOOR_RADIUS = 20;  // ステージ円の半径
-export const FLOOR_CENTER_Z = -13; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
-export const FLOOR_DEPTH_SCALE = 0.8; // 奥行き方向の縮小率（楕円）
+// 中心 z と奥行き率は「手前の縁を +3 に保ったまま、奥だけ伸ばす」ように組で決める（2026-09-13 ユーザー指定）。
+// 奥の縁 = 中心 - 半径×奥行き率 = -14 - 17 = -31。一番奥のひな壇の外径（-30）を 1 unit 覆う。
+// 手前の縁 = -14 + 17 = +3（変更前と同じ）。横幅は半径 20 のまま変えていない
+export const FLOOR_CENTER_Z = -14; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
+export const FLOOR_DEPTH_SCALE = 0.85; // 奥行き方向の縮小率（楕円）
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
