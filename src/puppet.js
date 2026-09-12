@@ -526,6 +526,9 @@ export class Puppet {
       case 'conductor': this._conductor(st, ctx); break;
     }
 
+    // アタックの明滅：発音した瞬間だけ楽器を明るくする（持続は足元の光が示すので不要。2026-09-12 ユーザー指定）
+    this._attackFlash(st);
+
     // 足元の光：baseOpacity × エネルギー × 濃度。指揮者だけは拍で明滅（小節頭は強く、拍の頭で光って減衰）
     this.glow.visible = settings.showGlow;
     let level = clamp(energy, 0, 1);
@@ -570,6 +573,25 @@ export class Puppet {
     }
     inst.userData.baseQ.copy(inst.userData.upQ).slerp(inst.userData.restQ, r);
     inst.quaternion.copy(inst.userData.baseQ);
+  }
+
+  /**
+   * アタックの明滅：発音した瞬間に楽器を明るくし、時定数 100ms で元へ戻す。
+   * 強さは energy（CC 追従・「強弱の反応」スライダー込み）を 1 で頭打ちにしたもの。
+   * 色は material.color を baseColor × 倍率で毎フレーム作り直す（直接代入すると累積して壊れる）。
+   * 楽器を持たない指揮者は対象外。楽器が手持ち（シンバル等）なら held を明滅させる
+   */
+  _attackFlash(st) {
+    if (this.family === 'conductor') return;
+    const { onset, age } = st;
+    const k = onset ? 1 + 0.8 * Math.exp(-age * 10) * clamp(st.energy, 0, 1) : 1;
+    if (k === this._flashK) return; // 1 のまま（休符中）は毎フレーム触らない
+    this._flashK = k;
+    const apply = (o) => o && o.traverse((m) => {
+      if (m.isMesh && m.userData.baseColor) m.material.color.copy(m.userData.baseColor).multiplyScalar(k);
+    });
+    if (this.inst) apply(this.inst);
+    else { apply(this.held?.L); apply(this.held?.R); }
   }
 
   /** 下ろし中の手の位置：構えの位置 p と下ろしの位置 to を補間（rig px） */
@@ -793,10 +815,6 @@ export class Puppet {
     }
     const sNow = this._strikeMax ?? 0; this._strikeMax = 0;
     this._spineGaze(st, dt, 0.06 * st.energy + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
-    if (this.inst) { // 打面の明滅：baseColor × 倍率
-      const flash = onset ? 1 + 0.8 * Math.exp(-age * 10) * onset.velocity : 1;
-      this.inst.material.color.copy(this.inst.userData.baseColor).multiplyScalar(flash);
-    }
     this.headPivot.rotation.z += -0.06 * st.energy;
   }
 
