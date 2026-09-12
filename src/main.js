@@ -11,7 +11,6 @@ import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
-import { TENCHI_DOTS } from './logoDotsData.js';
 import { PianoRoll } from './pianoRoll.js';
 
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
@@ -39,19 +38,13 @@ let labels = new THREE.Group(); // パート名ラベル
 scene.add(labels);
 
 // ロゴ（画像 → ボクセル）。配置は仮置き：舞台の後方に立てる（2026-09-12。置き場所は後で決める）
-const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' },
+const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#1a5378': '#12405e', '#f2f6fa': '#9fb4c4' },
   inner: { chars: 'i', depth: 3, z0: -3 } }); // 内側は本体より 3 セル奥 // 文字の内側は 8 セル奥に引っ込めた白い板（紺・青が出っ張る）
 logo.position.set(0, 7, -12);
 logo.scale.setScalar(1.0);
 scene.add(logo);
 window.__logo = logo; // 位置合わせ用
 
-// 比較用（2026-09-12）：同じ文字を太ゴシックから起こしたドット絵版。上に並べて見比べる
-const logoB = dotPart(TENCHI_DOTS, { depth: 6, res: 1.4, name: 'tenchiDots', back: { '#1f7fc0': '#12689d', '#f2f6fa': '#9fb4c4' },
-  inner: { chars: 'i', depth: 3, z0: -3 } });
-logoB.position.set(0, 10.5, -12);
-scene.add(logoB);
-window.__logoB = logoB;
 let midiFileName = '';
 let currentMidi = null;
 

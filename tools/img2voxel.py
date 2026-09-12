@@ -20,9 +20,9 @@ from PIL import Image
 PALETTE = {
     'w': '#f2f6fa',  # 外縁の白フチ
     'n': '#163450',  # 濃紺（本体・上）
+    'm': '#1a5378',  # 中間色（紺と青のあいだ。3 段グラデーション。2026-09-12 ユーザー指定）
     'b': '#1f7fc0',  # 青（本体・下）
-    'd': '#12689d',  # 青の影
-    'i': '#e6edf4',  # 文字の内側を埋める白（少し奥に置く板。2026-09-12 ユーザー指定）
+    'i': '#e6edf4',  # 文字の内側を埋める白（少し奥に置く板）
 }
 BG_LUM = 232  # これより明るく彩度が低いセルは背景（透明）とみなす
 
@@ -97,13 +97,16 @@ def add_outline(rows, thickness):
     pad = thickness + 1
     W, H = len(rows[0]), len(rows)
     W2, H2 = W + pad * 2, H + pad * 2
-    # 元の白は落として、紺・青だけを本体として置き直す
+    # 元の白は落として、紺・青だけを本体として置き直す。縦位置で 3 段に塗り分ける（上 紺 / 中 中間色 / 下 青）
     grid = [['.'] * W2 for _ in range(H2)]
+    ys = [y for y in range(H) for x in range(W) if rows[y][x] in ('n', 'b')]
+    y0, y1 = (min(ys), max(ys)) if ys else (0, H - 1)
     for y in range(H):
         for x in range(W):
-            c = rows[y][x]
-            if c in ('n', 'b'):
-                grid[y + pad][x + pad] = c
+            if rows[y][x] not in ('n', 'b'):
+                continue
+            t = (y - y0) / max(1, y1 - y0)
+            grid[y + pad][x + pad] = 'n' if t < 0.36 else ('m' if t < 0.64 else 'b')
     # 外側（キャンバスの縁から本体に遮られずに届く空白）を塗り分ける
     outside = [[False] * W2 for _ in range(H2)]
     stack = [(0, 0)]
