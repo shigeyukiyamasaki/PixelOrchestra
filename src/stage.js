@@ -298,14 +298,14 @@ export function buildRisers(seats) {
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
     const front = new THREE.Mesh(
       new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ map: rockMap(rIn * (thMax - thMin), row.h), color: wallColor('#846a41'), side: THREE.DoubleSide }),
+      matC({ ...wallSkin(rIn * (thMax - thMin), row.h, '#846a41'), side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-      matC({ map: rockMap(rOut * (thMax - thMin), row.h), color: wallColor('#7a603a'), side: THREE.DoubleSide }),
+      matC({ ...wallSkin(rOut * (thMax - thMin), row.h, '#7a603a'), side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
@@ -315,14 +315,14 @@ export function buildRisers(seats) {
       const z1 = -Math.sqrt(Math.max(0, rIn * rIn - cx * cx));   // 内径との交点
       const z2 = -Math.sqrt(Math.max(0, rOut * rOut - cx * cx)); // 外径との交点
       for (const sx of [-cx, cx]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ map: rockMap(Math.abs(z2 - z1), row.h), color: wallColor('#715935'), side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ ...wallSkin(Math.abs(z2 - z1), row.h, '#715935'), side: THREE.DoubleSide }));
         side.position.set(sx, row.h / 2, (z1 + z2) / 2);
         side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
         side.renderOrder = ro + 0.1; risers.add(side);
       }
     } else {
       for (const th of [thMin, thMax]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ map: rockMap(rOut - rIn, row.h), color: wallColor('#715935'), side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ ...wallSkin(rOut - rIn, row.h, '#715935'), side: THREE.DoubleSide }));
         const rm = (rIn + rOut) / 2;
         side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
         side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
@@ -395,98 +395,31 @@ function grassTexture() {
   return tex;
 }
 
-// 岩肌（スーパーファミコン風）：グレースケールで描き、材質の色（土色）を掛けて染める。
-// ドットは実寸固定（1 unit = ROCK_DPU ドット＝草原の奥行き方向のドットと同じ大きさ）。
-// 壁ごとに伸縮させず、タイルを実寸のまま敷き詰める（2026-09-13 ユーザー指定）
-const ROCK_DPU = 6;            // 1 unit あたりのドット数（草原の床は 192 ドット ÷ 32 unit = 6）
-const ROCK_N = 48;             // タイルのドット数 → 1 タイル = 48 / 6 = 8 unit（壁の高さ 1〜4 を割り切る）
-const ROCK_TILE = ROCK_N / ROCK_DPU;
-let rockTex = null;
-function rockTexture() {
-  if (rockTex) return rockTex;
-  const DOT = 6, N = ROCK_N, S = N * DOT;
-  const c = document.createElement('canvas');
-  c.width = S; c.height = S;
-  const g = c.getContext('2d');
-  const px = (x, y, col) => { g.fillStyle = col; g.fillRect((((x % N) + N) % N) * DOT, (((y % N) + N) % N) * DOT, DOT, DOT); };
-  let seed = 913 >>> 0;
-  const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
-
-  // 明度だけで描き、材質の土色を掛けて染める（色合いは今までと同じまま模様だけ乗る）
-  const CREVICE = '#6e6e6e', EDGE = '#9e9e9e', MID = '#cacaca', LIGHT = '#e8e8e8', HI = '#ffffff';
-  g.fillStyle = EDGE; g.fillRect(0, 0, S, S);      // 下地（塊の間から覗く土）
-
-  const ell = (cx, cy, rx, ry, fn) => {
-    for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++)
-      for (let dx = -Math.ceil(rx); dx <= Math.ceil(rx); dx++) {
-        const d = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
-        if (d <= 1) fn(cx + dx, cy + dy, dx, dy, d);
-      }
-  };
-  // 塊を 1 つ描く。先に一回り大きい溝色を置いてから本体を重ねるので、
-  // 後から描いた塊が前の塊に食い込み、無造作に入り組んだ見た目になる（2026-09-13 参考画像）
-  const lump = (cx, cy, rx, ry) => {
-    ell(cx, cy, rx + 0.6, ry + 0.6, (x, y) => px(x, y, CREVICE));   // 輪郭（溝）
-    ell(cx, cy, rx, ry, (x, y, dx, dy, d) => {
-      let col = MID;
-      if (dy > ry * 0.3 || (d > 0.55 && dy > 0)) col = EDGE;         // 下側：影
-      else if (dy < -ry * 0.3) col = LIGHT;                          // 上側：光
-      px(x, y, col);
-    });
-    px(cx - Math.round(rx * 0.35), cy - Math.round(ry * 0.6), HI);   // 上面のハイライト
-  };
-
-  // 大きさをばらばらにして無造作に散らす。縦長寄り（ry は rx の 1.3〜2.4 倍）。
-  // 数を多めにして塊で埋め、暗いのは塊どうしの境目だけにする
-  for (let i = 0; i < 70; i++) {
-    const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N);
-    const rx = 1.2 + rnd() * rnd() * 3.4;                            // 小さめが多く、たまに大きい
-    lump(cx, cy, rx, rx * (1.3 + rnd() * 1.1));
-  }
-  for (let i = 0; i < 60; i++) {                                     // ざらつき
-    const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
-    px(x, y, rnd() < 0.5 ? EDGE : LIGHT);
-  }
-  rockTex = new THREE.CanvasTexture(c);
-  rockTex.magFilter = THREE.NearestFilter; rockTex.minFilter = THREE.NearestFilter;
-  rockTex.wrapS = rockTex.wrapT = THREE.RepeatWrapping;
-  return rockTex;
-}
-
-// 【確認用】?wall=<画像URL> を付けると、壁を描画ではなくその画像のループにする（2026-09-13 ユーザー依頼）。
-// 画像は色をそのまま出したいので、材質の色は白にする
-const WALL_IMG = new URLSearchParams(location.search).get('wall');
+// 壁の土（草原の床の時だけ使う）：ドット絵の画像を 1 unit = WALL_DPU ドットの実寸でループさせる。
+// 絵は参考画像（2026-09-13 ユーザー提供）から元のドットを復元し、左右がつながる窓を切り出したもの。
+// ?wall=<画像URL> で差し替えて試せる
+const WALL_DPU = 6;            // 1 unit あたりのドット数（草原の床の 192 ドット ÷ 32 unit と同じ）
+const WALL_IMG = new URLSearchParams(location.search).get('wall') || 'assets/wall_dirt.png';
 let wallImgTex = null;
-if (WALL_IMG) {
-  // 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
-  wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
-    t.needsUpdate = true;
-    if (stageCtx && stageCtx.seats) buildRisers(stageCtx.seats);
-  });
-  wallImgTex.magFilter = THREE.NearestFilter; wallImgTex.minFilter = THREE.NearestFilter;
-  wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
-}
-export const wallColor = (c) => (WALL_IMG ? '#ffffff' : c);
+// 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
+wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
+  t.needsUpdate = true;
+  if (stageCtx && stageCtx.seats) buildRisers(stageCtx.seats);
+});
+wallImgTex.magFilter = THREE.NearestFilter; wallImgTex.minFilter = THREE.NearestFilter;
+wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
 
-// 岩肌を実寸で敷くためのテクスチャ（伸縮させないので repeat は端数のまま。端で切れるだけ）
-function rockMap(uLen, vLen) {
-  if (wallImgTex) {
-    // 画像モード：画像も 1 unit = ROCK_DPU ドットの実寸で敷く（伸縮させない）。
-    // 縦は絵の上端（草との境目）を壁の上端に合わせ、足りない下側は切る
-    const m = wallImgTex.clone(); m.needsUpdate = true;
-    m.wrapS = m.wrapT = THREE.RepeatWrapping;
-    const img = wallImgTex.image;
-    const tw = (img ? img.width : ROCK_N) / ROCK_DPU, th = (img ? img.height : ROCK_N) / ROCK_DPU;
-    m.repeat.set(uLen / tw, vLen / th);
-    m.offset.set(0, 1 - vLen / th);
-    m.__disposable = true;
-    return m;
-  }
-  const m = rockTexture().clone(); m.needsUpdate = true;
+/** 壁 1 枚ぶんの材質。草原の時は土の絵、板目の時は従来どおりの無地（2026-09-13 ユーザー指定） */
+function wallSkin(uLen, vLen, col) {
+  const img = wallImgTex.image;
+  if (!img || stageCtx.groundTex !== stageCtx.grassTex) return { color: col };
+  const m = wallImgTex.clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  m.repeat.set(uLen / ROCK_TILE, vLen / ROCK_TILE);
-  m.__disposable = true;          // 作り直しのたびに捨てる（天面の地面テクスチャは共有なので捨てない。r128 の Texture に userData は無い）
-  return m;
+  const tw = img.width / WALL_DPU, th = img.height / WALL_DPU;
+  m.repeat.set(uLen / tw, vLen / th);
+  m.offset.set(0, 1 - vLen / th);   // 絵の上端（草との境目）を壁の上端に合わせ、足りない下側は切る
+  m.__disposable = true;            // 作り直しのたびに捨てる（天面の地面テクスチャは共有なので捨てない）
+  return { map: m, color: '#ffffff' };   // 絵の色をそのまま出す
 }
 
 function plankTexture() {
