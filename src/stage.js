@@ -62,6 +62,11 @@ export const WALL_HEIGHT = 14;
 export const WALL_BASE_Y = 3.2; // 着弾ライン（後列ひな壇の少し上）
 
 const deg = (d) => (d * Math.PI) / 180;
+// 打楽器の後ろに置く、奏者のいないひな壇（キャラクター等を置く想定。2026-09-13 ユーザー指定）。
+// ここに足すだけで段が増える。r = 中心からの半径、h = 高さ、span = 扇の開き [deg]
+export const BACK_ROWS = [
+  { r: 27, h: 4.0, span: 110 },
+];
 const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
 let stageCtx = null;         // createStage() で設定（buildRisers から使う）
@@ -218,14 +223,18 @@ export function buildRisers(seats) {
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
   risers.clear();
 
-  // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする
+  // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする。
+  // 奏者のいない後方の段（BACK_ROWS）はさらに奥なので、打楽器より先に描く
   const order = { percussion: -33, brass: -32, woodwind: -31 };
-  for (const fam of ['percussion', 'brass', 'woodwind']) {
-    const row = ROWS[fam];
+  const rows = [
+    ...BACK_ROWS.map((row, i) => ({ row, ro: -34 - i, col: '#b2b2b2' })),
+    ...['percussion', 'brass', 'woodwind'].map((fam) => ({ row: ROWS[fam], ro: order[fam], fam,
+      col: fam === 'percussion' ? '#bfbfbf' : fam === 'brass' ? '#cbcbcb' : '#d8d8d8' })), // 天面は床と同じ板目（白〜灰の倍率で奥ほど少し暗く。2026-09-10 ユーザー指定：床と同じ色味。同日「少し暗く」で 10% 減）
+  ];
+  for (const { row, ro, fam, col } of rows) {
     if (row.h <= 0) continue;
     const rIn = row.r - RISER_HALF, rOut = row.r + RISER_HALF;
-    const ro = order[fam];
-    // この段（高さ h・半径帯）に座っている奏者の角度範囲
+    // この段（高さ h・半径帯）に座っている奏者の角度範囲（奏者のいない段は span をそのまま使う）
     let thMin = Infinity, thMax = -Infinity;
     for (const seat of seats) for (const p of seat.positions) {
       const pz = p.z - SEAT_SHIFT_Z; // 座席は奥へずらしてあるので戻して角度を測る
@@ -238,7 +247,6 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）
     const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
     thMin = -half; thMax = half;
-    const col = fam === 'percussion' ? '#bfbfbf' : fam === 'brass' ? '#cbcbcb' : '#d8d8d8'; // 天面は床と同じ板目（白〜灰の倍率で奥ほど少し暗く。2026-09-10 ユーザー指定：床と同じ色味。同日「少し暗く」で 10% 減）
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
