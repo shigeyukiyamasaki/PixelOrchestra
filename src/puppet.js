@@ -736,8 +736,11 @@ export class Puppet {
   }
 
   // ---- 打楽器：構え位置→打点。直前に振りかぶり、打った瞬間に打点、戻る。マレットは打面を向く ----
-  _percussion(st, { dt }) {
+  _percussion(st, { dt, settings }) {
     const { onset, next, age, toNext, pitchNorm } = st;
+    // 振りかぶり・構えの高さ・シンバルの回しは velocity 由来なので、そのままでは「強弱の反応」スライダーが効かない。
+    // ここでスライダーを掛ける（上限 2：これ以上構えを高くすると腕が届かなくなる）。2026-09-12 ユーザー指定
+    const vScale = (x) => clamp(x * (settings?.dynResponse ?? 1), 0, 2);
     const cfg = this.cfg, p3 = this.p3;
     const strike = p3?.strike || cfg.strike;
     const fixedHand = p3?.fixedHand || cfg.fixedHand;
@@ -750,14 +753,15 @@ export class Puppet {
       const sp = strike?.[side];
       if (!sp) { if (fixedHand?.[side]) this.setHand(side, fixedHand[side], dt, 10); continue; }
       let s = 0, ant = 0, vel = 0.5, pn = pitchNorm;
-      if (onset && (both || armOf(onset) === side)) { vel = onset.velocity; s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
-      if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * next.velocity; vel = Math.max(vel, next.velocity); if (spread) pn = normOf(next); }
+      if (onset && (both || armOf(onset) === side)) { vel = vScale(onset.velocity); s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
+      if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * vScale(next.velocity); vel = Math.max(vel, vScale(next.velocity)); if (spread) pn = normOf(next); }
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
       let target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
       // シンバルの大きな一打：合わせた後に両手を上に上げて大きく腕を回す（強さに応じた振り幅、約 0.9 秒で構えへ戻る。2026-09-11 ユーザー指定）
       if (both && onset && cfg.flourish) {
+        // ここだけスライダーを掛けない：掛けると弱い音でも回してしまい「強い音の時だけ大きく回す」という作りが崩れる（2026-09-12）
         const amp = clamp((onset.velocity - 0.3) / 0.5, 0, 1);                   // 弱い音（vel < 0.3）では回さず、0.8 以上で最大
         const T = 0.9, pf = (age - 0.05) / T;
         if (amp > 0 && pf > 0 && pf < 1) {
