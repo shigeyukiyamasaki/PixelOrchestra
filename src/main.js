@@ -5,7 +5,7 @@
  * UI・再生クロック・シーン組み立て。描画ロジックは「時刻 t → 状態」の純関数で書き、
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
-import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName } from './midiEngine.js';
+import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
@@ -206,7 +206,11 @@ function settings() {
 
 // トラック → 楽器の手動割当（MIDI ファイル名ごと。値は楽器名。旧形式のファミリー名も engine 側で受け付ける）
 function loadFamilyOverrides(name) {
-  try { return JSON.parse(localStorage.getItem(FAMILY_KEY) || '{}')[name] || {}; } catch { return {}; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(FAMILY_KEY) || '{}')[name] || {};
+    // 旧名 'violin'（1st/2nd に分ける前）の保存値は捨てて自動判定に戻す。残すと 2nd バイオリンまで 1st になる（2026-09-12）
+    return Object.fromEntries(Object.entries(saved).filter(([, v]) => normalizeVariant(v) === v));
+  } catch { return {}; }
 }
 function saveFamilyOverride(name, key, family) {
   let all = {};

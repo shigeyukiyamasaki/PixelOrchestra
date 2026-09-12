@@ -514,7 +514,8 @@ function withScroll(body, scroll, pos, axis = 'x') {
 export const INSTRUMENT = {
   // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
   // 胴：ネック＋渦巻き ≒ 6：4（実物の比率）。駒は x=10（基本座標 -2）
-  violin: () => withScroll(makePart(28, 16, 14, 8, (d) => {
+  // 1st / 2nd はどちらも同じ絵（violin1 を本体にして violin2 はエイリアス。2026-09-12 ユーザー指定で楽器の選択肢を分けた）
+  violin1: () => withScroll(makePart(28, 16, 14, 8, (d) => {
     d.disc(7, 8, 6, C.wood); d.disc(14, 8, 4, C.wood); d.r(10, 5, 5, 7, C.wood);   // 胴（下部・上部のふくらみ、くびれ）
     d.p(11, 4, null); d.p(11, 12, null); d.p(12, 4, null); d.p(12, 12, null);     // くびれの切れ込み
     d.r(3, 5, 1, 7, '#a0623c'); d.r(13, 6, 1, 5, '#a0623c');                       // 艶
@@ -802,8 +803,11 @@ export const INSTRUMENT = {
   }, { res: 2, depth: 12, z0: 0,
        side: (d) => { d.r(3, 0, 6, 4, F); d.r(4, 0, 4, 32, F); d.r(5, 0, 2, 68, F); for (let y = 40; y < 68; y++) { const w = 4 + Math.round((y - 40) * 8 / 28); d.r(Math.round(6 - w / 2), y, w, 1, F); } d.r(0, 68, 12, 4, F); },
        top: (d) => { d.r(2, 3, 10, 6, F); d.r(10, 0, 34, 12, F); } }),
+  // 2nd バイオリンは 1st と同じ絵（2026-09-12）。旧データの 'violin' も同じ
   baton: () => makePart(24, 1, 0, 0, (d) => { d.r(0, 0, 24, 1, C.ivory); d.r(0, 0, 4, 1, C.black); }, { res: 2, depth: 1, z0: -0.5 }),
 };
+INSTRUMENT.violin2 = INSTRUMENT.violin1;
+INSTRUMENT.violin = INSTRUMENT.violin1;
 
 /**
  * パート名ラベル（ドット風の小さな文字板）。常にカメラを向く Sprite。

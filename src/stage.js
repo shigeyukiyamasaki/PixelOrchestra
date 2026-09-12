@@ -28,7 +28,7 @@ export const ROWS = {
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
 export const SECTION_SIZE = {
-  violin: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 2, rows: 2 },
+  violin1: { cols: 3, rows: 3 }, violin2: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 2, rows: 2 },
   piccolo: { cols: 1, rows: 1 }, flute: { cols: 2, rows: 1 }, oboe: { cols: 2, rows: 1 }, clarinet: { cols: 2, rows: 1 }, bassoon: { cols: 2, rows: 1 },
   horn: { cols: 2, rows: 2 }, trumpet: { cols: 3, rows: 1 }, trombone: { cols: 3, rows: 1 }, tuba: { cols: 1, rows: 1 },
 };
@@ -40,7 +40,7 @@ function sizeOf(track) {
 }
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
-const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'] };
+const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {

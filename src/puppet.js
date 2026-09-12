@@ -25,7 +25,7 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 楽器の大きさ（体との比率）。弦・木管・金管は実物に近い比率まで大きく（2026-09-10 ユーザー指定）。
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
-const WOOD_INSTRUMENTS = new Set(['violin', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
+const WOOD_INSTRUMENTS = new Set(['violin1', 'violin2', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
 // 楽器ごとの倍率（ファミリーの既定を上書き）。基準は「実物の 1.25 倍」（2026-09-11 ユーザー確定。1px ≈ 4cm、指揮者 42.5px = 170cm で実測して揃えた）：
 //   弦：バイオリン/ヴィオラは 1.25 のまま、チェロ 1.25（絵の胴が横に太いので 1.4 だと大きく見える。2026-09-11）、コントラバス 1.3（実物 185cm。1.5 だと胴が体を隠すので幅基準で妥協）。木管：フルート 1.05・ピッコロ/オーボエ 1.0・クラリネット 1.05・ファゴット 1.25 のまま
 //   金管：ホルン 1.25 のまま・トランペット 0.9・トロンボーン 1.6（実物 120cm）・チューバ 1.35。鍵盤：ハープ 1.5（実物 175cm）・ピアノ 1.17・チェレスタ 1.2
@@ -140,7 +140,7 @@ const BASSDRUM_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.
 
 const VARIANT = {
   // contactZ = 駒の上の弦の高さ、leftHandZ = 指板の表面＋弦（楽器ローカル px、表板の厚みは絵の depth から）。指先はここに置く
-  violin:     { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [4, 0.3], // 弓の接点は胴の上端（ネック側）と駒の中間（2026-09-11 ユーザー指定）
+  violin1:    { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [4, 0.3], // 弓の接点は胴の上端（ネック側）と駒の中間（2026-09-11 ユーザー指定）
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.3, leftHandZ: 1.4 } }, // z 6→8：首にめり込んで見えるので前へ。y 27→25.5：あご側を肩に乗せる（2026-09-11）
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0.25, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [5, 0],
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 } },
@@ -211,6 +211,8 @@ const VARIANT = {
                 p3: { pos: [4, 0, 14], rot3: [-0.12, 0.7, 0], harp: true } },
   conductor:  { held: { R: 'baton' } },
 };
+VARIANT.violin2 = VARIANT.violin1; // 2nd バイオリンは 1st と同じ構え（2026-09-12）
+VARIANT.violin = VARIANT.violin1;  // 旧データ（楽器の割当が 'violin' で保存されている場合）
 
 export class Puppet {
   /**

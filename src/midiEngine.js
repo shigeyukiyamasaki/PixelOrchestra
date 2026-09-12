@@ -13,7 +13,9 @@ export const FAMILY_LABEL = {
 };
 // 楽器（バリアント）の一覧：割り当て UI の選択肢。family はここから導出する（単一の正解）
 export const VARIANTS = {
-  violin:     { family: 'strings',    label: 'バイオリン' },
+  // 2026-09-12：バイオリンを 1st / 2nd に分けた。旧データの 'violin' は 1st として扱う（normalizeVariant）
+  violin1:    { family: 'strings',    label: '1st バイオリン' },
+  violin2:    { family: 'strings',    label: '2nd バイオリン' },
   viola:      { family: 'strings',    label: 'ヴィオラ' },
   cello:      { family: 'strings',    label: 'チェロ' },
   contrabass: { family: 'strings',    label: 'コントラバス' },
@@ -57,8 +59,9 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'tuba',         keywords: ['tuba', 'tubas'] },
   { id: 'flugelhorn',   keywords: ['flugelhorn', 'flugel', 'flügelhorn'] },
   // 弦
-  { id: 'violin1',      keywords: ['violin 1', 'violin i', 'vln 1', 'vln1', 'vn1', 'vn 1', '1st violin', 'violins 1'] },
+  // 2nd を先に見る：'violin i' は 'violin ii' にも部分一致するので順番が逆だと 2nd が 1st になる（2026-09-12）
   { id: 'violin2',      keywords: ['violin 2', 'violin ii', 'vln 2', 'vln2', 'vn2', 'vn 2', '2nd violin', 'violins 2'] },
+  { id: 'violin1',      keywords: ['violin 1', 'violin i', 'vln 1', 'vln1', 'vn1', 'vn 1', '1st violin', 'violins 1'] },
   { id: 'violin1',      keywords: ['violin', 'vln', 'vn'] },
   { id: 'viola',        keywords: ['viola', 'vla', 'violas'] },
   { id: 'cello',        keywords: ['cello', 'vc', 'vlc', 'cellos', 'celli'] },
@@ -118,12 +121,15 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'celesta',      keywords: ['チェレスタ'] },
 ];
 
+/** 旧データの楽器名を今の名前に直す（保存済みの割当を読む時に通す） */
+export function normalizeVariant(v) { return v === 'violin' ? 'violin1' : v; }
+
 // MIDIOrchestra の楽器 ID → PixelOrchestra のバリアント（絵・動きの単位）
 // 専用スプライトが無いものは近い見た目・同じ動きのものに寄せる（TODO: 鍵盤打楽器のスプライト追加）
 const ORCH_ID_TO_VARIANT = {
   englishhorn: 'oboe', piccolo: 'piccolo', flute: 'flute', oboe: 'oboe', bassclarinet: 'clarinet', clarinet: 'clarinet', bassoon: 'bassoon',
   horn: 'horn', trumpet: 'trumpet', trombone: 'trombone', tuba: 'tuba', flugelhorn: 'trumpet',
-  violin1: 'violin', violin2: 'violin', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
+  violin1: 'violin1', violin2: 'violin2', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
   marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'xylophone', tubularbells: 'snare',
   triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'cymbal', suspendedcymbal: 'cymbal', cymbals: 'cymbal', hihat: 'cymbal',
@@ -169,7 +175,7 @@ function variantFromProgram(family, program) {
       if (program === 43) return 'contrabass';
       if (program === 42) return 'cello';
       if (program === 41) return 'viola';
-      return 'violin';
+      return 'violin1';
     case 'woodwind':
       if (program === 72) return 'piccolo';
       if (program === 73) return 'flute';
@@ -190,7 +196,7 @@ function variantFromProgram(family, program) {
       if (program === 8) return 'celesta';
       return 'piano';
   }
-  return 'violin';
+  return 'violin1';
 }
 
 // ファミリー別の色相（ノート色・足元の光の基準）
