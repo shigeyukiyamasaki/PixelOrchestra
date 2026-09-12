@@ -611,13 +611,18 @@ export class Puppet {
     if (!active.length && age > 0.5) lift = 2.5;
     if (next && !active.length && toNext < 0.25) lift = 2.5 * (toNext / 0.25);
     this.lift = approach(this.lift, lift, 14, dt);
+    // 弓圧：強く弾くほど弓を弦へ押し付ける（lift の逆向き）。押し付けた反動で上体が沈む（2026-09-12 ユーザー指定）。
+    // energy を直接使うと音の頭で跳ぶので rate 6（≒170 ms）で均す。楽器を下ろしている間は掛けない
+    const wantPress = active.length ? clamp(energy, 0, 3) * (1 - (this._rest ?? 0)) : 0;
+    this._press = approach(this._press ?? 0, wantPress, 6, dt);
+    const nOff = this.lift - 0.3 * this._press; // 弦から離す（+）／弦へ押し込む（−）
 
     // 接点（駒）と弓の向き・弦から離れる向き（2D は平面、3D は楽器の姿勢から）
     const C = instPoint(this.inst, bow.contact[0], bow.contact[1], p3?.contactZ ?? 0); // 3D では弦のある正面側
     let d, n;
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
-    const handR = [C[0] - d[0] * s + n[0] * this.lift, C[1] - d[1] * s + n[1] * this.lift, C[2] - d[2] * s + n[2] * this.lift];
+    const handR = [C[0] - d[0] * s + n[0] * nOff, C[1] - d[1] * s + n[1] * nOff, C[2] - d[2] * s + n[2] * nOff];
     // 手首あり：右手は前腕と一直線で、弓は手に対して直角に握る（実際の持ち方。2026-09-11 ユーザー確定 A）。
     // 手の向き＝前フレームの前腕の向き（肘→手首）から弓の方向 d の成分を除いたもの（弓と常に直角、前腕の延長に沿う。1 フレーム遅れで収束）。甲は弦の面の法線側（手のひらが弓に被さる）
     let rightHandDir = null;
@@ -654,6 +659,7 @@ export class Puppet {
     // bowPos はストローク中を連続的に動くので、この形なら段差が原理的に出ず、上体の揺れが弓と同期する
     const sNorm = clamp((this.bowPos - (sMin + sMax) / 2) / ((sMax - sMin) / 2 || 1), -1, 1);
     this.spine.rotation.z += MIRROR * 0.06 * sNorm * energy; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
+    this.spine.position.y -= 0.4 * this._press * PX; // 弓を押し付けた分だけ腰が沈む（強奏で体重が乗る）
     // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
     this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
     if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、頭がわずかに下がる（下ろしている間は解く）
