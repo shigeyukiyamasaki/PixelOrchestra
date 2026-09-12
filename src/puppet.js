@@ -187,7 +187,9 @@ const VARIANT = {
                 rest: { pos: [3, 12, 10], rot3: [0.5, 0.8, 0] } },
   // トロンボーン：左手はベル部とスライド部をつなぐ支柱（マウスピース寄り・左）、右手は外管の支柱（スライドと一緒に動く）
   trombone:   { inst: { pos: [1, 32.5, 4], rot: -0.1 }, hands: { L: [3, 3], R: [5, 0] }, kind: 'bell', slide: true, handDirs: { L: [0, 0, -1], R: [0, 0, 1] }, gazeDown: 0.0,
-                p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [3, 0.5, 3], R: [3.75, -0.625, 1.08] }, // 右手＝外管手前の支柱（銀のバー）の中心。スライド部は -60° ロールしているので
+                pole: { L: [0, -1, -0.6], R: [0, -1, -0.6] }, tiltBias: -0.25, // 肘は真下やや後ろ＋楽器を下げて構える（脇を締める。2026-09-12 ユーザー指定）
+                p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [1, -0.625, 1.08], R: [3.75, -0.625, 1.08] }, // 左手はベル管ではなくスライドの手元（マウスピース寄り）を持つ。
+                // 右手＝外管手前の支柱（銀のバー）の中心。スライド部は -60° ロールしているので
                 // 絵の行数から素直に計算すると合わない。実測した支柱の箱の中心（楽器ローカル px）を使う（2026-09-12）
                 rest: { pos: [1, 14, 8], rot3: [0, 0, -1.15] } } }, // 右手はロール後の上の外管（右へ 0.8）
   tuba:       { inst: { pos: [3, 6, 4], rot: 0 }, hands: { L: [-2, 12], R: [4, 14] }, kind: 'tuba', handDirs: { L: [0, 0, -1], R: [0, -1, 0] }, gazeDown: 0.05,
@@ -720,7 +722,7 @@ export class Puppet {
         case 'flute':   target = (-0.15 + 0.3 * pitchNorm) * (0.3 + 0.7 * energy); break;
         case 'reed':    target = -0.3 * energy - 0.15 * this._lift; break;   // ベルが持ち上がる
         case 'bassoon': target = 0.12 * energy; break;
-        case 'bell':    target = this._lift; break;                            // トランペット/トロンボーン：ベルが上がる
+        case 'bell':    target = (cfg.tiltBias ?? 0) + this._lift; break;      // トランペット/トロンボーン：ベルが上がる（tiltBias で構えの角度を下げる）
         case 'horn':    target = -0.4 * this._lift; break;
         case 'tuba':    target = 0.1 * this._lift; break;
       }
@@ -734,7 +736,8 @@ export class Puppet {
     if (cfg.slide) {
       // 高い音ほど手前（1 ポジション側）、低い音ほど伸ばす [基本 px]。
       // 伸ばす側は腕の長さで頭打ちなので、手前に引く側をマイナスまで引いて差を稼ぐ（2026-09-12 ユーザー指定）
-      this._slide = approach(this._slide, -2.5 + (1 - pitchNorm) * 8.5, 10, dt);
+      // 左手をスライドの手元へ移した分、引き切った時に右手と重ならないよう range を前へずらす（2026-09-12）
+      this._slide = approach(this._slide, -0.5 + (1 - pitchNorm) * 8.5, 10, dt);
       const sl = inst?.userData.slide;
       if (sl) sl.position.x = sl.userData.baseX + this._slide * PX; // 外管も一緒に動かす（右手と同じ量）
     }
