@@ -58,7 +58,7 @@ export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を�
 // 手前は指揮者（z = -2.1）の背後 5 ほど。ぼかしは無し（縁ははっきり出る）
 export const FLOOR_X_HALF = 18;   // 左右の縁（±x）
 export const FLOOR_Z_FRONT = 3;   // 手前の縁
-export const FLOOR_Z_BACK = -31;  // 奥の縁
+export const FLOOR_BACK_R = 29.5; // 奥の縁は一番奥のひな壇の外径（29）に沿わせた弧（2026-09-13 ユーザー指定「雛壇のところでカット」）
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
@@ -135,12 +135,21 @@ export function createStage(container) {
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
   // 円の縁は外側 25% でなだらかに透明にする（alphaMap の放射状グラデーション。2026-09-10）
-  const floorW = FLOOR_X_HALF * 2, floorD = FLOOR_Z_FRONT - FLOOR_Z_BACK;
+  // 床の形：手前と左右はまっすぐ、奥は一番奥のひな壇の外径に沿った弧（= ひな壇のところでカット）。
+  // 平面 shape の y は、rotation.x = -90° で世界の -z になる
+  const X = FLOOR_X_HALF, cy = -SEAT_SHIFT_Z, R = FLOOR_BACK_R;
+  const yEdge = cy + Math.sqrt(Math.max(0, R * R - X * X)); // 左右の辺と弧が交わる位置
+  const sh = new THREE.Shape();
+  sh.moveTo(-X, -FLOOR_Z_FRONT);
+  sh.lineTo(X, -FLOOR_Z_FRONT);
+  sh.lineTo(X, yEdge);
+  sh.absarc(0, cy, R, Math.atan2(yEdge - cy, X), Math.atan2(yEdge - cy, -X), false);
+  sh.lineTo(-X, -FLOOR_Z_FRONT);
   const floorMap = floorTex.clone(); floorMap.needsUpdate = true;
-  floorMap.repeat.set(floorW / 40, floorD / 32); // 板目の大きさを楕円だった頃（横 40・奥行き 32 に 1 枚）と揃える
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), stageMat({ map: floorMap, color: '#e6e6e6' }));
+  floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
+  floorMap.repeat.set(1 / 40, 1 / 32); // ShapeGeometry の UV は座標そのままなので、板目の大きさを楕円だった頃と揃える
+  const floor = new THREE.Mesh(new THREE.ShapeGeometry(sh, 64), stageMat({ map: floorMap, color: '#e6e6e6' }));
   floor.rotation.x = -Math.PI / 2;
-  floor.position.z = (FLOOR_Z_FRONT + FLOOR_Z_BACK) / 2;
   addStage(floor, -40);
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
