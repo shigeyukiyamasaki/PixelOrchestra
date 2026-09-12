@@ -330,7 +330,7 @@ export function buildRisers(seats) {
       }
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.05, 6, segs * 2, thMax - thMin), matC({ color: '#6b5430' }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.07, 6, segs * 2, thMax - thMin), matC({ color: '#b08a55' })); // 草の下の明るいフチ（2026-09-13 参考画像）
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
   }
@@ -393,40 +393,56 @@ function grassTexture() {
 }
 
 // 岩肌（スーパーファミコン風）：グレースケールで描き、材質の色（土色）を掛けて染める。
-// 四辺が繋がるように、はみ出した分を反対側へも描いて敷き詰められるようにする
+// ドットは実寸固定（1 unit = ROCK_DPU ドット＝草原の奥行き方向のドットと同じ大きさ）。
+// 壁ごとに伸縮させず、タイルを実寸のまま敷き詰める（2026-09-13 ユーザー指定）
+const ROCK_DPU = 6;            // 1 unit あたりのドット数（草原の床は 192 ドット ÷ 32 unit = 6）
+const ROCK_N = 48;             // タイルのドット数 → 1 タイル = 48 / 6 = 8 unit（壁の高さ 1〜4 を割り切る）
+const ROCK_TILE = ROCK_N / ROCK_DPU;
 let rockTex = null;
 function rockTexture() {
   if (rockTex) return rockTex;
-  const S = 128, DOT = 2;
+  const DOT = 6, N = ROCK_N, S = N * DOT;
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
   const g = c.getContext('2d');
-  const N = S / DOT;
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect((((x % N) + N) % N) * DOT, (((y % N) + N) % N) * DOT, DOT, DOT); };
   let seed = 913 >>> 0;
   const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
-  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(((x % N) + N) % N * DOT, ((y % N) + N) % N * DOT, DOT, DOT); };
-  const rect = (x, y, w, h, col) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, col); };
 
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {          // ざらつき
-    const r = rnd();
-    if (r < 0.16) px(x, y, '#e2e2e2');
-    else if (r < 0.24) px(x, y, '#cfcfcf');
+  // 明度だけで描き、材質の土色を掛けて染める（色合いは今までと同じまま模様だけ乗る）
+  const CREVICE = '#6e6e6e', EDGE = '#9e9e9e', MID = '#cacaca', LIGHT = '#e8e8e8', HI = '#ffffff';
+  g.fillStyle = EDGE; g.fillRect(0, 0, S, S);      // 下地（塊の間から覗く土）
+
+  const ell = (cx, cy, rx, ry, fn) => {
+    for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++)
+      for (let dx = -Math.ceil(rx); dx <= Math.ceil(rx); dx++) {
+        const d = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+        if (d <= 1) fn(cx + dx, cy + dy, dx, dy, d);
+      }
+  };
+  // 塊を 1 つ描く。先に一回り大きい溝色を置いてから本体を重ねるので、
+  // 後から描いた塊が前の塊に食い込み、無造作に入り組んだ見た目になる（2026-09-13 参考画像）
+  const lump = (cx, cy, rx, ry) => {
+    ell(cx, cy, rx + 0.6, ry + 0.6, (x, y) => px(x, y, CREVICE));   // 輪郭（溝）
+    ell(cx, cy, rx, ry, (x, y, dx, dy, d) => {
+      let col = MID;
+      if (dy > ry * 0.3 || (d > 0.55 && dy > 0)) col = EDGE;         // 下側：影
+      else if (dy < -ry * 0.3) col = LIGHT;                          // 上側：光
+      px(x, y, col);
+    });
+    px(cx - Math.round(rx * 0.35), cy - Math.round(ry * 0.6), HI);   // 上面のハイライト
+  };
+
+  // 大きさをばらばらにして無造作に散らす。縦長寄り（ry は rx の 1.3〜2.4 倍）。
+  // 数を多めにして塊で埋め、暗いのは塊どうしの境目だけにする
+  for (let i = 0; i < 70; i++) {
+    const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N);
+    const rx = 1.2 + rnd() * rnd() * 3.4;                            // 小さめが多く、たまに大きい
+    lump(cx, cy, rx, rx * (1.3 + rnd() * 1.1));
   }
-  for (let i = 0; i < 26; i++) {                                     // 岩の面（大きめの明暗の塊）
-    const w = 4 + Math.floor(rnd() * 10), h = 3 + Math.floor(rnd() * 7);
+  for (let i = 0; i < 60; i++) {                                     // ざらつき
     const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
-    rect(x, y, w, h, rnd() < 0.5 ? '#eaeaea' : '#d5d5d5');
-    rect(x, y + h, w, 1, '#a9a9a9');                                 // 下側に影
-    rect(x, y, 1, h, '#f4f4f4');                                     // 左に光
-  }
-  for (let i = 0; i < 14; i++) {                                     // ひび（折れ線）
-    let x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
-    const len = 6 + Math.floor(rnd() * 14);
-    for (let k = 0; k < len; k++) {
-      px(x, y, '#9c9c9c');
-      if (rnd() < 0.5) x += rnd() < 0.5 ? 1 : -1; else y += rnd() < 0.5 ? 1 : -1;
-    }
+    px(x, y, rnd() < 0.5 ? EDGE : LIGHT);
   }
   rockTex = new THREE.CanvasTexture(c);
   rockTex.magFilter = THREE.NearestFilter; rockTex.minFilter = THREE.NearestFilter;
@@ -434,12 +450,11 @@ function rockTexture() {
   return rockTex;
 }
 
-// 岩肌を指定の大きさで敷くためのテクスチャ（1 タイル = ROCK_TILE unit）
-const ROCK_TILE = 2.2;
+// 岩肌を実寸で敷くためのテクスチャ（伸縮させないので repeat は端数のまま。端で切れるだけ）
 function rockMap(uLen, vLen) {
   const m = rockTexture().clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  m.repeat.set(Math.max(1, Math.round(uLen / ROCK_TILE)), Math.max(1, Math.round(vLen / ROCK_TILE)));
+  m.repeat.set(uLen / ROCK_TILE, vLen / ROCK_TILE);
   m.__disposable = true;          // 作り直しのたびに捨てる（天面の地面テクスチャは共有なので捨てない。r128 の Texture に userData は無い）
   return m;
 }
