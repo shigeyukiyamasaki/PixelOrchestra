@@ -27,6 +27,12 @@
 ポート **8766 固定**（`python3 tools/serve.py`＝キャッシュ無効版。ES module の import はキャッシュバスターが効かないため）。`?midi=samples/test_orchestra.mid` で自動読み込み。
 Chrome MCP で確認する時はタブを前面化してから（背面だと rAF が止まる）。
 
+**「何度かリロードしないとプレビューが真っ暗」は `tools/serve.py` が原因だった**（2026-09-12 解決）。
+Python 標準の `request_queue_size` は 5（listen backlog）、`protocol_version` は HTTP/1.0（keep-alive 無し＝ファイル 1 本ごとに新規接続）。
+module を十数本まとめて取りに来ると待ち行列があふれ、OS が接続を RST で落とす → `ERR_CONNECTION_RESET` → その module だけ import に失敗してアプリが起動しない。
+`request_queue_size = 128` と `HTTP/1.1` で解消（60 並列 ×3 回で reset 0。修正前は 60 中 8〜20 が reset）。
+**同種の「時々動かない」を見たら、まず DevTools の Network でローカルの js が失敗していないか見ること。**
+
 ### 未着手タスク
 
 - **打楽器の大きさを「実物の 1.25 倍」に揃える**（2026-09-11 記録。他の楽器は揃えた）。ティンパニ・スネア・グランカッサ・シロフォン・マリンバ・シンバルは現状 1.4〜1.7 倍で大きめ。
