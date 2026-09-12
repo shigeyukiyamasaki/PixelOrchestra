@@ -369,6 +369,10 @@ export class MidiEngine {
       let e = 0, p = 0; // p: 次に処理するノート index
       const notes = tr.notes;
       let active = [];
+      // 統合された各トラック（source）ごとに「今そのトラックが鳴っているか」を追う。
+      // 鳴っていないトラックの CC は見ない（休んでいるトラックの CC が高いままだと、
+      // セクション全体の強弱がそこに張り付いてしまう。2026-09-12 ユーザー報告の原因）
+      const srcState = tr.sources.map((src) => ({ src, p: 0, active: [] }));
       for (let k = 0; k < len; k++) {
         const t = k / ENERGY_RATE;
         e *= ENERGY_DECAY;
@@ -385,9 +389,14 @@ export class MidiEngine {
         }
         // CC 由来の強弱：発音中だけ有効（休符で CC が高くても前傾しない）
         let d = e;
-        if (active.length) { // 統合された各トラックの CC の最大値
+        if (active.length) { // 今鳴っているトラックだけを見て、その CC の最大値を取る
           let cc = 0, useCC = false;
-          for (const src of tr.sources) {
+          for (const S of srcState) {
+            const sn = S.src.notes;
+            while (S.p < sn.length && sn[S.p].time < t + 1 / ENERGY_RATE) { S.active.push(sn[S.p]); S.p++; }
+            S.active = S.active.filter((n) => n.end > t);
+            if (!S.active.length) continue; // このトラックは休み
+            const src = S.src;
             if (src.dynResolved === 'cc1' || src.dynResolved === 'cc1+cc11') { cc = Math.max(cc, ccValueAt(src.cc1, t)); useCC = true; }
             if (src.dynResolved === 'cc11' || src.dynResolved === 'cc1+cc11') { cc = Math.max(cc, ccValueAt(src.cc11, t)); useCC = true; }
           }
