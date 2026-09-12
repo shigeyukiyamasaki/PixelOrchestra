@@ -687,7 +687,9 @@ export const INSTRUMENT = {
     const slide = makePart(22, 9, 0, 2, (d) => {
       d.r(0, 0, 20, 2, C.gold); d.r(0, 7, 20, 2, C.gold); d.r(18, 0, 3, 9, C.gold); d.r(20, 1, 1, 7, C.gold2); // 管・U 字
       d.r(1, 0, 1, 9, C.silver);                                                                // 支柱
-    }, { res: 2, depth: 4, z0: -2 });
+      // 奥行きは 2（管の太さと同じ）。4 だと上下 2 本の管の隙間が奥行きの面で埋まり、
+      // 斜めから見ると 1 枚の板に見える（2026-09-12 ユーザー指摘「ベルの下に板」）
+    }, { res: 2, depth: 2, z0: -1 });
     slide.position.set(6 * VOX, 0, 0);
     slide.userData.baseX = 6 * VOX;
     body.add(slide);
