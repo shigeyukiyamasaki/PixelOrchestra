@@ -53,12 +53,12 @@ const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]
 export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
 export const CONDUCTOR_Z = -2.1; // 指揮台（2.2 角）と指揮者の z。+z = 客席側。-3.2 から指揮台の半分（1.1）手前へ（2026-09-10 ユーザー指定）
 export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を奥へ平行移動する量 [unit]（2026-09-10 ユーザー指定「少し奥へ」）
-export const FLOOR_RADIUS = 20;  // ステージ円の半径
-// 中心 z と奥行き率は「手前の縁を +3 に保ったまま、奥だけ伸ばす」ように組で決める（2026-09-13 ユーザー指定）。
-// 奥の縁 = 中心 - 半径×奥行き率 = -14 - 17 = -31。一番奥のひな壇の外径（-30）を 1 unit 覆う。
-// 手前の縁 = -14 + 17 = +3（変更前と同じ）。横幅は半径 20 のまま変えていない
-export const FLOOR_CENTER_Z = -14; // ステージ円の中心 z（楽団の重心付近。-10 だと楽団が円の奥寄りに見えた。2026-09-10）
-export const FLOOR_DEPTH_SCALE = 0.85; // 奥行き方向の縮小率（楕円）
+// ステージ床は長方形（2026-09-13 ユーザー指定。それまでは外周がぼける楕円だった）。
+// 左右は後方ひな壇の切り口（BACK_ROWS の clipX = 18）と同じライン、奥は一番奥のひな壇の外径（-30）を 1 覆う位置、
+// 手前は指揮者（z = -2.1）の背後 5 ほど。ぼかしは無し（縁ははっきり出る）
+export const FLOOR_X_HALF = 18;   // 左右の縁（±x）
+export const FLOOR_Z_FRONT = 3;   // 手前の縁
+export const FLOOR_Z_BACK = -31;  // 奥の縁
 export const WALL_Z = -30;      // ピアノロール壁の z
 export const WALL_WIDTH = 56;
 export const WALL_HEIGHT = 14;
@@ -135,10 +135,12 @@ export function createStage(container) {
   const floorTex = plankTexture();
   // 楽団がちょうど収まるコンパクトな円（中心を後方へずらし、指揮者の前に余白を残さない）
   // 円の縁は外側 25% でなだらかに透明にする（alphaMap の放射状グラデーション。2026-09-10）
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_RADIUS, 64), stageMat({ map: floorTex, color: '#e6e6e6', alphaMap: radialAlphaTexture(0.75), transparent: true }));
+  const floorW = FLOOR_X_HALF * 2, floorD = FLOOR_Z_FRONT - FLOOR_Z_BACK;
+  const floorMap = floorTex.clone(); floorMap.needsUpdate = true;
+  floorMap.repeat.set(floorW / 40, floorD / 32); // 板目の大きさを楕円だった頃（横 40・奥行き 32 に 1 枚）と揃える
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), stageMat({ map: floorMap, color: '#e6e6e6' }));
   floor.rotation.x = -Math.PI / 2;
-  floor.position.z = FLOOR_CENTER_Z;
-  floor.scale.y = FLOOR_DEPTH_SCALE; // 奥行き方向を少し潰して指揮者の前の余白を減らす（平面の local y = 世界 -z）
+  floor.position.z = (FLOOR_Z_FRONT + FLOOR_Z_BACK) / 2;
   addStage(floor, -40);
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
