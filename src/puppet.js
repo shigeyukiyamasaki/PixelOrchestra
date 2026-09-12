@@ -500,7 +500,8 @@ export class Puppet {
     const energy = stRaw.energy;
     // 「強弱の反応」スライダー：前傾・楽器の角度・膨らみなど、強さ（velocity/CC）で動く量の倍率。揺れと足元の光には掛けない
     // 上限は「強弱の反応」スライダーの最大値（3）に合わせる。1.5 で頭打ちだと 1.5 より上げても何も変わらなかった（2026-09-12 修正）
-    const st = { ...stRaw, energy: clamp(energy * (settings.dynResponse ?? 1), 0, 3) };
+    const st = { ...stRaw, energy: clamp(energy * (settings.dynResponse ?? 1), 0, 3),
+      nextEnergy: clamp((stRaw.nextEnergy ?? 0) * (settings.dynResponse ?? 1), 0, 3) };
 
     // 共通：呼吸と拍に同期した体の揺れ
     // 揺れ・呼吸・上下動は腰（spine）から上だけ。下半身と椅子は動かない（2026-09-09 ユーザー指定）
@@ -641,7 +642,8 @@ export class Puppet {
     // 左手：指板の位置。長い音ではビブラート（弦に沿って 5.5Hz）
     const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
     const vibAxis = p3?.vib || cfg.vib || n;
-    const vib = active.length && onset && onset.duration > 0.2 ? 0.35 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
+    // ビブラート。setHand の追従（rate）が 5.5Hz を半分まで削るので、振幅と追従の両方を上げる（2026-09-12 ユーザー指定）
+    const vib = active.length && onset && onset.duration > 0.2 ? 0.8 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
     // 左手の向き（手首→指先）：
     //   あご楽器（バイオリン/ヴィオラ）：手首はネックの内側（体側・下）にあり、指はネックの下から回り込んで上（弦の面の法線方向）へ伸びる。肘は楽器の下で脇を閉める（2026-09-11 ユーザー指摘）
     //   チェロ/コントラバス：指は弦を上から押さえる（下向き＋弦の面へ少し＋弓元側へ少し）。手首は指板の上
@@ -651,7 +653,7 @@ export class Puppet {
     // 手の甲の向き：指はネックを横切って弦に乗り、4 本の指はネックに沿って並ぶ（手の幅＝ネックの軸）。手のひらはネックの内側から当たるので、
     // 甲はネックの外側＝弓の進行方向 d（軸にも弦の法線にも直交）。ネックと手が直交しないように（2026-09-11 ユーザー指摘）
     const lup = cfg.chin ? [n[0] - d[0], n[1] - d[1], n[2] - d[2]] : n; // あご楽器：甲は上・内側（手のひらはネックへ）。チェロ系：甲は弦の面の法線（手が指板に平らに乗る）
-    this.setHand('L', this._restHand([L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], cfg.rest?.leftHand), dt, 20, lhd, cfg.chin ? [0.6, -1, -0.2] : null, lup);
+    this.setHand('L', this._restHand([L[0] + vibAxis[0] * vib, L[1] + vibAxis[1] * vib, L[2] + (vibAxis[2] || 0) * vib], cfg.rest?.leftHand), dt, 35, lhd, cfg.chin ? [0.6, -1, -0.2] : null, lup);
 
     // 腰：強いほど前傾（楽器へ入り込む）、弓の進行方向へわずかに傾く。視線：弾いている間は楽器の方（あご楽器は左下、チェロ系は下）
     // 弓の進行方向への傾きは「上げ弓/下げ弓の符号」ではなく「弓が今どこを通っているか」で作る。
@@ -676,8 +678,10 @@ export class Puppet {
     const { onset, next, age, toNext, active, energy, pitchNorm } = st;
     const cfg = this.cfg, inst = this.inst, p3 = this.p3;
     // 息継ぎ：フレーズの直前に肩が上がり（0.35 秒前から）、アタックで落ちる
+    // 息継ぎの深さは次の音の強さで変える（強いフレーズの前ほど深く吸う。2026-09-12 ユーザー指定）。
+    // next.velocity ではなく nextEnergy を使うので、velocity 固定＋CC のトラックでも効き「強弱の反応」スライダーにも乗る
     let breath = 0;
-    if (next && !active.length && toNext < 0.35) breath = 1 - toNext / 0.35;
+    if (next && !active.length && toNext < 0.35) breath = (1 - toNext / 0.35) * (0.7 + 0.7 * clamp(st.nextEnergy ?? 0.43, 0, 3)); // 標準的な強さ（0.43）で従来と同じ深さ、強い音の前はより深く
     this._breath = approach(this._breath, breath, 12, dt);
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
     this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack) * PX;

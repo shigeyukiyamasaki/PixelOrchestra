@@ -489,6 +489,8 @@ export class MidiEngine {
       onset, next, active, pitchNorm,
       age: onset ? t - onset.time : Infinity,
       toNext: next ? next.time - t : Infinity,
+      // 次の音が鳴った瞬間の強さ（管の息継ぎの深さに使う。velocity 固定＋CC のトラックでも効く）
+      nextEnergy: next ? this.energyAt(track, next.time + 1 / ENERGY_RATE) : 0,
     };
   }
 
