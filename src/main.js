@@ -490,9 +490,6 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
   setBarH();
 }
 
-// パネルはプレビューの外にあるので、開閉するとプレビューの大きさが変わる（2026-09-12）
-$('panelToggle').addEventListener('click', () => { document.body.classList.toggle('panel-hidden'); stage.resize(); });
-$('panelRightToggle').addEventListener('click', () => { document.body.classList.toggle('panel-right-hidden'); stage.resize(); });
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 6, 10.5); controls.target.set(0, 4, -12); controls.update(); // 既定のカメラ（2026-09-11 ユーザー指定）
   syncCameraSliders();

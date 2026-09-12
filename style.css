@@ -10,15 +10,13 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
    行 1 = 上メニュー（全幅）／行 2 = [トラック一覧 | プレビュー | 表示設定]。プレビューは常に 16:9 で中央に置く */
 body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(--leftw, 340px) 1fr var(--rightw, 440px);
   height: 100dvh; overflow: hidden; }
-body.panel-hidden { --leftw: 0px; }
-body.panel-right-hidden { --rightw: 0px; }
 #stageArea { grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 /* プレビューの上の余白にカメラの操作を置く（2026-09-12 ユーザー指定）。高さは JS が --barh に書き込む */
-#camBar { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 6px 52px 0; } /* 左右はパネル開閉ボタンを避ける */
+#camBar { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 6px 12px 0; }
 #camBar fieldset.sub { flex: 1 1 0; min-width: 0; margin: 0; }
-#camBar .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 10px; }
+#camBar .row3 { display: grid; grid-template-columns: 1fr; } /* X/Y/Z は縦 3 行（2026-09-12 ユーザー指定） */
 #camBar .ctl { margin: 2px 0 4px; }
-#camBar #resetCam { flex: 0 0 auto; margin-top: 22px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+#camBar #resetCam { flex: 0 0 auto; margin-top: 24px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
 #camBar #resetCam:hover { border-color: var(--accent); color: var(--accent); }
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
@@ -45,12 +43,6 @@ body.panel-right-hidden { --rightw: 0px; }
 /* 左＝トラック一覧、右＝表示設定（2026-09-12 に左右を入れ替え）。どちらも閉じると列ごと消える */
 #panelRight { grid-column: 1; border-right: 1px solid var(--line); }
 #panel { grid-column: 3; border-left: 1px solid var(--line); }
-body.panel-hidden #panel { display: none; }
-body.panel-right-hidden #panelRight { display: none; }
-#panelToggle, #panelRightToggle { position: fixed; top: 64px; z-index: 3; width: 34px; height: 34px; border-radius: 8px;
-  border: 1px solid var(--line); background: rgba(22, 22, 42, 0.85); color: var(--text); cursor: pointer; transition: left 0.2s, right 0.2s; }
-#panelRightToggle { left: calc(var(--leftw, 340px) + 12px); }   /* 左のトラック一覧の開閉 */
-#panelToggle { right: calc(var(--rightw, 440px) + 12px); }      /* 右の表示設定の開閉 */
 h2 { font-size: 15px; margin: 0 0 6px; color: var(--accent); }
 
 h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
@@ -111,8 +103,6 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
   #stageArea { grid-row: 3; grid-column: 1; }
   #panelRight { grid-row: 2; grid-column: 1; max-height: 30dvh; border-right: none; border-bottom: 1px solid var(--line); }
   #panel { grid-row: 4; grid-column: 1; max-height: 40dvh; border-left: none; border-top: 1px solid var(--line); }
-  #panelToggle { left: auto; right: 56px; }
-  #panelRightToggle { right: 12px; }
   body:not(.panel-right-hidden) #panel { display: none; } /* 狭い画面では片方ずつ */
 }
 
