@@ -187,7 +187,7 @@ const VARIANT = {
                 rest: { pos: [3, 12, 10], rot3: [0.5, 0.8, 0] } },
   // トロンボーン：左手はベル部とスライド部をつなぐ支柱（マウスピース寄り・左）、右手は外管の支柱（スライドと一緒に動く）
   trombone:   { inst: { pos: [1, 32.5, 4], rot: -0.1 }, hands: { L: [3, 3], R: [5, 0] }, kind: 'bell', slide: true, handDirs: { L: [0, 0, -1], R: [0, 0, 1] }, gazeDown: 0.0,
-                p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [3, 0.5, 3], R: [5, 0.3, -0.8] },
+                p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [3, 0.5, 3], R: [3.5, 0.3, -0.8] },
                 rest: { pos: [1, 14, 8], rot3: [0, 0, -1.15] } } }, // 右手はロール後の上の外管（右へ 0.8）
   tuba:       { inst: { pos: [3, 6, 4], rot: 0 }, hands: { L: [-2, 12], R: [4, 14] }, kind: 'tuba', handDirs: { L: [0, 0, -1], R: [0, -1, 0] }, gazeDown: 0.05,
                 p3: { pos: [3, 6, 6], rot3: [0, 0.3, 0], hands: { L: [-2, 12, 2], R: [4, 14, 2] } },
@@ -731,7 +731,9 @@ export class Puppet {
     // 手：楽器ローカル点 → rig 座標。指の動き（音の変わり目で少し動く）、トロンボーンは音程でスライド
     const finger = onset ? (((onset.index * 7) % 3) - 1) * 0.6 * Math.exp(-age * 7) : 0;
     if (cfg.slide) {
-      this._slide = approach(this._slide, (1 - pitchNorm) * 6, 10, dt); // 高い音ほど手前（1 ポジション側）、低い音ほど伸ばす [基本 px]
+      // 高い音ほど手前（1 ポジション側）、低い音ほど伸ばす [基本 px]。
+      // 伸ばす側は腕の長さで頭打ちなので、手前に引く側をマイナスまで引いて差を稼ぐ（2026-09-12 ユーザー指定）
+      this._slide = approach(this._slide, -2.5 + (1 - pitchNorm) * 8.5, 10, dt);
       const sl = inst?.userData.slide;
       if (sl) sl.position.x = sl.userData.baseX + this._slide * PX; // 外管も一緒に動かす（右手と同じ量）
     }
