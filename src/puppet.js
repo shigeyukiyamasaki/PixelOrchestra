@@ -788,10 +788,11 @@ export class Puppet {
         const T = 0.9, pf = (age - 0.05) / T;
         if (amp > 0 && pf > 0 && pf < 1) {
           // 円を描いて構えへ戻す（2026-09-12 ユーザー指定）。横に sin・縦に 1-cos を使い、角度を 1 周させる。
-          // 同じ sin を両軸に使うと往路と復路が同じ線をなぞり、頂点から直線的に戻ってしまう
+          // 同じ sin を両軸に使うと往路と復路が同じ線をなぞり、頂点から直線的に戻ってしまう。
+          // 回す向きは「外回し」＝体の内側を上がって外側を下りる（内回しは不自然。2026-09-12 ユーザー指摘）
           const sign = side === 'L' ? -1 : 1, th = pf * Math.PI * 2;
-          const rx = 5 * amp, ry = 9 * amp; // 縦長の円（頂点は 2*ry = 18px 上）。横は広げすぎると左右の手が交差する
-          const ox = sign * rx * Math.sin(th), oy = ry * (1 - Math.cos(th));
+          const rx = 3 * amp, ry = 9 * amp; // 縦長の円（頂点は 2*ry = 18px 上）。横は広げすぎると左右の手が交差する
+          const ox = -sign * rx * Math.sin(th), oy = ry * (1 - Math.cos(th));
           target = [lerp(hit[0], rest[0], pf) + ox, lerp(hit[1], rest[1], pf) + oy, lerp(hit[2], rest[2], pf) - amp * (1 - Math.cos(th))];
         }
       }
