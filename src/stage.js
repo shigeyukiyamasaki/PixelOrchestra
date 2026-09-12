@@ -171,13 +171,13 @@ export function createStage(container) {
 }
 
 // 照明の状態。setShadows で切り替える（名前は互換のため）
-let lightState = { enabled: true, elev: null, spread: null, cone: null };
+let lightState = { enabled: true, elev: null, spread: null, cone: null, blur: null };
 const SPOT_R = 40; // スポットライトと舞台中心 (0,0,-12) の距離 [unit]
 /**
- * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number}} o
+ * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number, spotBlur?:number}} o
  *   enabled: 影を落とすか  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
  *   spotElev: スポットの仰角 [deg]（舞台中心から見た光源の高さ。90 で真上）  spotSpread: 左右の開き [deg]（2 灯が客席正面から左右に何度ずつ離れるか）
- *   spotCone: 円錐の広がり [deg]（半頂角）
+ *   spotCone: 円錐の広がり [deg]（半頂角）  spotBlur: 輪郭のぼけ（0 でくっきり、1 で中心から外へなだらかに消える）
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
@@ -189,6 +189,7 @@ export function setShadows(o = {}) {
   if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
   if (Number.isFinite(o.spotCone) && o.spotCone !== lightState.cone) { lightState.cone = o.spotCone; for (const sp of spots) sp.angle = deg(o.spotCone); }
+  if (Number.isFinite(o.spotBlur) && o.spotBlur !== lightState.blur) { lightState.blur = o.spotBlur; for (const sp of spots) sp.penumbra = o.spotBlur; } // 輪郭のぼけ（2026-09-12 ユーザー指定）
   const elev = Number.isFinite(o.spotElev) ? o.spotElev : lightState.elev, spread = Number.isFinite(o.spotSpread) ? o.spotSpread : lightState.spread;
   if (Number.isFinite(elev) && Number.isFinite(spread) && (elev !== lightState.elev || spread !== lightState.spread)) {
     lightState.elev = elev; lightState.spread = spread;

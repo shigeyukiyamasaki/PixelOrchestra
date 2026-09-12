@@ -195,6 +195,7 @@ function settings() {
     spotElev: num('spotElev', 40),
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
+    spotBlur: num('spotBlur', 0.5),
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
@@ -554,7 +555,7 @@ function animate() {
       labelSizeApplied = s.labelSize; labelSourceApplied = s.labelSource;
       rebuildLabels();
     }
-    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone });
+    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur });
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     logo.visible = s.showTitle;
