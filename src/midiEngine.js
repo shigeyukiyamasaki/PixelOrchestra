@@ -378,19 +378,23 @@ export class MidiEngine {
           p++;
         }
         active = active.filter((n) => n.end > t);
+        let sus = 0;
         if (active.length) { // 持続中は velocity の 40% を床にする
-          const sus = Math.max(...active.map((n) => n.velocity)) * 0.4;
+          sus = Math.max(...active.map((n) => n.velocity)) * 0.4;
           e = Math.max(e, sus);
         }
         // CC 由来の強弱：発音中だけ有効（休符で CC が高くても前傾しない）
         let d = e;
         if (active.length) { // 統合された各トラックの CC の最大値
-          let cc = 0;
+          let cc = 0, useCC = false;
           for (const src of tr.sources) {
-            if (src.dynResolved === 'cc1' || src.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(src.cc1, t));
-            if (src.dynResolved === 'cc11' || src.dynResolved === 'cc1+cc11') cc = Math.max(cc, ccValueAt(src.cc11, t));
+            if (src.dynResolved === 'cc1' || src.dynResolved === 'cc1+cc11') { cc = Math.max(cc, ccValueAt(src.cc1, t)); useCC = true; }
+            if (src.dynResolved === 'cc11' || src.dynResolved === 'cc1+cc11') { cc = Math.max(cc, ccValueAt(src.cc11, t)); useCC = true; }
           }
-          d = Math.max(e, cc);
+          // CC を強弱の情報源にしているトラックは CC の値に追従させる（減衰の床より CC を優先）。
+          // アタックの山だけは少し残して、音の出だしが分かるようにする（2026-09-12 ユーザー指摘：
+          // CC が下がっていっても前傾が緩まず、音が止まってから解除されていた）
+          d = useCC ? Math.min(1, cc + Math.max(0, e - sus) * 0.35) : e;
         }
         E[k] = d;
         global[k] += d;
