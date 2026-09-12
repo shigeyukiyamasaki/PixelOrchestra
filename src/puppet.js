@@ -787,9 +787,12 @@ export class Puppet {
         const amp = clamp((onset.velocity - 0.3) / 0.5, 0, 1);                   // 弱い音（vel < 0.3）では回さず、0.8 以上で最大
         const T = 0.9, pf = (age - 0.05) / T;
         if (amp > 0 && pf > 0 && pf < 1) {
-          const sign = side === 'L' ? -1 : 1, sw = Math.sin(pf * Math.PI);
-          const up = 18 * amp, out = 8 * amp;
-          target = [lerp(hit[0], rest[0], pf) + sign * out * sw, lerp(hit[1], rest[1], pf) + up * sw, lerp(hit[2], rest[2], pf) - 2 * sw * amp];
+          // 円を描いて構えへ戻す（2026-09-12 ユーザー指定）。横に sin・縦に 1-cos を使い、角度を 1 周させる。
+          // 同じ sin を両軸に使うと往路と復路が同じ線をなぞり、頂点から直線的に戻ってしまう
+          const sign = side === 'L' ? -1 : 1, th = pf * Math.PI * 2;
+          const rx = 5 * amp, ry = 9 * amp; // 縦長の円（頂点は 2*ry = 18px 上）。横は広げすぎると左右の手が交差する
+          const ox = sign * rx * Math.sin(th), oy = ry * (1 - Math.cos(th));
+          target = [lerp(hit[0], rest[0], pf) + ox, lerp(hit[1], rest[1], pf) + oy, lerp(hit[2], rest[2], pf) - amp * (1 - Math.cos(th))];
         }
       }
       // 手首：マレットは打点を向き、手首はそれより少し起きる（振りかぶりで返し、打つ瞬間に伸びる）
