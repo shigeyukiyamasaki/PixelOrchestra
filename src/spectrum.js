@@ -156,10 +156,10 @@ export class Spectrum {
     });
     for (let i = 0; i < n; i++) {
       const pivot = new THREE.Group();
-      if (useShape) { // 輪郭を等間隔にたどって、外向きに立てる
-        const p = this.shape[Math.floor(i * this.shape.length / n)];
+      if (useShape) { // 角度を等分し、その方向の輪郭上に根本を置く（外向きに立てる）
+        const p = this._shapeAt(-Math.PI + (i + 0.5) * 2 * Math.PI / n);
         pivot.position.set(p.x, p.y, 0);
-        pivot.rotation.z = Math.atan2(p.ny, p.nx) - Math.PI / 2; // 板の +y を法線へ
+        pivot.rotation.z = p.a - Math.PI / 2; // 板の +y をロゴの中心からの放射方向へ
       } else {
         pivot.rotation.z = -(i / n) * Math.PI * 2; // ロゴと同じ面（xy）に円を作る
       }
@@ -169,16 +169,31 @@ export class Spectrum {
     }
   }
 
+  /** その角度の輪郭点（無ければ一番近いもの）。角度を等分して根本を散らすために使う */
+  _shapeAt(a) {
+    let best = this.shape[0], bestD = Infinity;
+    for (const p of this.shape) {
+      let d = Math.abs(p.a - a);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best;
+  }
+
   /** 根本（内側）が太く先端が細い板。taper = 1 で均一、大きいほど根本が太い（2026-09-12 ユーザー指定） */
   _barGeometry(w) {
     const geo = new THREE.PlaneGeometry(1, 1);
     const pos = geo.attributes.position;
     const root = w * (this.opts.taper ?? 1) / 2, tip = w / 2;
+    const uv = geo.attributes.uv;
+    const k = tip / root; // 根本側は UV を中心へ寄せて、光の芯の太さを一定に保つ（太いだけで折れて見えないように）
     for (let i = 0; i < pos.count; i++) {
-      const half = pos.getY(i) < 0 ? root : tip; // ローカル -y が根本（ロゴ側）
-      pos.setX(i, Math.sign(pos.getX(i)) * half);
+      const isRoot = pos.getY(i) < 0; // ローカル -y が根本（ロゴ側）
+      pos.setX(i, Math.sign(pos.getX(i)) * (isRoot ? root : tip));
+      if (isRoot && uv) uv.setX(i, 0.5 + (uv.getX(i) - 0.5) * k);
     }
     pos.needsUpdate = true;
+    if (uv) uv.needsUpdate = true;
     return geo;
   }
 
