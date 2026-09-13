@@ -58,12 +58,17 @@ const wobble = (n, k = 0) => {
 };
 const swing = (n, k) => wobble(n, k) * 2 - 1;   // -1〜1
 
-/** 席（同じパートの奏者たち）の中心。world 座標 [x, 0, z] */
+/**
+ * 席（同じパートの奏者たち）の中心。world 座標 [x, y, z]。
+ * y は足元の高さ（ひな壇の上なら段の高さ）。これを無視して床基準で狙うと、
+ * 段の上のパートでは足元やひな壇の面ばかり映る（2026-09-14 ユーザー指摘）
+ */
 function seatCenter(seat) {
   const ps = seat?.positions;
   if (!ps || !ps.length) return null;
   const n = ps.length;
-  return [ps.reduce((a, q) => a + q.x, 0) / n, 0, ps.reduce((a, q) => a + q.z, 0) / n];
+  return [ps.reduce((a, q) => a + q.x, 0) / n, ps.reduce((a, q) => a + (q.y || 0), 0) / n,
+    ps.reduce((a, q) => a + q.z, 0) / n];
 }
 
 /** そのパートの首席（指揮者に一番近い奏者）。アップはここを狙う */
@@ -72,7 +77,7 @@ function seatLead(seat, cz) {
   if (!ps || !ps.length) return null;
   let best = ps[0], bd = Infinity;
   for (const q of ps) { const d = q.x * q.x + (q.z - cz) * (q.z - cz); if (d < bd) { bd = d; best = q; } }
-  return [best.x, 0, best.z];
+  return [best.x, best.y || 0, best.z];
 }
 
 export class AutoCamera {
@@ -275,9 +280,11 @@ export class AutoCamera {
     // アップは首席 1 人、中景はパート全体の中心を狙う
     const k = sh.kind === 'xclose' ? XCLOSE : sh.kind === 'close' ? CLOSE : MID;
     const c = (sh.kind === 'mid' ? sh.center : sh.lead) || sh.center;   // 寄りは首席 1 人、中景はパート全体
-    // 超近接だけは楽器の高さを狙い、カメラもその少し上に置く（顔だけ・足元だけの画にしない）
-    const aimY = sh.kind === 'xclose' ? clamp(sh.instY ?? k.targetY, 0.8, 6.5) : k.targetY;   // ひな壇の高さも乗るので上は広めに
-    const camY = sh.kind === 'xclose' ? aimY + k.yOver : k.y + swing(n, 6) * 0.4;
+    // 狙う高さは「その席の足元の高さ」からの相対。ひな壇の上のパートでも胸の高さを狙える。
+    // 超近接だけは楽器そのもの（外接箱の中心。world の絶対値）を狙う
+    const base = c[1] || 0;
+    const aimY = sh.kind === 'xclose' ? clamp(sh.instY ?? (base + k.targetY), 0.8, 8) : base + k.targetY;
+    const camY = sh.kind === 'xclose' ? aimY + k.yOver : base + k.y + swing(n, 6) * 0.4;
     const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * p * move);          // ショットの間にゆっくり寄る
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
