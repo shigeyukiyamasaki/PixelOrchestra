@@ -95,11 +95,14 @@ export class AutoCamera {
     const closeRatio = clamp(opt.close ?? 0.6, 0, 1);
     const subject = new Array(nBars).fill(-1);   // ソロ・入り・明確な主役（-1 = 無し）
     const loudest = new Array(nBars).fill(-1);   // 音が鳴っていれば必ず入る
+    const rank = new Array(nBars);               // 強い順のパート（同じパートが続くのを避ける時の代役）
     for (let b = 0; b < nBars; b++) {
       let top = -1, topE = 0, total = 0;
       for (let i = 0; i < seats.length; i++) { total += energy[i][b]; if (energy[i][b] > topE) { topE = energy[i][b]; top = i; } }
       if (top < 0 || topE <= 0) continue;
       loudest[b] = top;
+      rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > 0)
+        .sort((x, y) => energy[y][b] - energy[x][b]).slice(0, 4);
       let sounding = 0, entered = -1;
       for (let i = 0; i < seats.length; i++) {
         if (energy[i][b] > topE * SOUNDING_AT) sounding++;
@@ -119,6 +122,7 @@ export class AutoCamera {
     // アップが続いた時に挟む引きも、「アップの割合」が高いほど緩める（1 で挟まない）
     const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
     let closeRun = 0;
+    const recent = [];           // 直近で抜いたパート（新しい順。同じ顔ぶれの往復を避ける）
     for (let b = 0; b < nBars;) {
       // 主役が続く間をひとまとまりにする（主役が居ない小節は「一番強いパート」で繋ぐ）
       const key = (i) => (subject[i] >= 0 ? subject[i] : -1);
@@ -138,12 +142,25 @@ export class AutoCamera {
         kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
         closeRun = 0;
       }
-      // 寄る時の被写体：主役がいればその人、いなければ一番強いパート。どちらも無ければ引きに落とす
+      // 寄る時の被写体：主役がいればその人、いなければ一番強いパート。どちらも無ければ引きに落とす。
+      // 直前のショットと同じパートは避け、次に強いパートへ回す（2026-09-13 ユーザー指定）
       let who = -1;
       if (kind === 'close' || kind === 'mid') {
-        who = subject[b] >= 0 ? subject[b] : loudest[b];
+        const cands = [];
+        if (subject[b] >= 0) cands.push(subject[b]);
+        for (const i of (rank[b] || [])) if (!cands.includes(i)) cands.push(i);
+        // 直近 2 つと違うパート → 直前と違うパート → どうしても居なければ同じパート、の順に探す
+        who = cands.find((i) => !recent.includes(i));
+        if (who === undefined) who = cands.find((i) => i !== recent[0]);
+        if (who === undefined) {
+          // 他に鳴っているパートが無い（長いソロが続いている等）。人は替えられないので寄り方を替える
+          who = cands[0] ?? -1;
+          if (who >= 0 && who === recent[0]) kind = kind === 'close' ? 'mid' : 'close';
+        }
         if (who < 0) { kind = 'wide'; closeRun = 0; }
       }
+      if (kind === 'close' || kind === 'mid') { recent.unshift(who); recent.length = Math.min(recent.length, 2); }
+      else recent.length = 0;      // 引きを挟んだら制限を解く
       this.shots.push({
         t0: bars[b], t1: bars[Math.min(b + n, nBars)], kind, idx,
         center: who >= 0 ? seatCenter(seats[who]) : null,
