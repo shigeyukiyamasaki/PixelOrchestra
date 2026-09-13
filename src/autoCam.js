@@ -18,7 +18,7 @@ const LEAD_SHARE = 0.3;       // これ以上を占めていれば、そのパ�
 
 // ---- ショットの組み立て ----
 const SAMPLES_PER_BAR = 4;    // 1 小節あたり何点で強さを測るか
-const MIN_BARS = 2;           // 最短ショット長 [小節]
+const MIN_BARS = 1;           // 最短ショット長 [小節]（切り替えの速さを上げ切った時）
 const MAX_BARS = 8;           // 最長ショット長 [小節]
 const BASE_BARS = 4;          // 標準のショット長 [小節]（切り替えの速さ 1 のとき）
 const WIDE_EVERY = 3;         // アップがこの回数続いたら引きを挟む
@@ -118,17 +118,20 @@ export class AutoCamera {
 
     // 同じ主役が続く小節をまとめてショットにする
     const rate = clamp(opt.rate ?? 1, 0.3, 3);
-    const maxBars = clamp(Math.round(BASE_BARS / rate), MIN_BARS, MAX_BARS);
+    // ショットの長さは「切り替えの速さ」で決める。主役の切れ目だけで切っていた時は、
+    // 主役が毎小節変わるせいで全部が最短 2 小節になり、速さが効かなかった（2026-09-13 修正）
+    const targetBars = clamp(Math.round(BASE_BARS / rate), MIN_BARS, MAX_BARS);
     // アップが続いた時に挟む引きも、「アップの割合」が高いほど緩める（1 で挟まない）
     const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
     let closeRun = 0;
     const recent = [];           // 直近で抜いたパート（新しい順。同じ顔ぶれの往復を避ける）
+    let lastKind = '';
     for (let b = 0; b < nBars;) {
-      // 主役が続く間をひとまとまりにする（主役が居ない小節は「一番強いパート」で繋ぐ）
-      const key = (i) => (subject[i] >= 0 ? subject[i] : -1);
-      let n = 1;
-      while (b + n < nBars && key(b + n) === key(b) && n < maxBars) n++;
-      if (n < MIN_BARS) n = Math.min(MIN_BARS, nBars - b);               // 短すぎるショットは作らない
+      // 基本は「切り替えの速さ」で決まる長さ。ただし途中で新しい主役（ソロ・入り）が出たらそこで切る
+      let n = Math.min(targetBars, nBars - b);
+      for (let k = MIN_BARS; k < n; k++) {
+        if (subject[b + k] >= 0 && subject[b + k] !== subject[b]) { n = k; break; }
+      }
       const idx = this.shots.length;
       let kind;
       // まず「寄るか引くか」を割合で決め、寄ると決めた時に誰を抜くかを選ぶ。
@@ -140,6 +143,11 @@ export class AutoCamera {
         closeRun++;
       } else {
         kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
+        // 引き・指揮者が続くのを避ける：寄れるなら寄り、寄れなければ引きと指揮者を入れ替える
+        if (kind === lastKind) {
+          if ((subject[b] >= 0 || loudest[b] >= 0)) kind = 'mid';
+          else kind = kind === 'wide' ? 'cond' : 'wide';
+        }
         closeRun = 0;
       }
       // 寄る時の被写体：主役がいればその人、いなければ一番強いパート。どちらも無ければ引きに落とす。
@@ -161,6 +169,7 @@ export class AutoCamera {
       }
       if (kind === 'close' || kind === 'mid') { recent.unshift(who); recent.length = Math.min(recent.length, 2); }
       else recent.length = 0;      // 引きを挟んだら制限を解く
+      lastKind = kind;
       this.shots.push({
         t0: bars[b], t1: bars[Math.min(b + n, nBars)], kind, idx,
         center: who >= 0 ? seatCenter(seats[who]) : null,
