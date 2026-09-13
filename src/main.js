@@ -439,6 +439,28 @@ function setBarHeight() {
 }
 addEventListener('resize', setBarHeight);
 
+// ---------- クレジット（プレビューの左下。2026-09-13 ユーザー指定。MIDIOrchestra を参考に） ----------
+// 接頭辞（Comp. / Arr.）付きの行は、入力がある時だけ出す。行ごとの基準サイズに「大きさ」を掛ける
+const CREDIT_SIZE = { 1: 15, 2: 24, 3: 13, 4: 13 };
+let creditKey = '';
+function applyCredits(s) {
+  const key = [s.showCredits, s.credit1, s.credit2, s.credit3, s.credit4, s.creditScale, s.creditColor, s.creditOpacity].join('|');
+  if (key === creditKey) return;      // 変わった時だけ DOM を触る
+  creditKey = key;
+  const box = $('credits');
+  box.style.display = s.showCredits ? 'flex' : 'none';
+  for (const n of [1, 2, 3, 4]) {
+    const el = box.querySelector(`.cl[data-line="${n}"]`);
+    const text = s[`credit${n}`] || '';
+    const slot = el.querySelector('span:last-child');
+    if (slot && el.querySelector('.pre')) slot.textContent = text; else el.textContent = text;
+    el.classList.toggle('off', !text);
+    el.style.fontSize = `${CREDIT_SIZE[n] * s.creditScale}px`;
+    el.style.color = s.creditColor;
+    el.style.opacity = s.creditOpacity;
+  }
+}
+
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
@@ -552,6 +574,10 @@ function settings() {
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
+    // クレジット（2026-09-13。MIDIOrchestra と同じ作り：プレビューに重ねた DOM）
+    showCredits: $('showCredits').checked,
+    credit1: $('credit1').value, credit2: $('credit2').value, credit3: $('credit3').value, credit4: $('credit4').value,
+    creditScale: num('creditScale', 1), creditColor: $('creditColor').value, creditOpacity: num('creditOpacity', 0.8),
     specMode: radioValue('specMode') === 'logo' ? 'logo' : 'circle',
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
@@ -924,6 +950,7 @@ function animate() {
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
+    applyCredits(s);
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);

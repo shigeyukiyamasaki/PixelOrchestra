@@ -119,6 +119,20 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
   max-height: calc(100% - 4px); margin: 4px 0 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
 #view canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+/* クレジット：プレビューの左下に重ねる（MIDIOrchestra と同じ作り）。2026-09-13 ユーザー指定 */
+#credits { position: absolute; left: 20px; bottom: 18px; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; gap: 0; }
+#credits .cl { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  color: #fff; opacity: .8; white-space: nowrap; line-height: 1.25;
+  text-shadow: 0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,.6); }
+#credits .cl[data-line="1"] { font-size: 15px; }
+#credits .cl[data-line="2"] { font-size: 24px; }
+#credits .cl[data-line="3"], #credits .cl[data-line="4"] { font-size: 13px; }
+#credits .pre { opacity: .75; }
+#credits .cl:empty, #credits .cl.off { display: none; }
+/* 文字入力（クレジットの行） */
+.ctl input[type=text] { width: 100%; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
 .ctl.row { flex-direction: row; align-items: center; justify-content: space-between; }
 .ctl input[type=color] { width: 48px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); cursor: pointer; }
 
