@@ -70,8 +70,11 @@ const deg = (d) => (d * Math.PI) / 180;
 export const BACK_ROWS = [
   // clipX を指定すると、扇形の切り口ではなく x = ±clipX の垂直面で切る（2026-09-13 ユーザー指定）。
   // span は clipX より外まで届く広さにしておき、実際の端は clipX が決める
-  { r: 27, h: 4.0, span: 130, clipX: 18 },
+  { r: 27, h: 4.0, span: 130, clipX: 18, screen: true },
 ];
+// 一番奥のひな壇の上に立てる湾曲スクリーン（2026-09-13 ユーザー指定）。
+// 本来は透明にする予定だが、位置の確認用にいったん色を付けている
+export const SCREEN = { h: 10, color: '#4a90d9' };
 const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
 let stageCtx = null;         // createStage() で設定（buildRisers から使う）
@@ -348,6 +351,18 @@ export function buildRisers(seats) {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.07, 6, segs * 2, thMax - thMin), matC({ color: rimCol }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
+
+    // 湾曲スクリーン：段の外径に沿って、天面から立ち上がる。左右は段と同じ垂直面で切る
+    if (row.screen) {
+      const scr = new THREE.Mesh(
+        new THREE.CylinderGeometry(rOut, rOut, SCREEN.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
+        matC({ color: SCREEN.color, side: THREE.DoubleSide }),
+      );
+      scr.name = 'screen';
+      scr.position.y = row.h + SCREEN.h / 2;
+      scr.renderOrder = ro - 0.5;   // 一番奥なので他より先に描く
+      risers.add(scr);
+    }
   }
 }
 
