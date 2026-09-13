@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260914c">
+  <link rel="stylesheet" href="style.css?v=20260914d">
 </head>
 <body>
   <div id="stageArea">
@@ -72,6 +72,8 @@
       </div>
   </div>
     <div id="view">
+      <!-- テンポと拍子（左上）。拍子は「今の拍／分母」で、分子が 1 2 3 4 … と進む -->
+      <div id="tempoHud"><div class="bpm"></div><div class="sig"></div></div>
       <!-- クレジット（MIDIOrchestra と同じ作り：canvas の上に重ねた DOM。接頭辞付きの行は入力がある時だけ出す） -->
       <div id="credits">
         <div class="cl" data-line="1"></div>
@@ -176,6 +178,12 @@
       <label class="ctl" title="明るさ（加算合成なので重なると明るくなる）"><span>濃度 <b data-value-for="specOpacity">0.9</b></span><input type="range" id="specOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
       <label class="ctl row" title="バーの色"><span>色</span><input type="color" id="specColor" value="#9fd8ff"></label>
     </details>
+    <details open>
+      <summary>テンポ・拍子</summary>
+      <label class="chk" title="プレビューの左上にテンポ（♩=）と拍子を重ねて表示する"><input type="checkbox" id="showTempo"> 表示する</label>
+      <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
+      <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
+    </details>
       </div>
     </div>
   </aside>
@@ -191,6 +199,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260922b"></script>
+  <script type="module" src="src/main.js?v=20260922d"></script>
 </body>
 </html>

@@ -520,6 +520,24 @@ function setBarHeight() {
 }
 addEventListener('resize', setBarHeight);
 
+// ---------- テンポ・拍子（プレビューの左上。2026-09-13 ユーザー指定） ----------
+// 拍子は「今の拍／分母」。分子が 1 2 3 4 … と進み、小節の頭で 1 に戻る
+const TEMPO_SIZE = { bpm: 18, sig: 30 };
+let tempoKey = '';
+function applyTempo(s, bpm, beat) {
+  const box = $('tempoHud');
+  const key = [s.showTempo, s.tempoScale, s.tempoOpacity, Math.round(bpm), beat.beatInBar, beat.beatUnit].join('|');
+  if (key === tempoKey) return;        // 拍が変わった時だけ DOM を触る
+  tempoKey = key;
+  box.style.display = s.showTempo ? 'block' : 'none';
+  box.style.opacity = s.tempoOpacity;
+  const b = box.querySelector('.bpm'), g = box.querySelector('.sig');
+  b.style.fontSize = `${TEMPO_SIZE.bpm * s.tempoScale}px`;
+  g.style.fontSize = `${TEMPO_SIZE.sig * s.tempoScale}px`;
+  b.textContent = `♩= ${Math.round(bpm)}`;
+  g.textContent = `${beat.beatInBar + 1}/${beat.beatUnit || 4}`;
+}
+
 // ---------- クレジット（プレビューの左下。2026-09-13 ユーザー指定。MIDIOrchestra を参考に） ----------
 // 接頭辞（Comp. / Arr.）付きの行は、入力がある時だけ出す。行ごとの基準サイズに「大きさ」を掛ける
 const CREDIT_SIZE = { 1: 15, 2: 24, 3: 13, 4: 13 };
@@ -704,6 +722,7 @@ function settings() {
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
     // クレジット（2026-09-13。MIDIOrchestra と同じ作り：プレビューに重ねた DOM）
+    showTempo: $('showTempo').checked, tempoScale: num('tempoScale', 1), tempoOpacity: num('tempoOpacity', 0.9),
     showCredits: $('showCredits').checked,
     credit1: $('credit1').value, credit2: $('credit2').value, credit3: $('credit3').value, credit4: $('credit4').value,
     creditScale: num('creditScale', 1), creditColor: $('creditColor').value, creditOpacity: num('creditOpacity', 0.8),
@@ -1080,6 +1099,7 @@ function animate() {
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
+    applyTempo(s, engine.bpmAt(t), beat);
     applyCredits(s);
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);

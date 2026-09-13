@@ -458,7 +458,7 @@ export class MidiEngine {
     const beatsFromSig = (ticks - sig.ticks) / this.ppq / beatLen;
     const beatInBar = Math.floor(beatsFromSig) % num;
     const beatPhase = beatsFromSig - Math.floor(beatsFromSig);
-    return { beat, beatInBar, beatPhase, beatsPerBar: num };
+    return { beat, beatInBar, beatPhase, beatsPerBar: num, beatUnit: den };
   }
 
   // ---- 時刻 t におけるトラック状態 ----
