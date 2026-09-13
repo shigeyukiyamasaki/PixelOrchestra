@@ -184,11 +184,13 @@ let screens = (() => {
   return SCREEN_DEFAULT.map(withDefaults);
 })();
 // スカイドーム（遠景。3 層固定。追加も削除もしない）
-const DOME_BASE = { name: '', r: 100, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
+const DOME_BASE = { name: '', r: 40, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
                     src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false };
 let domes = (() => {
   try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
-    if (Array.isArray(a) && a.length === 3) return a.map((o) => ({ ...DOME_BASE, ...o })); } catch (e) { console.warn('スカイドーム設定の読込失敗:', e); }
+    if (Array.isArray(a) && a.length === 3) {
+      return a.map((o) => { const v = { ...DOME_BASE, ...o }; v.r = Math.min(50, Math.max(10, v.r)); return v; });
+    } } catch (e) { console.warn('スカイドーム設定の読込失敗:', e); }
   return DOME_DEFAULT.map((o) => ({ ...DOME_BASE, ...o }));
 })();
 let domeSaveTimer = null;
@@ -471,7 +473,7 @@ function domeRow(d, i) {
     out.textContent = (+el.value).toFixed(digits);
     el.oninput = () => { d[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
   };
-  slider('半径', 'r', 20, 260, 1, 0, '舞台の中心からの距離。大きいほど遠くに見える');
+  slider('半径', 'r', 10, 50, 0.5, 1, '舞台の中心からの距離。大きいほど遠くに見える');
   slider('高さ', 'y', -60, 40, 0.5, 1, 'ドームの中心の高さ。下げると地平線が下がる');
   slider('範囲', 'span', 40, 360, 5, 0, '横に何度ぶん覆うか。180 で半円（客席から見える側だけ）');
   slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
