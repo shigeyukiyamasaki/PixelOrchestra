@@ -6,6 +6,8 @@
  * トラック → 座席位置（扇形配置）の計算。
  */
 
+import { PX } from './sprites.js';
+
 // 列の定義：r=指揮者からの半径（そのセクションの最前列）、h=ひな壇の高さ、span=列が占める角度幅 [deg]
 // 弦は 3 列（r 6.5 / 9.15 / 11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
 export const ROWS = {
@@ -76,8 +78,11 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, wide: 1, at: 0 },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0 },
 ];
+// 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
+// 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
+export const SCREEN_PX = PX / 2;
 
 // ---- スクリーンに映す素材（透過 PNG / 緑背景の mp4）----
 // src ごとにテクスチャを使い回す。作り直すたびに読み込むと、スライダーを動かすだけで動画が頭出しに戻ってしまう
@@ -90,6 +95,7 @@ function mediaTexture(src) {
     const v = document.createElement('video');
     v.src = src; v.loop = true; v.muted = true; v.playsInline = true;
     v.setAttribute('playsinline', ''); v.crossOrigin = 'anonymous';
+    v.addEventListener('loadedmetadata', () => buildScreens());   // 実寸が分かってから組み直す
     v.play().catch((e) => console.warn('動画の自動再生が拒否されました（画面をクリックすると始まります）:', src, e.message));
     tex = new THREE.VideoTexture(v);
     tex.userDataVideo = v;
@@ -104,11 +110,11 @@ function mediaTexture(src) {
   MEDIA.set(src, tex);
   return tex;
 }
-/** 素材の縦横比（横 ÷ 縦）。まだ読み込めていなければ 0 */
-function mediaAspect(tex) {
+/** 素材の実寸 [px]。まだ読み込めていなければ null */
+function mediaSize(tex) {
   const im = tex && (tex.image || {});
   const w = im.videoWidth || im.width || 0, h = im.videoHeight || im.height || 0;
-  return h ? w / h : 0;
+  return w && h ? { w, h } : null;
 }
 
 // スクリーンのシェーダ：緑（キー色）との色の距離がしきい値より近い画素を捨てる（MIDIOrchestra と同じ判定）。
@@ -145,7 +151,7 @@ function screenMaterial(sc, tex) {
       hasMap: { value: tex ? 1 : 0 },
       keyColor: { value: new THREE.Color(sc.key || '#00ff00') },
       keyThr: { value: sc.thr ?? 0 },
-      tint: { value: new THREE.Color(sc.color) },
+      tint: { value: new THREE.Color('#ffffff') },
       opacity: { value: sc.opacity },
     },
     vertexShader: SCREEN_SHADER.vertexShader,
@@ -155,13 +161,10 @@ function screenMaterial(sc, tex) {
   });
 }
 
-/** スクリーン 1 枚の情報（幅合わせの計算に使う）。素材が未読込なら aspect = 0 */
+/** スクリーン 1 枚の素材の実寸 [px]。まだ読み込めていなければ null（UI の表示用） */
 export function screenInfo(i) {
-  const b = stageCtx && stageCtx.screenBase;
   const sc = screenList[i];
-  if (!b || !sc) return null;
-  const r = b.rIn + (b.rOut - b.rIn) * Math.max(0, Math.min(1, sc.pos));
-  return { aspect: sc.src ? mediaAspect(MEDIA.get(sc.src)) : 0, arcFull: r * (b.thMax - b.thMin), r };
+  return sc && sc.src ? mediaSize(MEDIA.get(sc.src)) : null;
 }
 let screenList = SCREEN_DEFAULT.map((o) => ({ ...o }));
 
@@ -470,22 +473,25 @@ function buildScreens() {
   const order = screenList.map((sc, i) => ({ sc, i })).sort((a, b) => b.sc.pos - a.sc.pos);
   const cTh = (thMin + thMax) / 2, halfTh = (thMax - thMin) / 2;
   order.forEach(({ sc, i }, k) => {
-    if (sc.show === false || !(sc.h > 0)) return;
+    if (sc.show === false || !sc.src) return;      // 素材の無いスクリーンは何も描かない（色は持たない）
+    const tex = mediaTexture(sc.src);
+    const px = mediaSize(tex);
+    if (!px) return;                               // まだ読み込めていない（読み終わったら組み直される）
     const r = rIn + (rOut - rIn) * Math.max(0, Math.min(1, sc.pos));
-    // 幅（全体の弧に対する割合）と横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
-    const wide = Math.max(0.02, Math.min(1, sc.wide ?? 1));
-    const half = halfTh * wide;
-    const ctr = cTh + (sc.at ?? 0) * (halfTh - half);
-    const tex = sc.src ? mediaTexture(sc.src) : null;
+    // 素材の実寸（1 ドット = SCREEN_PX × 倍率）。はみ出す時だけ弧の幅に収める
+    const scale = sc.scale > 0 ? sc.scale : 1;
+    const hgt = px.h * SCREEN_PX * scale;
+    const half = Math.min(halfTh, (px.w * SCREEN_PX * scale) / 2 / r);
+    const ctr = cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
     const m = screenMaterial(sc, tex);
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r, sc.h, Math.max(4, Math.round(segs * wide)), 1, true,
+      new THREE.CylinderGeometry(r, r, hgt, Math.max(4, Math.round(segs * (half / halfTh))), 1, true,
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
-    mesh.position.y = y + sc.h / 2;
-    mesh.renderOrder = ro - 1 + k * 0.05;   // 奥 → 手前 の順
+    mesh.position.y = y + hgt / 2;                     // 下端をひな壇の天面に置く
+    mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
   });
 }

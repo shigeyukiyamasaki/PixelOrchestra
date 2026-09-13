@@ -144,8 +144,8 @@ function seek(t) {
 // 枚数が変わる UI なので、id 付き input の自動収集には乗せず、独自キーで保存する
 // 項目が増えても古い保存データが壊れないよう、足りない値は既定で埋める
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
-const SCREEN_BASE = { name: '', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true,
-                      src: '', srcRaw: '', key: '#00ff00', thr: 0, wide: 1, at: 0 };
+const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
+                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0 };
 const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
 let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
@@ -218,12 +218,7 @@ function screenRow(sc, i) {
     return set;
   };
   slider(row, '位置', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
-  slider(row, '高さ', 'h', 1, 40, 0.5, 1, 'ひな壇の天面からの高さ [unit]');
   slider(row, '濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
-
-  const col = put(row, '<label title="確認用の色（素材を入れるまでの仮の色）"><input type="color"></label>').querySelector('input');
-  col.value = sc.color;
-  col.oninput = () => { sc.color = col.value; changed(); };
 
   const del = put(row, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
@@ -267,16 +262,11 @@ function screenRow(sc, i) {
   dirSel.onchange = () => { if (dirSel.value === '') { sc.src = ''; sc.srcRaw = ''; changed(); } fillSlot(); };
   fillSlot();
 
-  const setWide = slider(row2, '幅', 'wide', 0.02, 1, 0.01, 2, 'ひな壇の弧全体に対する幅の割合。キャラクターを置く時は小さくする');
+  // 大きさは素材の実寸が基準（倍率 1 = 素材のドットが奏者のドットと同じ大きさ）
+  const px = screenInfo(i);
+  slider(row2, '大きさ', 'scale', 0.1, 6, 0.05, 2,
+    `素材の実寸に対する倍率。1 で素材のドットが奏者のドットと同じ大きさ${px ? `（この素材は ${px.w}×${px.h} ドット）` : ''}`);
   slider(row2, '横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
-
-  const fit = put(row2, '<button title="素材の縦横比に合わせて幅を決める（高さはそのまま）">比率</button>');
-  fit.onclick = () => {
-    const info = screenInfo(i);
-    if (!info || !info.aspect) { fit.textContent = '未読込'; setTimeout(() => { fit.textContent = '比率'; }, 1200); return; }
-    sc.wide = Math.max(0.02, Math.min(1, (sc.h * info.aspect) / info.arcFull));
-    setWide(sc.wide); changed();
-  };
 
   const key = put(row2, '<label title="抜く色（緑背景の色）。透過 PNG ならしきい値 0 のままでよい"><span>キー色</span><input type="color"></label>').querySelector('input');
   key.value = sc.key || '#00ff00';
