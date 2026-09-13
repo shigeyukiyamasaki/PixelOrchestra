@@ -175,8 +175,9 @@ function seek(t) {
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
                       src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false,
-                      speed: 0, tile: 0 };
-const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
+                      speed: 0, loop: false };
+// tile（繰り返し幅）は廃止し、1 枚の幅は「大きさ」で決める形にした（2026-09-13）。古い保存データを移す
+const withDefaults = (o) => { const v = { ...SCREEN_BASE, ...o }; if (o && o.tile > 0) v.loop = true; delete v.tile; return v; };
 let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
   return SCREEN_DEFAULT.map(withDefaults);
@@ -397,9 +398,8 @@ function screenRow(sc, i) {
   slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
   slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る');
-  // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返し幅を 0 より大きくすると弧いっぱいに広がる
-  slider('繰り返し幅', 'tile', 0, 60, 0.5, 1, '素材を何 unit ごとに繰り返すか。0 で繰り返さない（実寸のまま 1 枚）。大きくすると絵も大きくまばらになる');
-  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる');
+  // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
+  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰り返す」と併せて使う');
 
   // 下：キー色・表示・削除
   const foot = put(box, '<div class="foot"></div>');
@@ -412,6 +412,9 @@ function screenRow(sc, i) {
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
   flip.checked = !!sc.flip;
   flip.onchange = () => { sc.flip = flip.checked; changed(); };
+  const loop = put(foot, '<label title="素材を横に繰り返して弧いっぱいに敷く（雲など）。1 枚の幅は「大きさ」で決まるので絵は歪まない"><input type="checkbox"><span>繰返</span></label>').querySelector('input');
+  loop.checked = !!sc.loop;
+  loop.onchange = () => { sc.loop = loop.checked; changed(); };
   const del = put(foot, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
   return box;

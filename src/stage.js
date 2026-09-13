@@ -78,7 +78,7 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false, speed: 0, tile: 0 },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false, speed: 0, loop: false },
 ];
 // 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
 // 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
@@ -171,13 +171,13 @@ function screenMaterial(sc, tex) {
 /**
  * 流れるスクリーン（雲など）の位置を時刻から決める。毎フレーム呼ぶ。
  * 「時刻 → 状態」の純関数なので、後でオフラインに書き出しても同じ絵になる。
- * 速度は正で右から左へ（UV を進めると絵は左へ動く）
+ * 速度は正で右から左へ（UV を進めると絵は左へ動く）。1 周期 = 素材 1 枚ぶんの幅
  */
 export function updateScreens(t) {
   if (!stageCtx) return;
   for (const m of stageCtx.screens.children) {
     const sc = m.userData.scroll;
-    if (sc) m.material.uniforms.uScroll.value = (sc.speed * t) / sc.tile;
+    if (sc) m.material.uniforms.uScroll.value = (sc.speed * t) / sc.period;
   }
 }
 
@@ -501,19 +501,21 @@ function buildScreens() {
     // 素材の実寸（1 ドット = SCREEN_PX × 倍率）。はみ出す時だけ弧の幅に収める
     const scale = sc.scale > 0 ? sc.scale : 1;
     const hgt = px.h * SCREEN_PX * scale;
-    // 繰り返し幅を指定した時（雲など）は弧いっぱいに広げ、その幅ごとに素材を繰り返す
-    const tile = sc.tile > 0 ? sc.tile : 0;
-    const half = tile ? halfTh : Math.min(halfTh, (px.w * SCREEN_PX * scale) / 2 / r);
-    const ctr = tile ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
+    // 「繰り返す」時（雲など）は弧いっぱいに広げ、素材 1 枚ぶんの幅ごとに並べる。
+    // 1 枚の幅は実寸 × 大きさなので、繰り返しても縦横比は変わらない（2026-09-13 修正）
+    const wid = px.w * SCREEN_PX * scale;
+    const loop = !!sc.loop;
+    const half = loop ? halfTh : Math.min(halfTh, wid / 2 / r);
+    const ctr = loop ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
     const m = screenMaterial(sc, tex);
-    if (tile) m.uniforms.uRepeat.value = (r * half * 2) / tile;
+    if (loop) m.uniforms.uRepeat.value = (r * half * 2) / wid;
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(r, r, hgt, Math.max(4, Math.round(segs * (half / halfTh))), 1, true,
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
-    mesh.userData.scroll = tile ? { speed: sc.speed || 0, tile } : null;
+    mesh.userData.scroll = loop ? { speed: sc.speed || 0, period: wid } : null;
     mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
