@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, updateScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -21,14 +21,15 @@ const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
-const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」の対応
+const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
+const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 
 // ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
 // localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY];
+const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY];
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
@@ -182,6 +183,21 @@ let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
   return SCREEN_DEFAULT.map(withDefaults);
 })();
+// スカイドーム（遠景。3 層固定。追加も削除もしない）
+const DOME_BASE = { name: '', r: 100, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
+                    src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false };
+let domes = (() => {
+  try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
+    if (Array.isArray(a) && a.length === 3) return a.map((o) => ({ ...DOME_BASE, ...o })); } catch (e) { console.warn('スカイドーム設定の読込失敗:', e); }
+  return DOME_DEFAULT.map((o) => ({ ...DOME_BASE, ...o }));
+})();
+let domeSaveTimer = null;
+function saveDomes() {
+  clearTimeout(domeSaveTimer);
+  domeSaveTimer = setTimeout(() => {
+    try { localStorage.setItem(DOMES_KEY, JSON.stringify(domes)); pushSettings(); } catch (e) { console.warn('スカイドーム設定の保存失敗:', e); }
+  }, 400);
+}
 let screenSaveTimer = null;
 function saveScreens() {
   clearTimeout(screenSaveTimer);
@@ -420,10 +436,66 @@ function screenRow(sc, i) {
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
   return box;
 }
+// スカイドーム 1 枚ぶんのカード。作りはスクリーンのカードと同じで、項目だけ違う
+function domeRow(d, i) {
+  const box = Object.assign(document.createElement('div'), { className: 'screen dome' });
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setDomes(domes); saveDomes(); };
+
+  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  const drawThumb = () => {
+    thumb.textContent = '';
+    thumb.appendChild(thumbFor(d));
+    const cap = document.createElement('span');
+    cap.className = 'cap';
+    cap.textContent = d.src ? (srcParts(d)?.name || d.srcRaw || '') : '素材を選ぶ';
+    thumb.appendChild(cap);
+    thumb.title = d.srcRaw || d.src || '押すとフォルダを辿って素材を選べる（雲などの遠景）';
+  };
+  drawThumb();
+  thumb.onclick = () => openPicker(thumb, d, (dir, name) => {
+    if (dir !== undefined) { d.src = mediaUrlOf(dir, name); d.srcRaw = `${dir}/${name}`; }
+    drawThumb(); changed();
+  });
+
+  const name = put(box, '<input type="text" class="name" title="名前（覚え書き）">');
+  name.value = d.name || `スカイドーム${i + 1}`;
+  name.oninput = () => { d.name = name.value; saveDomes(); };
+  name.onkeydown = (e) => e.stopPropagation();
+
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input'), out = lab.querySelector('b');
+    el.value = d[key] ?? DOME_BASE[key] ?? +min;
+    out.textContent = (+el.value).toFixed(digits);
+    el.oninput = () => { d[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+  };
+  slider('半径', 'r', 20, 260, 1, 0, '舞台の中心からの距離。大きいほど遠くに見える');
+  slider('高さ', 'y', -60, 40, 0.5, 1, 'ドームの中心の高さ。下げると地平線が下がる');
+  slider('範囲', 'span', 40, 360, 5, 0, '横に何度ぶん覆うか。180 で半円（客席から見える側だけ）');
+  slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
+  slider('流れる速度', 'speed', -30, 30, 0.5, 1, '横に流れる速さ [度/秒]。プラスで右から左へ');
+  slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度');
+  slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない');
+
+  const foot = put(box, '<div class="foot"></div>');
+  const key = put(foot, '<label title="抜く色（緑背景の色）"><input type="color"></label>').querySelector('input');
+  key.value = d.key || '#00ff00';
+  key.oninput = () => { d.key = key.value; changed(); };
+  const show = put(foot, '<label title="このドームを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = d.show !== false;
+  show.onchange = () => { d.show = show.checked; changed(); };
+  const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
+  flip.checked = !!d.flip;
+  flip.onchange = () => { d.flip = flip.checked; changed(); };
+  return box;
+}
+
 function renderScreens() {
   const box = $('screenRows');
   if (!box) return;
   box.textContent = '';
+  domes.forEach((d, i) => box.appendChild(domeRow(d, i)));     // 遠景（3 層固定）を先頭に
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
   // 右端の「＋」でカードを増やす
   const add = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: 'スクリーンを 1 枚増やす' });
@@ -1073,6 +1145,7 @@ for (const d of document.querySelectorAll('#panel details, #camBar details')) {
 }
 loadSettings();
 setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
+setDomes(domes);      // スカイドーム（遠景。3 層固定）
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
 refreshValueLabels();

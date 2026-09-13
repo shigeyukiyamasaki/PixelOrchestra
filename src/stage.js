@@ -95,12 +95,12 @@ function mediaTexture(src) {
     const v = document.createElement('video');
     v.src = src; v.loop = true; v.muted = true; v.playsInline = true;
     v.setAttribute('playsinline', ''); v.crossOrigin = 'anonymous';
-    v.addEventListener('loadedmetadata', () => buildScreens());   // 実寸が分かってから組み直す
+    v.addEventListener('loadedmetadata', () => { buildScreens(); buildDomes(); });   // 実寸が分かってから組み直す
     v.play().catch((e) => console.warn('動画の自動再生が拒否されました（画面をクリックすると始まります）:', src, e.message));
     tex = new THREE.VideoTexture(v);
     tex.userDataVideo = v;
   } else {
-    tex = new THREE.TextureLoader().load(src, () => { tex.needsUpdate = true; buildScreens(); },
+    tex = new THREE.TextureLoader().load(src, () => { tex.needsUpdate = true; buildScreens(); buildDomes(); },
       undefined, () => console.warn('素材を読み込めません:', src));
   }
   // ドット絵なので拡大は最近傍（MIDIOrchestra は Linear 固定だが、こちらは粒を保つ）
@@ -184,7 +184,7 @@ function screenMaterial(sc, tex) {
  */
 export function updateScreens(t) {
   if (!stageCtx) return;
-  for (const m of stageCtx.screens.children) {
+  for (const m of [...stageCtx.screens.children, ...stageCtx.domes.children]) {
     const sc = m.userData.scroll;
     if (sc) m.material.uniforms.uScroll.value = (sc.speed * t) / sc.period;
   }
@@ -287,7 +287,9 @@ export function createStage(container) {
   const screens = new THREE.Group();   // スクリーンはひな壇とは別に組み直す（枚数や位置を UI から頻繁に変えるため）
   screens.position.z = SEAT_SHIFT_Z;
   scene.add(screens);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, hemi, spots, seats: [] };
+  const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
+  scene.add(domes);
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -486,6 +488,53 @@ export function buildRisers(seats) {
     if (row.screen) stageCtx.screenBase = { rIn, rOut, y: row.h, thMin, thMax, segs, clip, ro };
   }
   buildScreens();   // 土台の寸法が変わるので組み直す
+}
+
+// ---- スカイドーム（遠景。3 層固定。2026-09-13 ユーザー指定）----
+// ひな壇の弧とは無関係に、舞台をぐるりと覆う半球の一部（既定は半円 = 180°）。
+// 素材は横に繰り返して流せるので、雲を層ごとに違う速さで動かすと奥行きが出る
+export const DOME_DEFAULT = [
+  { name: '遠景', r: 120, y: -10, span: 180, tiles: 3, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
+  { name: '中景', r: 90,  y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
+  { name: '近景', r: 60,  y: -10, span: 180, tiles: 1, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
+];
+let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
+
+/** スカイドームの構成を差し替えて組み直す */
+export function setDomes(list) {
+  domeList = (list || []).map((o) => ({ ...o }));
+  buildDomes();
+}
+
+function buildDomes() {
+  if (!stageCtx) return;
+  const g = stageCtx.domes;
+  g.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });   // 素材のテクスチャは使い回すので捨てない
+  g.clear();
+  // 半径の大きい（遠い）ものから描く。半透明の重なりを正しく出すため
+  const order = domeList.map((d, i) => ({ d, i })).sort((a, b) => b.d.r - a.d.r);
+  order.forEach(({ d, i }, k) => {
+    if (d.show === false || !d.src) return;
+    const tex = mediaTexture(d.src);
+    if (!mediaSize(tex)) return;                    // まだ読み込めていない（読み終わったら組み直される）
+    const span = deg(Math.max(20, Math.min(360, d.span ?? 180)));
+    const tiles = Math.max(0.1, d.tiles ?? 1);
+    const m = screenMaterial(d, tex);
+    m.side = THREE.BackSide;                        // 内側から見る
+    m.depthWrite = false;                           // 空なので奥行きは書かない
+    m.uniforms.uLoop.value = 1;
+    m.uniforms.uRepeat.value = tiles;
+    m.uniforms.uFill.value = 1;
+    // 上半分だけの球。正面（-z 側）が中心に来るよう phi を回す
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(d.r, 96, 24, Math.PI - span / 2, span, 0, Math.PI / 2), m,
+    );
+    mesh.name = `dome:${i}`;
+    mesh.position.set(0, d.y ?? 0, SEAT_SHIFT_Z);
+    mesh.userData.scroll = { speed: d.speed || 0, period: 360 / tiles };   // 1 周期 = 素材 1 枚ぶんの角度 [deg]
+    mesh.renderOrder = -200 + k;                    // 何よりも先に描く
+    g.add(mesh);
+  });
 }
 
 /**

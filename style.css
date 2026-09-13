@@ -71,6 +71,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #screenBar .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
 #screenBar .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 #screenBar .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
+/* スカイドーム（遠景。3 層固定）はスクリーンと見分けが付くよう枠の色を変える */
+#screenBar .screen.dome { border-color: rgba(226, 179, 72, .45); }
+#screenBar .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
 #screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }
 #screenBar .addCard:hover { border-color: var(--accent); color: var(--accent); }
