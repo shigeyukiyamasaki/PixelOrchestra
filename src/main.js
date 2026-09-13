@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, updateScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -174,7 +174,8 @@ function seek(t) {
 // 項目が増えても古い保存データが壊れないよう、足りない値は既定で埋める
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
-                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false };
+                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false,
+                      speed: 0, tile: 0 };
 const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
 let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
@@ -396,6 +397,9 @@ function screenRow(sc, i) {
   slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
   slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る');
+  // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返し幅を 0 より大きくすると弧いっぱいに広がる
+  slider('繰り返し幅', 'tile', 0, 60, 0.5, 1, '素材を何 unit ごとに繰り返すか。0 で繰り返さない（実寸のまま 1 枚）。大きくすると絵も大きくまばらになる');
+  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる');
 
   // 下：キー色・表示・削除
   const foot = put(box, '<div class="foot"></div>');
@@ -999,6 +1003,7 @@ function animate() {
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
+    updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
     applyCredits(s);
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);

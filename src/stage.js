@@ -78,7 +78,7 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false, speed: 0, tile: 0 },
 ];
 // 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
 // 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
@@ -106,7 +106,7 @@ function mediaTexture(src) {
   // ドット絵なので拡大は最近傍（MIDIOrchestra は Linear 固定だが、こちらは粒を保つ）
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping;   // 横は繰り返し（雲を流すため）
   MEDIA.set(src, tex);
   return tex;
 }
@@ -133,11 +133,13 @@ const SCREEN_SHADER = {
     uniform sampler2D map; uniform float hasMap;
     uniform vec3 keyColor; uniform float keyThr;
     uniform vec3 tint; uniform float opacity; uniform float flip;
+    uniform float uRepeat; uniform float uScroll;
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
     void main() {
       #include <clipping_planes_fragment>
-      vec2 uv = vec2(flip > 0.5 ? 1.0 - vUv.x : vUv.x, vUv.y);   // 左右反転（2026-09-13 ユーザー指定）
+      // 左右反転（2026-09-13 ユーザー指定）と、横方向の繰り返し・流し（雲。2026-09-13）
+      vec2 uv = vec2((flip > 0.5 ? 1.0 - vUv.x : vUv.x) * uRepeat + uScroll, vUv.y);
       vec4 c = hasMap > 0.5 ? texture2D(map, uv) : vec4(tint, 1.0);
       if (hasMap > 0.5 && keyThr > 0.0 && distance(c.rgb, keyColor) < keyThr) discard;
       float a = c.a * opacity;
@@ -155,6 +157,7 @@ function screenMaterial(sc, tex) {
       tint: { value: new THREE.Color('#ffffff') },
       opacity: { value: sc.opacity },
       flip: { value: sc.flip ? 1 : 0 },
+      uRepeat: { value: 1 }, uScroll: { value: 0 },
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,
@@ -163,6 +166,19 @@ function screenMaterial(sc, tex) {
     transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1,
     clipping: true,   // ShaderMaterial は明示しないと clippingPlanes が効かない
   });
+}
+
+/**
+ * 流れるスクリーン（雲など）の位置を時刻から決める。毎フレーム呼ぶ。
+ * 「時刻 → 状態」の純関数なので、後でオフラインに書き出しても同じ絵になる。
+ * 速度は正で右から左へ（UV を進めると絵は左へ動く）
+ */
+export function updateScreens(t) {
+  if (!stageCtx) return;
+  for (const m of stageCtx.screens.children) {
+    const sc = m.userData.scroll;
+    if (sc) m.material.uniforms.uScroll.value = (sc.speed * t) / sc.tile;
+  }
 }
 
 /** スクリーン 1 枚の素材の実寸 [px]。まだ読み込めていなければ null（UI の表示用） */
@@ -485,15 +501,19 @@ function buildScreens() {
     // 素材の実寸（1 ドット = SCREEN_PX × 倍率）。はみ出す時だけ弧の幅に収める
     const scale = sc.scale > 0 ? sc.scale : 1;
     const hgt = px.h * SCREEN_PX * scale;
-    const half = Math.min(halfTh, (px.w * SCREEN_PX * scale) / 2 / r);
-    const ctr = cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
+    // 繰り返し幅を指定した時（雲など）は弧いっぱいに広げ、その幅ごとに素材を繰り返す
+    const tile = sc.tile > 0 ? sc.tile : 0;
+    const half = tile ? halfTh : Math.min(halfTh, (px.w * SCREEN_PX * scale) / 2 / r);
+    const ctr = tile ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
     const m = screenMaterial(sc, tex);
+    if (tile) m.uniforms.uRepeat.value = (r * half * 2) / tile;
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(r, r, hgt, Math.max(4, Math.round(segs * (half / halfTh))), 1, true,
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
+    mesh.userData.scroll = tile ? { speed: sc.speed || 0, tile } : null;
     mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
