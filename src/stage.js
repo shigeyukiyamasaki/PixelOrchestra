@@ -516,7 +516,8 @@ function buildDomes() {
   order.forEach(({ d, i }, k) => {
     if (d.show === false || !d.src) return;
     const tex = mediaTexture(d.src);
-    if (!mediaSize(tex)) return;                    // まだ読み込めていない（読み終わったら組み直される）
+    const px = mediaSize(tex);
+    if (!px) return;                                // まだ読み込めていない（読み終わったら組み直される）
     const span = deg(Math.max(20, Math.min(360, d.span ?? 180)));
     const tiles = Math.max(0.1, d.tiles ?? 1);
     const m = screenMaterial(d, tex);
@@ -525,9 +526,13 @@ function buildDomes() {
     m.uniforms.uLoop.value = 1;
     m.uniforms.uRepeat.value = tiles;
     m.uniforms.uFill.value = 1;
-    // 上半分だけの球。正面（-z 側）が中心に来るよう phi を回す
+    // 縦は横に連動させる：1 枚ぶんの横幅（角度）に素材の縦横比を掛けたぶんだけの帯にし、
+    // 地平線の上にのせる。枚数を増やすと横も縦も一緒に小さくなる（2026-09-13 ユーザー指定）
+    const thetaLen = Math.min(Math.PI / 2, (span / tiles) * (px.h / px.w));
+    const thetaStart = Math.PI / 2 - thetaLen;
+    // 正面（-z 側）が中心に来るよう phi を回す
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(d.r, 96, 24, Math.PI - span / 2, span, 0, Math.PI / 2), m,
+      new THREE.SphereGeometry(d.r, 96, 24, Math.PI - span / 2, span, thetaStart, thetaLen), m,
     );
     mesh.name = `dome:${i}`;
     mesh.position.set(0, d.y ?? 0, SEAT_SHIFT_Z);
