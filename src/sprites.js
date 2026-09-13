@@ -858,15 +858,15 @@ INSTRUMENT.violin = INSTRUMENT.violin1;
  * 小さなキャンバスに描いて最近傍拡大するので文字もドット絵風になる。
  */
 export const LABEL_FONT = 'DotGothic16'; // ドットフォント（Google Fonts。index.html で読み込み）
-export function nameLabel(text, color = '#ffffff', size = 1) {
+export function nameLabel(text, color = '#ffffff', size = 1, outline = 3) {
   const SS = 3;                                    // 高解像度で描いて縮小（縁取りを滑らかに）
   const fontPx = 12 * SS;
   const font = `${fontPx}px "${LABEL_FONT}", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif`;
   const m = document.createElement('canvas').getContext('2d');
   m.font = font;
   const tw = Math.ceil(m.measureText(text).width);
-  const pad = 8 * SS;                              // 余白（白縁のぶん広げる）
-  const w = Math.min(220 * SS, tw + pad * 2), h = 22 * SS;
+  const pad = (5 + outline) * SS;                  // 余白（白縁のぶん広げる）
+  const w = Math.min(220 * SS, tw + pad * 2), h = (16 + 2 * outline) * SS;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
@@ -874,9 +874,12 @@ export function nameLabel(text, color = '#ffffff', size = 1) {
   // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。
   // 縁取りは外側から 白 → 黒 の二重（2026-09-13 ユーザー指定）。太い方から先に描いて内側を上書きする
   g.lineJoin = 'round';
-  // 白は黒より十分太くする。差が小さいと縮小時に黒と混ざって灰色に見える（2026-09-13 ユーザー指摘）
-  g.lineWidth = 9 * SS; g.strokeStyle = '#ffffff';
-  g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
+  // 白は黒より十分太くする。差が小さいと縮小時に黒と混ざって灰色に見える（2026-09-13 ユーザー指摘）。
+  // outline は「見える白の帯の太さ [px]」。黒 3px の外側へ左右それぞれ outline だけ出す
+  if (outline > 0) {
+    g.lineWidth = (3 + outline * 2) * SS; g.strokeStyle = '#ffffff';
+    g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
+  }
   g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
   g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   g.fillStyle = color;
