@@ -296,44 +296,15 @@ function toMediaUrl(src) {
   return p;   // プロジェクト内の相対パス（assets/… 等）はそのまま
 }
 
-// 1 枚ぶんの行を作る（2 段：上＝置き方、下＝映すもの）。値をいじったら即座に 3D へ反映し、保存は遅らせる
+// スクリーン 1 枚ぶんのカードを作る（縦並び。追加すると右へ増えていく。2026-09-13 ユーザー指定）。
+// 値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
-  const frag = document.createDocumentFragment();
-  const box = frag.appendChild(Object.assign(document.createElement('div'), { className: 'screen' }));
-  const line = (cls) => box.appendChild(Object.assign(document.createElement('div'), { className: cls }));
-  // 左端：サムネイル（押すと素材のカラム表示が開く）。2 行ぶんの高さを使う
-  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
-  const row = line('scr'), row2 = line('scr scr2');
+  const box = Object.assign(document.createElement('div'), { className: 'screen' });
   const put = (parent, html) => { const d = document.createElement('div'); d.innerHTML = html; return parent.appendChild(d.firstElementChild); };
   const changed = () => { setScreens(screens); saveScreens(); };
 
-  const show = put(row, '<label title="このスクリーンを表示する"><input type="checkbox"></label>').querySelector('input');
-  show.checked = sc.show !== false;
-  show.onchange = () => { sc.show = show.checked; changed(); };
-
-  const name = put(row, '<label><input type="text" title="名前（覚え書き。表示には影響しない）"></label>').querySelector('input');
-  name.value = sc.name || `スクリーン${i + 1}`;
-  name.oninput = () => { sc.name = name.value; saveScreens(); };
-  name.onkeydown = (e) => e.stopPropagation();   // Space 等を再生ショートカットに取られない
-
-  const slider = (parent, label, key, min, max, step, digits, title) => {
-    const lab = put(parent, `<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
-    const el = lab.querySelector('input'), out = lab.querySelector('b');
-    const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
-    // 既定値は必ず SCREEN_BASE から取る。表に無いと range 要素が「範囲の中央」を返してしまい、
-    // 触っていないのに変な値が表示される（2026-09-13 に 2 回やった）
-    if (!(key in SCREEN_BASE)) console.warn(`SCREEN_BASE に ${key} の既定値がありません`);
-    set(sc[key] ?? SCREEN_BASE[key] ?? +min);
-    el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
-    return set;
-  };
-  slider(row, '位置', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
-  slider(row, '濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
-
-  const del = put(row, '<button title="このスクリーンを削除する">削除</button>');
-  del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
-
-  // ---- サムネイル（素材の選択口）----
+  // 上：サムネイル（押すと素材のカラム表示が開く）
+  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
   const drawThumb = () => {
     thumb.textContent = '';
     thumb.appendChild(thumbFor(sc));
@@ -351,36 +322,58 @@ function screenRow(sc, i) {
     setTimeout(renderScreens, 600);   // 素材の大きさを説明文に出すため（読み込み後）
   });
 
-  // ---- 下の段：映すもの ----
+  const name = put(box, '<input type="text" class="name" title="名前（覚え書き。表示には影響しない）">');
+  name.value = sc.name || `スクリーン${i + 1}`;
+  name.oninput = () => { sc.name = name.value; saveScreens(); };
+  name.onkeydown = (e) => e.stopPropagation();   // Space 等を再生ショートカットに取られない
 
-  // 大きさは素材の実寸が基準（倍率 1 = 素材のドットが奏者のドットと同じ大きさ）
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input'), out = lab.querySelector('b');
+    const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
+    // 既定値は必ず SCREEN_BASE から取る。表に無いと range 要素が「範囲の中央」を返してしまい、
+    // 触っていないのに変な値が表示される（2026-09-13 に 2 回やった）
+    if (!(key in SCREEN_BASE)) console.warn(`SCREEN_BASE に ${key} の既定値がありません`);
+    set(sc[key] ?? SCREEN_BASE[key] ?? +min);
+    el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+  };
   const px = screenInfo(i);
-  slider(row2, '大きさ', 'scale', 0.1, 6, 0.05, 2,
+  slider('奥行き', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
+  slider('大きさ', 'scale', 0.1, 6, 0.05, 2,
     `素材の実寸に対する倍率。1 で素材のドットが奏者のドットと同じ大きさ${px ? `（この素材は ${px.w}×${px.h} ドット）` : ''}`);
-  slider(row2, '横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
-  slider(row2, '縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
+  slider('横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
+  slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
+  slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
+  slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る');
 
-  const key = put(row2, '<label title="抜く色（緑背景の色）。透過 PNG ならしきい値 0 のままでよい"><span>キー色</span><input type="color"></label>').querySelector('input');
+  // 下：キー色・表示・削除
+  const foot = put(box, '<div class="foot"></div>');
+  const key = put(foot, '<label title="抜く色（緑背景の色）。透過 PNG なら「抜く強さ」0 のままでよい"><input type="color"></label>').querySelector('input');
   key.value = sc.key || '#00ff00';
   key.oninput = () => { sc.key = key.value; changed(); };
-  slider(row2, 'しきい値', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので大きめに');
-  return frag;
+  const show = put(foot, '<label title="このスクリーンを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = sc.show !== false;
+  show.onchange = () => { sc.show = show.checked; changed(); };
+  const del = put(foot, '<button title="このスクリーンを削除する">削除</button>');
+  del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
+  return box;
 }
 function renderScreens() {
   const box = $('screenRows');
   if (!box) return;
   box.textContent = '';
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
+  // 右端の「＋」でカードを増やす
+  const add = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: 'スクリーンを 1 枚増やす' });
+  add.onclick = addScreen;
+  box.appendChild(add);
   setBarHeight();
 }
-const SCREEN_COLORS = ['#4a90d9', '#e0645a', '#5ec26a', '#d9b23f', '#9a6fd0', '#3fb6c2'];   // 確認用の仮の色（順に使い回す）
-$('screenAdd').addEventListener('click', () => {
-  const n = screens.length;
-  screens.push(withDefaults({ name: `スクリーン${n + 1}`, pos: Math.max(0, 1 - n * 0.25),
-                              color: SCREEN_COLORS[n % SCREEN_COLORS.length] }));
+function addScreen() {
+  screens.push(withDefaults({ name: `スクリーン${screens.length + 1}` }));
   renderScreens();
   setScreens(screens); saveScreens();
-});
+}
 $('screenReload').addEventListener('click', (e) => {
   const b = e.currentTarget;
   b.textContent = '調べています…';
