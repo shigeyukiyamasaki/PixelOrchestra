@@ -175,7 +175,7 @@ function seek(t) {
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
                       src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false,
-                      speed: 0, loop: false };
+                      speed: 0, loop: false, gap: 1 };
 // tile（繰り返し幅）は廃止し、1 枚の幅は「大きさ」で決める形にした（2026-09-13）。古い保存データを移す
 const withDefaults = (o) => { const v = { ...SCREEN_BASE, ...o }; if (o && o.tile > 0) v.loop = true; delete v.tile; return v; };
 let screens = (() => {
@@ -399,7 +399,8 @@ function screenRow(sc, i) {
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
   slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る');
   // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
-  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰り返す」と併せて使う');
+  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う');
+  slider('間隔', 'gap', 1, 6, 0.05, 2, '「繰返」した時の絵と絵の間隔。1 で隙間なし、2 で絵 1 枚ぶんの隙間が空く。絵の大きさは変わらない');
 
   // 下：キー色・表示・削除
   const foot = put(box, '<div class="foot"></div>');

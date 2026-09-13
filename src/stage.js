@@ -78,7 +78,7 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false, speed: 0, loop: false },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false, speed: 0, loop: false, gap: 1 },
 ];
 // 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
 // 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
@@ -133,13 +133,22 @@ const SCREEN_SHADER = {
     uniform sampler2D map; uniform float hasMap;
     uniform vec3 keyColor; uniform float keyThr;
     uniform vec3 tint; uniform float opacity; uniform float flip;
-    uniform float uRepeat; uniform float uScroll;
+    uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill;
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
     void main() {
       #include <clipping_planes_fragment>
-      // 左右反転（2026-09-13 ユーザー指定）と、横方向の繰り返し・流し（雲。2026-09-13）
-      vec2 uv = vec2((flip > 0.5 ? 1.0 - vUv.x : vUv.x) * uRepeat + uScroll, vUv.y);
+      // 左右反転（2026-09-13 ユーザー指定）と、横方向の繰り返し・流し（雲。2026-09-13）。
+      // 繰り返す時は 1 周期のうち uFill ぶんだけ絵を置き、残りは隙間として捨てる（間隔の調節）
+      float u = (flip > 0.5 ? 1.0 - vUv.x : vUv.x) * uRepeat + uScroll;
+      vec2 uv;
+      if (uLoop > 0.5) {
+        float f = fract(u);
+        if (f > uFill) discard;
+        uv = vec2(f / uFill, vUv.y);
+      } else {
+        uv = vec2(u, vUv.y);
+      }
       vec4 c = hasMap > 0.5 ? texture2D(map, uv) : vec4(tint, 1.0);
       if (hasMap > 0.5 && keyThr > 0.0 && distance(c.rgb, keyColor) < keyThr) discard;
       float a = c.a * opacity;
@@ -157,7 +166,7 @@ function screenMaterial(sc, tex) {
       tint: { value: new THREE.Color('#ffffff') },
       opacity: { value: sc.opacity },
       flip: { value: sc.flip ? 1 : 0 },
-      uRepeat: { value: 1 }, uScroll: { value: 0 },
+      uRepeat: { value: 1 }, uScroll: { value: 0 }, uLoop: { value: 0 }, uFill: { value: 1 },
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,
@@ -505,17 +514,23 @@ function buildScreens() {
     // 1 枚の幅は実寸 × 大きさなので、繰り返しても縦横比は変わらない（2026-09-13 修正）
     const wid = px.w * SCREEN_PX * scale;
     const loop = !!sc.loop;
+    const gap = Math.max(1, sc.gap ?? 1);            // 1 周期の幅 ÷ 絵の幅（1 で隙間なし）
+    const period = wid * gap;
     const half = loop ? halfTh : Math.min(halfTh, wid / 2 / r);
     const ctr = loop ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
     const m = screenMaterial(sc, tex);
-    if (loop) m.uniforms.uRepeat.value = (r * half * 2) / wid;
+    if (loop) {
+      m.uniforms.uLoop.value = 1;
+      m.uniforms.uRepeat.value = (r * half * 2) / period;
+      m.uniforms.uFill.value = 1 / gap;
+    }
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(r, r, hgt, Math.max(4, Math.round(segs * (half / halfTh))), 1, true,
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
-    mesh.userData.scroll = loop ? { speed: sc.speed || 0, period: wid } : null;
+    mesh.userData.scroll = loop ? { speed: sc.speed || 0, period } : null;
     mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
