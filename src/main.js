@@ -213,8 +213,9 @@ fetch('media-roots.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : [
 let mediaList = {};
 function loadMediaList(refresh = false) {
   return fetch(`media-list.json${refresh ? '?refresh=1' : ''}`, { cache: 'no-store' })
-    .then((r) => r.ok ? r.json() : {}).then((d) => { mediaList = d || {}; renderScreens(); })
-    .catch(() => { mediaList = {}; });
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((d) => { mediaList = d || {}; renderScreens(); })
+    .catch((e) => { console.warn('素材の一覧を取得できませんでした:', e.message); });   // 前回の一覧は残す
 }
 loadMediaList();
 // 一覧（フォルダ: [ファイル]）を木にする。カラム表示で辿るため
@@ -822,7 +823,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
+window.__po = { get mediaList() { return mediaList; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く

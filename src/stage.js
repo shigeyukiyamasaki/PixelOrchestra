@@ -112,7 +112,7 @@ function mediaTexture(src) {
 }
 /** 素材の実寸 [px]。まだ読み込めていなければ null */
 function mediaSize(tex) {
-  const im = tex && (tex.image || {});
+  const im = (tex && tex.image) || {};   // tex 自体が無い時もある（まだ読み込んでいない素材。2026-09-13 修正）
   const w = im.videoWidth || im.width || 0, h = im.videoHeight || im.height || 0;
   return w && h ? { w, h } : null;
 }
