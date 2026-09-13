@@ -84,17 +84,18 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 .mediaPicker .foot button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line);
   background: none; color: inherit; cursor: pointer; font: inherit; white-space: nowrap; }
 .mediaPicker .foot button:hover { border-color: var(--accent); color: var(--accent); }
-/* スクロールバー：細く・角丸・普段は控えめ（2026-09-13 ユーザー指定） */
-.mediaPicker .col, .mediaPicker .cols, #screenRows { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
-.mediaPicker .col::-webkit-scrollbar, .mediaPicker .cols::-webkit-scrollbar, #screenRows::-webkit-scrollbar { width: 9px; height: 9px; }
-.mediaPicker .col::-webkit-scrollbar-track, .mediaPicker .cols::-webkit-scrollbar-track, #screenRows::-webkit-scrollbar-track { background: transparent; }
-.mediaPicker .col::-webkit-scrollbar-thumb, .mediaPicker .cols::-webkit-scrollbar-thumb, #screenRows::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, .2); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-.mediaPicker .col:hover::-webkit-scrollbar-thumb, .mediaPicker .cols:hover::-webkit-scrollbar-thumb, #screenRows:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, .34); background-clip: padding-box; }
-.mediaPicker .col::-webkit-scrollbar-thumb:hover, .mediaPicker .cols::-webkit-scrollbar-thumb:hover, #screenRows::-webkit-scrollbar-thumb:hover {
-  background: var(--accent); background-clip: padding-box; }
-.mediaPicker ::-webkit-scrollbar-corner { background: transparent; }
+/* スクロールバー：MIDIOrchestra と同じ仕様に揃える（2026-09-13 ユーザー指定）。
+   幅 4px・普段は透明で、その要素にマウスが乗った時だけ水色で現れる。
+   Chrome は標準の scrollbar-width / scrollbar-color を解すると ::-webkit-scrollbar 側を無視するので、
+   どちらでも同じ見た目になるよう両方書いておく */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: rgba(79, 195, 247, .4) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+*:hover::-webkit-scrollbar-thumb { background: rgba(79, 195, 247, .4); }
+::-webkit-scrollbar-thumb:hover { background: rgba(79, 195, 247, .7); }
+::-webkit-scrollbar-corner { background: transparent; }
 
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
   max-height: calc(100% - 4px); margin: 4px 0 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
@@ -144,13 +145,14 @@ button.primary { background: var(--accent); color: #1a1408; border-color: var(--
 .cols .col > details:first-child { margin-top: 0; border-top: none; padding-top: 0; }
 /* 見出しは大きめ＋背景付きの帯。「表示する」のチェックは右端に置く（2026-09-13 ユーザー指定。MIDIOrchestra 参考） */
 details { margin-top: 10px; }
+/* 見出しは素材カラムの選択中と同じ配色（黄色地に濃紺の文字）。2026-09-13 ユーザー指定 */
 summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none;
-  font-size: 14px; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .14);
-  border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
+  font-size: 14px; font-weight: 600; color: #0b1020; background: var(--accent);
+  border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
 summary::-webkit-details-marker { display: none; }
-summary::before { content: '▸'; color: var(--accent); font-size: 20px; line-height: 1; }
+summary::before { content: '▸'; color: #0b1020; font-size: 20px; line-height: 1; }
 details[open] > summary::before { content: '▾'; }
-summary:hover { border-color: var(--accent); }
+summary:hover { filter: brightness(1.08); }
 summary input[type=checkbox] { margin-left: auto; margin-right: 0; }
 details > *:not(summary) { margin-left: 2px; }
 .hint.small { font-size: 11px; margin: 4px 0 0; }
