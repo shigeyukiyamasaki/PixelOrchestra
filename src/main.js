@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -87,6 +87,34 @@ const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7
 scene.add(logo);
 window.__logo = logo; // 位置合わせ用（位置・大きさ・濃度は「タイトル」の設定から）
 let logoOpacity = 1;
+
+// ---- タイトルを「ひな壇の曲率」で曲げる（2026-09-13 ユーザー指定）----
+// ひな壇は (0, SEAT_SHIFT_Z) を中心とした円弧なので、ロゴをその中心まわりの円筒に巻き付ける。
+// 半径はロゴの Z 位置から毎フレーム決まるので、Z を動かせばその位置の曲がり方になる。
+// 頂点シェーダで曲げる（ジオメトリは他と共有＆キャッシュされているため、作り直さない）
+const bendU = { uBend: { value: 0 }, uCz: { value: SEAT_SHIFT_Z }, uX0: { value: 0 }, uZ0: { value: 0 }, uS: { value: 1 } };
+logo.traverse((m) => {
+  if (!m.isMesh) return;
+  m.material.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, bendU);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        uniform float uBend; uniform float uCz; uniform float uX0; uniform float uZ0; uniform float uS;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        if (uBend > 0.5) {
+          float R0 = uCz - uZ0;                       // ロゴの中心面から円弧の中心までの距離
+          if (R0 > 1.0) {
+            float th = (uX0 + uS * transformed.x) / R0;   // 弧の長さが横位置と一致するように
+            float Rv = R0 - uS * transformed.z;           // 厚みぶんは半径方向にずらす
+            float xw = Rv * sin(th);
+            float zw = uCz - Rv * cos(th);
+            transformed.x = (xw - uX0) / uS;              // 親の位置・倍率を打ち消してローカルへ戻す
+            transformed.z = (zw - uZ0) / uS;
+          }
+        }`);
+  };
+  m.material.needsUpdate = true;
+});
 const spectrum = new Spectrum(scene); // タイトルの周りのスペクトラム（2026-09-12）
 spectrum.setShape(TENCHI, PX / 1.4); // ロゴの輪郭（dotPart と同じ res 1.4 のセル幅）
 
@@ -412,7 +440,7 @@ function setBarHeight() {
 addEventListener('resize', setBarHeight);
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
 // ラジオボタンは name をキーに、選択中の value を保存
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
@@ -523,6 +551,7 @@ function settings() {
     showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
+    titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
     specMode: radioValue('specMode') === 'logo' ? 'logo' : 'circle',
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
@@ -898,6 +927,8 @@ function animate() {
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);
     logo.scale.setScalar(s.titleScale);
+    bendU.uBend.value = s.titleBend ? 1 : 0;   // 曲げは毎フレーム位置・倍率を渡す（Z を動かせば曲率も変わる）
+    bendU.uX0.value = s.titleX; bendU.uZ0.value = s.titleZ; bendU.uS.value = s.titleScale;
     spectrum.setVisible(s.showSpectrum);
     spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor, mode: s.specMode });
     spectrum.setTransform(logo.position, s.titleScale);
@@ -945,7 +976,7 @@ async function loadFromUrl() {
 
 makeValueInputs();
 // 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
-for (const d of document.querySelectorAll('#panel details')) {
+for (const d of document.querySelectorAll('#panel details, #camBar details')) {
   const sum = d.querySelector(':scope > summary');
   const chk = [...d.querySelectorAll(':scope > label.chk')].find((l) => l.textContent.trim() === '表示する');
   if (!sum || !chk) continue;

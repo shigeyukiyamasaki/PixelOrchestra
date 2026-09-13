@@ -10,15 +10,25 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif; font-size: 13px; }
 /* 画面の骨格（2026-09-12 ユーザー指定）：メニューは全部プレビューの外。
    行 1 = 上メニュー（全幅）／行 2 = [トラック一覧 | プレビュー | 表示設定]。プレビューは常に 16:9 で中央に置く */
-body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(--leftw, 340px) 1fr var(--rightw, 440px);
+body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(--leftw, 392px) 1fr var(--rightw, 440px);
   height: 100dvh; overflow: hidden; }
 #stageArea { grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 /* プレビューの上の余白にカメラの操作を置く（2026-09-12 ユーザー指定）。高さは JS が --barh に書き込む */
 #camBar { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 6px 12px 0; }
-#camBar fieldset.sub { flex: 1 1 0; min-width: 0; margin: 0; }
+
 #camBar .row3 { display: grid; grid-template-columns: 1fr; } /* X/Y/Z は縦 3 行（2026-09-12 ユーザー指定） */
+#camBar .camSide > details > .row3 { margin-top: -2px; }
 #camBar .ctl { margin: 2px 0 4px; }
-#camBar #resetCam { flex: 0 0 auto; margin-top: 24px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+/* カメラ位置の左に置く「タイトル」「背景」（2026-09-13 ユーザー指定） */
+#camBar .camSide { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+#camBar .camSide > details { width: 196px; margin: 0; }
+/* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
+#camBar .camGroup { display: flex; flex-direction: column; gap: 6px; }
+#camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
+#camBar .camRow > details { width: 196px; margin: 0; }
+#camBar .camSide summary { font-size: 13px; padding: 4px 8px; margin-bottom: 5px; }
+#camBar .camSide .ctl { margin: 5px 0; }
+#camBar #resetCam { width: 100%; margin: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
 #camBar #resetCam:hover { border-color: var(--accent); color: var(--accent); }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */

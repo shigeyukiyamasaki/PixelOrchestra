@@ -158,7 +158,9 @@ function screenMaterial(sc, tex) {
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,
-    transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1 && !tex,
+    // 不透明なスクリーンは奥行きも書く（そうしないと手前のキャラクターがパート名を隠せない。
+    // 抜いた画素は discard するので、透明部分が後ろを消すことはない）。2026-09-13 ユーザー指定
+    transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1,
     clipping: true,   // ShaderMaterial は明示しないと clippingPlanes が効かない
   });
 }
