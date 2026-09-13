@@ -145,7 +145,7 @@ function seek(t) {
 // 項目が増えても古い保存データが壊れないよう、足りない値は既定で埋める
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
-                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0 };
+                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0 };
 const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
 let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
@@ -170,6 +170,93 @@ function loadMediaList(refresh = false) {
     .catch(() => { mediaList = {}; });
 }
 loadMediaList();
+// 一覧（フォルダ: [ファイル]）を木にする。カラム表示で辿るため
+function mediaTree() {
+  const root = { dirs: new Map(), files: [] };
+  for (const dir of Object.keys(mediaList).sort()) {
+    let node = root;
+    if (dir) for (const seg of dir.split('/')) {
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [] });
+      node = node.dirs.get(seg);
+    }
+    node.files = mediaList[dir];
+  }
+  return root;
+}
+// 開いているカラム表示（同時に 1 つだけ）
+let picker = null;
+function closePicker() { picker?.el.remove(); picker = null; }
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
+addEventListener('mousedown', (e) => { if (picker && !picker.el.contains(e.target) && e.target !== picker.anchor) closePicker(); }, true);
+
+/**
+ * 素材を選ぶカラム表示を開く。左のカラムでフォルダを選ぶと右に次のカラムが出る（Finder と同じ）。
+ * ファイルを選んだ時点で onPick(dir, name) を呼んで閉じる。2026-09-13 ユーザー指定
+ */
+function openPicker(anchor, sc, onPick) {
+  closePicker();
+  const el = document.createElement('div');
+  el.className = 'mediaPicker';
+  const cols = document.createElement('div');
+  cols.className = 'cols';
+  el.appendChild(cols);
+  const foot = document.createElement('div');
+  foot.className = 'foot';
+  foot.innerHTML = '<span>パスを直接入力</span>';
+  const tx = document.createElement('input');
+  tx.type = 'text'; tx.placeholder = '/Volumes/… もしくは assets/…';
+  tx.value = sc.srcRaw || sc.src || '';
+  tx.onkeydown = (e) => e.stopPropagation();
+  tx.onchange = () => { sc.srcRaw = tx.value.trim(); sc.src = toMediaUrl(tx.value); closePicker(); onPick(); };
+  foot.appendChild(tx);
+  const clr = document.createElement('button');
+  clr.textContent = '素材を外す';
+  clr.onclick = () => { sc.src = ''; sc.srcRaw = ''; closePicker(); onPick(); };
+  foot.appendChild(clr);
+  el.appendChild(foot);
+
+  const root = mediaTree();
+  const parts = srcParts(sc);
+  let path = parts ? parts.dir.split('/').filter(Boolean) : [];
+  const nodeAt = (segs) => segs.reduce((n, sg) => (n && n.dirs.get(sg)) || null, root);
+
+  function draw() {
+    cols.textContent = '';
+    for (let k = 0; k <= path.length; k++) {
+      const node = nodeAt(path.slice(0, k));
+      if (!node) break;
+      const col = document.createElement('div');
+      col.className = 'col';
+      for (const name of node.dirs.keys()) {
+        const b = document.createElement('button');
+        b.className = `dir${path[k] === name ? ' on' : ''}`;
+        b.textContent = name;
+        b.title = name;
+        b.onclick = () => { path = [...path.slice(0, k), name]; draw(); };
+        col.appendChild(b);
+      }
+      const here = path.slice(0, k).join('/');
+      for (const name of node.files) {
+        const b = document.createElement('button');
+        b.className = `file${parts && nfc(parts.name) === nfc(name) && nfc(parts.dir) === nfc(here) ? ' on' : ''}`;
+        b.textContent = name;
+        b.title = name;
+        b.onclick = () => { onPick(here, name); closePicker(); };
+        col.appendChild(b);
+      }
+      cols.appendChild(col);
+    }
+    cols.scrollLeft = cols.scrollWidth;   // 一番右のカラムを見せる
+  }
+  draw();
+  document.body.appendChild(el);
+  // メニューはプレビューの下端にあるので、上へ開く
+  const r = anchor.getBoundingClientRect();
+  el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8))}px`;
+  el.style.top = `${Math.max(8, r.top - el.offsetHeight - 4)}px`;
+  picker = { el, anchor };
+}
+
 // macOS のファイル名は NFD なので、比較は NFC に揃える
 const nfc = (x) => (x || '').normalize('NFC');
 /** sc.src（media/… の URL）を { dir, name } に戻す。当てはまらなければ null（＝直接入力） */
@@ -213,7 +300,10 @@ function screenRow(sc, i) {
     const lab = put(parent, `<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input'), out = lab.querySelector('b');
     const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
-    set(sc[key] ?? SCREEN_BASE[key]);
+    // 既定値は必ず SCREEN_BASE から取る。表に無いと range 要素が「範囲の中央」を返してしまい、
+    // 触っていないのに変な値が表示される（2026-09-13 に 2 回やった）
+    if (!(key in SCREEN_BASE)) console.warn(`SCREEN_BASE に ${key} の既定値がありません`);
+    set(sc[key] ?? SCREEN_BASE[key] ?? +min);
     el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
     return set;
   };
@@ -224,49 +314,29 @@ function screenRow(sc, i) {
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
 
   // ---- 下の段：映すもの ----
-  // 素材はフォルダ → ファイルの 2 段プルダウンで選ぶ。一覧に無いものは「直接入力」で貼る
-  const parts = srcParts(sc);
-  const dirs = Object.keys(mediaList).sort((a, b) => nfc(a).localeCompare(nfc(b), 'ja'));
-  const inList = parts && dirs.some((d) => nfc(d) === nfc(parts.dir));
-  const dirSel = put(row2, '<label class="src" title="素材のフォルダ"><span>素材</span><select></select></label>').querySelector('select');
-  const opt = (sel, v, text, on) => { const o = document.createElement('option'); o.value = v; o.textContent = text; o.selected = !!on; sel.appendChild(o); };
-  opt(dirSel, '', '（なし）', !sc.src);
-  opt(dirSel, '*', '（直接入力）', !!sc.src && !inList);
-  for (const d of dirs) opt(dirSel, d, d || '（素材ルート直下）', inList && nfc(d) === nfc(parts.dir));
-
-  const slot = put(row2, '<label class="pick"></label>');   // ファイル選択欄（直接入力の時はテキスト）
-  function fillSlot() {
-    slot.textContent = '';
-    if (dirSel.value === '*') {
-      const tx = document.createElement('input');
-      tx.type = 'text'; tx.placeholder = '/Volumes/… もしくは assets/…';
-      tx.title = 'Finder からコピーした絶対パスをそのまま貼れる';
-      tx.value = sc.srcRaw || sc.src || '';
-      tx.onkeydown = (e) => e.stopPropagation();
-      tx.onchange = () => { sc.srcRaw = tx.value.trim(); sc.src = toMediaUrl(tx.value); changed(); };
-      slot.appendChild(tx);
-      return;
-    }
-    const fsel = document.createElement('select');
-    fsel.title = '透過 PNG か、緑背景の mp4';
-    const names = mediaList[dirSel.value] || [];
-    opt(fsel, '', '（なし）', true);
-    for (const n of names) opt(fsel, n, n, parts && nfc(n) === nfc(parts.name));
-    fsel.onchange = () => {
-      sc.src = fsel.value ? mediaUrlOf(dirSel.value, fsel.value) : '';
-      sc.srcRaw = fsel.value ? `${dirSel.value}/${fsel.value}` : '';
-      changed();
-    };
-    slot.appendChild(fsel);
-  }
-  dirSel.onchange = () => { if (dirSel.value === '') { sc.src = ''; sc.srcRaw = ''; changed(); } fillSlot(); };
-  fillSlot();
+  // 素材は 1 つのボタンから Finder のようなカラム表示で辿って選ぶ
+  const pick = put(row2, '<label class="src" title="押すとフォルダを辿って選べる。透過 PNG か、緑背景の mp4"><span>素材</span><button class="picker"></button></label>').querySelector('button');
+  const label = () => {
+    if (!sc.src) return '（素材を選ぶ）';
+    const p = srcParts(sc);
+    if (!p) return sc.srcRaw || sc.src;
+    const dir = p.dir.split('/').filter(Boolean).pop();
+    return dir ? `${dir} / ${p.name}` : p.name;
+  };
+  pick.textContent = label();
+  pick.onclick = () => openPicker(pick, sc, (dir, name) => {
+    if (dir !== undefined) { sc.src = mediaUrlOf(dir, name); sc.srcRaw = `${dir}/${name}`; }
+    pick.textContent = label();
+    changed();
+    setTimeout(renderScreens, 600);   // 素材の大きさを見出しに出すため（読み込み後）
+  });
 
   // 大きさは素材の実寸が基準（倍率 1 = 素材のドットが奏者のドットと同じ大きさ）
   const px = screenInfo(i);
   slider(row2, '大きさ', 'scale', 0.1, 6, 0.05, 2,
     `素材の実寸に対する倍率。1 で素材のドットが奏者のドットと同じ大きさ${px ? `（この素材は ${px.w}×${px.h} ドット）` : ''}`);
   slider(row2, '横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
+  slider(row2, '縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
 
   const key = put(row2, '<label title="抜く色（緑背景の色）。透過 PNG ならしきい値 0 のままでよい"><span>キー色</span><input type="color"></label>').querySelector('input');
   key.value = sc.key || '#00ff00';

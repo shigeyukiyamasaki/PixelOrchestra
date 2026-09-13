@@ -78,7 +78,7 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0 },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0 },
 ];
 // 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
 // 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
@@ -490,7 +490,7 @@ function buildScreens() {
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
-    mesh.position.y = y + hgt / 2;                     // 下端をひな壇の天面に置く
+    mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
   });
