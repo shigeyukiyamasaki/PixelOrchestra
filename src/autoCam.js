@@ -17,21 +17,30 @@ const ENTER_AT = 0.6;         // 「入り」と見なす強さ（一番強い�
 const LEAD_SHARE = 0.3;       // これ以上を占めていれば、そのパートを主役にする
 
 // ---- ショットの組み立て ----
-const SAMPLES_PER_BAR = 4;    // 1 小節あたり何点で強さを測るか
+// 1 小節あたり何点で強さを測るか。打楽器の打音は短いので、粗いと取りこぼす
+// （4 点だとグランカッサが 0 と判定され、打楽器が一度も候補に入らなかった。2026-09-13 実測）
+const SAMPLES_PER_BAR = 16;
 const MIN_BARS = 1;           // 最短ショット長 [小節]（切り替えの速さを上げ切った時）
 const MAX_BARS = 8;           // 最長ショット長 [小節]
 const BASE_BARS = 4;          // 標準のショット長 [小節]（切り替えの速さ 1 のとき）
 const WIDE_EVERY = 3;         // アップがこの回数続いたら引きを挟む
 const COND_RATIO = 0.35;      // 全体ショットのうち、指揮者を抜く割合
+const XCLOSE_RATIO = 0.25;    // アップのうち、超近接にする割合
 const BAR_SCAN_STEP = 0.02;   // 小節の頭を探す時の刻み [s]
 
 // ---- カメラの置き方（すべて world unit）----
 const WIDE = { z: 13, dolly: 3, y: 9, sway: 3, yWave: 1.5, target: [0, 3, -12] };
 const COND = { dist: 7, dolly: 1.2, y: 3.4, targetY: 2.4, swing: 0.4, base: 0.5 };  // swing/base は [rad]
-const RANK_KEEP = 8;          // 各小節で候補に残すパート数（多いほど色々な席が映る）
+// 候補に残す下限（その小節で一番強いパートに対する割合）。上位 N 件で切ると、
+// 常に強い金管・弦に埋もれて打楽器が一度も候補に入らなかった（2026-09-13 実測：24 小節中 1〜2）
+const RELEVANT_AT = 0.35;
+// 同じ回数だけ抜かれている候補の中での優劣に足す揺らぎ。強い順に固定すると、
+// ショット数が少ない曲では強い金管・弦だけで枠が埋まり、打楽器まで回らない（2026-09-13）
+const PICK_JITTER = 0.45;
 const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜かない
 // 奏者は 3.2 unit ほどの背丈で 2.65 unit 間隔に並ぶ。近づきすぎると周りの奏者の中に入り込んで
 // 何を写しているか分からなくなるので、距離を取って高い位置から見下ろす（2026-09-13 実測して調整）
+const XCLOSE = { dist: 3.6, y: 3.6, targetY: 2.2 };   // 超近接：奏者 1 人で画面を埋める
 const CLOSE = { dist: 8.0, y: 5.6, targetY: 2.0 };
 const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
@@ -103,8 +112,8 @@ export class AutoCamera {
       for (let i = 0; i < seats.length; i++) { total += energy[i][b]; if (energy[i][b] > topE) { topE = energy[i][b]; top = i; } }
       if (top < 0 || topE <= 0) continue;
       loudest[b] = top;
-      rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > 0)
-        .sort((x, y) => energy[y][b] - energy[x][b]).slice(0, RANK_KEEP);
+      rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > topE * RELEVANT_AT)
+        .sort((x, y) => energy[y][b] - energy[x][b]);
       let sounding = 0, entered = -1;
       for (let i = 0; i < seats.length; i++) {
         if (energy[i][b] > topE * SOUNDING_AT) sounding++;
@@ -143,6 +152,7 @@ export class AutoCamera {
       else if (wobble(idx, 1) < closeRatio) {
         // 寄るショット。その中でアップ／中景を分ける（割合が高いほどアップ寄り）
         kind = wobble(idx, 8) < closeRatio ? 'close' : 'mid';
+        if (kind === 'close' && wobble(idx, 10) < XCLOSE_RATIO) kind = 'xclose';   // たまに超近接
         closeRun++;
       } else {
         kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
@@ -156,7 +166,7 @@ export class AutoCamera {
       // 寄る時の被写体：主役がいればその人、いなければ一番強いパート。どちらも無ければ引きに落とす。
       // 直前のショットと同じパートは避け、次に強いパートへ回す（2026-09-13 ユーザー指定）
       let who = -1;
-      if (kind === 'close' || kind === 'mid') {
+      if (kind !== 'wide' && kind !== 'cond') {
         const cands = [];
         if (subject[b] >= 0) cands.push(subject[b]);
         for (const i of (rank[b] || [])) if (!cands.includes(i)) cands.push(i);
@@ -166,18 +176,19 @@ export class AutoCamera {
         if (subject[b] >= 0 && !recent.includes(subject[b])) who = subject[b];
         else {
           const pool = cands.filter((i) => !recent.includes(i));
-          pool.sort((x, y) => (shown[x] - shown[y]) || (energy[y][b] - energy[x][b]));
+          const score = (i) => energy[i][b] + wobble(idx, 30 + i) * PICK_JITTER;
+          pool.sort((x, y) => (shown[x] - shown[y]) || (score(y) - score(x)));
           who = pool[0];
         }
         if (who === undefined) who = cands.find((i) => i !== recent[0]);
         if (who === undefined) {
           // 他に鳴っているパートが無い（長いソロが続いている等）。人は替えられないので寄り方を替える
           who = cands[0] ?? -1;
-          if (who >= 0 && who === recent[0]) kind = kind === 'close' ? 'mid' : 'close';
+          if (who >= 0 && who === recent[0]) kind = kind === 'mid' ? 'close' : 'mid';
         }
         if (who < 0) { kind = 'wide'; closeRun = 0; }
       }
-      if (kind === 'close' || kind === 'mid') { shown[who]++; recent.unshift(who); recent.length = Math.min(recent.length, RECENT_KEEP); }
+      if (kind !== 'wide' && kind !== 'cond') { shown[who]++; recent.unshift(who); recent.length = Math.min(recent.length, RECENT_KEEP); }
       else recent.length = 0;      // 引きを挟んだら制限を解く
       lastKind = kind;
       this.shots.push({
@@ -244,8 +255,8 @@ export class AutoCamera {
     }
     // 奏者：席の位置から、指揮者側（内側）の斜め上に置いて見下ろす。
     // アップは首席 1 人、中景はパート全体の中心を狙う
-    const k = sh.kind === 'close' ? CLOSE : MID;
-    const c = (sh.kind === 'close' ? sh.lead : sh.center) || sh.center;
+    const k = sh.kind === 'xclose' ? XCLOSE : sh.kind === 'close' ? CLOSE : MID;
+    const c = (sh.kind === 'mid' ? sh.center : sh.lead) || sh.center;   // 寄りは首席 1 人、中景はパート全体
     const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * p * move);          // ショットの間にゆっくり寄る
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
