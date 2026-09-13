@@ -232,7 +232,10 @@ function openPicker(anchor, sc, onPick) {
         b.className = `dir${path[k] === name ? ' on' : ''}`;
         b.textContent = name;
         b.title = name;
-        b.onclick = () => { path = [...path.slice(0, k), name]; draw(); };
+        // ホバーだけで下層を開く。同じ場所なら描き直さない（描き直すと mouseenter が再発して無限に回る）
+        const open = () => { const next = [...path.slice(0, k), name]; if (next.join('/') === path.join('/')) return; path = next; draw(); };
+        b.onmouseenter = open;
+        b.onclick = open;
         col.appendChild(b);
       }
       const here = path.slice(0, k).join('/');
@@ -255,6 +258,20 @@ function openPicker(anchor, sc, onPick) {
   el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8))}px`;
   el.style.top = `${Math.max(8, r.top - el.offsetHeight - 4)}px`;
   picker = { el, anchor };
+}
+
+// 選んだ素材のサムネイル。動画は小さく再生する（先頭フレームだけ出すより中身が分かる）
+function thumbFor(sc) {
+  if (!sc.src) { const d = document.createElement('div'); d.className = 'ph'; d.textContent = '素材'; return d; }
+  if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(sc.src)) {
+    const v = document.createElement('video');
+    v.src = sc.src; v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', '');
+    v.play().catch(() => {});    // 自動再生が止められても静止画として出る
+    return v;
+  }
+  const im = document.createElement('img');
+  im.src = sc.src;
+  return im;
 }
 
 // macOS のファイル名は NFD なので、比較は NFC に揃える
@@ -282,7 +299,10 @@ function toMediaUrl(src) {
 // 1 枚ぶんの行を作る（2 段：上＝置き方、下＝映すもの）。値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
   const frag = document.createDocumentFragment();
-  const line = (cls) => frag.appendChild(Object.assign(document.createElement('div'), { className: cls }));
+  const box = frag.appendChild(Object.assign(document.createElement('div'), { className: 'screen' }));
+  const line = (cls) => box.appendChild(Object.assign(document.createElement('div'), { className: cls }));
+  // 左端：サムネイル（押すと素材のカラム表示が開く）。2 行ぶんの高さを使う
+  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
   const row = line('scr'), row2 = line('scr scr2');
   const put = (parent, html) => { const d = document.createElement('div'); d.innerHTML = html; return parent.appendChild(d.firstElementChild); };
   const changed = () => { setScreens(screens); saveScreens(); };
@@ -313,23 +333,25 @@ function screenRow(sc, i) {
   const del = put(row, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
 
-  // ---- 下の段：映すもの ----
-  // 素材は 1 つのボタンから Finder のようなカラム表示で辿って選ぶ
-  const pick = put(row2, '<label class="src" title="押すとフォルダを辿って選べる。透過 PNG か、緑背景の mp4"><span>素材</span><button class="picker"></button></label>').querySelector('button');
-  const label = () => {
-    if (!sc.src) return '（素材を選ぶ）';
-    const p = srcParts(sc);
-    if (!p) return sc.srcRaw || sc.src;
-    const dir = p.dir.split('/').filter(Boolean).pop();
-    return dir ? `${dir} / ${p.name}` : p.name;
+  // ---- サムネイル（素材の選択口）----
+  const drawThumb = () => {
+    thumb.textContent = '';
+    thumb.appendChild(thumbFor(sc));
+    const cap = document.createElement('span');
+    cap.className = 'cap';
+    cap.textContent = sc.src ? (srcParts(sc)?.name || sc.srcRaw || '') : '素材を選ぶ';
+    thumb.appendChild(cap);
+    thumb.title = sc.srcRaw || sc.src || '押すとフォルダを辿って素材を選べる（透過 PNG か、緑背景の mp4）';
   };
-  pick.textContent = label();
-  pick.onclick = () => openPicker(pick, sc, (dir, name) => {
+  drawThumb();
+  thumb.onclick = () => openPicker(thumb, sc, (dir, name) => {
     if (dir !== undefined) { sc.src = mediaUrlOf(dir, name); sc.srcRaw = `${dir}/${name}`; }
-    pick.textContent = label();
+    drawThumb();
     changed();
-    setTimeout(renderScreens, 600);   // 素材の大きさを見出しに出すため（読み込み後）
+    setTimeout(renderScreens, 600);   // 素材の大きさを説明文に出すため（読み込み後）
   });
+
+  // ---- 下の段：映すもの ----
 
   // 大きさは素材の実寸が基準（倍率 1 = 素材のドットが奏者のドットと同じ大きさ）
   const px = screenInfo(i);
