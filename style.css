@@ -2,8 +2,8 @@
 :root {
   --bg: #0b0b16; --panel: #16162a; --panel2: #1f1f38; --text: #e8e8f0; --muted: #a0a0b8;
   --accent: #e2b348; --line: #2c2c48;
-  /* 要素を囲う枠線は控えめに（2026-09-13 ユーザー指定）。区切り線の --line より弱い */
-  --line-soft: rgba(255, 255, 255, .07);
+  /* 要素を囲う枠線は「薄い色＝明るい色」で、暗い地の上ではっきり見えるように（2026-09-13 ユーザー指定） */
+  --line-soft: rgba(255, 255, 255, .22);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -145,10 +145,10 @@ button.primary { background: var(--accent); color: #1a1408; border-color: var(--
 /* 見出しは大きめ＋背景付きの帯。「表示する」のチェックは右端に置く（2026-09-13 ユーザー指定。MIDIOrchestra 参考） */
 details { margin-top: 10px; }
 summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none;
-  font-size: 14px; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .045);
+  font-size: 14px; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .14);
   border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
 summary::-webkit-details-marker { display: none; }
-summary::before { content: '▸'; color: var(--accent); font-size: 16px; line-height: 1; }
+summary::before { content: '▸'; color: var(--accent); font-size: 20px; line-height: 1; }
 details[open] > summary::before { content: '▾'; }
 summary:hover { border-color: var(--accent); }
 summary input[type=checkbox] { margin-left: auto; margin-right: 0; }
