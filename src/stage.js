@@ -530,9 +530,10 @@ function buildDomes() {
     // 地平線の上にのせる。枚数を増やすと横も縦も一緒に小さくなる（2026-09-13 ユーザー指定）
     const thetaLen = Math.min(Math.PI / 2, (span / tiles) * (px.h / px.w));
     const thetaStart = Math.PI / 2 - thetaLen;
-    // 正面（-z 側）が中心に来るよう phi を回す
+    // 正面（客席から見える側 = 舞台の奥 -z）が中心に来るよう phi を回す。
+    // three.js の球は phi = π/2 が +z なので、-z は -π/2（2026-09-13 修正：180 度で右半分だけになっていた）
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(d.r, 96, 24, Math.PI - span / 2, span, thetaStart, thetaLen), m,
+      new THREE.SphereGeometry(d.r, 96, 24, -Math.PI / 2 - span / 2, span, thetaStart, thetaLen), m,
     );
     mesh.name = `dome:${i}`;
     mesh.position.set(0, d.y ?? 0, SEAT_SHIFT_Z);
