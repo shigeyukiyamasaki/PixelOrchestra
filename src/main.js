@@ -142,9 +142,14 @@ function seek(t) {
 // ---------- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定。2026-09-13 ユーザー指定） ----------
 // 枚数は自由。位置はひな壇の奥行きの中の割合（0 = 手前の辺 / 1 = 奥の辺）で持つ。
 // 枚数が変わる UI なので、id 付き input の自動収集には乗せず、独自キーで保存する
+// 項目が増えても古い保存データが壊れないよう、足りない値は既定で埋める
+// （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
+const SCREEN_BASE = { name: '', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true,
+                      src: '', srcRaw: '', key: '#00ff00', thr: 0, wide: 1, at: 0 };
+const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
 let screens = (() => {
-  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a; } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
-  return SCREEN_DEFAULT.map((o) => ({ ...o }));
+  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
+  return SCREEN_DEFAULT.map(withDefaults);
 })();
 let screenSaveTimer = null;
 function saveScreens() {
@@ -157,6 +162,24 @@ function saveScreens() {
 let mediaRoots = [];
 fetch('media-roots.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : []).then((a) => { mediaRoots = a || []; })
   .catch(() => { mediaRoots = []; });
+// 素材の一覧 { フォルダ: [ファイル名] }。プルダウンに出す。届いたら行を作り直す
+let mediaList = {};
+function loadMediaList(refresh = false) {
+  return fetch(`media-list.json${refresh ? '?refresh=1' : ''}`, { cache: 'no-store' })
+    .then((r) => r.ok ? r.json() : {}).then((d) => { mediaList = d || {}; renderScreens(); })
+    .catch(() => { mediaList = {}; });
+}
+loadMediaList();
+// macOS のファイル名は NFD なので、比較は NFC に揃える
+const nfc = (x) => (x || '').normalize('NFC');
+/** sc.src（media/… の URL）を { dir, name } に戻す。当てはまらなければ null（＝直接入力） */
+function srcParts(sc) {
+  const u = sc.src || '';
+  if (!u.startsWith('media/')) return null;
+  const segs = u.slice('media/'.length).split('/').map(decodeURIComponent);
+  return { dir: segs.slice(0, -1).join('/'), name: segs[segs.length - 1] };
+}
+const mediaUrlOf = (dir, name) => `media/${[...(dir ? dir.split('/') : []), name].map(encodeURIComponent).join('/')}`;
 // Finder からコピーした絶対パスを、そのまま貼れるようにする（素材ルートの中なら /media/… に読み替える）
 function toMediaUrl(src) {
   const p = (src || '').trim().replace(/^file:\/\//, '');
@@ -190,7 +213,7 @@ function screenRow(sc, i) {
     const lab = put(parent, `<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input'), out = lab.querySelector('b');
     const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
-    set(sc[key] ?? min);
+    set(sc[key] ?? SCREEN_BASE[key]);
     el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
     return set;
   };
@@ -206,10 +229,43 @@ function screenRow(sc, i) {
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
 
   // ---- 下の段：映すもの ----
-  const src = put(row2, '<label class="src" title="透過 PNG か、緑背景の mp4。Finder からコピーした絶対パスをそのまま貼れる"><span>素材</span><input type="text" placeholder="/Volumes/… もしくは assets/…"></label>').querySelector('input');
-  src.value = sc.srcRaw || sc.src || '';
-  src.onkeydown = (e) => e.stopPropagation();
-  src.onchange = () => { sc.srcRaw = src.value.trim(); sc.src = toMediaUrl(src.value); changed(); };
+  // 素材はフォルダ → ファイルの 2 段プルダウンで選ぶ。一覧に無いものは「直接入力」で貼る
+  const parts = srcParts(sc);
+  const dirs = Object.keys(mediaList).sort((a, b) => nfc(a).localeCompare(nfc(b), 'ja'));
+  const inList = parts && dirs.some((d) => nfc(d) === nfc(parts.dir));
+  const dirSel = put(row2, '<label class="src" title="素材のフォルダ"><span>素材</span><select></select></label>').querySelector('select');
+  const opt = (sel, v, text, on) => { const o = document.createElement('option'); o.value = v; o.textContent = text; o.selected = !!on; sel.appendChild(o); };
+  opt(dirSel, '', '（なし）', !sc.src);
+  opt(dirSel, '*', '（直接入力）', !!sc.src && !inList);
+  for (const d of dirs) opt(dirSel, d, d || '（素材ルート直下）', inList && nfc(d) === nfc(parts.dir));
+
+  const slot = put(row2, '<label class="pick"></label>');   // ファイル選択欄（直接入力の時はテキスト）
+  function fillSlot() {
+    slot.textContent = '';
+    if (dirSel.value === '*') {
+      const tx = document.createElement('input');
+      tx.type = 'text'; tx.placeholder = '/Volumes/… もしくは assets/…';
+      tx.title = 'Finder からコピーした絶対パスをそのまま貼れる';
+      tx.value = sc.srcRaw || sc.src || '';
+      tx.onkeydown = (e) => e.stopPropagation();
+      tx.onchange = () => { sc.srcRaw = tx.value.trim(); sc.src = toMediaUrl(tx.value); changed(); };
+      slot.appendChild(tx);
+      return;
+    }
+    const fsel = document.createElement('select');
+    fsel.title = '透過 PNG か、緑背景の mp4';
+    const names = mediaList[dirSel.value] || [];
+    opt(fsel, '', '（なし）', true);
+    for (const n of names) opt(fsel, n, n, parts && nfc(n) === nfc(parts.name));
+    fsel.onchange = () => {
+      sc.src = fsel.value ? mediaUrlOf(dirSel.value, fsel.value) : '';
+      sc.srcRaw = fsel.value ? `${dirSel.value}/${fsel.value}` : '';
+      changed();
+    };
+    slot.appendChild(fsel);
+  }
+  dirSel.onchange = () => { if (dirSel.value === '') { sc.src = ''; sc.srcRaw = ''; changed(); } fillSlot(); };
+  fillSlot();
 
   const setWide = slider(row2, '幅', 'wide', 0.02, 1, 0.01, 2, 'ひな壇の弧全体に対する幅の割合。キャラクターを置く時は小さくする');
   slider(row2, '横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
@@ -238,11 +294,15 @@ function renderScreens() {
 const SCREEN_COLORS = ['#4a90d9', '#e0645a', '#5ec26a', '#d9b23f', '#9a6fd0', '#3fb6c2'];   // 確認用の仮の色（順に使い回す）
 $('screenAdd').addEventListener('click', () => {
   const n = screens.length;
-  screens.push({ name: `スクリーン${n + 1}`, pos: Math.max(0, 1 - n * 0.25), h: 10,
-                 color: SCREEN_COLORS[n % SCREEN_COLORS.length], opacity: 1, show: true,
-                 src: '', key: '#00ff00', thr: 0, wide: 1, at: 0 });
+  screens.push(withDefaults({ name: `スクリーン${n + 1}`, pos: Math.max(0, 1 - n * 0.25),
+                              color: SCREEN_COLORS[n % SCREEN_COLORS.length] }));
   renderScreens();
   setScreens(screens); saveScreens();
+});
+$('screenReload').addEventListener('click', (e) => {
+  const b = e.currentTarget;
+  b.textContent = '調べています…';
+  loadMediaList(true).then(() => { b.textContent = '素材の一覧を更新'; });
 });
 // プレビューの高さ計算（style.css の --barh）に、上下のバーの実寸を渡す
 function setBarHeight() {

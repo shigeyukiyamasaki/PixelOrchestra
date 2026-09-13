@@ -23,6 +23,30 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 # tools/media_roots.txt があればそれを 1 行 1 パスで読む（無ければ下の既定値）。
 DEFAULT_MEDIA_ROOTS = ['/Volumes/SunDisk 4TB/動画編集']
 
+MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v'}
+_media_cache = {'t': 0, 'data': None}
+
+def media_list(max_files=20000):
+    """素材ルートの中の画像・動画を {フォルダ: [ファイル名]} で返す（UI のプルダウン用）。
+    実測 954 ファイルで 0.15 秒程度なので、短時間のキャッシュだけ持つ。"""
+    import time
+    if _media_cache['data'] is not None and time.time() - _media_cache['t'] < 5:
+        return _media_cache['data']
+    out, n = {}, 0
+    for root in media_roots():
+        for dp, dns, fns in os.walk(root):
+            dns[:] = sorted(d for d in dns if not d.startswith('.'))   # .Trashes 等は見ない
+            names = sorted(f for f in fns if os.path.splitext(f)[1].lower() in MEDIA_EXT)
+            if not names:
+                continue
+            rel = os.path.relpath(dp, root)
+            out.setdefault('' if rel == '.' else rel, []).extend(names)
+            n += len(names)
+            if n >= max_files:
+                break
+    _media_cache.update(t=time.time(), data=out)
+    return out
+
 def media_roots():
     conf = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'media_roots.txt')
     roots = []
@@ -50,8 +74,13 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if path.startswith('/media/'):   # 素材は Range 対応で返す（動画のシークと再生に必要）
             self._serve_media(self.translate_path(self.path))
             return
-        if path == '/media-roots.json':   # 素材ルートの一覧（絶対パスを /media/ の URL に直すのに使う）
-            body = json.dumps(media_roots(), ensure_ascii=False).encode('utf-8')
+        if path in ('/media-roots.json', '/media-list.json'):
+            # roots: 絶対パスを /media/ の URL に直すため。list: UI のプルダウン用の一覧
+            data = media_roots() if path == '/media-roots.json' else media_list()
+            if path == '/media-list.json' and 'refresh=1' in (self.path.split('?', 1) + [''])[1]:
+                _media_cache['data'] = None
+                data = media_list()
+            body = json.dumps(data, ensure_ascii=False).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))

@@ -36,9 +36,13 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #screenBar .scr input[type=color] { width: 3em; height: 18px; padding: 0; border: 1px solid var(--line); background: none; }
 #screenBar .scr b { color: var(--text); font-weight: 400; min-width: 2.4em; text-align: right; }
 /* 2 段目：映すもの（素材・幅・横位置・キー色・しきい値） */
-#screenBar .scr2 { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) auto 4.5em minmax(0, 1fr);
+/* 素材フォルダ・ファイル・幅・横位置・比率・キー色・しきい値 の 7 列 */
+#screenBar .scr2 { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) auto 4.5em minmax(0, 1fr);
                    border-top: none; padding-top: 0; }
-#screenBar .scr2 .src input { font-size: 11px; }
+#screenBar .scr2 .src select, #screenBar .scr2 .pick select, #screenBar .scr2 .pick input {
+  min-width: 0; width: 100%; font-size: 11px; background: var(--panel2, none); color: inherit;
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; }
+#screenBar .scr2 .pick { display: block; min-width: 0; }
 #screenBar .scr2 button { padding: 1px 6px; }
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
   max-height: calc(100% - 4px); margin: 4px 0 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
