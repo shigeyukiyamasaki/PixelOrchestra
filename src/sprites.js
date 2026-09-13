@@ -865,14 +865,18 @@ export function nameLabel(text, color = '#ffffff', size = 1) {
   const m = document.createElement('canvas').getContext('2d');
   m.font = font;
   const tw = Math.ceil(m.measureText(text).width);
-  const pad = 4 * SS;                              // 余白
-  const w = Math.min(220 * SS, tw + pad * 2), h = 18 * SS;
+  const pad = 6 * SS;                              // 余白（白縁のぶん広げる）
+  const w = Math.min(220 * SS, tw + pad * 2), h = 20 * SS;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
   g.font = font; g.textBaseline = 'middle';
-  // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。黒縁取り（白も試したが黒に確定。2026-09-11）
-  g.lineJoin = 'round'; g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
+  // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。
+  // 縁取りは外側から 白 → 黒 の二重（2026-09-13 ユーザー指定）。太い方から先に描いて内側を上書きする
+  g.lineJoin = 'round';
+  g.lineWidth = 6 * SS; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
+  g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
   g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   g.fillStyle = color;
   g.fillText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
