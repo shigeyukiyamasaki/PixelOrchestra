@@ -1035,13 +1035,24 @@ $('resetCam').addEventListener('click', () => {
 // スライダー → カメラ、マウス操作（OrbitControls）→ スライダー の双方向。値は他の設定と同じく自動保存される
 const CAM_IDS = ['camX', 'camY', 'camZ', 'tgtX', 'tgtY', 'tgtZ'];
 let camSyncing = false;
-function syncCameraSliders() { // カメラ → スライダー
+// 表示だけ更新する（保存はしない）。自動カメラ中に毎フレーム呼ぶので、触るのはカメラの 6 本だけ
+function showCameraValues() {
   camSyncing = true;
   const p = camera.position, t = controls.target;
   const vals = { camX: p.x, camY: p.y, camZ: p.z, tgtX: t.x, tgtY: t.y, tgtZ: t.z };
-  for (const id of CAM_IDS) $(id).value = vals[id].toFixed(1);
-  refreshValueLabels();
+  for (const id of CAM_IDS) {
+    const v = vals[id].toFixed(1);
+    const el = $(id);
+    if (el.value !== v) el.value = v;
+    const lab = document.querySelector(`[data-value-for="${id}"]`);
+    if (lab && document.activeElement !== lab) {
+      if (lab.tagName === 'INPUT') lab.value = v; else lab.textContent = v;
+    }
+  }
   camSyncing = false;
+}
+function syncCameraSliders() { // カメラ → スライダー（手動操作の後。保存もする）
+  showCameraValues();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
 }
@@ -1083,6 +1094,7 @@ function updateAutoCam(s, t) {
   camera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);
   controls.target.set(shot.target[0], shot.target[1], shot.target[2]);
   controls.update();
+  showCameraValues();     // スライダーを自動カメラに追従させる（保存はしない。2026-09-13 ユーザー指定）
   autoDriving = false;
 }
 

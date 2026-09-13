@@ -25,18 +25,20 @@ const MAX_BARS = 8;           // 最長ショット長 [小節]
 const BASE_BARS = 4;          // 標準のショット長 [小節]（切り替えの速さ 1 のとき）
 const WIDE_EVERY = 3;         // アップがこの回数続いたら引きを挟む
 const COND_RATIO = 0.35;      // 全体ショットのうち、指揮者を抜く割合
-const XCLOSE_RATIO = 0.25;    // アップのうち、超近接にする割合
+const XCLOSE_RATIO = 0.3;     // 寄りのうち、超近接にする割合
+const XCLOSE_EVERY = 3;       // 寄りがこの回数続いても超近接が出なければ、次は必ず超近接にする
 const BAR_SCAN_STEP = 0.02;   // 小節の頭を探す時の刻み [s]
 
 // ---- カメラの置き方（すべて world unit）----
 const WIDE = { z: 13, dolly: 3, y: 9, sway: 3, yWave: 1.5, target: [0, 3, -12] };
 const COND = { dist: 7, dolly: 1.2, y: 3.4, targetY: 2.4, swing: 0.4, base: 0.5 };  // swing/base は [rad]
-// 候補に残す下限（その小節で一番強いパートに対する割合）。上位 N 件で切ると、
-// 常に強い金管・弦に埋もれて打楽器が一度も候補に入らなかった（2026-09-13 実測：24 小節中 1〜2）
-const RELEVANT_AT = 0.35;
+// 候補に残す下限。「そのパート自身の曲中の最大」に対する割合で見る。
+// 小節内の一番強いパートと比べると、打楽器は絶対値で金管・弦に勝てず一度も候補に入らない
+// （2026-09-13 実測：上位 8 に入る小節が 24 中 1〜2）。自分比なら「今このパートは頑張っている」を拾える
+const RELEVANT_AT = 0.5;
 // 同じ回数だけ抜かれている候補の中での優劣に足す揺らぎ。強い順に固定すると、
 // ショット数が少ない曲では強い金管・弦だけで枠が埋まり、打楽器まで回らない（2026-09-13）
-const PICK_JITTER = 0.45;
+const PICK_JITTER = 0.6;
 const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜かない
 // 奏者は 3.2 unit ほどの背丈で 2.65 unit 間隔に並ぶ。近づきすぎると周りの奏者の中に入り込んで
 // 何を写しているか分からなくなるので、距離を取って高い位置から見下ろす（2026-09-13 実測して調整）
@@ -101,6 +103,10 @@ export class AutoCamera {
       });
     }
 
+    // そのパート自身の曲中の最大（自分比を出すため。打楽器は絶対値では金管・弦に勝てない）
+    const peak = energy.map((row) => row.reduce((a, x) => Math.max(a, x), 0) || 1);
+    const rel = (i, b) => energy[i][b] / peak[i];
+
     // 小節ごとに「主役（はっきり目立つパート）」と「一番強いパート」を出す。
     // 主役が立たない小節でも、寄りたい時は一番強いパートを抜く（2026-09-13 修正）
     const closeRatio = clamp(opt.close ?? 0.6, 0, 1);
@@ -112,8 +118,7 @@ export class AutoCamera {
       for (let i = 0; i < seats.length; i++) { total += energy[i][b]; if (energy[i][b] > topE) { topE = energy[i][b]; top = i; } }
       if (top < 0 || topE <= 0) continue;
       loudest[b] = top;
-      rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > topE * RELEVANT_AT)
-        .sort((x, y) => energy[y][b] - energy[x][b]);
+      rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > 0);
       let sounding = 0, entered = -1;
       for (let i = 0; i < seats.length; i++) {
         if (energy[i][b] > topE * SOUNDING_AT) sounding++;
@@ -134,7 +139,7 @@ export class AutoCamera {
     const targetBars = clamp(Math.round(BASE_BARS / rate), MIN_BARS, MAX_BARS);
     // アップが続いた時に挟む引きも、「アップの割合」が高いほど緩める（1 で挟まない）
     const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
-    let closeRun = 0;
+    let closeRun = 0, xcloseRun = 0;
     const shown = new Array(seats.length).fill(0);   // これまで抜いた回数（少ない席を優先して回す）
     const recent = [];           // 直近で抜いたパート（新しい順。同じ顔ぶれの往復を避ける）
     let lastKind = '';
@@ -151,8 +156,12 @@ export class AutoCamera {
       if (closeRun >= wideEvery) { kind = 'wide'; closeRun = 0; }        // アップが続いたら引きを挟む
       else if (wobble(idx, 1) < closeRatio) {
         // 寄るショット。その中でアップ／中景を分ける（割合が高いほどアップ寄り）
-        kind = wobble(idx, 8) < closeRatio ? 'close' : 'mid';
-        if (kind === 'close' && wobble(idx, 10) < XCLOSE_RATIO) kind = 'xclose';   // たまに超近接
+        // 超近接は寄りの中で先に決める。close/mid に割ってから判定すると確率が半分になり、
+        // アップ 0.5 では 6% しか出なかった（2026-09-13 ユーザー指摘）。
+        // 確率だけだと一度も出ない曲があるので、しばらく出ていなければ必ず入れる
+        if (wobble(idx, 10) < XCLOSE_RATIO || xcloseRun >= XCLOSE_EVERY) kind = 'xclose';
+        else kind = wobble(idx, 8) < closeRatio ? 'close' : 'mid';
+        xcloseRun = kind === 'xclose' ? 0 : xcloseRun + 1;
         closeRun++;
       } else {
         kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
@@ -175,11 +184,12 @@ export class AutoCamera {
         // （2026-09-13 ユーザー指摘）
         if (subject[b] >= 0 && !recent.includes(subject[b])) who = subject[b];
         else {
-          const pool = cands.filter((i) => !recent.includes(i));
-          const score = (i) => energy[i][b] + wobble(idx, 30 + i) * PICK_JITTER;
+          const pool = cands.filter((i) => !recent.includes(i) && rel(i, b) >= RELEVANT_AT);
+          const score = (i) => rel(i, b) + wobble(idx, 30 + i) * PICK_JITTER;
           pool.sort((x, y) => (shown[x] - shown[y]) || (score(y) - score(x)));
           who = pool[0];
         }
+        if (who === undefined) who = cands.find((i) => i !== recent[0] && rel(i, b) >= RELEVANT_AT);
         if (who === undefined) who = cands.find((i) => i !== recent[0]);
         if (who === undefined) {
           // 他に鳴っているパートが無い（長いソロが続いている等）。人は替えられないので寄り方を替える
