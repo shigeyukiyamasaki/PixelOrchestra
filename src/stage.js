@@ -521,7 +521,7 @@ function buildDomes() {
     const span = deg(Math.max(20, Math.min(360, d.span ?? 180)));
     const tiles = Math.max(0.1, d.tiles ?? 1);
     const m = screenMaterial(d, tex);
-    m.side = THREE.BackSide;                        // 内側から見る
+    m.side = THREE.DoubleSide;                      // 外からカメラを引いた時も見えるように（2026-09-13 ユーザー指定）
     m.depthWrite = false;                           // 空なので奥行きは書かない
     m.uniforms.uLoop.value = 1;
     m.uniforms.uRepeat.value = tiles;
