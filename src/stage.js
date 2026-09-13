@@ -78,7 +78,7 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0 },
+  { name: '背景', pos: 1, scale: 1, opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false },
 ];
 // 素材 1 ドットの大きさ。奏者のドット（res:2 のスプライト 1px = PX/2）と揃える。
 // 倍率 scale = 1 で「素材の実寸のまま」。2026-09-13 ユーザー指定「素材を貼ったらその大きさのまま」
@@ -132,12 +132,13 @@ const SCREEN_SHADER = {
   fragmentShader: `
     uniform sampler2D map; uniform float hasMap;
     uniform vec3 keyColor; uniform float keyThr;
-    uniform vec3 tint; uniform float opacity;
+    uniform vec3 tint; uniform float opacity; uniform float flip;
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
     void main() {
       #include <clipping_planes_fragment>
-      vec4 c = hasMap > 0.5 ? texture2D(map, vUv) : vec4(tint, 1.0);
+      vec2 uv = vec2(flip > 0.5 ? 1.0 - vUv.x : vUv.x, vUv.y);   // 左右反転（2026-09-13 ユーザー指定）
+      vec4 c = hasMap > 0.5 ? texture2D(map, uv) : vec4(tint, 1.0);
       if (hasMap > 0.5 && keyThr > 0.0 && distance(c.rgb, keyColor) < keyThr) discard;
       float a = c.a * opacity;
       if (a < 0.01) discard;
@@ -153,6 +154,7 @@ function screenMaterial(sc, tex) {
       keyThr: { value: sc.thr ?? 0 },
       tint: { value: new THREE.Color('#ffffff') },
       opacity: { value: sc.opacity },
+      flip: { value: sc.flip ? 1 : 0 },
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,

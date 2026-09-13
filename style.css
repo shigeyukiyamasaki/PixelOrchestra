@@ -55,7 +55,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #screenBar .screen .sld b { font-weight: 400; text-align: right; }
 #screenBar .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
 #screenBar .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
-#screenBar .screen .foot > button { margin-left: auto; }
+#screenBar .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+#screenBar .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 #screenBar .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
 #screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }

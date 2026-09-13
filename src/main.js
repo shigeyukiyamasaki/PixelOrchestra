@@ -145,7 +145,7 @@ function seek(t) {
 // 項目が増えても古い保存データが壊れないよう、足りない値は既定で埋める
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
-                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0 };
+                      src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false };
 const withDefaults = (o) => ({ ...SCREEN_BASE, ...o });
 let screens = (() => {
   try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
@@ -376,6 +376,9 @@ function screenRow(sc, i) {
   const show = put(foot, '<label title="このスクリーンを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = sc.show !== false;
   show.onchange = () => { sc.show = show.checked; changed(); };
+  const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
+  flip.checked = !!sc.flip;
+  flip.onchange = () => { sc.flip = flip.checked; changed(); };
   const del = put(foot, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
   return box;
