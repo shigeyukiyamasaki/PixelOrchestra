@@ -73,8 +73,12 @@ export const BACK_ROWS = [
   { r: 27, h: 4.0, span: 130, clipX: 18, screen: true },
 ];
 // 一番奥のひな壇の上に立てる湾曲スクリーン（2026-09-13 ユーザー指定）。
-// 本来は透明にする予定だが、位置の確認用にいったん色を付けている
-export const SCREEN = { h: 10, color: '#4a90d9' };
+// 本来は透明にする予定だが、位置の確認用にいったん色を付けている。
+// at: 段のどちらの辺に沿わせるか（'outer' = 奥の辺 / 'inner' = 手前の辺）
+export const SCREEN = { h: 10, layers: [
+  { at: 'outer', color: '#4a90d9', opacity: 1 },
+  { at: 'inner', color: '#e0645a', opacity: 0.45 },   // 手前の一枚は半透明にして重なりを見る
+] };
 const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
 let stageCtx = null;         // createStage() で設定（buildRisers から使う）
@@ -352,16 +356,20 @@ export function buildRisers(seats) {
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
 
-    // 湾曲スクリーン：段の外径に沿って、天面から立ち上がる。左右は段と同じ垂直面で切る
+    // 湾曲スクリーン：段の辺に沿って、天面から立ち上がる。左右は段と同じ垂直面で切る
     if (row.screen) {
-      const scr = new THREE.Mesh(
-        new THREE.CylinderGeometry(rOut, rOut, SCREEN.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-        matC({ color: SCREEN.color, side: THREE.DoubleSide }),
-      );
-      scr.name = 'screen';
-      scr.position.y = row.h + SCREEN.h / 2;
-      scr.renderOrder = ro - 0.5;   // 一番奥なので他より先に描く
-      risers.add(scr);
+      SCREEN.layers.forEach((L, i) => {
+        const rs = L.at === 'inner' ? rIn : rOut;
+        const scr = new THREE.Mesh(
+          new THREE.CylinderGeometry(rs, rs, SCREEN.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
+          matC({ color: L.color, side: THREE.DoubleSide,
+                 transparent: L.opacity < 1, opacity: L.opacity }),
+        );
+        scr.name = `screen:${L.at}`;
+        scr.position.y = row.h + SCREEN.h / 2;
+        scr.renderOrder = ro - 0.5 + i * 0.05;   // 奥の一枚 → 手前の一枚 の順に描く
+        risers.add(scr);
+      });
     }
   }
 }
