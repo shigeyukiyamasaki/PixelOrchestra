@@ -934,6 +934,17 @@ async function loadFromUrl() {
 }
 
 makeValueInputs();
+// 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
+for (const d of document.querySelectorAll('#panel details')) {
+  const sum = d.querySelector(':scope > summary');
+  const chk = [...d.querySelectorAll(':scope > label.chk')].find((l) => l.textContent.trim() === '表示する');
+  if (!sum || !chk) continue;
+  const el = chk.querySelector('input[type=checkbox]');
+  el.title = chk.title;
+  el.addEventListener('click', (e) => e.stopPropagation());   // 見出しの開閉に取られないように
+  sum.appendChild(el);
+  chk.remove();
+}
 loadSettings();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
