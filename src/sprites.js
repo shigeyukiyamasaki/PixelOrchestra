@@ -865,8 +865,8 @@ export function nameLabel(text, color = '#ffffff', size = 1) {
   const m = document.createElement('canvas').getContext('2d');
   m.font = font;
   const tw = Math.ceil(m.measureText(text).width);
-  const pad = 6 * SS;                              // 余白（白縁のぶん広げる）
-  const w = Math.min(220 * SS, tw + pad * 2), h = 20 * SS;
+  const pad = 8 * SS;                              // 余白（白縁のぶん広げる）
+  const w = Math.min(220 * SS, tw + pad * 2), h = 22 * SS;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
@@ -874,7 +874,8 @@ export function nameLabel(text, color = '#ffffff', size = 1) {
   // 文字をトラック色で塗る（色マークは廃止。2026-09-11 ユーザー指定）。
   // 縁取りは外側から 白 → 黒 の二重（2026-09-13 ユーザー指定）。太い方から先に描いて内側を上書きする
   g.lineJoin = 'round';
-  g.lineWidth = 6 * SS; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  // 白は黒より十分太くする。差が小さいと縮小時に黒と混ざって灰色に見える（2026-09-13 ユーザー指摘）
+  g.lineWidth = 9 * SS; g.strokeStyle = '#ffffff';
   g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   g.lineWidth = 3 * SS; g.strokeStyle = 'rgba(0,0,0,0.95)';
   g.strokeText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
@@ -882,7 +883,9 @@ export function nameLabel(text, color = '#ffffff', size = 1) {
   g.fillText(text, pad, h / 2 + SS * 0.5, w - pad * 2);
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  // 手前に奏者や楽器がある時は隠れるように、奥行きを見る（2026-09-13 ユーザー指定）。
+  // ただし自分は深度を書かない（透明な余白が後ろのものを消さないように）
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }));
   sp.scale.set((w / SS) * 0.032 * size, (h / SS) * 0.032 * size, 1); // 1px ≒ 0.032 unit ×「パート名」の大きさ（2026-09-12）
   sp.renderOrder = 10;
   return sp;
