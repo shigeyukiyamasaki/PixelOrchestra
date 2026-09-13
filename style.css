@@ -19,8 +19,24 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar #resetCam { flex: 0 0 auto; margin-top: 24px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
 #camBar #resetCam:hover { border-color: var(--accent); color: var(--accent); }
+/* スクリーンの操作メニュー（プレビューの下）。2026-09-13 ユーザー指定 */
+#screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; max-height: 22dvh; overflow-y: auto; margin-bottom: auto; }
+#screenBar .head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+#screenBar .ttl { color: var(--muted); font-weight: 600; }
+#screenBar .hint { color: var(--muted); font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
+#screenBar button:hover { border-color: var(--accent); color: var(--accent); }
+#screenBar .scr { display: grid; grid-template-columns: auto 7em repeat(3, minmax(0, 1fr)) 3em auto; gap: 0 10px;
+                  align-items: center; padding: 2px 0; border-top: 1px solid var(--line); }
+#screenBar .scr > label { display: flex; align-items: center; gap: 5px; min-width: 0; }
+#screenBar .scr > label > span { color: var(--muted); white-space: nowrap; }
+#screenBar .scr input[type=range] { flex: 1 1 0; min-width: 0; }
+#screenBar .scr input[type=text] { width: 100%; min-width: 0; background: none; border: 1px solid var(--line); color: inherit;
+                                   border-radius: 4px; padding: 1px 4px; font: inherit; }
+#screenBar .scr input[type=color] { width: 3em; height: 18px; padding: 0; border: 1px solid var(--line); background: none; }
+#screenBar .scr b { color: var(--text); font-weight: 400; min-width: 2.4em; text-align: right; }
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
-  max-height: calc(100% - 4px); margin: 4px 0 auto; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+  max-height: calc(100% - 4px); margin: 4px 0 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
 #view canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .ctl.row { flex-direction: row; align-items: center; justify-content: space-between; }
 .ctl input[type=color] { width: 48px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); cursor: pointer; }

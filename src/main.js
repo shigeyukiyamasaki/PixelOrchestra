@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, CONDUCTOR_Z, PODIUM_H } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -20,13 +20,14 @@ const FAMILY_KEY = 'pixelOrchestra.families.v1';
 const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
+const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
 
 // ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
 // localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY];
+const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY];
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
@@ -137,6 +138,76 @@ function seek(t) {
   if (audioLoaded) audio.currentTime = Math.max(0, clock.t - audioOffsetSec());
   if (wasPlaying) play();
 }
+
+// ---------- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定。2026-09-13 ユーザー指定） ----------
+// 枚数は自由。位置はひな壇の奥行きの中の割合（0 = 手前の辺 / 1 = 奥の辺）で持つ。
+// 枚数が変わる UI なので、id 付き input の自動収集には乗せず、独自キーで保存する
+let screens = (() => {
+  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a; } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
+  return SCREEN_DEFAULT.map((o) => ({ ...o }));
+})();
+let screenSaveTimer = null;
+function saveScreens() {
+  clearTimeout(screenSaveTimer);
+  screenSaveTimer = setTimeout(() => {
+    try { localStorage.setItem(SCREENS_KEY, JSON.stringify(screens)); pushSettings(); } catch (e) { console.warn('スクリーン設定の保存失敗:', e); }
+  }, 400);
+}
+// 1 枚ぶんの行を作る。値をいじったら即座に 3D へ反映し、保存は遅らせる
+function screenRow(sc, i) {
+  const row = document.createElement('div');
+  row.className = 'scr';
+  const add = (html) => { const d = document.createElement('div'); d.innerHTML = html; return row.appendChild(d.firstElementChild); };
+  const changed = () => { setScreens(screens); saveScreens(); };
+
+  const show = add('<label title="このスクリーンを表示する"><input type="checkbox"></label>').querySelector('input');
+  show.checked = sc.show !== false;
+  show.onchange = () => { sc.show = show.checked; changed(); };
+
+  const name = add('<label><input type="text" title="名前（覚え書き。表示には影響しない）"></label>').querySelector('input');
+  name.value = sc.name || `スクリーン${i + 1}`;
+  name.oninput = () => { sc.name = name.value; saveScreens(); };
+  name.onkeydown = (e) => e.stopPropagation();   // Space 等を再生ショートカットに取られない
+
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = add(`<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input'), out = lab.querySelector('b');
+    el.value = sc[key]; out.textContent = (+sc[key]).toFixed(digits);
+    el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+  };
+  slider('位置', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
+  slider('高さ', 'h', 1, 40, 0.5, 1, 'ひな壇の天面からの高さ [unit]');
+  slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
+
+  const col = add('<label title="確認用の色（映像を貼るまでの仮の色）"><input type="color"></label>').querySelector('input');
+  col.value = sc.color;
+  col.oninput = () => { sc.color = col.value; changed(); };
+
+  const del = add('<button title="このスクリーンを削除する">削除</button>');
+  del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
+  return row;
+}
+function renderScreens() {
+  const box = $('screenRows');
+  if (!box) return;
+  box.textContent = '';
+  screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
+  setBarHeight();
+}
+const SCREEN_COLORS = ['#4a90d9', '#e0645a', '#5ec26a', '#d9b23f', '#9a6fd0', '#3fb6c2'];   // 確認用の仮の色（順に使い回す）
+$('screenAdd').addEventListener('click', () => {
+  const n = screens.length;
+  screens.push({ name: `スクリーン${n + 1}`, pos: Math.max(0, 1 - n * 0.25), h: 10,
+                 color: SCREEN_COLORS[n % SCREEN_COLORS.length], opacity: 0.45, show: true });
+  renderScreens();
+  setScreens(screens); saveScreens();
+});
+// プレビューの高さ計算（style.css の --barh）に、上下のバーの実寸を渡す
+function setBarHeight() {
+  const h = ($('camBar')?.offsetHeight || 0) + ($('screenBar')?.offsetHeight || 0);
+  if (h) document.documentElement.style.setProperty('--barh', `${h}px`);
+}
+addEventListener('resize', setBarHeight);
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id]')]
@@ -665,6 +736,8 @@ async function loadFromUrl() {
 
 makeValueInputs();
 loadSettings();
+renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
+setScreens(screens);
 refreshValueLabels();
 applyCameraSliders(); // 保存されたカメラ座標を復元
 animate();

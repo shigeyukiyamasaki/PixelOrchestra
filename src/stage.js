@@ -72,13 +72,20 @@ export const BACK_ROWS = [
   // span は clipX より外まで届く広さにしておき、実際の端は clipX が決める
   { r: 27, h: 4.0, span: 130, clipX: 18, screen: true },
 ];
-// 一番奥のひな壇の上に立てる湾曲スクリーン（2026-09-13 ユーザー指定）。
-// 本来は透明にする予定だが、位置の確認用にいったん色を付けている。
-// at: 段のどちらの辺に沿わせるか（'outer' = 奥の辺 / 'inner' = 手前の辺）
-export const SCREEN = { h: 10, layers: [
-  { at: 'outer', color: '#4a90d9', opacity: 1 },
-  { at: 'inner', color: '#e0645a', opacity: 0.45 },   // 手前の一枚は半透明にして重なりを見る
-] };
+// 一番奥のひな壇の上に立てる湾曲スクリーン（2026-09-13 ユーザー指定）。背景やキャラクターを映す想定で、
+// 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
+// 本来は透明にする予定だが、位置の確認用にいったん色を付けている
+export const SCREEN_DEFAULT = [
+  { name: '奥', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true },
+  { name: '手前', pos: 0, h: 10, color: '#e0645a', opacity: 0.45, show: true },
+];
+let screenList = SCREEN_DEFAULT.map((o) => ({ ...o }));
+
+/** スクリーンの構成を差し替えて組み直す。main.js の操作メニューから呼ぶ */
+export function setScreens(list) {
+  screenList = (list || []).map((o) => ({ ...o }));
+  buildScreens();
+}
 const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
 let stageCtx = null;         // createStage() で設定（buildRisers から使う）
@@ -161,7 +168,10 @@ export function createStage(container) {
   const risers = new THREE.Group();
   risers.position.z = SEAT_SHIFT_Z; // 座席と一緒に奥へ
   scene.add(risers);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, hemi, spots, seats: [] };
+  const screens = new THREE.Group();   // スクリーンはひな壇とは別に組み直す（枚数や位置を UI から頻繁に変えるため）
+  screens.position.z = SEAT_SHIFT_Z;
+  scene.add(screens);
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, hemi, spots, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -356,22 +366,38 @@ export function buildRisers(seats) {
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
 
-    // 湾曲スクリーン：段の辺に沿って、天面から立ち上がる。左右は段と同じ垂直面で切る
-    if (row.screen) {
-      SCREEN.layers.forEach((L, i) => {
-        const rs = L.at === 'inner' ? rIn : rOut;
-        const scr = new THREE.Mesh(
-          new THREE.CylinderGeometry(rs, rs, SCREEN.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
-          matC({ color: L.color, side: THREE.DoubleSide,
-                 transparent: L.opacity < 1, opacity: L.opacity }),
-        );
-        scr.name = `screen:${L.at}`;
-        scr.position.y = row.h + SCREEN.h / 2;
-        scr.renderOrder = ro - 0.5 + i * 0.05;   // 奥の一枚 → 手前の一枚 の順に描く
-        risers.add(scr);
-      });
-    }
+    // スクリーンを立てる段なら、その寸法を控えておく（スクリーン自体は buildScreens が作る）
+    if (row.screen) stageCtx.screenBase = { rIn, rOut, y: row.h, thMin, thMax, segs, clip, ro };
   }
+  buildScreens();   // 土台の寸法が変わるので組み直す
+}
+
+/**
+ * スクリーンを組み直す。ひな壇の奥行き（内径〜外径）の中で、pos = 0（手前の辺）〜 1（奥の辺）の
+ * 好きな位置に何枚でも立てられる。左右の切り口はひな壇と同じ垂直面。
+ */
+function buildScreens() {
+  if (!stageCtx || !stageCtx.screenBase) return;
+  const { screens } = stageCtx;
+  screens.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
+  screens.clear();
+  const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
+  // 手前のものが後に描かれるよう、奥（pos 大）から順に並べる（半透明の重なりを正しく出すため）
+  const order = screenList.map((sc, i) => ({ sc, i })).sort((a, b) => b.sc.pos - a.sc.pos);
+  order.forEach(({ sc, i }, k) => {
+    if (sc.show === false || !(sc.h > 0)) return;
+    const r = rIn + (rOut - rIn) * Math.max(0, Math.min(1, sc.pos));
+    const m = stageCtx.stageMat({ color: sc.color, side: THREE.DoubleSide,
+      transparent: sc.opacity < 1, opacity: sc.opacity });
+    if (clip) m.clippingPlanes = clip;
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(r, r, sc.h, segs, 1, true, Math.PI - thMax, thMax - thMin), m,
+    );
+    mesh.name = `screen:${i}`;
+    mesh.position.y = y + sc.h / 2;
+    mesh.renderOrder = ro - 1 + k * 0.05;   // 奥 → 手前 の順
+    screens.add(mesh);
+  });
 }
 
 // 中心 1 → 半径 inner までは不透明、外周で 0 になる放射状のアルファ（円ジオメトリの UV は外接正方形に 0..1）

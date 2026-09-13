@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260917h">
+  <link rel="stylesheet" href="style.css?v=20260913b">
 </head>
 <body>
   <div id="stageArea">
@@ -28,6 +28,15 @@
       <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
   </div>
     <div id="view"></div>
+    <!-- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定）。2026-09-13 ユーザー指定 -->
+    <div id="screenBar">
+      <div class="head">
+        <span class="ttl">スクリーン</span>
+        <button id="screenAdd" title="スクリーンを 1 枚増やす">＋ 追加</button>
+        <span class="hint">位置：0 = ひな壇の手前の辺／1 = 奥の辺。手前のものほど後に描くので、半透明の重なりが正しく出る</span>
+      </div>
+      <div id="screenRows"></div>
+    </div>
   </div>
 
   <header id="topbar">
@@ -146,6 +155,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260920t"></script>
+  <script type="module" src="src/main.js?v=20260920u"></script>
 </body>
 </html>
