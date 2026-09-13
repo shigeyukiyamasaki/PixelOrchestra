@@ -22,6 +22,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* カメラ位置の左に置く「タイトル」「背景」（2026-09-13 ユーザー指定） */
 #camBar .camSide { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 #camBar .camSide > details { width: 196px; margin: 0; }
+/* クレジットだけ 2 列（左＝文字、右＝大きさ・色・濃度）。2026-09-13 ユーザー指定 */
+#camBar .camSide > details.credits2 { width: 402px; }
+#camBar .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
 #camBar .camGroup { display: flex; flex-direction: column; gap: 6px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
