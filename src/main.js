@@ -220,36 +220,58 @@ function openPicker(anchor, sc, onPick) {
   let path = parts ? parts.dir.split('/').filter(Boolean) : [];
   const nodeAt = (segs) => segs.reduce((n, sg) => (n && n.dirs.get(sg)) || null, root);
 
-  function draw() {
-    cols.textContent = '';
-    for (let k = 0; k <= path.length; k++) {
-      const node = nodeAt(path.slice(0, k));
-      if (!node) break;
-      const col = document.createElement('div');
-      col.className = 'col';
-      for (const name of node.dirs.keys()) {
-        const b = document.createElement('button');
-        b.className = `dir${path[k] === name ? ' on' : ''}`;
-        b.textContent = name;
-        b.title = name;
-        // ホバーだけで下層を開く。同じ場所なら描き直さない（描き直すと mouseenter が再発して無限に回る）
-        const open = () => { const next = [...path.slice(0, k), name]; if (next.join('/') === path.join('/')) return; path = next; draw(); };
-        b.onmouseenter = open;
-        b.onclick = open;
-        col.appendChild(b);
-      }
-      const here = path.slice(0, k).join('/');
-      for (const name of node.files) {
-        const b = document.createElement('button');
-        b.className = `file${parts && nfc(parts.name) === nfc(name) && nfc(parts.dir) === nfc(here) ? ' on' : ''}`;
-        b.textContent = name;
-        b.title = name;
-        b.onclick = () => { onPick(here, name); closePicker(); };
-        col.appendChild(b);
-      }
-      cols.appendChild(col);
+  // カラムは「中身が変わらないものは作り直さない」。毎回作り直すとスクロール位置が 0 に戻り、
+  // ホイールで下へ送れなくなる（下層をホバーで開くようにした副作用。2026-09-13 ユーザー指摘）
+  const colEls = [];
+  function buildCol(k) {
+    const node = nodeAt(path.slice(0, k));
+    const col = document.createElement('div');
+    col.className = 'col';
+    col.dataset.at = path.slice(0, k).join('/');
+    for (const name of node.dirs.keys()) {
+      const b2 = document.createElement('button');
+      b2.className = 'dir';
+      b2.dataset.name = name;
+      b2.textContent = name;
+      b2.title = name;
+      // ホバーだけで下層を開く。同じ場所なら何もしない（作り直すと mouseenter が再発して無限に回る）
+      const open = () => { const next = [...path.slice(0, k), name]; if (next.join('/') === path.join('/')) return; path = next; draw(); };
+      b2.onmouseenter = open;
+      b2.onclick = open;
+      col.appendChild(b2);
     }
-    cols.scrollLeft = cols.scrollWidth;   // 一番右のカラムを見せる
+    const here = col.dataset.at;
+    for (const name of node.files) {
+      const b2 = document.createElement('button');
+      b2.className = 'file';
+      b2.dataset.name = name;
+      b2.textContent = name;
+      b2.title = name;
+      b2.onclick = () => { onPick(here, name); closePicker(); };
+      col.appendChild(b2);
+    }
+    return col;
+  }
+  function draw() {
+    let added = false;
+    for (let k = 0; k <= path.length; k++) {
+      const at = path.slice(0, k).join('/');
+      if (!nodeAt(path.slice(0, k))) break;
+      if (!colEls[k] || colEls[k].dataset.at !== at) {     // 中身が変わるカラムだけ作り直す
+        const col = buildCol(k);
+        if (colEls[k]) cols.replaceChild(col, colEls[k]); else { cols.appendChild(col); added = true; }
+        colEls[k] = col;
+      }
+      // 選択中の印だけ付け替える（作り直さないのでスクロール位置は保たれる）
+      for (const b2 of colEls[k].children) {
+        const isDir = b2.classList.contains('dir');
+        const on = isDir ? path[k] === b2.dataset.name
+          : parts && nfc(parts.name) === nfc(b2.dataset.name) && nfc(parts.dir) === nfc(at);
+        b2.classList.toggle('on', !!on);
+      }
+    }
+    while (colEls.length > path.length + 1) cols.removeChild(colEls.pop());   // 深い方は捨てる
+    if (added) cols.scrollLeft = cols.scrollWidth;    // 新しいカラムが出た時だけ右端を見せる
   }
   draw();
   document.body.appendChild(el);

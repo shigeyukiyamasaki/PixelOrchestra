@@ -35,13 +35,13 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
   padding: 2px; background: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; color: inherit; font: inherit; }
 #screenBar .screen .thumb:hover { border-color: var(--accent); }
 #screenBar .screen .thumb img, #screenBar .screen .thumb video {
-  width: 100%; height: 52px; object-fit: contain; display: block; image-rendering: pixelated;
+  width: 100%; height: 96px; object-fit: contain; display: block; image-rendering: pixelated;
   /* 透過の素材が見えるように市松模様を敷く */
   background-color: #2a3050;
   background-image: linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%),
                     linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%);
   background-size: 10px 10px; background-position: 0 0, 5px 5px; }
-#screenBar .screen .thumb .ph { width: 100%; height: 52px; display: flex; align-items: center; justify-content: center;
+#screenBar .screen .thumb .ph { width: 100%; height: 96px; display: flex; align-items: center; justify-content: center;
   color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; }
 #screenBar .screen .thumb .cap { align-self: stretch; font-size: 10px; color: var(--muted); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -82,6 +82,17 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 .mediaPicker .foot button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line);
   background: none; color: inherit; cursor: pointer; font: inherit; white-space: nowrap; }
 .mediaPicker .foot button:hover { border-color: var(--accent); color: var(--accent); }
+/* スクロールバー：細く・角丸・普段は控えめ（2026-09-13 ユーザー指定） */
+.mediaPicker .col, .mediaPicker .cols, #screenRows { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
+.mediaPicker .col::-webkit-scrollbar, .mediaPicker .cols::-webkit-scrollbar, #screenRows::-webkit-scrollbar { width: 9px; height: 9px; }
+.mediaPicker .col::-webkit-scrollbar-track, .mediaPicker .cols::-webkit-scrollbar-track, #screenRows::-webkit-scrollbar-track { background: transparent; }
+.mediaPicker .col::-webkit-scrollbar-thumb, .mediaPicker .cols::-webkit-scrollbar-thumb, #screenRows::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .2); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+.mediaPicker .col:hover::-webkit-scrollbar-thumb, .mediaPicker .cols:hover::-webkit-scrollbar-thumb, #screenRows:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .34); background-clip: padding-box; }
+.mediaPicker .col::-webkit-scrollbar-thumb:hover, .mediaPicker .cols::-webkit-scrollbar-thumb:hover, #screenRows::-webkit-scrollbar-thumb:hover {
+  background: var(--accent); background-clip: padding-box; }
+.mediaPicker ::-webkit-scrollbar-corner { background: transparent; }
 
 #view { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: calc((100dvh - 52px - var(--barh, 110px)) * 16 / 9);
   max-height: calc(100% - 4px); margin: 4px 0 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
