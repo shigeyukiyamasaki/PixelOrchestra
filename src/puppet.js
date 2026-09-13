@@ -147,10 +147,10 @@ const VARIANT = {
   // contactZ = 駒の上の弦の高さ、leftHandZ = 指板の表面＋弦（楽器ローカル px、表板の厚みは絵の depth から）。指先はここに置く
   violin1:    { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [4, 0.3], // 弓の接点は胴の上端（ネック側）と駒の中間（2026-09-11 ユーザー指定）
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.3, leftHandZ: 1.4 },
-                rest: { pos: [-2, 14, 12], quat: VIOLIN_REST_Q, bowHand: [8, 12, 9] } }, // z 6→8：首にめり込んで見えるので前へ。y 27→25.5：あご側を肩に乗せる（2026-09-11）
+                rest: { pos: [-2, 14, 12], quat: VIOLIN_REST_Q, bowHand: [8, 12, 9], bowAim: [-0.25, -0.05, 1] } }, // z 6→8：首にめり込んで見えるので前へ。y 27→25.5：あご側を肩に乗せる（2026-09-11）。弓は太ももに沿わせる（2026-09-13）
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0.25, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [5, 0],
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 1.6 },
-                rest: { pos: [-2, 14, 12], quat: VIOLIN_REST_Q, bowHand: [8, 12, 9] } },
+                rest: { pos: [-2, 14, 12], quat: VIOLIN_REST_Q, bowHand: [8, 12, 9], bowAim: [-0.25, -0.05, 1] } },
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
                 p3: { pos: [0, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 3.5 }, legSpread: 6.5,
                 rest: { bowHand: [9, 13, 9], leftHand: [-6, 15, 9] } }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
@@ -662,9 +662,11 @@ export class Puppet {
       rightHandDir = [a.x, a.y, a.z];
     }
     this.setHand('R', this._restHand(handR, cfg.rest?.bowHand), dt, Infinity, rightHandDir, cfg.pole?.R, this.hasWrist ? n : null); // pole：肘の向き（コントラバスは肘を外・上に出して前腕を弓と直角に）
-    // 下ろしている間は弓を下へ垂らす（構えの向き d → 下向き）
+    // 下ろしている間の弓の向き。既定は下へ垂らす。
+    // あご楽器は太ももに沿わせて置く（cfg.rest.bowAim。2026-09-13 ユーザー指定）
     const rr = this._rest ?? 0;
-    this.aimHeldDir('R', rr > 0 ? [d[0] * (1 - rr) + 0.25 * rr, d[1] * (1 - rr) - 1.0 * rr, d[2] * (1 - rr)] : d, 'x');
+    const rd = cfg.rest?.bowAim || [0.25, -1.0, 0];
+    this.aimHeldDir('R', rr > 0 ? [d[0] * (1 - rr) + rd[0] * rr, d[1] * (1 - rr) + rd[1] * rr, d[2] * (1 - rr) + rd[2] * rr] : d, 'x');
 
     // 左手：指板の位置。長い音ではビブラート（弦に沿って 5.5Hz）
     const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
