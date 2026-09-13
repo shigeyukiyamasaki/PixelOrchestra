@@ -13,6 +13,7 @@ import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
 import { Spectrum } from './spectrum.js';
 import { PianoRoll } from './pianoRoll.js';
+import { AutoCamera } from './autoCam.js';
 
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
 const FAMILY_KEY = 'pixelOrchestra.families.v1';
@@ -724,6 +725,8 @@ function settings() {
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
+    // 自動カメラ（演奏会のカメラワーク。2026-09-13）
+    autoCam: $('autoCam').checked, camRate: num('camRate', 1), camClose: num('camClose', 0.6), camMove: num('camMove', 0.6),
     // クレジット（2026-09-13。MIDIOrchestra と同じ作り：プレビューに重ねた DOM）
     showTempo: $('showTempo').checked, tempoScale: num('tempoScale', 1), tempoOpacity: num('tempoOpacity', 0.9),
     showCredits: $('showCredits').checked,
@@ -1056,10 +1059,31 @@ function applyCameraSliders(movedId = null) { // スライダー → カメラ
   controls.update();
 }
 for (const id of CAM_IDS) $(id).addEventListener('input', () => { if (!camSyncing) applyCameraSliders(id); });
-controls.addEventListener('change', () => { if (!camSyncing) syncCameraSliders(); });
+controls.addEventListener('change', () => { if (!camSyncing && !autoDriving) syncCameraSliders(); });
 
 function setStatus(msg) { $('status').textContent = msg; }
 function fmtTime(s) { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; }
+
+// ---------- 自動カメラ（演奏会のカメラワーク。2026-09-13 ユーザー指定） ----------
+// ショットの一覧は曲・座席・設定が変わった時だけ作り直す（毎フレームは引くだけ）
+const autoCam = new AutoCamera();
+let autoCamKey = '';
+let autoDriving = false;      // 自動でカメラを動かしている間は、スライダーへの書き戻しをしない
+function updateAutoCam(s, t) {
+  if (!engine || !lastSeats.length) return;
+  const key = [lastSeats.length, engine.duration, s.camRate, s.camClose].join('|');
+  if (key !== autoCamKey) {
+    autoCamKey = key;
+    autoCam.build(engine, lastSeats, { rate: s.camRate, close: s.camClose }, CONDUCTOR_Z);
+  }
+  const shot = autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove });
+  if (!shot) return;
+  autoDriving = true;
+  camera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);
+  controls.target.set(shot.target[0], shot.target[1], shot.target[2]);
+  controls.update();
+  autoDriving = false;
+}
 
 // ---------- メインループ ----------
 let lastPerf = performance.now();
@@ -1101,6 +1125,8 @@ function animate() {
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
+    if (s.autoCam) updateAutoCam(s, t);      // 自動カメラ（手動操作より先に。切り替えは小節の頭）
+    controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
     applyTempo(s, engine.bpmAt(t), beat);
     applyCredits(s);
