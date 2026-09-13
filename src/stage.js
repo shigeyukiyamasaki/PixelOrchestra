@@ -76,9 +76,93 @@ export const BACK_ROWS = [
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
 // 本来は透明にする予定だが、位置の確認用にいったん色を付けている
 export const SCREEN_DEFAULT = [
-  { name: '奥', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true },
-  { name: '手前', pos: 0, h: 10, color: '#e0645a', opacity: 0.45, show: true },
+  { name: '背景', pos: 1, h: 10, color: '#4a90d9', opacity: 1, show: true, src: '', key: '#00ff00', thr: 0, wide: 1, at: 0 },
 ];
+
+// ---- スクリーンに映す素材（透過 PNG / 緑背景の mp4）----
+// src ごとにテクスチャを使い回す。作り直すたびに読み込むと、スライダーを動かすだけで動画が頭出しに戻ってしまう
+const MEDIA = new Map();
+const isVideo = (src) => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src);
+function mediaTexture(src) {
+  if (MEDIA.has(src)) return MEDIA.get(src);
+  let tex;
+  if (isVideo(src)) {
+    const v = document.createElement('video');
+    v.src = src; v.loop = true; v.muted = true; v.playsInline = true;
+    v.setAttribute('playsinline', ''); v.crossOrigin = 'anonymous';
+    v.play().catch((e) => console.warn('動画の自動再生が拒否されました（画面をクリックすると始まります）:', src, e.message));
+    tex = new THREE.VideoTexture(v);
+    tex.userDataVideo = v;
+  } else {
+    tex = new THREE.TextureLoader().load(src, () => { tex.needsUpdate = true; buildScreens(); },
+      undefined, () => console.warn('素材を読み込めません:', src));
+  }
+  // ドット絵なので拡大は最近傍（MIDIOrchestra は Linear 固定だが、こちらは粒を保つ）
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  MEDIA.set(src, tex);
+  return tex;
+}
+/** 素材の縦横比（横 ÷ 縦）。まだ読み込めていなければ 0 */
+function mediaAspect(tex) {
+  const im = tex && (tex.image || {});
+  const w = im.videoWidth || im.width || 0, h = im.videoHeight || im.height || 0;
+  return h ? w / h : 0;
+}
+
+// スクリーンのシェーダ：緑（キー色）との色の距離がしきい値より近い画素を捨てる（MIDIOrchestra と同じ判定）。
+// 舞台の照明で色が変わると素材の見た目が変わるので、こちらは陰影を付けない
+const SCREEN_SHADER = {
+  vertexShader: `
+    varying vec2 vUv;
+    #include <clipping_planes_pars_vertex>
+    void main() {
+      vUv = uv;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      #include <clipping_planes_vertex>
+      gl_Position = projectionMatrix * mvPosition;
+    }`,
+  fragmentShader: `
+    uniform sampler2D map; uniform float hasMap;
+    uniform vec3 keyColor; uniform float keyThr;
+    uniform vec3 tint; uniform float opacity;
+    varying vec2 vUv;
+    #include <clipping_planes_pars_fragment>
+    void main() {
+      #include <clipping_planes_fragment>
+      vec4 c = hasMap > 0.5 ? texture2D(map, vUv) : vec4(tint, 1.0);
+      if (hasMap > 0.5 && keyThr > 0.0 && distance(c.rgb, keyColor) < keyThr) discard;
+      float a = c.a * opacity;
+      if (a < 0.01) discard;
+      gl_FragColor = vec4(c.rgb, a);
+    }`,
+};
+function screenMaterial(sc, tex) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      map: { value: tex || null },
+      hasMap: { value: tex ? 1 : 0 },
+      keyColor: { value: new THREE.Color(sc.key || '#00ff00') },
+      keyThr: { value: sc.thr ?? 0 },
+      tint: { value: new THREE.Color(sc.color) },
+      opacity: { value: sc.opacity },
+    },
+    vertexShader: SCREEN_SHADER.vertexShader,
+    fragmentShader: SCREEN_SHADER.fragmentShader,
+    transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1 && !tex,
+    clipping: true,   // ShaderMaterial は明示しないと clippingPlanes が効かない
+  });
+}
+
+/** スクリーン 1 枚の情報（幅合わせの計算に使う）。素材が未読込なら aspect = 0 */
+export function screenInfo(i) {
+  const b = stageCtx && stageCtx.screenBase;
+  const sc = screenList[i];
+  if (!b || !sc) return null;
+  const r = b.rIn + (b.rOut - b.rIn) * Math.max(0, Math.min(1, sc.pos));
+  return { aspect: sc.src ? mediaAspect(MEDIA.get(sc.src)) : 0, arcFull: r * (b.thMax - b.thMin), r };
+}
 let screenList = SCREEN_DEFAULT.map((o) => ({ ...o }));
 
 /** スクリーンの構成を差し替えて組み直す。main.js の操作メニューから呼ぶ */
@@ -379,19 +463,25 @@ export function buildRisers(seats) {
 function buildScreens() {
   if (!stageCtx || !stageCtx.screenBase) return;
   const { screens } = stageCtx;
-  screens.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); o.material.dispose(); } });
+  screens.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });   // 素材のテクスチャは MEDIA で使い回すので捨てない
   screens.clear();
   const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
   // 手前のものが後に描かれるよう、奥（pos 大）から順に並べる（半透明の重なりを正しく出すため）
   const order = screenList.map((sc, i) => ({ sc, i })).sort((a, b) => b.sc.pos - a.sc.pos);
+  const cTh = (thMin + thMax) / 2, halfTh = (thMax - thMin) / 2;
   order.forEach(({ sc, i }, k) => {
     if (sc.show === false || !(sc.h > 0)) return;
     const r = rIn + (rOut - rIn) * Math.max(0, Math.min(1, sc.pos));
-    const m = stageCtx.stageMat({ color: sc.color, side: THREE.DoubleSide,
-      transparent: sc.opacity < 1, opacity: sc.opacity });
+    // 幅（全体の弧に対する割合）と横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
+    const wide = Math.max(0.02, Math.min(1, sc.wide ?? 1));
+    const half = halfTh * wide;
+    const ctr = cTh + (sc.at ?? 0) * (halfTh - half);
+    const tex = sc.src ? mediaTexture(sc.src) : null;
+    const m = screenMaterial(sc, tex);
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r, sc.h, segs, 1, true, Math.PI - thMax, thMax - thMin), m,
+      new THREE.CylinderGeometry(r, r, sc.h, Math.max(4, Math.round(segs * wide)), 1, true,
+        Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
     mesh.position.y = y + sc.h / 2;

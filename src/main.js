@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, screenInfo, SCREEN_DEFAULT, CONDUCTOR_Z, PODIUM_H } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -153,39 +153,80 @@ function saveScreens() {
     try { localStorage.setItem(SCREENS_KEY, JSON.stringify(screens)); pushSettings(); } catch (e) { console.warn('スクリーン設定の保存失敗:', e); }
   }, 400);
 }
-// 1 枚ぶんの行を作る。値をいじったら即座に 3D へ反映し、保存は遅らせる
+// 素材ルート（開発サーバーが /media/ で公開しているフォルダ）。絶対パスを URL に直すのに使う
+let mediaRoots = [];
+fetch('media-roots.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : []).then((a) => { mediaRoots = a || []; })
+  .catch(() => { mediaRoots = []; });
+// Finder からコピーした絶対パスを、そのまま貼れるようにする（素材ルートの中なら /media/… に読み替える）
+function toMediaUrl(src) {
+  const p = (src || '').trim().replace(/^file:\/\//, '');
+  if (!p || /^https?:\/\//.test(p)) return p;
+  for (const root of mediaRoots) {
+    if (p === root || p.startsWith(`${root}/`)) {
+      return `media/${p.slice(root.length + 1).split('/').map(encodeURIComponent).join('/')}`;
+    }
+  }
+  return p;   // プロジェクト内の相対パス（assets/… 等）はそのまま
+}
+
+// 1 枚ぶんの行を作る（2 段：上＝置き方、下＝映すもの）。値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
-  const row = document.createElement('div');
-  row.className = 'scr';
-  const add = (html) => { const d = document.createElement('div'); d.innerHTML = html; return row.appendChild(d.firstElementChild); };
+  const frag = document.createDocumentFragment();
+  const line = (cls) => frag.appendChild(Object.assign(document.createElement('div'), { className: cls }));
+  const row = line('scr'), row2 = line('scr scr2');
+  const put = (parent, html) => { const d = document.createElement('div'); d.innerHTML = html; return parent.appendChild(d.firstElementChild); };
   const changed = () => { setScreens(screens); saveScreens(); };
 
-  const show = add('<label title="このスクリーンを表示する"><input type="checkbox"></label>').querySelector('input');
+  const show = put(row, '<label title="このスクリーンを表示する"><input type="checkbox"></label>').querySelector('input');
   show.checked = sc.show !== false;
   show.onchange = () => { sc.show = show.checked; changed(); };
 
-  const name = add('<label><input type="text" title="名前（覚え書き。表示には影響しない）"></label>').querySelector('input');
+  const name = put(row, '<label><input type="text" title="名前（覚え書き。表示には影響しない）"></label>').querySelector('input');
   name.value = sc.name || `スクリーン${i + 1}`;
   name.oninput = () => { sc.name = name.value; saveScreens(); };
   name.onkeydown = (e) => e.stopPropagation();   // Space 等を再生ショートカットに取られない
 
-  const slider = (label, key, min, max, step, digits, title) => {
-    const lab = add(`<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+  const slider = (parent, label, key, min, max, step, digits, title) => {
+    const lab = put(parent, `<label title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input'), out = lab.querySelector('b');
-    el.value = sc[key]; out.textContent = (+sc[key]).toFixed(digits);
+    const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
+    set(sc[key] ?? min);
     el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+    return set;
   };
-  slider('位置', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
-  slider('高さ', 'h', 1, 40, 0.5, 1, 'ひな壇の天面からの高さ [unit]');
-  slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
+  slider(row, '位置', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
+  slider(row, '高さ', 'h', 1, 40, 0.5, 1, 'ひな壇の天面からの高さ [unit]');
+  slider(row, '濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
 
-  const col = add('<label title="確認用の色（映像を貼るまでの仮の色）"><input type="color"></label>').querySelector('input');
+  const col = put(row, '<label title="確認用の色（素材を入れるまでの仮の色）"><input type="color"></label>').querySelector('input');
   col.value = sc.color;
   col.oninput = () => { sc.color = col.value; changed(); };
 
-  const del = add('<button title="このスクリーンを削除する">削除</button>');
+  const del = put(row, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
-  return row;
+
+  // ---- 下の段：映すもの ----
+  const src = put(row2, '<label class="src" title="透過 PNG か、緑背景の mp4。Finder からコピーした絶対パスをそのまま貼れる"><span>素材</span><input type="text" placeholder="/Volumes/… もしくは assets/…"></label>').querySelector('input');
+  src.value = sc.srcRaw || sc.src || '';
+  src.onkeydown = (e) => e.stopPropagation();
+  src.onchange = () => { sc.srcRaw = src.value.trim(); sc.src = toMediaUrl(src.value); changed(); };
+
+  const setWide = slider(row2, '幅', 'wide', 0.02, 1, 0.01, 2, 'ひな壇の弧全体に対する幅の割合。キャラクターを置く時は小さくする');
+  slider(row2, '横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
+
+  const fit = put(row2, '<button title="素材の縦横比に合わせて幅を決める（高さはそのまま）">比率</button>');
+  fit.onclick = () => {
+    const info = screenInfo(i);
+    if (!info || !info.aspect) { fit.textContent = '未読込'; setTimeout(() => { fit.textContent = '比率'; }, 1200); return; }
+    sc.wide = Math.max(0.02, Math.min(1, (sc.h * info.aspect) / info.arcFull));
+    setWide(sc.wide); changed();
+  };
+
+  const key = put(row2, '<label title="抜く色（緑背景の色）。透過 PNG ならしきい値 0 のままでよい"><span>キー色</span><input type="color"></label>').querySelector('input');
+  key.value = sc.key || '#00ff00';
+  key.oninput = () => { sc.key = key.value; changed(); };
+  slider(row2, 'しきい値', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので大きめに');
+  return frag;
 }
 function renderScreens() {
   const box = $('screenRows');
@@ -198,7 +239,8 @@ const SCREEN_COLORS = ['#4a90d9', '#e0645a', '#5ec26a', '#d9b23f', '#9a6fd0', '#
 $('screenAdd').addEventListener('click', () => {
   const n = screens.length;
   screens.push({ name: `スクリーン${n + 1}`, pos: Math.max(0, 1 - n * 0.25), h: 10,
-                 color: SCREEN_COLORS[n % SCREEN_COLORS.length], opacity: 0.45, show: true });
+                 color: SCREEN_COLORS[n % SCREEN_COLORS.length], opacity: 1, show: true,
+                 src: '', key: '#00ff00', thr: 0, wide: 1, at: 0 });
   renderScreens();
   setScreens(screens); saveScreens();
 });
