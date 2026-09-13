@@ -1086,7 +1086,18 @@ function updateAutoCam(s, t) {
   const key = [lastSeats.length, engine.duration, s.camRate, s.camClose].join('|');
   if (key !== autoCamKey) {
     autoCamKey = key;
-    autoCam.build(engine, lastSeats, { rate: s.camRate, close: s.camClose }, CONDUCTOR_Z);
+    autoCam.build(engine, lastSeats, {
+      rate: s.camRate, close: s.camClose,
+      // セクション（弦・木管・金管・打楽器）と、楽器の実際の高さを渡す。
+      // 超近接は顔でも足元でもなく楽器を狙う（2026-09-13 ユーザー指定）
+      familyOf: (seat) => VARIANTS[seat.track.variant]?.family || 'other',
+      instYOf: (seat) => {
+        const pp = puppets.find((x) => x.track === seat.track)?.puppet;
+        const o = pp && (pp.inst || pp.held?.R || pp.held?.L);
+        // 原点ではなく見た目の中心（外接箱の中心）。原点はチェレスタなら床、ホルンなら頭上にある
+        return o ? new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).y : null;
+      },
+    }, CONDUCTOR_Z);
   }
   const shot = autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove, moveFreq: s.camMoveFreq });
   if (!shot) return;

@@ -42,7 +42,9 @@ const PICK_JITTER = 0.6;
 const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜かない
 // 奏者は 3.2 unit ほどの背丈で 2.65 unit 間隔に並ぶ。近づきすぎると周りの奏者の中に入り込んで
 // 何を写しているか分からなくなるので、距離を取って高い位置から見下ろす（2026-09-13 実測して調整）
-const XCLOSE = { dist: 3.6, y: 3.6, targetY: 2.2 };   // 超近接：奏者 1 人で画面を埋める
+// 超近接：奏者 1 人に寄る。狙うのは顔でも足元でもなく「楽器」（2026-09-13 ユーザー指定）。
+// 楽器の高さはパートごとに違う（チェロは低く、金管は高い）ので、実際の高さを受け取って使う
+const XCLOSE = { dist: 4.2, yOver: 0.9, targetY: 1.9 };
 const CLOSE = { dist: 8.0, y: 5.6, targetY: 2.0 };
 const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
@@ -141,6 +143,10 @@ export class AutoCamera {
     const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
     let closeRun = 0, xcloseRun = 0;
     const shown = new Array(seats.length).fill(0);   // これまで抜いた回数（少ない席を優先して回す）
+    // セクション（弦・木管・金管・打楽器）ごとの回数も見る。席の数が多い弦や、常に強い金管に
+    // 偏って、打楽器が回ってこないため（2026-09-13 ユーザー指摘）
+    const fams = seats.map((st) => opt.familyOf?.(st) || 'other');
+    const shownFam = {};
     const recent = [];           // 直近で抜いたパート（新しい順。同じ顔ぶれの往復を避ける）
     let lastKind = '';
     for (let b = 0; b < nBars;) {
@@ -186,7 +192,8 @@ export class AutoCamera {
         else {
           const pool = cands.filter((i) => !recent.includes(i) && rel(i, b) >= RELEVANT_AT);
           const score = (i) => rel(i, b) + wobble(idx, 30 + i) * PICK_JITTER;
-          pool.sort((x, y) => (shown[x] - shown[y]) || (score(y) - score(x)));
+          const fam = (i) => shownFam[fams[i]] || 0;
+          pool.sort((x, y) => (shown[x] - shown[y]) || (fam(x) - fam(y)) || (score(y) - score(x)));
           who = pool[0];
         }
         if (who === undefined) who = cands.find((i) => i !== recent[0] && rel(i, b) >= RELEVANT_AT);
@@ -198,13 +205,14 @@ export class AutoCamera {
         }
         if (who < 0) { kind = 'wide'; closeRun = 0; }
       }
-      if (kind !== 'wide' && kind !== 'cond') { shown[who]++; recent.unshift(who); recent.length = Math.min(recent.length, RECENT_KEEP); }
+      if (kind !== 'wide' && kind !== 'cond') { shown[who]++; shownFam[fams[who]] = (shownFam[fams[who]] || 0) + 1; recent.unshift(who); recent.length = Math.min(recent.length, RECENT_KEEP); }
       else recent.length = 0;      // 引きを挟んだら制限を解く
       lastKind = kind;
       this.shots.push({
         t0: bars[b], t1: bars[Math.min(b + n, nBars)], kind, idx,
         center: who >= 0 ? seatCenter(seats[who]) : null,
         lead: who >= 0 ? seatLead(seats[who], conductorZ) : null,
+        instY: who >= 0 ? (opt.instYOf?.(seats[who]) ?? XCLOSE.targetY) : XCLOSE.targetY,
         name: who >= 0 ? seats[who].track?.name : '全体',
       });
       b += n;
@@ -267,6 +275,9 @@ export class AutoCamera {
     // アップは首席 1 人、中景はパート全体の中心を狙う
     const k = sh.kind === 'xclose' ? XCLOSE : sh.kind === 'close' ? CLOSE : MID;
     const c = (sh.kind === 'mid' ? sh.center : sh.lead) || sh.center;   // 寄りは首席 1 人、中景はパート全体
+    // 超近接だけは楽器の高さを狙い、カメラもその少し上に置く（顔だけ・足元だけの画にしない）
+    const aimY = sh.kind === 'xclose' ? clamp(sh.instY ?? k.targetY, 0.8, 6.5) : k.targetY;   // ひな壇の高さも乗るので上は広めに
+    const camY = sh.kind === 'xclose' ? aimY + k.yOver : k.y + swing(n, 6) * 0.4;
     const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * p * move);          // ショットの間にゆっくり寄る
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
@@ -274,8 +285,8 @@ export class AutoCamera {
     const a = swing(n, 5) * YAW;                                         // 正面を外して斜めから
     const rx = dx * Math.cos(a) - dz * Math.sin(a), rz = dx * Math.sin(a) + dz * Math.cos(a);
     return {
-      pos: [c[0] + rx * dist, k.y + swing(n, 6) * 0.4, c[2] + rz * dist],
-      target: [c[0], k.targetY, c[2]],
+      pos: [c[0] + rx * dist, camY, c[2] + rz * dist],
+      target: [c[0], aimY, c[2]],
     };
   }
 }
