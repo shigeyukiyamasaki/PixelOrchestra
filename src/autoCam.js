@@ -28,6 +28,8 @@ const BAR_SCAN_STEP = 0.02;   // 小節の頭を探す時の刻み [s]
 // ---- カメラの置き方（すべて world unit）----
 const WIDE = { z: 13, dolly: 3, y: 9, sway: 3, yWave: 1.5, target: [0, 3, -12] };
 const COND = { dist: 7, dolly: 1.2, y: 3.4, targetY: 2.4, swing: 0.4, base: 0.5 };  // swing/base は [rad]
+const RANK_KEEP = 8;          // 各小節で候補に残すパート数（多いほど色々な席が映る）
+const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜かない
 // 奏者は 3.2 unit ほどの背丈で 2.65 unit 間隔に並ぶ。近づきすぎると周りの奏者の中に入り込んで
 // 何を写しているか分からなくなるので、距離を取って高い位置から見下ろす（2026-09-13 実測して調整）
 const CLOSE = { dist: 8.0, y: 5.6, targetY: 2.0 };
@@ -102,7 +104,7 @@ export class AutoCamera {
       if (top < 0 || topE <= 0) continue;
       loudest[b] = top;
       rank[b] = seats.map((_, i) => i).filter((i) => energy[i][b] > 0)
-        .sort((x, y) => energy[y][b] - energy[x][b]).slice(0, 4);
+        .sort((x, y) => energy[y][b] - energy[x][b]).slice(0, RANK_KEEP);
       let sounding = 0, entered = -1;
       for (let i = 0; i < seats.length; i++) {
         if (energy[i][b] > topE * SOUNDING_AT) sounding++;
@@ -124,6 +126,7 @@ export class AutoCamera {
     // アップが続いた時に挟む引きも、「アップの割合」が高いほど緩める（1 で挟まない）
     const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
     let closeRun = 0;
+    const shown = new Array(seats.length).fill(0);   // これまで抜いた回数（少ない席を優先して回す）
     const recent = [];           // 直近で抜いたパート（新しい順。同じ顔ぶれの往復を避ける）
     let lastKind = '';
     for (let b = 0; b < nBars;) {
@@ -157,8 +160,15 @@ export class AutoCamera {
         const cands = [];
         if (subject[b] >= 0) cands.push(subject[b]);
         for (const i of (rank[b] || [])) if (!cands.includes(i)) cands.push(i);
-        // 直近 2 つと違うパート → 直前と違うパート → どうしても居なければ同じパート、の順に探す
-        who = cands.find((i) => !recent.includes(i));
+        // ソロ・入り（はっきりした主役）は最優先。それ以外は「これまで抜いた回数が少ない席」を優先し、
+        // 同数なら強い方。強い順に選ぶだけだと上位の常連ばかりになり、チェロ等が映らなくなる
+        // （2026-09-13 ユーザー指摘）
+        if (subject[b] >= 0 && !recent.includes(subject[b])) who = subject[b];
+        else {
+          const pool = cands.filter((i) => !recent.includes(i));
+          pool.sort((x, y) => (shown[x] - shown[y]) || (energy[y][b] - energy[x][b]));
+          who = pool[0];
+        }
         if (who === undefined) who = cands.find((i) => i !== recent[0]);
         if (who === undefined) {
           // 他に鳴っているパートが無い（長いソロが続いている等）。人は替えられないので寄り方を替える
@@ -167,7 +177,7 @@ export class AutoCamera {
         }
         if (who < 0) { kind = 'wide'; closeRun = 0; }
       }
-      if (kind === 'close' || kind === 'mid') { recent.unshift(who); recent.length = Math.min(recent.length, 2); }
+      if (kind === 'close' || kind === 'mid') { shown[who]++; recent.unshift(who); recent.length = Math.min(recent.length, RECENT_KEEP); }
       else recent.length = 0;      // 引きを挟んだら制限を解く
       lastKind = kind;
       this.shots.push({
@@ -220,7 +230,9 @@ export class AutoCamera {
     const move = moving ? clamp(env.move ?? 0.6, 0, 1) : 0;
 
     if (sh.kind === 'cond') {                                            // 指揮者：奏者側から顔を見る
-      const a = COND.base + swing(n, 4) * COND.swing;
+      // 左右どちら側からも撮る。片側だけだと背景に写るパートがいつも同じになる（2026-09-13 ユーザー指摘）
+      const side = wobble(n, 9) < 0.5 ? -1 : 1;
+      const a = side * (COND.base + wobble(n, 4) * COND.swing);
       const d = COND.dist - COND.dolly * p * move;
       return { pos: [Math.sin(a) * d, COND.y, cz - Math.cos(a) * d], target: [0, COND.targetY, cz] };
     }
