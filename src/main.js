@@ -21,13 +21,14 @@ const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
+const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」の対応
 
 // ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
 // localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY];
+const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY];
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
@@ -459,6 +460,54 @@ function applyCredits(s) {
     el.style.color = s.creditColor;
     el.style.opacity = s.creditOpacity;
   }
+}
+
+// ---------- クレジットの履歴と「ゲーム → 作曲者」（2026-09-13 ユーザー指定） ----------
+// 同じゲーム名・作曲者名を何度も打たずに済むよう、入力を覚えて候補に出す。
+// 1 つのゲームに対して作曲者はほぼ固定なので、ゲーム名を選んだら作曲者を自動で入れる。
+// 辞書は手で作らず、入力するたびに自動で溜まる
+const CREDIT_HIST_MAX = 30;
+let credits = (() => {
+  try { const o = JSON.parse(localStorage.getItem(CREDITS_KEY) || 'null'); if (o && o.hist) return o; } catch (e) { console.warn('クレジット履歴の読込失敗:', e); }
+  return { hist: { 1: [], 2: [], 3: [], 4: [] }, byGame: {} };
+})();
+function saveCredits() {
+  try { localStorage.setItem(CREDITS_KEY, JSON.stringify(credits)); pushSettings(); } catch (e) { console.warn('クレジット履歴の保存失敗:', e); }
+}
+function fillCreditList(n) {
+  const dl = document.getElementById(`creditHist${n}`);
+  if (!dl) return;
+  dl.textContent = '';
+  for (const v of credits.hist[n] || []) dl.appendChild(Object.assign(document.createElement('option'), { value: v }));
+}
+function rememberCredit(n, v) {
+  const t = (v || '').trim();
+  if (!t) return;
+  const list = credits.hist[n] || (credits.hist[n] = []);
+  const i = list.indexOf(t);
+  if (i >= 0) list.splice(i, 1);
+  list.unshift(t);                       // 使ったものが先頭
+  list.length = Math.min(list.length, CREDIT_HIST_MAX);
+  fillCreditList(n);
+}
+function setupCredits() {
+  for (const n of [1, 2, 3, 4]) fillCreditList(n);
+  const el = (n) => $(`credit${n}`);
+  const commit = (n) => { rememberCredit(n, el(n).value); learnGame(); saveCredits(); };
+  const learnGame = () => {                // ゲーム名と作曲者が揃っていたら対応を覚える
+    const g = el(1).value.trim(), c = el(3).value.trim();
+    if (g && c) credits.byGame[g] = c;
+  };
+  for (const n of [1, 2, 3, 4]) el(n).addEventListener('change', () => commit(n));
+  // ゲーム名を選んだら、覚えている作曲者を入れる（候補から選んだ時も change が飛ぶ）
+  el(1).addEventListener('change', () => {
+    const c = credits.byGame[el(1).value.trim()];
+    if (c && c !== el(3).value) {
+      el(3).value = c;
+      el(3).dispatchEvent(new Event('input', { bubbles: true }));   // 保存と反映はいつもの経路で
+      rememberCredit(3, c);
+    }
+  });
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
@@ -1014,6 +1063,7 @@ for (const d of document.querySelectorAll('#panel details, #camBar details')) {
   chk.remove();
 }
 loadSettings();
+setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
 refreshValueLabels();
