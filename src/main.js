@@ -726,7 +726,8 @@ function settings() {
     specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
     // 自動カメラ（演奏会のカメラワーク。2026-09-13）
-    autoCam: $('autoCam').checked, camRate: num('camRate', 1), camClose: num('camClose', 0.6), camMove: num('camMove', 0.6),
+    autoCam: $('autoCam').checked, camRate: num('camRate', 1), camClose: num('camClose', 0.6),
+    camMove: num('camMove', 0.6), camMoveFreq: num('camMoveFreq', 0.6),
     // クレジット（2026-09-13。MIDIOrchestra と同じ作り：プレビューに重ねた DOM）
     showTempo: $('showTempo').checked, tempoScale: num('tempoScale', 1), tempoOpacity: num('tempoOpacity', 0.9),
     showCredits: $('showCredits').checked,
@@ -828,7 +829,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get mediaList() { return mediaList; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
+window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
@@ -1076,7 +1077,7 @@ function updateAutoCam(s, t) {
     autoCamKey = key;
     autoCam.build(engine, lastSeats, { rate: s.camRate, close: s.camClose }, CONDUCTOR_Z);
   }
-  const shot = autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove });
+  const shot = autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove, moveFreq: s.camMoveFreq });
   if (!shot) return;
   autoDriving = true;
   camera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);

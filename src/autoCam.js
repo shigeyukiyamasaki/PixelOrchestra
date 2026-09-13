@@ -90,12 +90,16 @@ export class AutoCamera {
       });
     }
 
-    // 小節ごとの主役を決める（-1 = 全体）
-    const subject = new Array(nBars).fill(-1);
+    // 小節ごとに「主役（はっきり目立つパート）」と「一番強いパート」を出す。
+    // 主役が立たない小節でも、寄りたい時は一番強いパートを抜く（2026-09-13 修正）
+    const closeRatio = clamp(opt.close ?? 0.6, 0, 1);
+    const subject = new Array(nBars).fill(-1);   // ソロ・入り・明確な主役（-1 = 無し）
+    const loudest = new Array(nBars).fill(-1);   // 音が鳴っていれば必ず入る
     for (let b = 0; b < nBars; b++) {
       let top = -1, topE = 0, total = 0;
       for (let i = 0; i < seats.length; i++) { total += energy[i][b]; if (energy[i][b] > topE) { topE = energy[i][b]; top = i; } }
       if (top < 0 || topE <= 0) continue;
+      loudest[b] = top;
       let sounding = 0, entered = -1;
       for (let i = 0; i < seats.length; i++) {
         if (energy[i][b] > topE * SOUNDING_AT) sounding++;
@@ -106,24 +110,40 @@ export class AutoCamera {
       const share = topE / total;
       if (sounding === 1 && share > SOLO_SHARE) subject[b] = top;        // ソロ
       else if (entered >= 0) subject[b] = entered;                       // 入り
-      else if (share > LEAD_SHARE) subject[b] = top;                     // 一番強いパート
+      else if (share > LEAD_SHARE) subject[b] = top;                     // 明確に目立つパート
     }
 
     // 同じ主役が続く小節をまとめてショットにする
     const rate = clamp(opt.rate ?? 1, 0.3, 3);
     const maxBars = clamp(Math.round(BASE_BARS / rate), MIN_BARS, MAX_BARS);
-    const closeRatio = clamp(opt.close ?? 0.6, 0, 1);
+    // アップが続いた時に挟む引きも、「アップの割合」が高いほど緩める（1 で挟まない）
+    const wideEvery = closeRatio >= 0.95 ? Infinity : Math.max(2, Math.round(WIDE_EVERY / Math.max(0.2, 1 - closeRatio)));
     let closeRun = 0;
     for (let b = 0; b < nBars;) {
+      // 主役が続く間をひとまとまりにする（主役が居ない小節は「一番強いパート」で繋ぐ）
+      const key = (i) => (subject[i] >= 0 ? subject[i] : -1);
       let n = 1;
-      while (b + n < nBars && subject[b + n] === subject[b] && n < maxBars) n++;
+      while (b + n < nBars && key(b + n) === key(b) && n < maxBars) n++;
       if (n < MIN_BARS) n = Math.min(MIN_BARS, nBars - b);               // 短すぎるショットは作らない
       const idx = this.shots.length;
-      const who = subject[b];
       let kind;
-      if (who < 0) { kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide'; closeRun = 0; }
-      else if (closeRun >= WIDE_EVERY) { kind = 'wide'; closeRun = 0; }  // アップが続いたら引きを挟む
-      else { kind = wobble(idx, 1) < closeRatio ? 'close' : 'mid'; closeRun++; }
+      // まず「寄るか引くか」を割合で決め、寄ると決めた時に誰を抜くかを選ぶ。
+      // こうしないと、総奏ばかりの曲で主役が立たず、割合を上げても寄れない
+      if (closeRun >= wideEvery) { kind = 'wide'; closeRun = 0; }        // アップが続いたら引きを挟む
+      else if (wobble(idx, 1) < closeRatio) {
+        // 寄るショット。その中でアップ／中景を分ける（割合が高いほどアップ寄り）
+        kind = wobble(idx, 8) < closeRatio ? 'close' : 'mid';
+        closeRun++;
+      } else {
+        kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
+        closeRun = 0;
+      }
+      // 寄る時の被写体：主役がいればその人、いなければ一番強いパート。どちらも無ければ引きに落とす
+      let who = -1;
+      if (kind === 'close' || kind === 'mid') {
+        who = subject[b] >= 0 ? subject[b] : loudest[b];
+        if (who < 0) { kind = 'wide'; closeRun = 0; }
+      }
       this.shots.push({
         t0: bars[b], t1: bars[Math.min(b + n, nBars)], kind, idx,
         center: who >= 0 ? seatCenter(seats[who]) : null,
@@ -159,15 +179,19 @@ export class AutoCamera {
   /**
    * 時刻 t のカメラ。{ pos:[x,y,z], target:[x,y,z] }（ショットが無ければ null）
    * @param {number} t 再生位置 [s]
-   * @param {{conductorZ:number, move:number}} env move = 動きの量（0〜1）
+   * @param {{conductorZ:number, move:number, moveFreq:number}} env
+   *   move = 動きの量（0〜1）、moveFreq = 動くショットの割合（0 で全部固定、1 で全部動く）
    */
   at(t, env = {}) {
     const sh = this.shotAt(t);
     if (!sh) return null;
     const p = clamp((t - sh.t0) / Math.max(0.1, sh.t1 - sh.t0), 0, 1);   // ショット内の進み具合
-    const move = clamp(env.move ?? 0.6, 0, 1);
     const cz = env.conductorZ ?? 0;
     const n = sh.idx;
+    // このショットが「動くショット」かどうかはショット番号から決まる（毎回同じ）。
+    // 動きの頻度で固定ショットとの割合を決め、動きの量でその大きさを決める（2026-09-13 ユーザー指定）
+    const moving = wobble(n, 7) < clamp(env.moveFreq ?? 0.6, 0, 1);
+    const move = moving ? clamp(env.move ?? 0.6, 0, 1) : 0;
 
     if (sh.kind === 'cond') {                                            // 指揮者：奏者側から顔を見る
       const a = COND.base + swing(n, 4) * COND.swing;
