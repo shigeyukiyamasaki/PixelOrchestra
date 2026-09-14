@@ -49,6 +49,10 @@ const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜�
 const XCLOSE = { dist: 4.6, yOver: 1.6, minOver: 4.2, targetY: 1.9 };
 const CLOSE = { dist: 8.0, y: 5.6, targetY: 2.0 };
 const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
+// 列沿い：円弧の接線方向にカメラを置き、同じ列の奏者が並んで見える画（2026-09-14 ユーザー提案）。
+// 例：チューバのあたりからトロンボーン・トランペットが並ぶ方向を見る
+const ALONG = { back: 9.0, ahead: 7.0, out: 1.2, y: 2.6, targetY: 2.2 };
+const ALONG_RATIO = 0.3;      // 寄りのうち、列沿いにする割合
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
 const YAW = 0.45;             // 正面を外す振り幅 [rad]（±26°）
 
@@ -173,6 +177,7 @@ export class AutoCamera {
         // アップ 0.5 では 6% しか出なかった（2026-09-13 ユーザー指摘）。
         // 確率だけだと一度も出ない曲があるので、しばらく出ていなければ必ず入れる
         if (wobble(idx, 10) < XCLOSE_RATIO || xcloseRun >= XCLOSE_EVERY) kind = 'xclose';
+        else if (wobble(idx, 11) < ALONG_RATIO) kind = 'along';   // 列沿いの横アングル
         else kind = wobble(idx, 8) < closeRatio ? 'close' : 'mid';
         xcloseRun = kind === 'xclose' ? 0 : xcloseRun + 1;
         closeRun++;
@@ -280,8 +285,23 @@ export class AutoCamera {
     }
     // 奏者：席の位置から、指揮者側（内側）の斜め上に置いて見下ろす。
     // アップは首席 1 人、中景はパート全体の中心を狙う
+    const c = (sh.kind === 'mid' || sh.kind === 'along' ? sh.center : sh.lead) || sh.center;   // 寄りは首席 1 人、中景・列沿いはパート全体
+    if (sh.kind === 'along') {
+      // 円弧の接線方向に構える。半径方向（中心 → 席）に対して直角が接線
+      const base = c[1] || 0;
+      let rx = c[0], rz = c[2] - cz;
+      const len = Math.hypot(rx, rz) || 1;
+      rx /= len; rz /= len;
+      const tx = -rz, tz = rx;                                   // 接線（+ 方向）
+      const dir = wobble(n, 12) < 0.5 ? -1 : 1;                  // どちら向きに列を見るかは半々
+      const out = ALONG.out;                                     // 少し外側に下がって列の背後から
+      const d = ALONG.back * (1 + 0.12 - 0.12 * p * move);
+      return {
+        pos: [c[0] + rx * out - tx * dir * d, base + ALONG.y, c[2] + rz * out - tz * dir * d],
+        target: [c[0] + tx * dir * ALONG.ahead, base + ALONG.targetY, c[2] + tz * dir * ALONG.ahead],
+      };
+    }
     const k = sh.kind === 'xclose' ? XCLOSE : sh.kind === 'close' ? CLOSE : MID;
-    const c = (sh.kind === 'mid' ? sh.center : sh.lead) || sh.center;   // 寄りは首席 1 人、中景はパート全体
     // 狙う高さは「その席の足元の高さ」からの相対。ひな壇の上のパートでも胸の高さを狙える。
     // 超近接だけは楽器そのもの（外接箱の中心。world の絶対値）を狙う
     const base = c[1] || 0;
