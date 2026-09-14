@@ -65,10 +65,14 @@ const PROFILE_RATIO = 0.4;    // 寄りのうち、横向きから狙う割合
 const PROFILE_MIN = 1.0, PROFILE_MAX = 1.45;   // 振り角 [rad]（57〜83°）
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-// ショット番号から決まる 0〜1 の値（毎回同じ。乱数の代わり）
+// ショット番号から決まる 0〜1 の値（毎回同じ。乱数の代わり）。
+// sin を使う定番のハッシュは整数の並びで偏りが出た（パンの向きが右 10・左 2。2026-09-14 実測）ので、
+// 32bit の混ぜ込み（avalanche）に変更
 const wobble = (n, k = 0) => {
-  const x = Math.sin((n + 1) * 12.9898 + k * 78.233) * 43758.5453;
-  return x - Math.floor(x);
+  let x = Math.imul(n | 0, 73856093) ^ Math.imul(k | 0, 19349663);
+  x = Math.imul(x ^ (x >>> 16), 2246822507);
+  x = Math.imul(x ^ (x >>> 13), 3266489909);
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 };
 const swing = (n, k) => wobble(n, k) * 2 - 1;   // -1〜1
 
@@ -280,6 +284,9 @@ export class AutoCamera {
     // 動くショットは「寄る」か「水平に流す（パン）」のどちらか。pd は寄りの進み具合
     const pan = move > 0 && wobble(n, 16) < PAN_RATIO;
     const pd = pan ? 0 : p;
+    // 寄る／引くはショットごとに半々（2026-09-14 ユーザー指定）。zk は ±（動きの量 ÷ 2）
+    const zoomDir = wobble(n, 18) < 0.5 ? 1 : -1;       // +1 = 寄る、-1 = 引く
+    const zk = zoomDir * move * (0.5 - pd);
     // パン：カメラと狙いを、視線に対して直角な向きへ一緒に流す（被写体が画面を横切る）
     const panDir = wobble(n, 17) < 0.5 ? -1 : 1;
     const withPan = (cam, width = PAN_WIDE) => {
@@ -297,12 +304,12 @@ export class AutoCamera {
       // 左右どちら側からも撮る。片側だけだと背景に写るパートがいつも同じになる（2026-09-13 ユーザー指摘）
       const side = wobble(n, 9) < 0.5 ? -1 : 1;
       const a = side * (COND.base + wobble(n, 4) * COND.swing);
-      const d = COND.dist - COND.dolly * pd * move;
+      const d = COND.dist + 2 * COND.dolly * zk;
       return withPan({ pos: [Math.sin(a) * d, COND.y, cz - Math.cos(a) * d], target: [0, COND.targetY, cz] });
     }
     if (sh.kind === 'wide' || !sh.center) {                              // 引き：正面から全景
       return withPan({
-        pos: [swing(n, 2) * WIDE.sway * move, WIDE.y + swing(n, 3) * WIDE.yWave, WIDE.z - WIDE.dolly * pd * move],
+        pos: [swing(n, 2) * WIDE.sway * move, WIDE.y + swing(n, 3) * WIDE.yWave, WIDE.z + 2 * WIDE.dolly * zk],
         target: [...WIDE.target],
       });
     }
@@ -318,7 +325,7 @@ export class AutoCamera {
       const tx = -rz, tz = rx;                                   // 接線（+ 方向）
       const dir = wobble(n, 12) < 0.5 ? -1 : 1;                  // どちら向きに列を見るかは半々
       const out = ALONG.out;                                     // 少し外側に下がって列の背後から
-      const d = ALONG.back * (1 + 0.12 - 0.12 * pd * move);
+      const d = ALONG.back * (1 + 2 * 0.12 * zk);
       return withPan({
         pos: [c[0] + rx * out - tx * dir * d, base + ALONG.y, c[2] + rz * out - tz * dir * d],
         target: [c[0] + tx * dir * ALONG.ahead, base + ALONG.targetY, c[2] + tz * dir * ALONG.ahead],
@@ -333,7 +340,7 @@ export class AutoCamera {
     const camY = sh.kind === 'xclose'
       ? Math.max(aimY + k.yOver, base + k.minOver)
       : base + k.y + swing(n, 6) * 0.4;
-    const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * pd * move);         // ショットの間にゆっくり寄る
+    const dist = k.dist * (1 + 2 * DOLLY_IN * zk);   // ショットの間にゆっくり寄る（zoomDir が -1 なら引く）
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
     dx /= len; dz /= len;
