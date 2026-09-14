@@ -620,21 +620,26 @@ export class Puppet {
       // 「強弱の反応」スライダーも velocity には掛からないので効かなかった。energy なら両方に乗る。
       // 弓が長く動けば上体の傾き（sNorm）も自動的に大きくなる
       const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * clamp(energy, 0, 3)) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
-      // 弓の向きは「同じ時刻に同じ音程を弾いている奏者」で揃える（2026-09-14 ユーザー指定）。
-      // 同じパートの中はもちろん、1st と 2nd がユニゾンの時も自動的に揃う。
+      // 弓の向きは「同じリズムを弾いている奏者」で揃える（2026-09-14 ユーザー指定）。
+      // 実際の演奏でも、弓使いは首席が決めてセクションをまたいで揃えるのが普通で、
+      // 同じリズムならハモっていても（音程が違っても）揃える。リズムが別なら自然に分かれる。
+      // キーは「開始時刻｜音の長さ」。演奏のゆらぎを吸収するため、時刻は 30ms・長さは 50ms 刻みに丸める。
       // 振り幅の個体差（scaleVar）と後列の遅れで各自が別々に折り返すと向きが混ざるので、
-      // 音符ごとに最初に到達した奏者が決めた向きを、同じ音を弾く全員で使う
+      // 最初に到達した奏者が決めた向きを、同じリズムの全員で使う
       let dir;
       const sync = this.bowSync;
-      const key = `${onset.time.toFixed(4)}|${onset.midi}`;
+      const key = `${Math.round(onset.time / 0.03)}|${Math.round(onset.duration / 0.05)}`;
       const decided = sync?.dirOf.get(key);
       if (decided !== undefined) dir = decided;
       else {
-        dir = -this.bowDir;
+        // 反転の基準は「そのリズム集団の前回の向き」。各自の前回の向きを基準にすると、
+        // 音符ごとに最初に決める奏者が変わった時に反転が打ち消し合い、向きが固まる（2026-09-14 実測）
+        dir = -(sync?.lastDir ?? this.bowDir);
         const t0 = this.bowPos + dir * len;
         if (t0 > sMax || t0 < sMin) dir = -dir;                 // 端に当たったら折り返す
         if (sync) {
           sync.dirOf.set(key, dir);
+          sync.lastDir = dir;
           if (sync.dirOf.size > 64) sync.dirOf.delete(sync.dirOf.keys().next().value);   // 直近だけ覚える
         }
       }

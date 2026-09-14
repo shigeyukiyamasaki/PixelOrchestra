@@ -869,8 +869,8 @@ function applyBackground(top, bottom, mid) {
 }
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
-// 弓の向きの共有台帳。キーは「音符の時刻 | 音程」なので、同じパートの中はもちろん、
-// 1st と 2nd がユニゾンの時も同じ向きになる（2026-09-14 ユーザー指定）
+// 弓の向きの共有台帳。キーは「音符の時刻 | 音の長さ」なので、同じパートの中はもちろん、
+// 同じリズムを弾いている弦どうし（ハモっていても）同じ向きになる（2026-09-14 ユーザー指定）
 const bowSync = { dirOf: new Map() };
 
 function placePuppets() {
@@ -885,7 +885,7 @@ function placePuppets() {
   for (const seat of seats) {
     seat.positions.forEach((pos) => {
       const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++ });
-      puppet.bowSync = bowSync;   // 同じ音を弾く奏者どうしで弓の向きを揃える（2026-09-14 ユーザー指定）
+      puppet.bowSync = bowSync;   // 同じリズムを弾く奏者どうしで弓の向きを揃える（2026-09-14 ユーザー指定）
       puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
       scene.add(puppet.root);
