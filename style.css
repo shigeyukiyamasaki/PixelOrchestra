@@ -60,6 +60,10 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
   border: none; border-radius: 7px 7px 0 0; }
 #viewOverlay .box .ctl { margin: 6px 0; }
 #viewOverlay .box .chk { margin: 4px 0 6px; }
+/* 映像に重なっている箱だけ、スライダーの棒を黒にして明るい絵の上でも見えるように
+   （黒帯や余白に逃げている箱はそのまま。重なりは JS が判定して .onImage を付ける。2026-09-14 ユーザー指定） */
+#viewOverlay .box.onImage input[type=range] { background: #000; }
+#viewOverlay .box.onImage input[type=range]::-moz-range-track { background: #000; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camRow > .box { width: 196px; margin: 0; }
 #camBar .camSide .ctl { margin: 5px 0; }

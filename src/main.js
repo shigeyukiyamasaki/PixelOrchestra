@@ -602,6 +602,14 @@ function placeAutoCamBox() {
   } else {
     bottom.style.top = '';
   }
+  // 映像に重なっている箱に .onImage を付ける（スライダーの棒を黒にするため。2026-09-14 ユーザー指定）
+  const vr = $('view').getBoundingClientRect();
+  for (const box of ov.querySelectorAll('.box')) {
+    const r = box.getBoundingClientRect();
+    const over = Math.min(r.right, vr.right) - Math.max(r.left, vr.left) > 2
+              && Math.min(r.bottom, vr.bottom) - Math.max(r.top, vr.top) > 2;
+    box.classList.toggle('onImage', over);
+  }
 }
 addEventListener('resize', setBarHeight);
 
