@@ -1108,11 +1108,13 @@ $('resetCam').addEventListener('click', () => {
 
 // プレビューの縦横比を PC（16:9）/ スマホ（9:16）に切り替える（2026-09-14 ユーザー指定）。
 // 実際の描画サイズは stage.resize() が毎フレーム見ているので、class を付け替えるだけでよい
-for (const [id, phone] of [['viewPc', false], ['viewPhone', true]]) {
+const VIEW_MODES = [['viewPc', ''], ['viewPhoneV', 'phoneV'], ['viewPhoneH', 'phoneH']];
+for (const [id, cls] of VIEW_MODES) {
   $(id).addEventListener('click', () => {
-    $('view').classList.toggle('phone', phone);
-    $('viewPc').classList.toggle('on', !phone);
-    $('viewPhone').classList.toggle('on', phone);
+    for (const [other, c] of VIEW_MODES) {
+      $(other).classList.toggle('on', other === id);
+      if (c) $('view').classList.toggle(c, c === cls);
+    }
   });
 }
 

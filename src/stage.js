@@ -304,12 +304,19 @@ export function createStage(container) {
   // レイアウトが決まる前（0×0）に設定すると aspect が NaN になり以後ずっと真っ黒になるため、その時は何もしない
   // （2026-09-12：ページを開いた時に稀に表示されない不具合。読み込み順やブラウザによってタイミングが変わる）
   let lastW = 0, lastH = 0;
+  // 縦長（スマホ縦など）にした時、左右が切り落とされないように縦の画角を広げる。
+  // 基準は 16:9 のときの横画角で、それより細い比率では横に写る範囲が変わらない（2026-09-14 ユーザー指定）
+  const BASE_FOV = camera.fov, BASE_ASPECT = 16 / 9;
+  const BASE_HTAN = Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * BASE_ASPECT;
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
     if (w < 2 || h < 2 || (w === lastW && h === lastH)) return;
     lastW = w; lastH = h;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    camera.fov = camera.aspect < BASE_ASPECT
+      ? THREE.MathUtils.radToDeg(2 * Math.atan(BASE_HTAN / camera.aspect))
+      : BASE_FOV;
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
