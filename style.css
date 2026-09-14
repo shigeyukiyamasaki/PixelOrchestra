@@ -197,7 +197,10 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 /* 左＝トラック一覧、右＝表示設定（2026-09-12 に左右を入れ替え）。どちらも閉じると列ごと消える */
 #panelRight { grid-column: 1; border-right: 1px solid var(--line); }
 #panel { grid-column: 3; border-left: 1px solid var(--line); }
-h2 { font-size: 15px; margin: 0 0 6px; color: var(--accent); }
+/* 左メニューの見出しも、右メニューの見出し（summary）と同じ黄色の帯にする（2026-09-14 ユーザー指定）。
+   開閉しないので ▸ は付けない */
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #0b1020; background: var(--accent);
+  border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; }
 
 h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
 .hint { color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
@@ -254,7 +257,7 @@ table.tracks td.name { max-width: 120px; overflow: hidden; text-overflow: ellips
 table.tracks select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
 .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 tr.pitch-row td { border-top: none; padding: 0 4px 6px 24px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-tr.pitch-row input[type=number] { width: 44px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 11px; margin: 0 2px; }
+tr.pitch-row input[type=number] { width: 44px; background: none; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 11px; margin: 0 2px; }
 tr.pitch-row .note-name { display: inline-block; min-width: 26px; color: var(--accent); }
 tr.pitch-row .pitch-label { margin-right: 4px; }
 tr.pitch-row .dyn-label { margin-left: 0; }
