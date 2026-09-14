@@ -252,10 +252,11 @@ button.primary { background: var(--accent); color: #1a1408; border-color: var(--
 .box { margin-top: 10px; }
 /* 見出しは素材カラムの選択中と同じ配色（黄色地に濃紺の文字）。2026-09-13 ユーザー指定 */
 /* 折りたたみは廃止（2026-09-14 ユーザー指定）。見出しは全部このクラス（左メニューの「トラック」も同じ） */
-/* 見出しは白地に濃紺の文字（2026-09-14 ユーザー指定。以前は黄色地）。プレビューの中も外も同じ */
+/* 見出しはオフホワイト地に濃紺の文字（2026-09-14 ユーザー指定。黄色地 → 白 → オフホワイト）。
+   白のままだと箱の白い枠線と同化するので少し落とした。プレビューの中も外も同じ */
 .hd { display: flex; align-items: center; gap: 8px;
-  font-size: 14px; font-weight: 600; color: #0b1020; background: #fff;
-  border: 1px solid #fff; border-radius: 6px; padding: 6px 9px; margin: 0 0 8px; }
+  font-size: 14px; font-weight: 600; color: #0b1020; background: #ececee;
+  border: 1px solid #ececee; border-radius: 6px; padding: 6px 9px; margin: 0 0 8px; }
 .hd input[type=checkbox] { margin-left: auto; margin-right: 0; }
 .box > *:not(.hd) { margin-left: 2px; }
 .hint.small { font-size: 11px; margin: 4px 0 0; }
