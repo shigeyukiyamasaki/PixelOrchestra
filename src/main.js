@@ -715,7 +715,7 @@ function settings() {
     glowIntensity: num('glowIntensity', 1),
     glowSoft: num('glowSoft', 0.6),
     showNames: $('showNames').checked,
-    labelSize: num('labelSize', 1), labelSource: radioValue('labelSource') === 'variant' ? 'variant' : 'name', // パート名（2026-09-12）
+    labelSize: num('labelSize', 1), // パート名（2026-09-12）
     labelOutline: num('labelOutline', 3), labelY: num('labelY', 0),   // 白縁の太さ・頭上からの高さ（2026-09-13）
     floorStyle: $('floorStyle')?.value === 'grass' ? 'grass' : 'plank', // 床の絵（板目／草原）
     showShadows: $('showShadows').checked,
@@ -937,7 +937,7 @@ function placePuppets() {
 
 // パート名ラベル：トラックごとに奏者グループの中央・頭の少し上（フォント読み込み後にも作り直す）
 let lastSeats = [];
-let labelSizeApplied = 1, labelSourceApplied = 'name', labelOutlineApplied = 3, labelYApplied = 0;
+let labelSizeApplied = 1, labelOutlineApplied = 3, labelYApplied = 0;
 function rebuildLabels() {
   labels.traverse((o) => { if (o.material) { o.material.map?.dispose(); o.material.dispose(); } });
   labels.clear();
@@ -946,7 +946,8 @@ function rebuildLabels() {
     const cx = ps.reduce((a, p) => a + p.x, 0) / ps.length;
     const cz = ps.reduce((a, p) => a + p.z, 0) / ps.length;
     const s = settings();
-    const text = s.labelSource === 'variant' ? (VARIANTS[seat.track.variant]?.label || seat.track.name) : seat.track.name;
+    // 出す文字は割り当てた楽器の名前で固定（2026-09-14 ユーザー指定。MIDI のトラック名は使わない）
+    const text = VARIANTS[seat.track.variant]?.label || seat.track.name;
     const sp = nameLabel(text, seat.track.color, s.labelSize, s.labelOutline);
     sp.userData.baseY = ps[0].y + HEAD_Y - 0.55;      // 高さ位置スライダーはここからの差分
     sp.position.set(cx, sp.userData.baseY + s.labelY, cz);
@@ -1174,9 +1175,9 @@ function animate() {
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
-    if (s.labelSize !== labelSizeApplied || s.labelSource !== labelSourceApplied || s.labelOutline !== labelOutlineApplied) {
-      // 大きさ・表示する名前・白縁の太さが変わったら絵を作り直す
-      labelSizeApplied = s.labelSize; labelSourceApplied = s.labelSource; labelOutlineApplied = s.labelOutline;
+    if (s.labelSize !== labelSizeApplied || s.labelOutline !== labelOutlineApplied) {
+      // 大きさ・白縁の太さが変わったら絵を作り直す
+      labelSizeApplied = s.labelSize; labelOutlineApplied = s.labelOutline;
       rebuildLabels();
     }
     if (s.labelY !== labelYApplied) {   // 高さ位置は動かすだけ（作り直さない）
