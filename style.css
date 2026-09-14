@@ -46,10 +46,11 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
   display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
 /* スマホ縦のとき、奏者・パート名・足元の光を下の黒帯へ横並びで置く（2026-09-14 ユーザー指定）。
    下端から積み上げる。3 つ並べても端末の幅（390px）に収まるよう、この列だけ箱を細くする */
-#viewOverlay #viewBottom { position: absolute; left: 14px; right: 14px; bottom: 14px; zoom: var(--ovzoom, 1);
-  display: flex; align-items: flex-end; gap: 10px; pointer-events: auto; }
+/* 位置（映像のすぐ下＝黒帯の上端）は JS が入れる。3 つで幅いっぱいに広げ、上をそろえる */
+#viewOverlay #viewBottom { position: absolute; left: 14px; right: 14px; zoom: var(--ovzoom, 1);
+  display: flex; align-items: flex-start; gap: 10px; pointer-events: auto; }
 #viewOverlay #viewBottom:empty { display: none; }
-#viewOverlay #viewBottom > .box { flex: 0 0 160px; width: 160px; }
+#viewOverlay #viewBottom > .box { flex: 1 1 0; width: auto; min-width: 0; }
 #viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: var(--ovzoom, 1); pointer-events: auto; }
 #viewOverlay .box { margin: 0; background: rgba(0, 0, 0, .52); border: 1px solid var(--line-soft);
   border-radius: 8px; padding: 8px 10px 10px; }
