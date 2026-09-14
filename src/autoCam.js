@@ -52,9 +52,13 @@ const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 // 列沿い：円弧の接線方向にカメラを置き、同じ列の奏者が並んで見える画（2026-09-14 ユーザー提案）。
 // 例：チューバのあたりからトロンボーン・トランペットが並ぶ方向を見る
 const ALONG = { back: 9.0, ahead: 7.0, out: 1.2, y: 2.6, targetY: 2.2 };
-const ALONG_RATIO = 0.3;      // 寄りのうち、列沿いにする割合
+const ALONG_RATIO = 0.45;     // 寄りのうち、列沿いにする割合
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
 const YAW = 0.45;             // 正面を外す振り幅 [rad]（±26°）
+// 横顔のアングル。寄りは指揮者側（正面）からばかりになるので、たまに真横から狙う
+// （2026-09-14 ユーザー指摘：木管・弦の横顔がほとんど出ない）
+const PROFILE_RATIO = 0.4;    // 寄りのうち、横向きから狙う割合
+const PROFILE_MIN = 1.0, PROFILE_MAX = 1.45;   // 振り角 [rad]（57〜83°）
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 // ショット番号から決まる 0〜1 の値（毎回同じ。乱数の代わり）
@@ -314,7 +318,11 @@ export class AutoCamera {
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
     dx /= len; dz /= len;
-    const a = swing(n, 5) * YAW;                                         // 正面を外して斜めから
+    // 向き：たいていは指揮者側（正面）から少し振る。たまに真横に回り込んで横顔を狙う
+    const profile = wobble(n, 13) < PROFILE_RATIO;
+    const a = profile
+      ? (wobble(n, 14) < 0.5 ? -1 : 1) * (PROFILE_MIN + wobble(n, 15) * (PROFILE_MAX - PROFILE_MIN))
+      : swing(n, 5) * YAW;
     const rx = dx * Math.cos(a) - dz * Math.sin(a), rz = dx * Math.sin(a) + dz * Math.cos(a);
     return {
       pos: [c[0] + rx * dist, camY, c[2] + rz * dist],
