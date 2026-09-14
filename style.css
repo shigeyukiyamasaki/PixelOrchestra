@@ -1,6 +1,7 @@
 /* PixelOrchestra — 最終更新: 2026-09-09 / v0.1 / 生成元: PixelOrchestra */
 :root {
-  --bg: #0b0b16; --panel: #16162a; --panel2: #35355e;  /* ボタン・入力欄の地。暗すぎて沈むので明るくした（2026-09-14 ユーザー指定） */ --text: #e8e8f0; --muted: #a0a0b8;
+  /* メニューの地は黒（2026-09-14 ユーザー指定。以前は紺 #0b0b16 / #16162a） */
+  --bg: #000000; --panel: #000000; --panel2: #35355e;  /* ボタン・入力欄の地。暗すぎて沈むので明るくした（2026-09-14 ユーザー指定） */ --text: #e8e8f0; --muted: #a0a0b8;
   --accent: #e2b348;
   /* 要素を囲う枠線は「薄い色＝明るい色」で、暗い地の上ではっきり見えるように（2026-09-13 ユーザー指定）
      2026-09-14 ユーザー指定：枠線は全部この色に統一した（--line も同じ値。以前は #2c2c48 で暗かった） */
@@ -37,7 +38,7 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 #view .autoCamBox { position: absolute; right: 14px; top: 14px; z-index: 3; width: 200px; margin: 0;
-  background: rgba(12, 16, 32, .72); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px 10px; }
+  background: rgba(0, 0, 0, .72); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px 10px; }
 #view .autoCamBox > summary { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
 #view .autoCamBox .ctl { margin: 6px 0; }
 #view .autoCamBox .chk { margin: 4px 0 6px; }
