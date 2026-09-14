@@ -554,10 +554,13 @@ $('screenReload').addEventListener('click', (e) => {
   b.textContent = '調べています…';
   loadMediaList(true).then(() => { b.textContent = '素材の一覧を更新'; });
 });
-// プレビューの高さ計算（style.css の --barh）に、上下のバーの実寸を渡す
+// プレビューに使える高さ（style.css の --viewh）を実測して渡す。
+// 以前は 100dvh から上のバーの高さを引いて見積もっていたが、数 px ずれて
+// 縦横比が 16:9 ちょうどにならなかった（2026-09-14 に実測方式へ変更）
 function setBarHeight() {
-  const h = ($('camBar')?.offsetHeight || 0) + ($('screenBar')?.offsetHeight || 0);
-  if (h) document.documentElement.style.setProperty('--barh', `${h}px`);
+  const area = $('stageArea'), bar = $('camBar'), sbar = document.getElementById('screenBar');
+  const h = area.clientHeight - (bar?.offsetHeight || 0) - (sbar?.offsetHeight || 0) - 4; // 4 = #view の上マージン
+  if (h > 0) document.documentElement.style.setProperty('--viewh', `${h}px`);
 }
 addEventListener('resize', setBarHeight);
 
@@ -1093,16 +1096,25 @@ window.addEventListener('keydown', (e) => {
 for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () => $(id).blur());
 // プレビュー上のカメラ操作バーの高さを CSS 変数に流す（プレビューの最大幅の計算に使う。2026-09-12）
 {
-  const bar = $('camBar');
-  const setBarH = () => document.documentElement.style.setProperty('--barh', `${bar.offsetHeight}px`);
-  new ResizeObserver(setBarH).observe(bar);
-  setBarH();
+  const ro = new ResizeObserver(setBarHeight);
+  for (const id of ['stageArea', 'camBar', 'screenBar']) { const el = document.getElementById(id); if (el) ro.observe(el); }
+  setBarHeight();
 }
 
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 9, 10.5); controls.target.set(0, 3, -12); controls.update(); // 既定のカメラ（2026-09-13 ユーザー指定）
   syncCameraSliders();
 });
+
+// プレビューの縦横比を PC（16:9）/ スマホ（9:16）に切り替える（2026-09-14 ユーザー指定）。
+// 実際の描画サイズは stage.resize() が毎フレーム見ているので、class を付け替えるだけでよい
+for (const [id, phone] of [['viewPc', false], ['viewPhone', true]]) {
+  $(id).addEventListener('click', () => {
+    $('view').classList.toggle('phone', phone);
+    $('viewPc').classList.toggle('on', !phone);
+    $('viewPhone').classList.toggle('on', phone);
+  });
+}
 
 // ---------- カメラ座標スライダー（MIDIOrchestra を参考に。2026-09-11）----------
 // スライダー → カメラ、マウス操作（OrbitControls）→ スライダー の双方向。値は他の設定と同じく自動保存される
