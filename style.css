@@ -233,6 +233,13 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #topbar .dly > span { flex: 0 0 58px; }
 #topbar .dly input[type=range] { width: 104px; margin: 0; }
 #topbar .dly small { color: var(--muted); font-size: 11px; }
+/* プリセット（2026-09-14 ユーザー指定）。一覧・名前・保存・削除を 1 行に */
+#topbar .preset { display: flex; align-items: center; gap: 6px; }
+#topbar .preset select { max-width: 150px; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
+#topbar .preset input { width: 96px; background: none; color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
+#topbar .preset button { padding: 4px 8px; font-size: 12px; }
 #topbar .dly input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
   background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 #topbar .dly input.num:focus { outline: none; border-color: var(--accent); }

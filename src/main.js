@@ -24,13 +24,15 @@ const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
 const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
+const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
 
 // ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
 // localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const SYNC_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY];
+const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY];   // プリセットそのものも共有する（中身には入れない）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
@@ -1376,7 +1378,86 @@ for (const d of document.querySelectorAll('#panel .box, #camBar .box, #viewArea 
   hd.appendChild(el);
   chk.remove();
 }
+// ---------- プリセット（保存対象を丸ごと名前付きで控える。2026-09-14 ユーザー指定） ----------
+// 中身は PRESET_KEYS（設定・楽器の割当・音域・統合・スクリーン・スカイドーム・クレジット履歴）の
+// localStorage の値をそのまま写したもの。プリセット自身は入れ子にしない
+// 知らせは名前欄のプレースホルダーに一瞬出す（#status は MIDI のファイル名を出す場所なので使わない）
+let presetFlashTimer = null;
+function flashPreset(msg) {
+  const el = $('presetName');
+  clearTimeout(presetFlashTimer);
+  el.placeholder = msg;
+  presetFlashTimer = setTimeout(() => { el.placeholder = '名前'; }, 2500);
+}
+function loadPresets() {
+  try { const o = JSON.parse(localStorage.getItem(PRESETS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; }
+  catch (e) { console.warn('プリセットの読込失敗:', e); return {}; }
+}
+function storePresets(all) {
+  try { localStorage.setItem(PRESETS_KEY, JSON.stringify(all)); pushSettings(); }
+  catch (e) { console.warn('プリセットの保存失敗:', e); }
+}
+function renderPresetList(sel = '') {
+  const list = $('presetList');
+  const all = loadPresets();
+  list.textContent = '';
+  list.appendChild(new Option('プリセット…', ''));
+  for (const name of Object.keys(all).sort()) list.appendChild(new Option(name, name));
+  list.value = all[sel] ? sel : '';
+}
+function savePreset(name) {
+  saveSettings();                    // 遅延保存を待たず、今の値を localStorage に確定させる
+  const all = loadPresets();
+  const snap = {};
+  for (const k of PRESET_KEYS) { const raw = localStorage.getItem(k); if (raw != null) snap[k] = raw; }
+  all[name] = snap;
+  storePresets(all);
+  renderPresetList(name);
+  flashPreset(`「${name}」を保存しました`);
+}
+function applyPreset(name) {
+  const p = loadPresets()[name];
+  if (!p) return;
+  for (const k of PRESET_KEYS) { if (p[k] != null) localStorage.setItem(k, p[k]); else localStorage.removeItem(k); }
+  pushSettings();
+  // 画面へ反映する（再読み込みせずに済ませる）
+  loadSettings(); refreshValueLabels(); applyCameraSliders();
+  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a)) screens = a.map(withDefaults); } catch (e) { console.warn('スクリーンの復元失敗:', e); }
+  try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
+        if (Array.isArray(a) && a.length === 3) domes = a.map((o) => { const v = { ...DOME_BASE, ...o }; v.r = Math.min(50, Math.max(10, v.r)); return v; }); }
+  catch (e) { console.warn('スカイドームの復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes);
+  try { const c = JSON.parse(localStorage.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
+  for (const n of [1, 2, 3, 4]) fillCreditList(n);
+  // 楽器の割当・音域・統合が変わるので、MIDI を読んでいれば組み直す
+  if (currentMidi) buildScene(currentMidi, { keepTime: true });
+  flashPreset(`「${name}」を読み込みました`);
+}
+$('presetList').addEventListener('change', (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  $('presetName').value = name;
+  applyPreset(name);
+});
+$('presetSave').addEventListener('click', () => {
+  const name = $('presetName').value.trim();
+  if (!name) { $('presetName').focus(); flashPreset('名前を入れてください'); return; }
+  savePreset(name);
+});
+$('presetDel').addEventListener('click', () => {
+  const name = $('presetName').value.trim() || $('presetList').value;
+  const all = loadPresets();
+  if (!name || !all[name]) { flashPreset('削除するものを選んでください'); return; }
+  delete all[name];
+  storePresets(all);
+  renderPresetList();
+  $('presetName').value = '';
+  flashPreset(`「${name}」を削除しました`);
+});
+for (const id of ['presetName']) $(id).addEventListener('keydown', (e) => e.stopPropagation());  // Space 等をショートカットに取られない
+
 loadSettings();
+renderPresetList();
 audioDelayPrev = audioDelaySec();   // 復元した値を基準にする（0 のままだと最初の 1 回だけ音がずれる）
 setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
 setDomes(domes);      // スカイドーム（遠景。3 層固定）
