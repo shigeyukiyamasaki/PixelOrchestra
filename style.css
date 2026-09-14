@@ -237,7 +237,7 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #topbar .preset { display: flex; align-items: center; gap: 6px; }
 #topbar .preset select { max-width: 150px; background: var(--panel2); color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
-#topbar .preset input { width: 96px; background: none; color: var(--text);
+#topbar .preset input { width: 160px; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
 #topbar .preset button { padding: 4px 8px; font-size: 12px; }
 /* 保存＝水色、削除＝赤（2026-09-14 ユーザー指定） */
