@@ -186,7 +186,7 @@ let screens = (() => {
 })();
 // スカイドーム（遠景。3 層固定。追加も削除もしない）
 const DOME_BASE = { name: '', r: 40, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
-                    src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false };
+                    src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 };
 let domes = (() => {
   try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
     if (Array.isArray(a) && a.length === 3) {
@@ -479,6 +479,7 @@ function domeRow(d, i) {
   slider('範囲', 'span', 40, 360, 5, 0, '横に何度ぶん覆うか。180 で半円（客席から見える側だけ）');
   slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
   slider('流れる速度', 'speed', -30, 30, 0.5, 1, '横に流れる速さ [度/秒]。プラスで右から左へ');
+  slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '範囲の両端で絵をなだらかに消す幅（範囲に対する割合）。0 でくっきり切れる');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度');
   slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない');
 

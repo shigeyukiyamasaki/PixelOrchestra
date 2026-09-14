@@ -133,7 +133,7 @@ const SCREEN_SHADER = {
     uniform sampler2D map; uniform float hasMap;
     uniform vec3 keyColor; uniform float keyThr;
     uniform vec3 tint; uniform float opacity; uniform float flip;
-    uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill;
+    uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade;
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
     void main() {
@@ -152,6 +152,11 @@ const SCREEN_SHADER = {
       vec4 c = hasMap > 0.5 ? texture2D(map, uv) : vec4(tint, 1.0);
       if (hasMap > 0.5 && keyThr > 0.0 && distance(c.rgb, keyColor) < keyThr) discard;
       float a = c.a * opacity;
+      // 端のぼかし：範囲を狭めたスカイドームで、絵が現れる／消える切れ目をなだらかにする
+      // （2026-09-14 ユーザー指定）。vUv.x は「その面の端から端まで」なので、繰り返しとは無関係に効く
+      if (uFade > 0.001) {
+        a *= smoothstep(0.0, uFade, vUv.x) * smoothstep(0.0, uFade, 1.0 - vUv.x);
+      }
       if (a < 0.01) discard;
       gl_FragColor = vec4(c.rgb, a);
     }`,
@@ -167,6 +172,7 @@ function screenMaterial(sc, tex) {
       opacity: { value: sc.opacity },
       flip: { value: sc.flip ? 1 : 0 },
       uRepeat: { value: 1 }, uScroll: { value: 0 }, uLoop: { value: 0 }, uFill: { value: 1 },
+      uFade: { value: 0 },
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,
@@ -494,9 +500,9 @@ export function buildRisers(seats) {
 // ひな壇の弧とは無関係に、舞台をぐるりと覆う半球の一部（既定は半円 = 180°）。
 // 素材は横に繰り返して流せるので、雲を層ごとに違う速さで動かすと奥行きが出る
 export const DOME_DEFAULT = [
-  { name: '遠景', r: 46, y: -10, span: 180, tiles: 3, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
-  { name: '中景', r: 38, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
-  { name: '近景', r: 30, y: -10, span: 180, tiles: 1, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false },
+  { name: '遠景', r: 46, y: -10, span: 180, tiles: 3, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 },
+  { name: '中景', r: 38, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 },
+  { name: '近景', r: 30, y: -10, span: 180, tiles: 1, speed: 0, opacity: 1, show: true, src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 },
 ];
 let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
 
@@ -528,6 +534,7 @@ function buildDomes() {
     m.uniforms.uLoop.value = 1;
     m.uniforms.uRepeat.value = tiles;
     m.uniforms.uFill.value = 1;
+    m.uniforms.uFade.value = Math.max(0, Math.min(0.49, d.fade ?? 0));   // 端のぼかし（範囲に対する割合）
     // 縦は横に連動させる：1 枚ぶんの横幅（角度）に素材の縦横比を掛けたぶんだけの帯にし、
     // 地平線の上にのせる。枚数を増やすと横も縦も一緒に小さくなる（2026-09-13 ユーザー指定）
     const thetaLen = Math.min(Math.PI / 2, (span / tiles) * (px.h / px.w));
