@@ -61,10 +61,6 @@ export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を�
 export const FLOOR_X_HALF = 18;   // 左右の縁（±x）
 export const FLOOR_Z_FRONT = 3;   // 手前の縁
 export const FLOOR_BACK_R = 29.5; // 奥の縁は一番奥のひな壇の外径（29）に沿わせた弧（2026-09-13 ユーザー指定「雛壇のところでカット」）
-export const WALL_Z = -30;      // ピアノロール壁の z
-export const WALL_WIDTH = 56;
-export const WALL_HEIGHT = 14;
-export const WALL_BASE_Y = 3.2; // 着弾ライン（後列ひな壇の少し上）
 
 const deg = (d) => (d * Math.PI) / 180;
 // 打楽器の後ろに置く、奏者のいないひな壇（キャラクター等を置く想定。2026-09-13 ユーザー指定）。
@@ -304,14 +300,6 @@ export function createStage(container) {
   podium.position.set(0, PODIUM_H / 2, CONDUCTOR_Z);
   addStage(podium, -20);
 
-  // ロール壁の背景板（暗い半透明で対比を作る）
-  const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(WALL_WIDTH, WALL_HEIGHT),
-    new THREE.MeshBasicMaterial({ color: '#141428', transparent: true, opacity: 0.85 }),
-  );
-  wall.position.set(0, WALL_BASE_Y + WALL_HEIGHT / 2, WALL_Z - 0.05);
-  scene.add(wall);
-
   // 描画サイズはプレビュー要素の大きさに合わせる。毎フレーム呼ばれるので、変わった時だけ設定する。
   // レイアウトが決まる前（0×0）に設定すると aspect が NaN になり以後ずっと真っ黒になるため、その時は何もしない
   // （2026-09-12：ページを開いた時に稀に表示されない不具合。読み込み順やブラウザによってタイミングが変わる）
@@ -328,7 +316,7 @@ export function createStage(container) {
   new ResizeObserver(resize).observe(container);
   resize();
 
-  return { scene, camera, renderer, controls, resize, wall, setShadows };
+  return { scene, camera, renderer, controls, resize, setShadows };
 }
 
 // 照明の状態。setShadows で切り替える（名前は互換のため）

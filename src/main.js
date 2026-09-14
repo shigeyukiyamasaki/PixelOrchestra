@@ -75,7 +75,7 @@ const $ = (id) => {
 
 // ---------- ステージ ----------
 const stage = createStage($('view'));
-const { scene, camera, renderer, controls, wall, setShadows } = stage;
+const { scene, camera, renderer, controls, setShadows } = stage;
 
 let engine = null;
 let roll = null;
@@ -708,7 +708,6 @@ function settings() {
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
     showRoll: $('showRoll').checked,
-    rollMode: radioValue('rollMode') === 'wall' ? 'wall' : 'overhead',
     showLandLine: false, // 着地点のラインは不要（2026-09-10 ユーザー確定。UI 撤去）
     rollOpacity: num('rollOpacity', 0.85),
     rollGlow: num('rollGlow', 0),
@@ -1208,10 +1207,9 @@ function animate() {
     }
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
-    roll.setMode(s.rollMode, s.showLandLine);
+    roll.setMode(s.showLandLine);
     roll.setOpacity(s.rollOpacity);
     roll.setGlow(s.rollGlow);
-    wall.visible = s.showRoll && s.rollMode === 'wall';
     if (s.showRoll) roll.update(t, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
@@ -1245,12 +1243,14 @@ async function loadFromUrl() {
 
 makeValueInputs();
 // 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
-for (const d of document.querySelectorAll('#panel details, #camBar details')) {
+for (const d of document.querySelectorAll('#panel details, #camBar details, #view details')) {
   const sum = d.querySelector(':scope > summary');
-  const chk = [...d.querySelectorAll(':scope > label.chk')].find((l) => l.textContent.trim() === '表示する');
+  // その箱の先頭にあるチェック（「表示する」「自動で切り替える」など）を見出しの右端へ
+  const chk = d.querySelector(':scope > label.chk');
   if (!sum || !chk) continue;
   const el = chk.querySelector('input[type=checkbox]');
-  el.title = chk.title;
+  if (!el) continue;
+  el.title = `${chk.textContent.trim()}：${chk.title}`;
   el.addEventListener('click', (e) => e.stopPropagation());   // 見出しの開閉に取られないように
   sum.appendChild(el);
   chk.remove();

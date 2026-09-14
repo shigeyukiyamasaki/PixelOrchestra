@@ -2,12 +2,10 @@
  * PixelOrchestra — pianoRoll.js
  * 最終更新: 2026-09-09 / v0.2 / 生成元: PixelOrchestra
  *
- * 滝型ピアノロール。2 モード：
- *   overhead: 各奏者（トラック）の真上からノートが降ってきて足元で着弾する（既定。体は貫通）
- *   wall:     後方の壁を上から下へ流れる（横軸 = 音程・全トラック共通）
- * どちらも InstancedMesh 1つで全ノートを描く。
+ * 滝型ピアノロール。各奏者（トラック）の真上からノートが降ってきて足元で着弾する（体は貫通）。
+ * InstancedMesh 1つで全ノートを描く。
+ * 「後方の壁を流れる」モードは 2026-09-14 にユーザー指定で撤去した。
  */
-import { WALL_Z, WALL_WIDTH, WALL_HEIGHT, WALL_BASE_Y } from './stage.js';
 import { PX } from './sprites.js';
 
 const FLASH_SEC = 0.12;       // 着弾後に明るく光る時間
@@ -48,11 +46,7 @@ export class PianoRoll {
     this.notes = engine.allNotes;
     this.group = new THREE.Group();
     scene.add(this.group);
-    this.mode = 'overhead';
 
-    const lo = engine.minPitch - 1, hi = engine.maxPitch + 1;
-    this.pitchLo = lo;
-    this.semitoneW = WALL_WIDTH / (hi - lo + 1);
 
     // ノート：底辺が pivot の 1×1 平面
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -77,7 +71,6 @@ export class PianoRoll {
     this._white = new THREE.Color(1, 1, 1);
     this._m = new THREE.Matrix4();
     this._pos = new THREE.Vector3();
-    this._identityQ = new THREE.Quaternion();
     this._scl = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
     this.columns = new Map(); // track → { x, y, z, width, yaw, quat, line }（setSeats で生成）
@@ -86,28 +79,12 @@ export class PianoRoll {
     this._lastVisible = new Set();
     this.maxDurAll = Math.max(...this.notes.map((n) => n.duration));
 
-    // ---- 壁モードの装飾 ----
-    this.wallGroup = new THREE.Group();
-    this.group.add(this.wallGroup);
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(WALL_WIDTH, 0.08), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
-    line.position.set(0, WALL_BASE_Y, WALL_Z + 0.02);
-    this.wallGroup.add(line);
-    const octMat = new THREE.MeshBasicMaterial({ color: '#2a2a48' });
-    for (let p = Math.ceil(lo / 12) * 12; p <= hi; p += 12) {
-      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.03, WALL_HEIGHT), octMat);
-      l.position.set(this._wallX(p) - this.semitoneW / 2, WALL_BASE_Y + WALL_HEIGHT / 2, WALL_Z);
-      this.wallGroup.add(l);
-    }
-
     // ---- 頭上モードの装飾（トラックごとの着弾ライン。setSeats で生成）----
     this.overheadGroup = new THREE.Group();
     this.group.add(this.overheadGroup);
-    this.setMode(this.mode);
+    this.setMode(true);
   }
 
-  _wallX(midi) {
-    return -WALL_WIDTH / 2 + (midi - this.pitchLo + 0.5) * this.semitoneW;
-  }
 
   /** トラック色の再取得（楽器割当を変えた後に呼ぶ） */
   refreshColors() {
@@ -138,23 +115,21 @@ export class PianoRoll {
     }
   }
 
-  setMode(mode, showLine = true) {
-    this.mode = mode;
+  /** 着弾ラインを出すか（位置の選択肢は廃止。奏者の足元だけ。2026-09-14 ユーザー指定） */
+  setMode(showLine = true) {
     this.showLine = showLine;
-    this.wallGroup.visible = mode === 'wall' && showLine;       // 壁モードの着弾ライン・オクターブ線
-    this.overheadGroup.visible = mode === 'overhead' && showLine; // 頭上モードの着弾ライン
+    this.overheadGroup.visible = showLine;
   }
 
   /**
    * @param {number} t 現在時刻 [s]
    * @param {number} speed 落下速度 [unit/s]
-   * @param {object} opts { overheadHeight, semitoneW }（頭上モードの見える高さ・半音幅）
+   * @param {object} opts { overheadHeight, semitoneW }（見える高さ・半音幅）
    */
   update(t, speed, opts = {}) {
-    const overhead = this.mode === 'overhead';
     const overheadH = Number.isFinite(opts.overheadHeight) ? opts.overheadHeight : DEFAULT_OVERHEAD_HEIGHT;
     const semitoneW = Number.isFinite(opts.semitoneW) ? opts.semitoneW : DEFAULT_SEMITONE_W;
-    const visibleH = overhead ? overheadH : WALL_HEIGHT;
+    const visibleH = overheadH;
     const lookahead = visibleH / speed;   // 上端に見える未来 [s]
     const tailSec = 0.5;                  // 着弾後も少しだけ残す
     const notes = this.notes;
@@ -167,17 +142,15 @@ export class PianoRoll {
     for (const i of this._lastVisible) { mesh.setMatrixAt(i, zeroM); halo.setMatrixAt(i, zeroM); }
     this._lastVisible.clear();
 
-    // 頭上モード：列ごとにカメラの方位へ向ける（円筒ビルボード）。着弾ラインも同じ向き
-    if (overhead) {
-      const cam = this.camera.position;
-      for (const [tr, c] of this.columns) {
-        const range = tr.maxPitch - tr.minPitch + 1;
-        c.width = Math.min(range * semitoneW, c.spread + COLUMN_EXTRA_MAX);
-        c.line.scale.x = c.width;
-        c.yaw = Math.atan2(cam.x - c.x, cam.z - c.z);
-        c.quat.setFromAxisAngle(this._yAxis, c.yaw);
-        c.line.quaternion.copy(c.quat);
-      }
+    // 列ごとにカメラの方位へ向ける（円筒ビルボード）。着弾ラインも同じ向き
+    const cam = this.camera.position;
+    for (const [tr, c] of this.columns) {
+      const range = tr.maxPitch - tr.minPitch + 1;
+      c.width = Math.min(range * semitoneW, c.spread + COLUMN_EXTRA_MAX);
+      c.line.scale.x = c.width;
+      c.yaw = Math.atan2(cam.x - c.x, cam.z - c.z);
+      c.quat.setFromAxisAngle(this._yAxis, c.yaw);
+      c.line.quaternion.copy(c.quat);
     }
 
     // 表示対象：end > t - tail かつ time < t + lookahead。time 昇順なので二分探索で開始点を探す
@@ -190,25 +163,18 @@ export class PianoRoll {
       if (n.time > t + lookahead) break;
       if (n.end < t - tailSec) continue;
 
-      let baseY, x, z, w, quat;
-      if (overhead) {
-        const c = this.columns.get(n.track);
-        if (!c) continue;
-        const tr = n.track;
-        const range = tr.maxPitch - tr.minPitch + 1;
-        const semi = c.width / range; // 通常は SEMITONE_W。列幅上限に当たった時だけ詰まる
-        w = semi * 0.9;
-        const localX = -c.width / 2 + (n.midi - tr.minPitch + 0.5) * semi; // 列の中で音程を横に展開
-        // 列のビルボード回転（yaw）に合わせて横オフセットを世界座標へ（y 回転で x→(cos, 0, -sin)）
-        x = c.x + Math.cos(c.yaw) * localX;
-        z = c.z - Math.sin(c.yaw) * localX;
-        baseY = c.y;
-        quat = c.quat;
-      } else {
-        x = this._wallX(n.midi); z = WALL_Z; baseY = WALL_BASE_Y;
-        w = this.semitoneW * 0.85;
-        quat = this._identityQ;
-      }
+      const col = this.columns.get(n.track);
+      if (!col) continue;
+      const tr = n.track;
+      const range = tr.maxPitch - tr.minPitch + 1;
+      const semi = col.width / range; // 通常は SEMITONE_W。列幅上限に当たった時だけ詰まる
+      const w = semi * 0.9;
+      const localX = -col.width / 2 + (n.midi - tr.minPitch + 0.5) * semi; // 列の中で音程を横に展開
+      // 列のビルボード回転（yaw）に合わせて横オフセットを世界座標へ（y 回転で x→(cos, 0, -sin)）
+      const x = col.x + Math.cos(col.yaw) * localX;
+      const z = col.z - Math.sin(col.yaw) * localX;
+      const baseY = col.y;
+      const quat = col.quat;
 
       const yBottom = baseY + (n.time - t) * speed;
       const h = n.duration * speed;
