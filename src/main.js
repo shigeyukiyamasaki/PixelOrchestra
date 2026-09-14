@@ -134,25 +134,39 @@ const clock = {
 const audio = new Audio();
 let audioLoaded = false;
 
+// 遅延（秒）。MIDI 遅延は奏者の動き・ピアノロールを、音声遅延は音を、舞台の時計に対して遅らせる。
+// どちらもプラスで遅らせる（MIDIOrchestra と同じ向き。2026-09-14 ユーザー指定）
+function midiDelaySec() { const v = parseFloat($('midiDelay').value); return Number.isFinite(v) ? v : 0; }
+function audioDelaySec() { const v = parseFloat($('audioDelay').value); return Number.isFinite(v) ? v : 0; }
+
+// 舞台の時計（マスター）。音声が実際に鳴っている間だけ音声の時計に従う
+// （音声遅延がプラスの頭は、まだ鳴っていないので performance.now() で進める）
 function currentTime() {
   if (!clock.playing) return clock.t;
-  if (audioLoaded) return audio.currentTime + audioOffsetSec();
+  if (audioLoaded && !audio.paused) return audio.currentTime + audioDelaySec();
   return clock.tStart + (performance.now() - clock.perfStart) / 1000;
 }
-function audioOffsetSec() {
-  const v = parseFloat($('audioOffset').value);
-  return Number.isFinite(v) ? v / 1000 : 0;
+/** 舞台の時計 t のとき、音声を鳴らすべきか・どこへ合わせるか（毎フレーム呼ぶ） */
+function syncAudio(t) {
+  if (!audioLoaded || !clock.playing) return;
+  const at = t - audioDelaySec();
+  if (at < 0) { if (!audio.paused) audio.pause(); audio.currentTime = 0; return; } // まだ出番でない
+  if (audio.paused) {
+    audio.currentTime = at;
+    audio.play().catch((e) => console.warn('audio.play 失敗:', e));
+    // 音声が鳴り出すとマスターが音声側に移る。ずれないよう perf 側の基準も今の t に合わせておく
+    clock.tStart = t; clock.perfStart = performance.now();
+  }
 }
 function play() {
   if (!engine) return;
-  if (clock.t >= engine.duration) clock.t = 0;
+  if (clock.t >= engine.duration + midiDelaySec()) clock.t = 0;
   clock.playing = true;
   clock.tStart = clock.t;
   clock.perfStart = performance.now();
   if (audioLoaded) {
-    audio.currentTime = Math.max(0, clock.t - audioOffsetSec());
     spectrum.connect(audio); // 再生の操作の中で音声をつなぐ（自動再生の制限のため）
-    audio.play().catch((e) => console.warn('audio.play 失敗:', e));
+    syncAudio(clock.t);
   }
   $('playBtn').textContent = '❚❚ 一時停止';
 }
@@ -165,10 +179,32 @@ function pause() {
 function seek(t) {
   const wasPlaying = clock.playing;
   if (wasPlaying) pause();
-  clock.t = Math.max(0, Math.min(engine ? engine.duration : 0, t));
-  if (audioLoaded) audio.currentTime = Math.max(0, clock.t - audioOffsetSec());
+  clock.t = Math.max(0, Math.min(engine ? engine.duration + midiDelaySec() : 0, t));
+  if (audioLoaded) audio.currentTime = Math.max(0, clock.t - audioDelaySec());
   if (wasPlaying) play();
 }
+
+// MIDI 遅延を動かした時：曲の終わりが後ろにずれるので、シークの範囲も合わせる
+$('midiDelay').addEventListener('input', () => {
+  if (engine) $('seek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
+});
+
+// 音声遅延を動かした時：舞台の時計は音声から引いているので、音声の位置を同じ差だけずらして時刻を保つ
+let audioDelayPrev = 0;
+$('audioDelay').addEventListener('input', (e) => {
+  const now = parseFloat(e.target.value) || 0;
+  const d = now - audioDelayPrev;
+  audioDelayPrev = now;
+  if (!audioLoaded) return;
+  if (clock.playing) {
+    const at = audio.currentTime - d;
+    if (audio.paused) syncAudio(currentTime());
+    else if (at >= 0) audio.currentTime = at;
+    else { audio.pause(); audio.currentTime = 0; clock.tStart = currentTime(); clock.perfStart = performance.now(); }
+  } else {
+    audio.currentTime = Math.max(0, clock.t - now);
+  }
+});
 
 // ---------- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定。2026-09-13 ユーザー指定） ----------
 // 枚数は自由。位置はひな壇の奥行きの中の割合（0 = 手前の辺 / 1 = 奥の辺）で持つ。
@@ -652,8 +688,10 @@ for (const id of ['panel', 'topbar', 'camBar', 'view']) document.getElementById(
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
+// 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
+const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id], #topbar .dly input[type=range][id]';
 function refreshValueLabels() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id]')) {
+  for (const el of document.querySelectorAll(RANGE_SEL)) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
     if (!lab) continue;
     if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = el.value; } // 数値入力欄（編集中は上書きしない）
@@ -662,7 +700,7 @@ function refreshValueLabels() {
 }
 // スライダーの値表示を数値入力欄に置き換える（直接入力できる。Enter/フォーカス外しで確定、範囲外はスライダーの範囲に丸める。2026-09-11 ユーザー指定）
 function makeValueInputs() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id]')) {
+  for (const el of document.querySelectorAll(RANGE_SEL)) {
     const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
     if (!lab) continue;
     const num = document.createElement('input');
@@ -857,11 +895,11 @@ function buildScene(midi, { keepTime = false } = {}) {
   roll = new PianoRoll(scene, engine, camera);
   placePuppets();
   renderTrackTable();
-  $('seek').max = Math.floor(engine.duration * 100);
+  $('seek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum };
+window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum, audio, clock, currentTime };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
@@ -1159,17 +1197,20 @@ function animate() {
   controls.update();
 
   if (engine && conductor && roll) {
-    const t = currentTime();
-    if (clock.playing && t >= engine.duration + 1) pause();
+    const t = currentTime();                 // 舞台の時計（シーク・時間表示・スクリーンはこれ）
+    const md = midiDelaySec();
+    const tm = t - md;                       // MIDI の時刻（奏者の動き・ピアノロール・テンポ表示）
+    syncAudio(t);                            // 音声遅延の待ち合わせ
+    if (clock.playing && t >= engine.duration + md + 1) pause();
     const s = settings();
-    const beat = engine.beatAt(t);
-    const g = engine.globalEnergyAt(t);
-    const ctx = { t, dt, beat, settings: s, globalEnergy: g };
+    const beat = engine.beatAt(tm);
+    const g = engine.globalEnergyAt(tm);
+    const ctx = { t: tm, dt, beat, settings: s, globalEnergy: g };
 
     const face = (p) => (s.facing === 'conductor' ? p.faceToward(0, CONDUCTOR_Z) : p.faceCamera(camera));
     for (const { puppet, track } of puppets) {
       face(puppet);
-      puppet.update(engine.trackState(track, t - puppet.delay), ctx);
+      puppet.update(engine.trackState(track, tm - puppet.delay), ctx);
     }
     face(conductor);
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
@@ -1188,10 +1229,10 @@ function animate() {
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
-    if (s.autoCam) updateAutoCam(s, t);      // 自動カメラ（手動操作より先に。切り替えは小節の頭）
+    if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
-    applyTempo(s, engine.bpmAt(t), beat);
+    applyTempo(s, engine.bpmAt(tm), beat);
     applyCredits(s);
     logo.visible = s.showTitle;
     logo.position.set(s.titleX, s.titleY, s.titleZ);
@@ -1211,10 +1252,10 @@ function animate() {
     roll.setMode(s.showLandLine);
     roll.setOpacity(s.rollOpacity);
     roll.setGlow(s.rollGlow);
-    if (s.showRoll) roll.update(t, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
+    if (s.showRoll) roll.update(tm, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
-    $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration)}  ♩=${Math.round(engine.bpmAt(t))}`;
+    $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
   renderer.render(scene, camera);
 }
@@ -1257,6 +1298,7 @@ for (const d of document.querySelectorAll('#panel details, #camBar details, #vie
   chk.remove();
 }
 loadSettings();
+audioDelayPrev = audioDelaySec();   // 復元した値を基準にする（0 のままだと最初の 1 回だけ音がずれる）
 setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
 setDomes(domes);      // スカイドーム（遠景。3 層固定）
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）

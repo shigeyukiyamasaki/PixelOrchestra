@@ -166,10 +166,22 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 .ctl input[type=color] { width: 48px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); cursor: pointer; }
 
 /* 上：タイトル・ファイル・再生。左：表示設定、右：トラック一覧。どれも半透明でステージが透ける */
-#topbar { grid-row: 1; grid-column: 1 / -1; height: 52px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+#topbar { grid-row: 1; grid-column: 1 / -1; height: 72px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 0 14px;
   background: var(--panel); border-bottom: 1px solid var(--line); }
 #topbar h1 { margin: 0 8px 0 0; white-space: nowrap; }
 #topbar .status { margin: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ファイル（MIDI / 音声）と遅延（MIDI / 音声）をそれぞれ 2 段に積む。2026-09-14 ユーザー指定 */
+#topbar .files, #topbar .delays { display: flex; flex-direction: column; gap: 5px; }
+#topbar .frow { display: flex; align-items: center; gap: 8px; }
+#topbar .frow .filebtn { flex: 0 0 62px; padding: 3px 8px; text-align: center; font-size: 12px; }
+#topbar .dly { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+#topbar .dly > span { flex: 0 0 58px; }
+#topbar .dly input[type=range] { width: 104px; margin: 0; }
+#topbar .dly small { color: var(--muted); font-size: 11px; }
+#topbar .dly input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
+  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
+#topbar .dly input.num:focus { outline: none; border-color: var(--accent); }
+#topbar .dly input.num::-webkit-inner-spin-button, #topbar .dly input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #topbar .spacer { flex: 0 0 8px; }
 #topbar .seek { flex: 1 1 160px; min-width: 120px; margin: 0; }
 #topbar .time { margin-left: 0; }

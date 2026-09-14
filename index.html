@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260914p">
+  <link rel="stylesheet" href="style.css?v=20260914q">
 </head>
 <body>
   <div id="stageArea">
@@ -112,11 +112,21 @@
 
   <header id="topbar">
     <h1>Pixel Orchestra</h1>
-    <label class="filebtn" title="MIDI ファイル（.mid）を読み込む。トラック名から楽器を自動判定します">MIDI<input type="file" id="midiFile" accept=".mid,.midi,audio/midi"></label>
-    <span id="status" class="status">（未読み込み）</span>
-    <label class="filebtn" title="音声ファイル（mp3/wav/m4a・任意）。MIDI と同期して再生します。無くても動きます">音声<input type="file" id="audioFile" accept="audio/*"></label>
-    <span id="audioName" class="status">（なし）</span>
-    <label class="offset" title="音声を MIDI に対して何 ms 遅らせるか（マイナスで早める）。映像と音がずれる時に調整">オフセット<input type="number" id="audioOffset" value="0" step="10"><span>ms</span></label>
+    <!-- ファイルは 2 段（MIDI / 音声）、その右に遅延スライダーを 2 段（2026-09-14 ユーザー指定） -->
+    <div class="files">
+      <div class="frow">
+        <label class="filebtn" title="MIDI ファイル（.mid）を読み込む。トラック名から楽器を自動判定します">MIDI<input type="file" id="midiFile" accept=".mid,.midi,audio/midi"></label>
+        <span id="status" class="status">（未読み込み）</span>
+      </div>
+      <div class="frow">
+        <label class="filebtn" title="音声ファイル（mp3/wav/m4a・任意）。MIDI と同期して再生します。無くても動きます">音声<input type="file" id="audioFile" accept="audio/*"></label>
+        <span id="audioName" class="status">（なし）</span>
+      </div>
+    </div>
+    <div class="delays">
+      <label class="dly" title="MIDI（奏者の動き・ピアノロール）を何秒遅らせるか。マイナスで早める"><span>MIDI遅延</span><input type="range" id="midiDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="midiDelay">0</b><small>秒</small></label>
+      <label class="dly" title="音声を何秒遅らせるか。マイナスで早める。映像と音がずれる時に調整"><span>音声遅延</span><input type="range" id="audioDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="audioDelay">0</b><small>秒</small></label>
+    </div>
     <span class="spacer"></span>
     <button id="playBtn" class="primary" title="再生／一時停止（Space キーでも可）">▶ 再生</button>
     <button id="stopBtn" title="停止して曲頭に戻る">■ 停止</button>
@@ -202,6 +212,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260914b"></script>
+  <script type="module" src="src/main.js?v=20260914c"></script>
 </body>
 </html>
