@@ -620,20 +620,22 @@ export class Puppet {
       // 「強弱の反応」スライダーも velocity には掛からないので効かなかった。energy なら両方に乗る。
       // 弓が長く動けば上体の傾き（sNorm）も自動的に大きくなる
       const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * clamp(energy, 0, 3)) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
-      // 弓の向きは同じパートで揃える（2026-09-14 ユーザー指定）。
-      // 振り幅の個体差（scaleVar）と後列の遅れで各自が別々に折り返すと、同じ 1st Vn でも
-      // 上げ弓と下げ弓が混ざる。音符ごとに最初に到達した奏者が決めた向きを、パート全員で使う
+      // 弓の向きは「同じ時刻に同じ音程を弾いている奏者」で揃える（2026-09-14 ユーザー指定）。
+      // 同じパートの中はもちろん、1st と 2nd がユニゾンの時も自動的に揃う。
+      // 振り幅の個体差（scaleVar）と後列の遅れで各自が別々に折り返すと向きが混ざるので、
+      // 音符ごとに最初に到達した奏者が決めた向きを、同じ音を弾く全員で使う
       let dir;
       const sync = this.bowSync;
-      const decided = sync?.dirOf.get(onset);
+      const key = `${onset.time.toFixed(4)}|${onset.midi}`;
+      const decided = sync?.dirOf.get(key);
       if (decided !== undefined) dir = decided;
       else {
         dir = -this.bowDir;
         const t0 = this.bowPos + dir * len;
         if (t0 > sMax || t0 < sMin) dir = -dir;                 // 端に当たったら折り返す
         if (sync) {
-          sync.dirOf.set(onset, dir);
-          if (sync.dirOf.size > 16) sync.dirOf.delete(sync.dirOf.keys().next().value);   // 直近だけ覚える
+          sync.dirOf.set(key, dir);
+          if (sync.dirOf.size > 64) sync.dirOf.delete(sync.dirOf.keys().next().value);   // 直近だけ覚える
         }
       }
       const target = clamp(this.bowPos + dir * len, sMin, sMax);
