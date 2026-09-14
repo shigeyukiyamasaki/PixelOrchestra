@@ -878,8 +878,10 @@ function placePuppets() {
   const seats = layoutSeats(engine.tracks, footprintOf);
   let seed = 1;
   for (const seat of seats) {
+    const bowSync = { dirOf: new Map() };   // この席（＝同じパート）の弓の向き。音符ごとに 1 つ
     seat.positions.forEach((pos) => {
       const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++ });
+      puppet.bowSync = bowSync;   // 同じパートで弓の向きを揃える（2026-09-14 ユーザー指定）
       puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
       scene.add(puppet.root);

@@ -620,9 +620,23 @@ export class Puppet {
       // 「強弱の反応」スライダーも velocity には掛からないので効かなかった。energy なら両方に乗る。
       // 弓が長く動けば上体の傾き（sNorm）も自動的に大きくなる
       const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * clamp(energy, 0, 3)) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
-      let dir = -this.bowDir;
-      let target = this.bowPos + dir * len;
-      if (target > sMax || target < sMin) { dir = -dir; target = clamp(this.bowPos + dir * len, sMin, sMax); }
+      // 弓の向きは同じパートで揃える（2026-09-14 ユーザー指定）。
+      // 振り幅の個体差（scaleVar）と後列の遅れで各自が別々に折り返すと、同じ 1st Vn でも
+      // 上げ弓と下げ弓が混ざる。音符ごとに最初に到達した奏者が決めた向きを、パート全員で使う
+      let dir;
+      const sync = this.bowSync;
+      const decided = sync?.dirOf.get(onset);
+      if (decided !== undefined) dir = decided;
+      else {
+        dir = -this.bowDir;
+        const t0 = this.bowPos + dir * len;
+        if (t0 > sMax || t0 < sMin) dir = -dir;                 // 端に当たったら折り返す
+        if (sync) {
+          sync.dirOf.set(onset, dir);
+          if (sync.dirOf.size > 16) sync.dirOf.delete(sync.dirOf.keys().next().value);   // 直近だけ覚える
+        }
+      }
+      const target = clamp(this.bowPos + dir * len, sMin, sMax);
       this.bowDir = dir; this.bowFrom = this.bowPos; this.bowTo = target;
       this.bowDur = Math.max(onset.duration, 0.1);
     }
