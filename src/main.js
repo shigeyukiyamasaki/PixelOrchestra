@@ -725,7 +725,7 @@ function setupCredits() {
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
-  .filter((el) => el.type !== 'file' && el.id !== 'seek');
+  .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset'));   // プリセットの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
 const radioValue = (name) => document.querySelector(`#panel input[type=radio][name="${name}"]:checked`)?.value;

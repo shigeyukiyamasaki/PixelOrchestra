@@ -240,6 +240,11 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #topbar .preset input { width: 96px; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
 #topbar .preset button { padding: 4px 8px; font-size: 12px; }
+/* 保存＝水色、削除＝赤（2026-09-14 ユーザー指定） */
+#topbar #presetSave { background: #4fc3f7; border-color: #4fc3f7; color: #0b1020; font-weight: 600; }
+#topbar #presetSave:hover { background: #7ad2fa; border-color: #7ad2fa; color: #0b1020; }
+#topbar #presetDel { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+#topbar #presetDel:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 #topbar .dly input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
   background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 #topbar .dly input.num:focus { outline: none; border-color: var(--accent); }
