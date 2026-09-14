@@ -44,7 +44,9 @@ const RECENT_KEEP = 4;        // 直近これだけのパートは続けて抜�
 // 何を写しているか分からなくなるので、距離を取って高い位置から見下ろす（2026-09-13 実測して調整）
 // 超近接：奏者 1 人に寄る。狙うのは顔でも足元でもなく「楽器」（2026-09-13 ユーザー指定）。
 // 楽器の高さはパートごとに違う（チェロは低く、金管は高い）ので、実際の高さを受け取って使う
-const XCLOSE = { dist: 4.2, yOver: 0.9, targetY: 1.9 };
+// yOver = 楽器からどれだけ上にカメラを置くか。minOver = 席の足元からの最低の高さ。
+// 低い位置に置くと周りの楽器や奏者に埋もれる（2026-09-14 実測：チェレスタがハープの陰に隠れた）
+const XCLOSE = { dist: 4.6, yOver: 1.6, minOver: 4.2, targetY: 1.9 };
 const CLOSE = { dist: 8.0, y: 5.6, targetY: 2.0 };
 const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
@@ -284,7 +286,10 @@ export class AutoCamera {
     // 超近接だけは楽器そのもの（外接箱の中心。world の絶対値）を狙う
     const base = c[1] || 0;
     const aimY = sh.kind === 'xclose' ? clamp(sh.instY ?? (base + k.targetY), 0.8, 8) : base + k.targetY;
-    const camY = sh.kind === 'xclose' ? aimY + k.yOver : base + k.y + swing(n, 6) * 0.4;
+    // 超近接は周りの頭より上に出してから見下ろす（低いと手前の楽器・奏者に埋もれる）
+    const camY = sh.kind === 'xclose'
+      ? Math.max(aimY + k.yOver, base + k.minOver)
+      : base + k.y + swing(n, 6) * 0.4;
     const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * p * move);          // ショットの間にゆっくり寄る
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
