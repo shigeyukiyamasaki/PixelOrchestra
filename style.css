@@ -50,7 +50,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 見出しは箱の上端いっぱいに（左右・上の余白を打ち消す。2026-09-14 ユーザー指定）。
    角丸は箱の内側の半径（8px - 枠線 1px）に合わせる */
 #viewOverlay .box > .hd { font-size: 13px; padding: 4px 8px; margin: -8px -10px 6px;
-  border: none; border-radius: 7px 7px 0 0; }
+  border: none; border-radius: 7px 7px 0 0;
+  background: rgba(194, 194, 200, .75); }   /* 帯も少し透かす（2026-09-14 ユーザー指定）。#c2c2c8 の 75% */
 #viewOverlay .box .ctl { margin: 6px 0; }
 #viewOverlay .box .chk { margin: 4px 0 6px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
