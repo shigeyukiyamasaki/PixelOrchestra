@@ -54,6 +54,10 @@ const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 const ALONG = { back: 9.0, ahead: 7.0, out: 1.2, y: 2.6, targetY: 2.2 };
 const ALONG_RATIO = 0.45;     // 寄りのうち、列沿いにする割合
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
+// 動くショットのうち、寄る代わりに水平に流す（パン）割合と、その振れ幅 [unit]（2026-09-14 ユーザー指定）
+const PAN_RATIO = 0.5;
+const PAN_WIDE = 9.0;         // 引き・指揮者のパン幅
+const PAN_NEAR = 4.5;         // 寄り・列沿いのパン幅
 const YAW = 0.45;             // 正面を外す振り幅 [rad]（±26°）
 // 横顔のアングル。寄りは指揮者側（正面）からばかりになるので、たまに真横から狙う
 // （2026-09-14 ユーザー指摘：木管・弦の横顔がほとんど出ない）
@@ -273,19 +277,34 @@ export class AutoCamera {
     // 動きの頻度で固定ショットとの割合を決め、動きの量でその大きさを決める（2026-09-13 ユーザー指定）
     const moving = wobble(n, 7) < clamp(env.moveFreq ?? 0.6, 0, 1);
     const move = moving ? clamp(env.move ?? 0.6, 0, 1) : 0;
+    // 動くショットは「寄る」か「水平に流す（パン）」のどちらか。pd は寄りの進み具合
+    const pan = move > 0 && wobble(n, 16) < PAN_RATIO;
+    const pd = pan ? 0 : p;
+    // パン：カメラと狙いを、視線に対して直角な向きへ一緒に流す（被写体が画面を横切る）
+    const panDir = wobble(n, 17) < 0.5 ? -1 : 1;
+    const withPan = (cam, width = PAN_WIDE) => {
+      if (!pan) return cam;
+      const vx = cam.target[0] - cam.pos[0], vz = cam.target[2] - cam.pos[2];
+      const len = Math.hypot(vx, vz) || 1;
+      const sx = -vz / len, sz = vx / len;                    // 視線に直角（水平）
+      const off = (p - 0.5) * width * move * panDir;
+      cam.pos[0] += sx * off; cam.pos[2] += sz * off;
+      cam.target[0] += sx * off; cam.target[2] += sz * off;
+      return cam;
+    };
 
     if (sh.kind === 'cond') {                                            // 指揮者：奏者側から顔を見る
       // 左右どちら側からも撮る。片側だけだと背景に写るパートがいつも同じになる（2026-09-13 ユーザー指摘）
       const side = wobble(n, 9) < 0.5 ? -1 : 1;
       const a = side * (COND.base + wobble(n, 4) * COND.swing);
-      const d = COND.dist - COND.dolly * p * move;
-      return { pos: [Math.sin(a) * d, COND.y, cz - Math.cos(a) * d], target: [0, COND.targetY, cz] };
+      const d = COND.dist - COND.dolly * pd * move;
+      return withPan({ pos: [Math.sin(a) * d, COND.y, cz - Math.cos(a) * d], target: [0, COND.targetY, cz] });
     }
     if (sh.kind === 'wide' || !sh.center) {                              // 引き：正面から全景
-      return {
-        pos: [swing(n, 2) * WIDE.sway * move, WIDE.y + swing(n, 3) * WIDE.yWave, WIDE.z - WIDE.dolly * p * move],
-        target: WIDE.target,
-      };
+      return withPan({
+        pos: [swing(n, 2) * WIDE.sway * move, WIDE.y + swing(n, 3) * WIDE.yWave, WIDE.z - WIDE.dolly * pd * move],
+        target: [...WIDE.target],
+      });
     }
     // 奏者：席の位置から、指揮者側（内側）の斜め上に置いて見下ろす。
     // アップは首席 1 人、中景はパート全体の中心を狙う
@@ -299,11 +318,11 @@ export class AutoCamera {
       const tx = -rz, tz = rx;                                   // 接線（+ 方向）
       const dir = wobble(n, 12) < 0.5 ? -1 : 1;                  // どちら向きに列を見るかは半々
       const out = ALONG.out;                                     // 少し外側に下がって列の背後から
-      const d = ALONG.back * (1 + 0.12 - 0.12 * p * move);
-      return {
+      const d = ALONG.back * (1 + 0.12 - 0.12 * pd * move);
+      return withPan({
         pos: [c[0] + rx * out - tx * dir * d, base + ALONG.y, c[2] + rz * out - tz * dir * d],
         target: [c[0] + tx * dir * ALONG.ahead, base + ALONG.targetY, c[2] + tz * dir * ALONG.ahead],
-      };
+      }, PAN_NEAR);
     }
     const k = sh.kind === 'xclose' ? XCLOSE : sh.kind === 'close' ? CLOSE : MID;
     // 狙う高さは「その席の足元の高さ」からの相対。ひな壇の上のパートでも胸の高さを狙える。
@@ -314,7 +333,7 @@ export class AutoCamera {
     const camY = sh.kind === 'xclose'
       ? Math.max(aimY + k.yOver, base + k.minOver)
       : base + k.y + swing(n, 6) * 0.4;
-    const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * p * move);          // ショットの間にゆっくり寄る
+    const dist = k.dist * (1 + DOLLY_IN - DOLLY_IN * pd * move);         // ショットの間にゆっくり寄る
     let dx = -c[0], dz = cz - c[2];                                      // 席 → 指揮者（内向き）
     const len = Math.hypot(dx, dz) || 1;
     dx /= len; dz /= len;
@@ -324,9 +343,9 @@ export class AutoCamera {
       ? (wobble(n, 14) < 0.5 ? -1 : 1) * (PROFILE_MIN + wobble(n, 15) * (PROFILE_MAX - PROFILE_MIN))
       : swing(n, 5) * YAW;
     const rx = dx * Math.cos(a) - dz * Math.sin(a), rz = dx * Math.sin(a) + dz * Math.cos(a);
-    return {
+    return withPan({
       pos: [c[0] + rx * dist, camY, c[2] + rz * dist],
       target: [c[0], aimY, c[2]],
-    };
+    }, PAN_NEAR);
   }
 }
