@@ -584,6 +584,7 @@ function placeAutoCamBox() {
   const phoneV = $('viewWrap').classList.contains('phoneV');
   const phone = phoneV || $('viewWrap').classList.contains('phoneH');
   ov.style.setProperty('--ovzoom', phone ? '.7' : '1');
+  ov.classList.toggle('phone', phone);   // スマホは数値入力と上下矢印を隠す（2026-09-14 ユーザー指定）
   // スマホ縦だけ、奏者・パート名・足元の光を下の黒帯へ移す（2026-09-14 ユーザー指定）
   const left = $('viewLeft'), bottom = $('viewBottom');
   const wantBottom = phoneV ? ['boxPlayer', 'boxLabel', 'boxGlow'] : [];
