@@ -621,7 +621,7 @@ function setupCredits() {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #view input[id], #view select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
 // ラジオボタンは name をキーに、選択中の value を保存
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
@@ -647,13 +647,13 @@ function loadSettings() {
   }
 }
 let saveTimer = null;
-for (const id of ['panel', 'topbar', 'camBar']) document.getElementById(id)?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar', 'camBar', 'view']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
 function refreshValueLabels() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id]')) {
+  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id]')) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
     if (!lab) continue;
     if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = el.value; } // 数値入力欄（編集中は上書きしない）
@@ -662,7 +662,7 @@ function refreshValueLabels() {
 }
 // スライダーの値表示を数値入力欄に置き換える（直接入力できる。Enter/フォーカス外しで確定、範囲外はスライダーの範囲に丸める。2026-09-11 ユーザー指定）
 function makeValueInputs() {
-  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id]')) {
+  for (const el of document.querySelectorAll('#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id]')) {
     const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
     if (!lab) continue;
     const num = document.createElement('input');

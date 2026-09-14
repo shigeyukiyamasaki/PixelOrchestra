@@ -34,7 +34,13 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* カメラの箱（位置・中心点・リセット）の右に、自動カメラの箱を並べる（2026-09-14 ユーザー指定） */
 #camBar .camGroup { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camCol { display: flex; flex-direction: column; gap: 6px; }
-#camBar .autoCamBox { width: 196px; margin: 0; }
+/* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
+#view .autoCamBox { position: absolute; right: 14px; top: 14px; z-index: 3; width: 200px; margin: 0;
+  background: rgba(12, 16, 32, .72); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px 10px; }
+#view .autoCamBox > summary { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
+#view .autoCamBox .ctl { margin: 6px 0; }
+#view .autoCamBox .chk { margin: 4px 0 6px; }
+#view .autoCamBox:not([open]) { padding-bottom: 8px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camRow > details { width: 196px; margin: 0; }
 #camBar .camSide summary { font-size: 13px; padding: 4px 8px; margin-bottom: 5px; }
