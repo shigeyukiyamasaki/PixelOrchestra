@@ -564,6 +564,7 @@ function setBarHeight() {
     wrap.style.setProperty('--fw', `${w.toFixed(1)}px`);
     wrap.style.setProperty('--fh', `${((w * 9) / 16).toFixed(1)}px`);
     wrap.style.setProperty('--vzoom', '1');
+    placeAutoCamBox();
     return;
   }
   const cs = getComputedStyle(wrap);
@@ -571,6 +572,16 @@ function setBarHeight() {
   if (!(w > 0 && h > 0)) return;
   const k = Math.min(1, area.clientWidth / w, area.clientHeight / h);
   wrap.style.setProperty('--vzoom', k.toFixed(4));
+  placeAutoCamBox();
+}
+// 自動カメラの箱は、選んでいる端末の画面の右上に置く（スマホ縦なら上の黒帯の中になる。2026-09-14 ユーザー指定）。
+// 箱自体は縮小の対象外なので（#viewArea の子）、画面の位置を測って重ねる
+function placeAutoCamBox() {
+  const box = document.querySelector('#viewArea .autoCamBox');
+  if (!box) return;
+  const ar = $('viewArea').getBoundingClientRect(), wr = $('viewWrap').getBoundingClientRect();
+  box.style.top = `${Math.max(0, wr.top - ar.top) + 10}px`;
+  box.style.right = `${Math.max(0, ar.right - wr.right) + 10}px`;
 }
 addEventListener('resize', setBarHeight);
 
