@@ -617,16 +617,24 @@ addEventListener('resize', setBarHeight);
 // 拍子は「今の拍／分母」。分子が 1 2 3 4 … と進み、小節の頭で 1 に戻る
 const TEMPO_SIZE = { bpm: 18, sig: 30 };
 let tempoKey = '';
+// 端末ごとの文字の倍率。スマホは画面が小さいぶん、クレジットとテンポ・拍子を小さくする
+// （スマホ横 0.7 / スマホ縦 0.5。2026-09-14 ユーザー指定）
+function deviceTextScale() {
+  const c = $('viewWrap').classList;
+  return c.contains('phoneV') ? 0.5 : c.contains('phoneH') ? 0.7 : 1;
+}
+
 function applyTempo(s, bpm, beat) {
   const box = $('tempoHud');
-  const key = [s.showTempo, s.tempoScale, s.tempoOpacity, Math.round(bpm), beat.beatInBar, beat.beatUnit].join('|');
+  const ds = deviceTextScale();
+  const key = [s.showTempo, s.tempoScale, s.tempoOpacity, ds, Math.round(bpm), beat.beatInBar, beat.beatUnit].join('|');
   if (key === tempoKey) return;        // 拍が変わった時だけ DOM を触る
   tempoKey = key;
   box.style.display = s.showTempo ? 'block' : 'none';
   box.style.opacity = s.tempoOpacity;
   const b = box.querySelector('.bpm'), g = box.querySelector('.sig');
-  b.style.fontSize = `${TEMPO_SIZE.bpm * s.tempoScale}px`;
-  g.style.fontSize = `${TEMPO_SIZE.sig * s.tempoScale}px`;
+  b.style.fontSize = `${TEMPO_SIZE.bpm * s.tempoScale * ds}px`;
+  g.style.fontSize = `${TEMPO_SIZE.sig * s.tempoScale * ds}px`;
   b.textContent = `♩= ${Math.round(bpm)}`;
   g.textContent = `${beat.beatInBar + 1}/${beat.beatUnit || 4}`;
 }
@@ -636,7 +644,8 @@ function applyTempo(s, bpm, beat) {
 const CREDIT_SIZE = { 1: 15, 2: 24, 3: 13, 4: 13 };
 let creditKey = '';
 function applyCredits(s) {
-  const key = [s.showCredits, s.credit1, s.credit2, s.credit3, s.credit4, s.creditScale, s.creditColor, s.creditOpacity].join('|');
+  const ds = deviceTextScale();
+  const key = [s.showCredits, s.credit1, s.credit2, s.credit3, s.credit4, s.creditScale, ds, s.creditColor, s.creditOpacity].join('|');
   if (key === creditKey) return;      // 変わった時だけ DOM を触る
   creditKey = key;
   const box = $('credits');
@@ -647,7 +656,7 @@ function applyCredits(s) {
     const slot = el.querySelector('span:last-child');
     if (slot && el.querySelector('.pre')) slot.textContent = text; else el.textContent = text;
     el.classList.toggle('off', !text);
-    el.style.fontSize = `${CREDIT_SIZE[n] * s.creditScale}px`;
+    el.style.fontSize = `${CREDIT_SIZE[n] * s.creditScale * ds}px`;
     el.style.color = s.creditColor;
     el.style.opacity = s.creditOpacity;
   }
