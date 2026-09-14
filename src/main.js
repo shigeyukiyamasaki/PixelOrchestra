@@ -595,7 +595,8 @@ function placeAutoCamBox() {
   }
   // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
   const z = phone ? 0.7 : 1;
-  left.style.maxHeight = `${Math.max(80, (b - t) / z - 28)}px`;
+  const pad = phone ? 20 : 28;   // 上下の余白（style.css の top/bottom と合わせる）
+  left.style.maxHeight = `${Math.max(80, (b - t) / z - pad)}px`;
   // 下の列は映像のすぐ下（黒帯の上端）から下へ積む。映像に重ならないように
   if (phoneV) {
     const vr = $('view').getBoundingClientRect();

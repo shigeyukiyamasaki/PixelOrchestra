@@ -59,8 +59,16 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #viewOverlay .box > .hd { font-size: 13px; padding: 4px 8px; margin: -8px -10px 6px;
   border: none; border-radius: 7px 7px 0 0; }
 #viewOverlay .box .ctl { margin: 6px 0; }
-/* スマホはスライダーだけで操作する。数値入力欄と上下矢印は出さない（2026-09-14 ユーザー指定） */
-#viewOverlay.phone .numwrap { display: none; }
+/* スマホはスライダーだけで操作する。上下矢印は出さず、数値は読むだけ（触れない）にする。
+   その分、上下を詰める（2026-09-14 ユーザー指定） */
+#viewOverlay.phone .numspin { display: none; }
+#viewOverlay.phone input.num { pointer-events: none; width: auto; min-width: 24px;
+  border: none; background: none; padding: 0; }
+#viewOverlay.phone .box { padding: 6px 8px 6px; }
+#viewOverlay.phone .box > .hd { margin: -6px -8px 4px; padding: 3px 8px; }
+#viewOverlay.phone .box .ctl { margin: 3px 0; gap: 2px; }
+#viewOverlay.phone .box .chk { margin: 2px 0 4px; }
+#viewOverlay.phone #viewLeft { gap: 6px; top: 10px; left: 10px; }   /* 4 つがスマホ横の画面に収まる高さ */
 #viewOverlay .box .chk { margin: 4px 0 6px; }
 /* 映像に重なっている箱だけ、スライダーの棒を黒にして明るい絵の上でも見えるように
    （黒帯や余白に逃げている箱はそのまま。重なりは JS が判定して .onImage を付ける。2026-09-14 ユーザー指定） */
