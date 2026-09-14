@@ -14,23 +14,31 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
   height: 100dvh; overflow: hidden; }
 #stageArea { grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 /* プレビューの上の余白にカメラの操作を置く（2026-09-12 ユーザー指定）。高さは JS が --barh に書き込む */
-#camBar { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 6px 12px 0; }
+/* 箱が増えて横に入り切らない時は、崩さず横スクロールにする（2026-09-14） */
+#camBar { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 6px 12px 0; }
 
 #camBar .row3 { display: grid; grid-template-columns: 1fr; } /* X/Y/Z は縦 3 行（2026-09-12 ユーザー指定） */
 #camBar .camSide > details > .row3 { margin-top: -2px; }
 #camBar .ctl { margin: 2px 0 4px; }
 /* カメラ位置の左に置く「タイトル」「背景」（2026-09-13 ユーザー指定） */
-#camBar .camSide { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+/* 箱が横に入り切らない時は折り返す（2026-09-14。以前ここで崩れたのは HTML の閉じ忘れが原因だった） */
+#camBar .camSide { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; min-width: 0; }
 #camBar .camSide > details { width: 196px; margin: 0; }
 /* クレジットだけ 2 列（左＝文字、右＝大きさ・色・濃度）。2026-09-13 ユーザー指定 */
 #camBar .camSide > details.credits2 { width: 402px; }
 #camBar .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
-#camBar .camGroup { display: flex; flex-direction: column; gap: 6px; }
+/* カメラの箱（位置・中心点・リセット）の右に、自動カメラの箱を並べる（2026-09-14 ユーザー指定） */
+#camBar .camGroup { display: flex; align-items: flex-start; gap: 10px; }
+#camBar .camCol { display: flex; flex-direction: column; gap: 6px; }
+#camBar .autoCamBox { width: 196px; margin: 0; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camRow > details { width: 196px; margin: 0; }
 #camBar .camSide summary { font-size: 13px; padding: 4px 8px; margin-bottom: 5px; }
 #camBar .camSide .ctl { margin: 5px 0; }
+#camBar .camSide button.wide { width: 100%; margin-top: 4px; padding: 4px 8px; border-radius: 5px;
+  border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font: inherit; }
+#camBar .camSide button.wide:hover { border-color: var(--accent); color: var(--accent); }
 #camBar #resetCam { width: 100%; margin: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
 #camBar #resetCam:hover { border-color: var(--accent); color: var(--accent); }

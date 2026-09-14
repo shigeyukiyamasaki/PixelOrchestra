@@ -513,6 +513,13 @@ function addScreen() {
   renderScreens();
   setScreens(screens); saveScreens();
 }
+// 背景の上下反転（2026-09-14 ユーザー指定）。色を入れ替え、中間地点も上下に折り返す
+$('bgSwap').addEventListener('click', () => {
+  const top = $('bgTop').value, bottom = $('bgBottom').value;
+  $('bgTop').value = bottom; $('bgBottom').value = top;
+  $('bgMid').value = String(100 - parseFloat($('bgMid').value || 50));
+  for (const id of ['bgTop', 'bgBottom', 'bgMid']) $(id).dispatchEvent(new Event('input', { bubbles: true }));
+});
 $('screenReload').addEventListener('click', (e) => {
   const b = e.currentTarget;
   b.textContent = '調べています…';
