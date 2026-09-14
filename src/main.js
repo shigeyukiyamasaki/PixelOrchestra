@@ -563,32 +563,31 @@ function setBarHeight() {
     const w = Math.min(area.clientWidth, (area.clientHeight * 16) / 9);
     wrap.style.setProperty('--fw', `${w.toFixed(1)}px`);
     wrap.style.setProperty('--fh', `${((w * 9) / 16).toFixed(1)}px`);
-    wrap.style.setProperty('--vzoom', '1');
-    placeAutoCamBox();
-    return;
   }
-  const cs = getComputedStyle(wrap);
-  const w = parseFloat(cs.getPropertyValue('--w')), h = parseFloat(cs.getPropertyValue('--h'));
-  if (!(w > 0 && h > 0)) return;
-  const k = Math.min(1, area.clientWidth / w, area.clientHeight / h);
-  wrap.style.setProperty('--vzoom', k.toFixed(4));
+  // 端末を選んでいる時は、ブラウザが狭くても縮めない。入り切らない分は見切れる（2026-09-14 ユーザー指定）
   placeAutoCamBox();
 }
 // プレビューに重ねる操作の層を、選んでいる端末の画面にぴったり重ねる（2026-09-14 ユーザー指定）。
-// 層は縮小（--vzoom）の対象外なので、画面の位置と大きさを測って合わせる
+// 画面の位置と大きさを測って合わせる（はみ出す時は見えている範囲に合わせる）
 function placeAutoCamBox() {
   const ov = document.getElementById('viewOverlay');
   if (!ov) return;
   const ar = $('viewArea').getBoundingClientRect(), wr = $('viewWrap').getBoundingClientRect();
-  ov.style.left = `${wr.left - ar.left}px`;
-  ov.style.top = `${wr.top - ar.top}px`;
-  ov.style.width = `${wr.width}px`;
-  ov.style.height = `${wr.height}px`;
+  // 端末の画面がブラウザからはみ出す時は、見えている部分に合わせる（操作の箱が画面外へ行かないように）
+  const l = Math.max(wr.left, ar.left), t = Math.max(wr.top, ar.top);
+  const r = Math.min(wr.right, ar.right), b = Math.min(wr.bottom, ar.bottom);
+  ov.style.left = `${l - ar.left}px`;
+  ov.style.top = `${t - ar.top}px`;
+  ov.style.width = `${Math.max(0, r - l)}px`;
+  ov.style.height = `${Math.max(0, b - t)}px`;
+  // 操作の箱の大きさ：PC と「なし」は等倍、スマホは 70%（2026-09-14 ユーザー指定）
+  const phone = $('viewWrap').classList.contains('phoneV') || $('viewWrap').classList.contains('phoneH');
+  ov.style.setProperty('--ovzoom', phone ? '.7' : '1');
   // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
   const left = document.getElementById('viewLeft');
   if (left) {
-    const z = parseFloat(getComputedStyle(left).zoom) || 1;
-    left.style.maxHeight = `${Math.max(80, wr.height / z - 28)}px`;
+    const z = phone ? 0.7 : 1;
+    left.style.maxHeight = `${Math.max(80, (b - t) / z - 28)}px`;
   }
 }
 addEventListener('resize', setBarHeight);

@@ -39,11 +39,12 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
 #viewOverlay { position: absolute; z-index: 3; pointer-events: none; }
-/* 左の列（ピアノロール・奏者・パート名・足元の光）と右の自動カメラ。どちらも 70%（2026-09-14 ユーザー指定） */
+/* 左の列（ピアノロール・奏者・パート名・足元の光）と右の自動カメラ。
+   PC と「なし」は等倍、スマホは 70%（--ovzoom を JS が入れる。2026-09-14 ユーザー指定） */
 /* 高さは端末の画面に収める（はみ出す時は中でスクロール）。max-height は JS が入れる */
-#viewOverlay #viewLeft { position: absolute; left: 14px; top: 14px; width: 200px; zoom: .7;
+#viewOverlay #viewLeft { position: absolute; left: 14px; top: 14px; width: 200px; zoom: var(--ovzoom, 1);
   display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
-#viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: .7; pointer-events: auto; }
+#viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: var(--ovzoom, 1); pointer-events: auto; }
 #viewOverlay .box { margin: 0; background: rgba(0, 0, 0, .72); border: 1px solid var(--line-soft);
   border-radius: 8px; padding: 8px 10px 10px; }
 #viewOverlay .box > .hd { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
@@ -154,15 +155,15 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 
 /* プレビューは「端末の画素数」で置く（2026-09-14 ユーザー指定）。
    --w/--h = 端末の画面、--cw/--ch = 実際に映る面。スマホ縦は映る面が 19.5:9 のままなので上下が黒帯になる。
-   画素数どおりだと入り切らないことがあるので、その時だけ --vzoom で丸ごと縮める（中身の比率は変わらない） */
+   ブラウザが端末より狭い時は縮めずに見切れさせる（2026-09-14 ユーザー指定） */
 #viewArea { flex: 1 1 auto; width: 100%; min-height: 0; padding: 4px 0 0;
   display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 /* 端末を指定しない時（既定）は、ブラウザの空きに収まる最大の 16:9。--fw/--fh は JS が入れる */
 #viewWrap { --w: var(--fw, 960px); --h: var(--fh, 540px); --cw: var(--w); --ch: var(--h);
-  width: var(--w); height: var(--h); flex: 0 0 auto; background: #000; zoom: var(--vzoom, 1);
+  width: var(--w); height: var(--h); flex: 0 0 auto; background: #000;
   display: flex; align-items: center; justify-content: center;
-  /* 端末の外形が分かるように枠線。縮小しても 1px に見えるよう --vzoom で割る */
-  box-shadow: 0 0 0 calc(1px / var(--vzoom, 1)) rgba(255, 255, 255, .5); }
+  /* 端末の外形が分かるように枠線 */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); }
 #viewWrap.pc { --w: 1920px; --h: 1080px; --cw: 1920px; --ch: 1080px; }
 #viewWrap.phoneV { --w: 390px; --h: 844px; --cw: 390px; --ch: 390px; }   /* 論理 390×844（実画素 1170×2532）。映る面は正方形（2026-09-14 ユーザー指定） */
 #viewWrap.phoneH { --w: 844px; --h: 390px; --cw: 844px; --ch: 390px; }
