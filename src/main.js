@@ -554,13 +554,15 @@ $('screenReload').addEventListener('click', (e) => {
   b.textContent = '調べています…';
   loadMediaList(true).then(() => { b.textContent = '素材の一覧を更新'; });
 });
-// プレビューに使える高さ（style.css の --viewh）を実測して渡す。
-// 以前は 100dvh から上のバーの高さを引いて見積もっていたが、数 px ずれて
-// 縦横比が 16:9 ちょうどにならなかった（2026-09-14 に実測方式へ変更）
+// プレビューは端末の画素数どおりに置く。入り切らない時だけ丸ごと縮める（2026-09-14 ユーザー指定）。
+// 縮めても中の比率は変わらないので、実機で「どれだけ入るか」の見え方は保たれる
 function setBarHeight() {
-  const area = $('stageArea'), bar = $('camBar'), sbar = document.getElementById('screenBar');
-  const h = area.clientHeight - (bar?.offsetHeight || 0) - (sbar?.offsetHeight || 0) - 4; // 4 = #view の上マージン
-  if (h > 0) document.documentElement.style.setProperty('--viewh', `${h}px`);
+  const area = $('viewArea'), wrap = $('viewWrap');
+  const cs = getComputedStyle(wrap);
+  const w = parseFloat(cs.getPropertyValue('--w')), h = parseFloat(cs.getPropertyValue('--h'));
+  if (!(w > 0 && h > 0) || area.clientWidth < 2) return;
+  const k = Math.min(1, area.clientWidth / w, area.clientHeight / h);
+  wrap.style.setProperty('--vzoom', k.toFixed(4));
 }
 addEventListener('resize', setBarHeight);
 
@@ -653,7 +655,7 @@ function setupCredits() {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #view input[id], #view select[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek');
 // ラジオボタンは name をキーに、選択中の value を保存
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
@@ -679,13 +681,13 @@ function loadSettings() {
   }
 }
 let saveTimer = null;
-for (const id of ['panel', 'topbar', 'camBar', 'view']) document.getElementById(id)?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
-const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #view input[type=range][id], #topbar .dly input[type=range][id]';
+const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id]';
 function refreshValueLabels() {
   for (const el of document.querySelectorAll(RANGE_SEL)) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
@@ -1097,7 +1099,7 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
 // プレビュー上のカメラ操作バーの高さを CSS 変数に流す（プレビューの最大幅の計算に使う。2026-09-12）
 {
   const ro = new ResizeObserver(setBarHeight);
-  for (const id of ['stageArea', 'camBar', 'screenBar']) { const el = document.getElementById(id); if (el) ro.observe(el); }
+  for (const id of ['stageArea', 'camBar', 'screenBar', 'viewArea']) { const el = document.getElementById(id); if (el) ro.observe(el); }
   setBarHeight();
 }
 
@@ -1113,8 +1115,9 @@ for (const [id, cls] of VIEW_MODES) {
   $(id).addEventListener('click', () => {
     for (const [other, c] of VIEW_MODES) {
       $(other).classList.toggle('on', other === id);
-      if (c) $('view').classList.toggle(c, c === cls);
+      if (c) $('viewWrap').classList.toggle(c, c === cls);
     }
+    setBarHeight();   // 端末が変われば入り切るかどうかも変わる
   });
 }
 
@@ -1295,7 +1298,7 @@ async function loadFromUrl() {
 
 makeValueInputs();
 // 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
-for (const d of document.querySelectorAll('#panel .box, #camBar .box, #view .box')) {
+for (const d of document.querySelectorAll('#panel .box, #camBar .box, #viewArea .box')) {
   const hd = d.querySelector(':scope > .hd');
   // その箱の先頭にあるチェック（「表示する」「自動で切り替える」など）を見出しの右端へ
   const chk = d.querySelector(':scope > label.chk');

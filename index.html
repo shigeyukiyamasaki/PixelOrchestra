@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260915c">
+  <link rel="stylesheet" href="style.css?v=20260915f">
 </head>
 <body>
   <div id="stageArea">
@@ -86,6 +86,11 @@
       </div>
       </div>
   </div>
+    <!-- プレビュー：外枠（#viewWrap）＝端末の画面、内側（#view）＝実際に映る面。
+         スマホ縦は内側が 19.5:9 のままなので、上下に黒帯が入る（2026-09-14 ユーザー指定）。
+         端末の画素数どおりの大きさで置き、入り切らない時だけ #viewWrap ごと縮小する（--vzoom） -->
+    <div id="viewArea">
+    <div id="viewWrap">
     <div id="view">
       <!-- テンポと拍子（左上）。拍子は「今の拍／分母」で、分子が 1 2 3 4 … と進む -->
       <div id="tempoHud"><div class="bpm"></div><div class="sig"></div></div>
@@ -96,6 +101,8 @@
         <div class="cl" data-line="3"><span class="pre">Comp. </span><span></span></div>
         <div class="cl" data-line="4"><span class="pre">Arr. </span><span></span></div>
       </div>
+    </div>
+    </div>
         <div class="box autoCamBox" title="演奏会のカメラワークのように、小節の頭で自動的に構図を切り替える">
         <h3 class="hd">自動カメラ</h3>
         <label class="chk" title="オンの間はマウス操作を止める"><input type="checkbox" id="autoCam"> 自動で切り替える</label>
@@ -218,6 +225,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260915c"></script>
+  <script type="module" src="src/main.js?v=20260915d"></script>
 </body>
 </html>
