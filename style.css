@@ -1,6 +1,6 @@
 /* PixelOrchestra — 最終更新: 2026-09-09 / v0.1 / 生成元: PixelOrchestra */
 :root {
-  --bg: #0b0b16; --panel: #16162a; --panel2: #1f1f38; --text: #e8e8f0; --muted: #a0a0b8;
+  --bg: #0b0b16; --panel: #16162a; --panel2: #35355e;  /* ボタン・入力欄の地。暗すぎて沈むので明るくした（2026-09-14 ユーザー指定） */ --text: #e8e8f0; --muted: #a0a0b8;
   --accent: #e2b348; --line: #2c2c48;
   /* 要素を囲う枠線は「薄い色＝明るい色」で、暗い地の上ではっきり見えるように（2026-09-13 ユーザー指定） */
   --line-soft: rgba(255, 255, 255, .22);
