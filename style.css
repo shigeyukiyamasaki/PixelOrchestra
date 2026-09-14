@@ -162,7 +162,7 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #credits .pre { opacity: .75; }
 #credits .cl:empty, #credits .cl.off { display: none; }
 /* 文字入力（クレジットの行） */
-.ctl input[type=text] { width: 100%; background: var(--panel2); color: var(--text);
+.ctl input[type=text] { width: 100%; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
 .ctl.row { flex-direction: row; align-items: center; justify-content: space-between; }
 .ctl input[type=color] { width: 48px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); cursor: pointer; }
@@ -191,8 +191,6 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
   padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 .filebtn:hover { border-color: var(--accent); }
 .filebtn input[type=file] { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
-.offset { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
-.offset input[type=number] { width: 64px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 #panel, #panelRight { grid-row: 2; overflow-y: auto; background: var(--panel); padding: 14px 16px 16px; width: 100%; }
 /* 左＝トラック一覧、右＝表示設定（2026-09-12 に左右を入れ替え）。どちらも閉じると列ごと消える */
 #panelRight { grid-column: 1; border-right: 1px solid var(--line); }
@@ -241,7 +239,7 @@ details > *:not(summary) { margin-left: 2px; }
 .ctl.radio label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .ctl span b { color: var(--accent); font-weight: 600; margin-left: 4px; }
 .ctl select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
-.ctl input[type=number] { width: 100px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.ctl input[type=number] { width: 100px; background: none; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .chk { display: block; margin: 6px 0; }
 /* 見出しへ移さないチェック（「表示する」以外。例：背景の上下反転）。2026-09-14 */
 .chk2 { display: block; margin: 6px 0; }
