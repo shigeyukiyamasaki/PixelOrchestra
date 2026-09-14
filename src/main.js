@@ -1281,16 +1281,15 @@ async function loadFromUrl() {
 
 makeValueInputs();
 // 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
-for (const d of document.querySelectorAll('#panel details, #camBar details, #view details')) {
-  const sum = d.querySelector(':scope > summary');
+for (const d of document.querySelectorAll('#panel .box, #camBar .box, #view .box')) {
+  const hd = d.querySelector(':scope > .hd');
   // その箱の先頭にあるチェック（「表示する」「自動で切り替える」など）を見出しの右端へ
   const chk = d.querySelector(':scope > label.chk');
-  if (!sum || !chk) continue;
+  if (!hd || !chk) continue;
   const el = chk.querySelector('input[type=checkbox]');
   if (!el) continue;
   el.title = `${chk.textContent.trim()}：${chk.title}`;
-  el.addEventListener('click', (e) => e.stopPropagation());   // 見出しの開閉に取られないように
-  sum.appendChild(el);
+  hd.appendChild(el);
   chk.remove();
 }
 loadSettings();

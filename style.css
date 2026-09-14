@@ -22,15 +22,15 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .3); background-clip: padding-box; }
 
 #camBar .row3 { display: grid; grid-template-columns: 1fr; } /* X/Y/Z は縦 3 行（2026-09-12 ユーザー指定） */
-#camBar .camSide > details > .row3 { margin-top: -2px; }
+#camBar .camSide > .box > .row3 { margin-top: -2px; }
 #camBar .ctl { margin: 2px 0 4px; }
 /* カメラ位置の左に置く「タイトル」「背景」（2026-09-13 ユーザー指定） */
 /* 箱は 1 行のまま。折り返すとバーが倍の高さになり、プレビューが 601 → 382 まで縮むため
    （2026-09-14 実測）。入り切らない分は横スクロールで見る（2026-09-14 ユーザー指定） */
 #camBar .camSide { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-#camBar .camSide > details { width: 196px; margin: 0; }
+#camBar .camSide > .box { width: 196px; margin: 0; }
 /* クレジットだけ 2 列（左＝文字、右＝大きさ・色・濃度）。2026-09-13 ユーザー指定 */
-#camBar .camSide > details.credits2 { width: 402px; }
+#camBar .camSide > .box.credits2 { width: 402px; }
 #camBar .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
 /* カメラの箱（位置・中心点・リセット）の右に、自動カメラの箱を並べる（2026-09-14 ユーザー指定） */
@@ -39,12 +39,11 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 #view .autoCamBox { position: absolute; right: 14px; top: 14px; z-index: 3; width: 200px; margin: 0;
   background: rgba(0, 0, 0, .72); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px 10px; }
-#view .autoCamBox > summary { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
+#view .autoCamBox > .hd { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
 #view .autoCamBox .ctl { margin: 6px 0; }
 #view .autoCamBox .chk { margin: 4px 0 6px; }
-#view .autoCamBox:not([open]) { padding-bottom: 8px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
-#camBar .camRow > details { width: 196px; margin: 0; }
+#camBar .camRow > .box { width: 196px; margin: 0; }
 #camBar .camSide .ctl { margin: 5px 0; }
 #camBar .camSide button.wide { width: 100%; margin-top: 4px; padding: 4px 8px; border-radius: 5px;
   border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font: inherit; }
@@ -194,10 +193,7 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 /* 左＝トラック一覧、右＝表示設定（2026-09-12 に左右を入れ替え）。どちらも閉じると列ごと消える */
 #panelRight { grid-column: 1; border-right: 1px solid var(--line); }
 #panel { grid-column: 3; border-left: 1px solid var(--line); }
-/* 左メニューの見出しも、右メニューの見出し（summary）と同じ黄色の帯にする（2026-09-14 ユーザー指定）。
-   開閉しないので ▸ は付けない */
-h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #0b1020; background: var(--accent);
-  border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; }
+
 
 h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
 .hint { color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
@@ -218,19 +214,16 @@ button.primary { background: var(--accent); color: #1a1408; border-color: var(--
 /* 右の表示設定は 2 列（左＝カメラ/ピアノロール/奏者、右＝背景/照明/足元の光。2026-09-12 ユーザー指定） */
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: start; }
 .cols .col { min-width: 0; }
-.cols .col > details:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+.cols .col > .box:first-child { margin-top: 0; border-top: none; padding-top: 0; }
 /* 見出しは大きめ＋背景付きの帯。「表示する」のチェックは右端に置く（2026-09-13 ユーザー指定。MIDIOrchestra 参考） */
-details { margin-top: 10px; }
+.box { margin-top: 10px; }
 /* 見出しは素材カラムの選択中と同じ配色（黄色地に濃紺の文字）。2026-09-13 ユーザー指定 */
-summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none;
+/* 折りたたみは廃止（2026-09-14 ユーザー指定）。見出しは全部このクラス（左メニューの「トラック」も同じ） */
+.hd { display: flex; align-items: center; gap: 8px;
   font-size: 14px; font-weight: 600; color: #0b1020; background: var(--accent);
-  border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
-summary::-webkit-details-marker { display: none; }
-summary::before { content: '▸'; color: #0b1020; font-size: 20px; line-height: 1; }
-details[open] > summary::before { content: '▾'; }
-summary:hover { filter: brightness(1.08); }
-summary input[type=checkbox] { margin-left: auto; margin-right: 0; }
-details > *:not(summary) { margin-left: 2px; }
+  border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; margin: 0 0 8px; }
+.hd input[type=checkbox] { margin-left: auto; margin-right: 0; }
+.box > *:not(.hd) { margin-left: 2px; }
 .hint.small { font-size: 11px; margin: 4px 0 0; }
 .ctl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .ctl.radio { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
