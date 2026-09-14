@@ -37,11 +37,18 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar .camGroup { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
-#viewArea .autoCamBox { position: absolute; right: 14px; top: 14px; z-index: 3; width: 200px; margin: 0;
-  background: rgba(0, 0, 0, .72); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px 10px; }
-#viewArea .autoCamBox > .hd { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
-#viewArea .autoCamBox .ctl { margin: 6px 0; }
-#viewArea .autoCamBox .chk { margin: 4px 0 6px; }
+/* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
+#viewOverlay { position: absolute; z-index: 3; pointer-events: none; }
+/* 左の列（ピアノロール・奏者・パート名・足元の光）と右の自動カメラ。どちらも 70%（2026-09-14 ユーザー指定） */
+/* 高さは端末の画面に収める（はみ出す時は中でスクロール）。max-height は JS が入れる */
+#viewOverlay #viewLeft { position: absolute; left: 14px; top: 14px; width: 200px; zoom: .7;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
+#viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: .7; pointer-events: auto; }
+#viewOverlay .box { margin: 0; background: rgba(0, 0, 0, .72); border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 8px 10px 10px; }
+#viewOverlay .box > .hd { font-size: 13px; padding: 4px 8px; margin-bottom: 6px; }
+#viewOverlay .box .ctl { margin: 6px 0; }
+#viewOverlay .box .chk { margin: 4px 0 6px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
 #camBar .camRow > .box { width: 196px; margin: 0; }
 #camBar .camSide .ctl { margin: 5px 0; }

@@ -574,14 +574,22 @@ function setBarHeight() {
   wrap.style.setProperty('--vzoom', k.toFixed(4));
   placeAutoCamBox();
 }
-// 自動カメラの箱は、選んでいる端末の画面の右上に置く（スマホ縦なら上の黒帯の中になる。2026-09-14 ユーザー指定）。
-// 箱自体は縮小の対象外なので（#viewArea の子）、画面の位置を測って重ねる
+// プレビューに重ねる操作の層を、選んでいる端末の画面にぴったり重ねる（2026-09-14 ユーザー指定）。
+// 層は縮小（--vzoom）の対象外なので、画面の位置と大きさを測って合わせる
 function placeAutoCamBox() {
-  const box = document.querySelector('#viewArea .autoCamBox');
-  if (!box) return;
+  const ov = document.getElementById('viewOverlay');
+  if (!ov) return;
   const ar = $('viewArea').getBoundingClientRect(), wr = $('viewWrap').getBoundingClientRect();
-  box.style.top = `${Math.max(0, wr.top - ar.top) + 10}px`;
-  box.style.right = `${Math.max(0, ar.right - wr.right) + 10}px`;
+  ov.style.left = `${wr.left - ar.left}px`;
+  ov.style.top = `${wr.top - ar.top}px`;
+  ov.style.width = `${wr.width}px`;
+  ov.style.height = `${wr.height}px`;
+  // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
+  const left = document.getElementById('viewLeft');
+  if (left) {
+    const z = parseFloat(getComputedStyle(left).zoom) || 1;
+    left.style.maxHeight = `${Math.max(80, wr.height / z - 28)}px`;
+  }
 }
 addEventListener('resize', setBarHeight);
 
