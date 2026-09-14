@@ -558,9 +558,17 @@ $('screenReload').addEventListener('click', (e) => {
 // 縮めても中の比率は変わらないので、実機で「どれだけ入るか」の見え方は保たれる
 function setBarHeight() {
   const area = $('viewArea'), wrap = $('viewWrap');
+  if (area.clientWidth < 2 || area.clientHeight < 2) return;
+  if (!wrap.className) {   // 端末を指定しない：空きに収まる最大の 16:9（今までどおりの動き）
+    const w = Math.min(area.clientWidth, (area.clientHeight * 16) / 9);
+    wrap.style.setProperty('--fw', `${w.toFixed(1)}px`);
+    wrap.style.setProperty('--fh', `${((w * 9) / 16).toFixed(1)}px`);
+    wrap.style.setProperty('--vzoom', '1');
+    return;
+  }
   const cs = getComputedStyle(wrap);
   const w = parseFloat(cs.getPropertyValue('--w')), h = parseFloat(cs.getPropertyValue('--h'));
-  if (!(w > 0 && h > 0) || area.clientWidth < 2) return;
+  if (!(w > 0 && h > 0)) return;
   const k = Math.min(1, area.clientWidth / w, area.clientHeight / h);
   wrap.style.setProperty('--vzoom', k.toFixed(4));
 }
@@ -1110,7 +1118,7 @@ $('resetCam').addEventListener('click', () => {
 
 // プレビューの縦横比を PC（16:9）/ スマホ（9:16）に切り替える（2026-09-14 ユーザー指定）。
 // 実際の描画サイズは stage.resize() が毎フレーム見ているので、class を付け替えるだけでよい
-const VIEW_MODES = [['viewPc', ''], ['viewPhoneV', 'phoneV'], ['viewPhoneH', 'phoneH']];
+const VIEW_MODES = [['viewFree', ''], ['viewPc', 'pc'], ['viewPhoneV', 'phoneV'], ['viewPhoneH', 'phoneH']];
 for (const [id, cls] of VIEW_MODES) {
   $(id).addEventListener('click', () => {
     for (const [other, c] of VIEW_MODES) {

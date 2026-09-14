@@ -150,11 +150,13 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
    画素数どおりだと入り切らないことがあるので、その時だけ --vzoom で丸ごと縮める（中身の比率は変わらない） */
 #viewArea { flex: 1 1 auto; width: 100%; min-height: 0; padding: 4px 0 0;
   display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-#viewWrap { --w: 1280px; --h: 720px; --cw: 1280px; --ch: 720px;
+/* 端末を指定しない時（既定）は、ブラウザの空きに収まる最大の 16:9。--fw/--fh は JS が入れる */
+#viewWrap { --w: var(--fw, 960px); --h: var(--fh, 540px); --cw: var(--w); --ch: var(--h);
   width: var(--w); height: var(--h); flex: 0 0 auto; background: #000; zoom: var(--vzoom, 1);
   display: flex; align-items: center; justify-content: center;
   /* 端末の外形が分かるように枠線。縮小しても 1px に見えるよう --vzoom で割る */
   box-shadow: 0 0 0 calc(1px / var(--vzoom, 1)) rgba(255, 255, 255, .5); }
+#viewWrap.pc { --w: 1920px; --h: 1080px; --cw: 1920px; --ch: 1080px; }
 #viewWrap.phoneV { --w: 390px; --h: 844px; --cw: 390px; --ch: 180px; }   /* 1080×2340 の端末（論理 390×844） */
 #viewWrap.phoneH { --w: 844px; --h: 390px; --cw: 844px; --ch: 390px; }
 #view { position: relative; width: var(--cw); height: var(--ch); overflow: hidden; }
