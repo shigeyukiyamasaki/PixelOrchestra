@@ -44,14 +44,19 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 高さは端末の画面に収める（はみ出す時は中でスクロール）。max-height は JS が入れる */
 #viewOverlay #viewLeft { position: absolute; left: 14px; top: 14px; width: 200px; zoom: var(--ovzoom, 1);
   display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
+/* スマホ縦のとき、奏者・パート名・足元の光を下の黒帯へ横並びで置く（2026-09-14 ユーザー指定）。
+   下端から積み上げる。3 つ並べても端末の幅（390px）に収まるよう、この列だけ箱を細くする */
+#viewOverlay #viewBottom { position: absolute; left: 14px; right: 14px; bottom: 14px; zoom: var(--ovzoom, 1);
+  display: flex; align-items: flex-end; gap: 10px; pointer-events: auto; }
+#viewOverlay #viewBottom:empty { display: none; }
+#viewOverlay #viewBottom > .box { flex: 0 0 160px; width: 160px; }
 #viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: var(--ovzoom, 1); pointer-events: auto; }
 #viewOverlay .box { margin: 0; background: rgba(0, 0, 0, .52); border: 1px solid var(--line-soft);
   border-radius: 8px; padding: 8px 10px 10px; }
 /* 見出しは箱の上端いっぱいに（左右・上の余白を打ち消す。2026-09-14 ユーザー指定）。
    角丸は箱の内側の半径（8px - 枠線 1px）に合わせる */
 #viewOverlay .box > .hd { font-size: 13px; padding: 4px 8px; margin: -8px -10px 6px;
-  border: none; border-radius: 7px 7px 0 0;
-  background: rgba(194, 194, 200, .75); }   /* 帯も少し透かす（2026-09-14 ユーザー指定）。#c2c2c8 の 75% */
+  border: none; border-radius: 7px 7px 0 0; }
 #viewOverlay .box .ctl { margin: 6px 0; }
 #viewOverlay .box .chk { margin: 4px 0 6px; }
 #camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }

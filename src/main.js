@@ -581,14 +581,20 @@ function placeAutoCamBox() {
   ov.style.width = `${Math.max(0, r - l)}px`;
   ov.style.height = `${Math.max(0, b - t)}px`;
   // 操作の箱の大きさ：PC と「なし」は等倍、スマホは 70%（2026-09-14 ユーザー指定）
-  const phone = $('viewWrap').classList.contains('phoneV') || $('viewWrap').classList.contains('phoneH');
+  const phoneV = $('viewWrap').classList.contains('phoneV');
+  const phone = phoneV || $('viewWrap').classList.contains('phoneH');
   ov.style.setProperty('--ovzoom', phone ? '.7' : '1');
-  // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
-  const left = document.getElementById('viewLeft');
-  if (left) {
-    const z = phone ? 0.7 : 1;
-    left.style.maxHeight = `${Math.max(80, (b - t) / z - 28)}px`;
+  // スマホ縦だけ、奏者・パート名・足元の光を下の黒帯へ移す（2026-09-14 ユーザー指定）
+  const left = $('viewLeft'), bottom = $('viewBottom');
+  const wantBottom = phoneV ? ['boxPlayer', 'boxLabel', 'boxGlow'] : [];
+  const nowBottom = [...bottom.children].map((e) => e.id).join();
+  if (nowBottom !== wantBottom.join()) {
+    for (const id of wantBottom) bottom.appendChild($(id));
+    if (!phoneV) for (const id of ['boxRoll', 'boxPlayer', 'boxLabel', 'boxGlow']) left.appendChild($(id));
   }
+  // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
+  const z = phone ? 0.7 : 1;
+  left.style.maxHeight = `${Math.max(80, (b - t) / z - 28)}px`;
 }
 addEventListener('resize', setBarHeight);
 
