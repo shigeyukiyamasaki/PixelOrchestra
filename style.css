@@ -179,7 +179,7 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #topbar .dly input[type=range] { width: 104px; margin: 0; }
 #topbar .dly small { color: var(--muted); font-size: 11px; }
 #topbar .dly input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
-  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
+  background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 #topbar .dly input.num:focus { outline: none; border-color: var(--accent); }
 #topbar .dly input.num::-webkit-inner-spin-button, #topbar .dly input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #topbar .spacer { flex: 0 0 8px; }
@@ -272,12 +272,13 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
 .numwrap { display: inline-flex; align-items: stretch; margin-left: auto; } /* 右端へ寄せる（2026-09-11 ユーザー指定） */
 .ctl:not(.radio) > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; } /* 幅 250 でラベルが折り返さないように */
 .ctl input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
-  background: var(--panel2); color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
+  /* 値表示だけは地の色を塗らず枠線のみ（2026-09-14 ユーザー指定）。枠は他と同じ 1px var(--line) */
+  background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 .ctl input.num:focus { outline: none; border-color: var(--accent); }
 .ctl input.num::-webkit-inner-spin-button, .ctl input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .numspin { display: flex; flex-direction: column; width: 15px; }
 .numspin button { flex: 1 1 50%; padding: 0; font-size: 8px; line-height: 1; color: var(--muted); cursor: pointer;
-  background: var(--panel2); border: 1px solid var(--line); }
+  background: none; border: 1px solid var(--line); }
 .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
 .numspin button:last-child { border-radius: 0 0 4px 0; }
 .numspin button:hover { color: var(--accent); border-color: var(--accent); }
