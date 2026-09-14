@@ -786,8 +786,24 @@ function saveMerge(trackName, value) {
 }
 
 // ---------- MIDI 読み込み ----------
-$('midiFile').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
+// ---- ファイルを開く（2026-09-14 ユーザー指定）----
+// 「ファイル選択」（input type=file）は開始フォルダを指定・記憶できず、ブラウザがオリジンに 1 つだけ
+// 覚えるので、MIDI と音声で同じ場所が開いてしまう。File System Access API の showOpenFilePicker は
+// id ごとに最後のフォルダを別々に覚えるので、使える時はそちらを使う（使えない時は従来の input）
+async function pickFile(id, types) {
+  if (!window.showOpenFilePicker) return null;      // 非対応なら input にフォールバック
+  try {
+    const [h] = await window.showOpenFilePicker({ id, types, multiple: false });
+    return await h.getFile();
+  } catch (err) {
+    if (err.name !== 'AbortError') console.warn('ファイルを開けませんでした:', err);
+    return null;                                     // 取り消しは何もしない
+  }
+}
+const MIDI_TYPES = [{ description: 'MIDI ファイル', accept: { 'audio/midi': ['.mid', '.midi'] } }];
+const AUDIO_TYPES = [{ description: '音声ファイル', accept: { 'audio/*': ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'] } }];
+
+async function loadMidiFile(file) {
   if (!file) return;
   try {
     const buf = await file.arrayBuffer();
@@ -799,15 +815,24 @@ $('midiFile').addEventListener('change', async (e) => {
     console.error(err);
     setStatus(`✗ MIDI を読み込めませんでした（${err.message}）。標準 MIDI ファイル (.mid) を選んでください`);
   }
-});
-
-$('audioFile').addEventListener('change', (e) => {
-  const file = e.target.files[0];
+}
+function loadAudioFile(file) {
   if (!file) return;
   audio.src = URL.createObjectURL(file);
   audio.addEventListener('loadedmetadata', () => { audioLoaded = true; $('audioName').textContent = file.name; }, { once: true });
   audio.addEventListener('error', () => { audioLoaded = false; $('audioName').textContent = '✗ 再生できない形式（mp3/wav/m4a）'; }, { once: true });
-});
+}
+$('midiFile').addEventListener('change', (e) => loadMidiFile(e.target.files[0]));
+$('audioFile').addEventListener('change', (e) => loadAudioFile(e.target.files[0]));
+// クリックを乗っ取って、フォルダを別々に覚えるピッカーを使う。
+// ボタンの見た目はラベルだが、クリックが当たるのは上に重ねた透明な input なので input 側に付ける
+for (const [id, types, load] of [['midiFile', MIDI_TYPES, loadMidiFile], ['audioFile', AUDIO_TYPES, loadAudioFile]]) {
+  if (!window.showOpenFilePicker) break;             // 非対応のブラウザは従来の「ファイル選択」のまま
+  $(id).addEventListener('click', async (e) => {
+    e.preventDefault();                              // 標準のダイアログは開かせない
+    load(await pickFile(`pixelOrchestra-${id}`, types));
+  });
+}
 
 function buildScene(midi, { keepTime = false } = {}) {
   const wasPlaying = clock.playing;
