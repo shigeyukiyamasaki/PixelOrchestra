@@ -597,6 +597,15 @@ function placeAutoCamBox() {
   const z = phone ? 0.7 : 1;
   const pad = phone ? 20 : 28;   // 上下の余白（style.css の top/bottom と合わせる）
   left.style.maxHeight = `${Math.max(80, (b - t) / z - pad)}px`;
+  // スマホ横：映る面の左に空く黒い隙間にカードを収める。機種で隙間が狭くなったら
+  // 横スクロールではなくカードの幅を縮める（2026-09-14 ユーザー指定）
+  if ($('viewWrap').classList.contains('phoneH')) {
+    const vr0 = $('view').getBoundingClientRect(), wr0 = $('viewWrap').getBoundingClientRect();
+    const gap = (vr0.left - wr0.left) / z;      // 隙間（箱と同じ単位に直す）
+    left.style.width = `${Math.max(110, gap - pad)}px`;
+  } else {
+    left.style.width = '';
+  }
   // 下の列は映像のすぐ下（黒帯の上端）から下へ積む。映像に重ならないように
   if (phoneV) {
     const vr = $('view').getBoundingClientRect();
