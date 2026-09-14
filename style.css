@@ -18,8 +18,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* プレビューの上の余白にカメラの操作を置く（2026-09-12 ユーザー指定） */
 /* 箱が増えて横に入り切らない時は、崩さず横スクロールにする（2026-09-14） */
 #camBar { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 14px 12px 0;
-  overflow-x: auto; scrollbar-color: rgba(255, 255, 255, .3) transparent; }
-#camBar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .3); background-clip: padding-box; }
+  overflow-x: auto; scrollbar-color: rgba(255, 255, 255, .45) transparent; }
+#camBar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .45); background-clip: padding-box; }
 
 #camBar .row3 { display: grid; grid-template-columns: 1fr; } /* X/Y/Z は縦 3 行（2026-09-12 ユーザー指定） */
 #camBar .camSide > .box > .row3 { margin-top: -2px; }
@@ -135,12 +135,12 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* スクロールバー：細く・角丸・普段は控えめ。サイト全体に適用（2026-09-13 ユーザー指定）。
    Chrome は標準の scrollbar-width / scrollbar-color を解すると ::-webkit-scrollbar 側を無視するので、
    どちらでも同じ見た目になるよう両方書いておく */
-* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .45) transparent; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .2); border-radius: 99px;
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .45); border-radius: 99px;
   border: 2px solid transparent; background-clip: padding-box; }
-*:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .34); background-clip: padding-box; }
+*:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .6); background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
