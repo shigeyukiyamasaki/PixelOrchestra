@@ -549,13 +549,6 @@ function addScreen() {
   renderScreens();
   setScreens(screens); saveScreens();
 }
-// 背景の上下反転（2026-09-14 ユーザー指定）。色を入れ替え、中間地点も上下に折り返す
-$('bgSwap').addEventListener('click', () => {
-  const top = $('bgTop').value, bottom = $('bgBottom').value;
-  $('bgTop').value = bottom; $('bgBottom').value = top;
-  $('bgMid').value = String(100 - parseFloat($('bgMid').value || 50));
-  for (const id of ['bgTop', 'bgBottom', 'bgMid']) $(id).dispatchEvent(new Event('input', { bubbles: true }));
-});
 $('screenReload').addEventListener('click', (e) => {
   const b = e.currentTarget;
   b.textContent = '調べています…';
@@ -764,7 +757,7 @@ function settings() {
     spotCone: num('spotCone', 30),
     spotBlur: num('spotBlur', 0.5),
     exposure: num('exposure', 1),
-    bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50),
+    bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
     showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
     specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
@@ -931,8 +924,11 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
 renderer.toneMapping = THREE.CustomToneMapping;
 // 背景：上下グラデーション（CSS）。中間地点 = 2 色が半分ずつ混ざる高さ [%]（2026-09-10）
 let bgApplied = '';
-function applyBackground(top, bottom, mid) {
-  const css = `linear-gradient(to bottom, ${top}, ${mid}%, ${bottom})`;
+// 上下反転（2026-09-14 ユーザー指定）は見た目だけ。上の色・下の色・中間地点の値は動かさない
+function applyBackground(top, bottom, mid, flip) {
+  const css = flip
+    ? `linear-gradient(to bottom, ${bottom}, ${100 - mid}%, ${top})`
+    : `linear-gradient(to bottom, ${top}, ${mid}%, ${bottom})`;
   if (css === bgApplied) return;
   bgApplied = css;
   $('view').style.background = css;
@@ -1227,7 +1223,7 @@ function animate() {
     }
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur });
     applyToneMapping(s.exposure);
-    applyBackground(s.bgTop, s.bgBottom, s.bgMid);
+    applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
