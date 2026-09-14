@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260915g">
+  <link rel="stylesheet" href="style.css?v=20260915h">
 </head>
 <body>
   <div id="stageArea">
@@ -80,15 +80,15 @@
         <div class="viewSize">
           <button id="viewFree" class="on" title="端末を指定しない（今までどおり、ブラウザの大きさに合わせて 16:9 で表示）">なし</button>
           <button id="viewPc" title="PC で見たときの画素数（1920×1080）">PC</button>
-          <button id="viewPhoneV" title="スマホを縦にしたときの比率（9:19.5 ／ 1080×2340）。左右に写る範囲は PC と同じで、上下が広くなる">スマホ縦</button>
-          <button id="viewPhoneH" title="スマホを横にしたときの比率（19.5:9 ／ 2340×1080）">スマホ横</button>
+          <button id="viewPhoneV" title="スマホを縦にしたとき（論理 390×844）。映る面は正方形 390×390 で、上下は黒帯。左右に写る範囲は PC と同じ">スマホ縦</button>
+          <button id="viewPhoneH" title="スマホを横にしたとき（論理 844×390）">スマホ横</button>
         </div>
         </div>
       </div>
       </div>
   </div>
     <!-- プレビュー：外枠（#viewWrap）＝端末の画面、内側（#view）＝実際に映る面。
-         スマホ縦は内側が 19.5:9 のままなので、上下に黒帯が入る（2026-09-14 ユーザー指定）。
+         スマホ縦は内側が正方形なので、上下に黒帯が入る（2026-09-14 ユーザー指定）。
          端末の画素数どおりの大きさで置き、入り切らない時だけ #viewWrap ごと縮小する（--vzoom） -->
     <div id="viewArea">
     <div id="viewWrap">
