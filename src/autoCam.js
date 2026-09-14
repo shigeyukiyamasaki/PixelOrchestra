@@ -53,6 +53,10 @@ const MID = { dist: 14.0, y: 7.6, targetY: 1.8 };
 // 例：チューバのあたりからトロンボーン・トランペットが並ぶ方向を見る
 const ALONG = { back: 9.0, ahead: 7.0, out: 1.2, y: 2.6, targetY: 2.2 };
 const ALONG_RATIO = 0.45;     // 寄りのうち、列沿いにする割合
+// 俯瞰（2026-09-14 ユーザー提案）。全体を斜め上から見るものと、セクションの真上寄りから見るもの。
+// 全体俯瞰の位置は舞台の広さ（座席の散らばり）から決めるので、編成が変わっても成り立つ
+const TOP = { wideDist: 0.9, wideY: 1.5, nearDist: 5.5, nearY: 13, targetY: 1.5, wideAz: 1.0 };
+const TOP_RATIO = 0.35;       // 引き・指揮者のうち、俯瞰にする割合
 const DOLLY_IN = 0.17;        // ショットの間に寄る割合
 // 動くショットのうち、寄る代わりに水平に流す（パン）割合と、その振れ幅 [unit]（2026-09-14 ユーザー指定）
 const PAN_RATIO = 0.5;
@@ -99,7 +103,7 @@ function seatLead(seat, cz) {
 }
 
 export class AutoCamera {
-  constructor() { this.shots = []; }
+  constructor() { this.shots = []; this.stage = { cx: 0, cz: -12, r: 14 }; }
 
   /**
    * ショットの一覧を作る。曲・座席・設定が変わった時だけ呼ぶ（重いので毎フレームは呼ばない）
@@ -110,6 +114,14 @@ export class AutoCamera {
   build(engine, seats, opt = {}, conductorZ = 0) {
     this.shots = [];
     if (!engine || !seats || !seats.length || !(engine.duration > 0)) return;
+    // 舞台の中心と広がり（全体俯瞰の距離・高さの基準。編成で変わる）
+    const all = seats.flatMap((st) => st.positions || []);
+    if (all.length) {
+      const cx = all.reduce((a, q) => a + q.x, 0) / all.length;
+      const cz = all.reduce((a, q) => a + q.z, 0) / all.length;
+      const r = all.reduce((a, q) => Math.max(a, Math.hypot(q.x - cx, q.z - cz)), 0) || 10;
+      this.stage = { cx, cz, r };
+    }
     const bars = this._barTimes(engine);
     if (bars.length < 2) return;
     const nBars = bars.length - 1;
@@ -194,7 +206,8 @@ export class AutoCamera {
         xcloseRun = kind === 'xclose' ? 0 : xcloseRun + 1;
         closeRun++;
       } else {
-        kind = wobble(idx) < COND_RATIO ? 'cond' : 'wide';
+        const r0 = wobble(idx);
+        kind = r0 < COND_RATIO ? 'cond' : (r0 < COND_RATIO + TOP_RATIO ? 'top' : 'wide');
         // 引き・指揮者が続くのを避ける：寄れるなら寄り、寄れなければ引きと指揮者を入れ替える
         if (kind === lastKind) {
           if ((subject[b] >= 0 || loudest[b] >= 0)) kind = 'mid';
@@ -234,7 +247,7 @@ export class AutoCamera {
       lastKind = kind;
       this.shots.push({
         t0: bars[b], t1: bars[Math.min(b + n, nBars)], kind, idx,
-        center: who >= 0 ? seatCenter(seats[who]) : null,
+        center: who >= 0 ? seatCenter(seats[who]) : (loudest[b] >= 0 ? seatCenter(seats[loudest[b]]) : null),
         lead: who >= 0 ? seatLead(seats[who], conductorZ) : null,
         instY: who >= 0 ? (opt.instYOf?.(seats[who]) ?? XCLOSE.targetY) : XCLOSE.targetY,
         name: who >= 0 ? seats[who].track?.name : '全体',
@@ -306,6 +319,20 @@ export class AutoCamera {
       const a = side * (COND.base + wobble(n, 4) * COND.swing);
       const d = COND.dist + 2 * COND.dolly * zk;
       return withPan({ pos: [Math.sin(a) * d, COND.y, cz - Math.cos(a) * d], target: [0, COND.targetY, cz] });
+    }
+    if (sh.kind === 'top') {                                             // 俯瞰：上から見下ろす
+      // 全体を斜め上から／セクションの真上寄りから、の 2 通り
+      const overStage = !sh.center || wobble(n, 19) < 0.5;
+      const st = this.stage;
+      const c = overStage ? [st.cx, 0, st.cz] : sh.center;
+      const base = overStage ? 0 : (c[1] || 0);
+      const az = overStage ? swing(n, 20) * TOP.wideAz : swing(n, 20) * Math.PI;   // 全体は客席側から、席は自由な方位
+      const d = (overStage ? st.r * TOP.wideDist : TOP.nearDist) * (1 + 2 * 0.1 * zk);
+      const h = overStage ? st.r * TOP.wideY : base + TOP.nearY;
+      return withPan({
+        pos: [c[0] + Math.sin(az) * d, h, c[2] + Math.cos(az) * d],
+        target: [c[0], base + TOP.targetY, c[2]],
+      }, overStage ? PAN_WIDE : PAN_NEAR);
     }
     if (sh.kind === 'wide' || !sh.center) {                              // 引き：正面から全景
       return withPan({
