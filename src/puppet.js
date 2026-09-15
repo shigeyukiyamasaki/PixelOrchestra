@@ -894,8 +894,9 @@ export class Puppet {
   }
 
   // ---- 指揮者：拍子に応じた振り図形（4拍子：下→内→外→上）。イクタスで跳ね、強いほど大きく ----
-  _conductor(st, { beat, dt, settings }) {
-    const g = st.energy; // = globalEnergy
+  _conductor(st, { beat, dt, settings, bpm }) {
+    const g = st.posture;   // 振り幅・身の乗り出し・左手の同調は均した方（= globalEnergy を拍の長さで均したもの）
+    const gAcc = st.energy; // 拍のうなずきだけ速い方
     const n = beat.beatsPerBar || 4;
     const C = this.flat ? [7, 30, 3] : [6, 25, 10]; // 右手の振りの中心（rig px）。3D では胸の高さ・体の前で振る（顔の前に手が来ないように）
     const P4 = [[0, -7], [-6, -4], [8, -3], [1, 6]];
@@ -923,11 +924,22 @@ export class Puppet {
     const restL = this.flat ? [-5, 24, 3] : [-5, 22, 7];
     const w = clamp((g - 0.25) / 0.5, 0, 1);
     this.setHand('L', [lerp(restL[0], mirror[0], w), lerp(restL[1], mirror[1], w), lerp(restL[2], mirror[2], w)], dt, 18);
-    const nod = ph < 0.15 ? (1 - ph / 0.15) * 0.15 * g : 0;
-    this.headPivot.rotation.z += -nod;
+    // 拍のうなずき：以前は拍の頭で 0 → 最大へ「瞬間に」跳ねてから直線で戻していたので、毎拍ピクついた
+    // （2026-09-15 ユーザー指摘）。60 ms で沈み 180 ms で戻る連続した山にする（時間は秒で決め、
+    // 速い拍では拍の 6 割に収める）。大きさは「強弱の反応」を上げても 1.5 で頭打ち（首が跳ねすぎないように）
+    const beatSec = 60 / Math.max(20, bpm || 120);
+    const k = Math.min(1, (0.6 * beatSec) / 0.24);
+    const rise = 0.06 * k, fall = 0.18 * k, phSec = ph * beatSec;
+    let nod = 0;
+    if (phSec < rise) nod = Math.sin((phSec / rise) * Math.PI / 2);
+    else if (phSec < rise + fall) nod = Math.cos(((phSec - rise) / fall) * Math.PI / 2);
+    this.headPivot.rotation.z += -0.15 * clamp(gAcc, 0, 1.5) * nod;
     this._leanC = approach(this._leanC ?? 0, 0.12 * g, 5, dt);
     if (!this.flat) this.spine.rotation.x += this._leanC; // 盛り上がるほど楽団へ身を乗り出す
     this.spine.rotation.z = Math.sin(Math.PI * beat.beat * 0.5) * 0.06 * (0.3 + 0.7 * g) * settings.sway;
-    this.spine.position.y = (SPINE_Y - 0.3 * (1 - ph) * g) * PX;
+    // 体の沈み：以前は (1 - ph) で拍の頭に段差があった。拍の頭で速く沈み（10%）、拍の残りでなだらかに戻す
+    const dipLen = 0.1;
+    const dip = ph < dipLen ? Math.sin((ph / dipLen) * Math.PI / 2) : Math.cos(((ph - dipLen) / (1 - dipLen)) * Math.PI / 2);
+    this.spine.position.y = (SPINE_Y - 0.3 * dip * g) * PX;
   }
 }
