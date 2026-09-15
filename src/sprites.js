@@ -502,11 +502,22 @@ function scrollPart(neckColor, r = 3) {
        } });
 }
 /** 胴と糸巻きをまとめる（pos は 2 倍解像度 px、pivot 基準。axis: 'x' = ネックが +x、'y' = ネックが +y） */
-function withScroll(body, scroll, pos, axis = 'x') {
+/** 指板：胴・ネックの表板の上に乗る別の物体（厚み thick セル）。pivot は左上（2026-09-16 ユーザー指定：塗りでなく厚みを持たせる） */
+function fingerboardPart(w, h, thick = 1) {
+  return makePart(w, h, 0, 0, (d) => { d.r(0, 0, w, h, C.black); d.r(0, 0, w, 1, '#2a2a30'); },
+                  { res: 2, depth: thick, z0: 0, accent: `fb|${w}x${h}x${thick}` });
+}
+/** 胴 + 渦巻き（+ 指板）。pos はセル単位（VOX）。fb = { w, h, pos:[x,y,z], thick }：z は表板の面（胴の depth の端）に置く */
+function withScroll(body, scroll, pos, axis = 'x', fb = null) {
   const g = new THREE.Group();
   scroll.position.set(pos[0] * VOX, pos[1] * VOX, pos[2] * VOX);
   if (axis === 'y') scroll.rotation.z = Math.PI / 2;
   g.add(body, scroll);
+  if (fb) {
+    const f = fingerboardPart(fb.w, fb.h, fb.thick ?? 1);
+    f.position.set(fb.pos[0] * VOX, fb.pos[1] * VOX, fb.pos[2] * VOX);
+    g.add(f);
+  }
   g.userData.size = body.userData.size;
   return g;
 }
@@ -521,11 +532,11 @@ export const INSTRUMENT = {
     d.r(3, 5, 1, 7, '#a0623c'); d.r(13, 6, 1, 5, '#a0623c');                       // 艶
     d.r(5, 5, 1, 2, C.black); d.r(5, 10, 1, 2, C.black); d.r(12, 5, 1, 2, C.black); d.r(12, 10, 1, 2, C.black); // f 字孔
     d.r(2, 7, 4, 2, C.black);                                                       // テールピース
-    d.r(18, 7, 7, 2, C.wood2);                                                      // ネック（糸巻きは別パーツ）。指板より先に描く
-    d.r(8, 7, 17, 2, C.black); d.r(8, 7, 17, 1, '#2a2a30');                         // 指板：ネックの先端（糸巻きの手前）まで続く（2026-09-16 ユーザー指摘：途中で切れていた）
+    d.r(18, 7, 7, 2, C.wood2);                                                      // ネック（糸巻きは別パーツ）。指板は別の物体（withScroll の fb）で表板の上に乗せる（2026-09-16）
     d.r(10, 6, 1, 4, C.ivory);                                                      // 駒
     d.r(1, 10, 4, 3, C.black);                                                      // あご当て
-  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(2, 2, 2, 12, F); d.r(0, 4, 4, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 3), [11, 0, 1]), // ネックは表板側 2 セル（胴の延長でなく、胴の上に乗る。2026-09-16 ユーザー指摘）。渦巻きもその中心へ
+  }, { res: 2, depth: 4, z0: -2, side: (d) => { d.r(2, 2, 2, 12, F); d.r(0, 4, 4, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 3), [11, 0, 1], 'x',
+    { w: 17, h: 2, pos: [-6, 1, 2], thick: 1 }),   // 指板：cells x 8-24 / rows 7-8 を表板の面（z 2）に 1 セル厚で // ネックは表板側 2 セル（胴の延長でなく、胴の上に乗る。2026-09-16 ユーザー指摘）。渦巻きもその中心へ
   // ヴィオラ 32×18（2倍解像度）：バイオリンより一回り大きく、濃い色。駒は x=12（基本座標 -2）
   viola: () => withScroll(makePart(32, 18, 16, 9, (d) => {
     d.disc(8, 9, 7, C.wood2); d.disc(16, 9, 5, C.wood2); d.r(12, 5, 5, 9, C.wood2);
@@ -533,11 +544,11 @@ export const INSTRUMENT = {
     d.r(3, 5, 1, 9, '#8a4a34'); d.r(15, 7, 1, 5, '#8a4a34');
     d.r(6, 6, 1, 2, C.black); d.r(6, 11, 1, 2, C.black); d.r(14, 6, 1, 2, C.black); d.r(14, 11, 1, 2, C.black);
     d.r(2, 8, 5, 2, C.black);
-    d.r(21, 8, 7, 2, C.wood);                                                       // ネック（糸巻きは別パーツ）。指板より先に描く
-    d.r(10, 8, 18, 2, C.black); d.r(10, 8, 18, 1, '#2a2a30');                       // 指板：ネックの先端まで（2026-09-16）
+    d.r(21, 8, 7, 2, C.wood);                                                       // ネック（糸巻きは別パーツ）。指板は別の物体（2026-09-16）
     d.r(12, 7, 1, 4, C.ivory);
     d.r(1, 11, 5, 3, C.black);
-  }, { res: 2, depth: 5, z0: -2.5, side: (d) => { d.r(3, 2, 2, 14, F); d.r(0, 4, 5, 10, F); }, back: STRING_BACK(C.wood2) }), scrollPart(C.wood, 3), [12, 0, 1.5]), // ネックは表板側 2 セル（2026-09-16）
+  }, { res: 2, depth: 5, z0: -2.5, side: (d) => { d.r(3, 2, 2, 14, F); d.r(0, 4, 5, 10, F); }, back: STRING_BACK(C.wood2) }), scrollPart(C.wood, 3), [12, 0, 1.5], 'x',
+    { w: 18, h: 2, pos: [-6, 1, 2.5], thick: 1 }), // ネックは表板側 2 セル（2026-09-16）
   // チェロ 24×60（2倍解像度）。渦巻き・ネック・上部/下部のふくらみ・くびれ・f 字孔・駒（row 36）・テールピース・エンドピン
   cello: () => withScroll(makePart(24, 60, 12, 60, (d) => {
     d.r(10, 3, 4, 16, C.wood2);                                            // ネック（糸巻きは別パーツ）。くびれを 4 行縮めた分だけ長く（2026-09-11 ユーザー指定）
@@ -545,11 +556,12 @@ export const INSTRUMENT = {
     d.p(6, 26, null); d.p(17, 26, null); d.p(6, 29, null); d.p(17, 29, null);
     d.r(6, 18, 1, 7, '#a0623c'); d.r(4, 32, 1, 12, '#a0623c');              // 艶（ふくらみの円の内側に収める。はみ出すと側面に板が飛び出て見える。2026-09-11）
     d.r(7, 30, 1, 7, C.black); d.r(16, 30, 1, 7, C.black);                   // f 字孔（駒の左右、駒を挟んで上下に伸びる。2026-09-11）
-    d.r(11, 3, 2, 28, C.black); d.r(11, 3, 1, 28, '#2a2a30');                // 指板：ネックの先端（row 3）から胴の途中（row 30）まで（2026-09-16 ユーザー指摘：上が切れていた）
+    // 指板は別の物体（withScroll の fb。rows 3-30 × cells 11-12 を表板の上に）（2026-09-16）
     d.r(9, 33, 6, 1, C.ivory);                                             // 駒（胴 rows 14-48 の真ん中より少し下。基本 y=13.5）
     d.r(11, 34, 2, 12, '#3a3a44'); d.r(10, 46, 4, 6, C.black);              // 弦・テールピース
     d.r(11, 52, 2, 8, C.silver);                                           // エンドピン
-  }, { res: 2, depth: 8, z0: 0, side: (d) => { d.r(6, 0, 2, 16, F); d.r(1, 14, 6, 4, F); d.r(0, 18, 8, 30, F); d.r(1, 48, 6, 4, F); d.r(3, 52, 2, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 4), [0, 57, 7], 'y'), // ネックは表板側 2 セル（胴 8 セルの 1/4。2026-09-16 ユーザー指摘）。渦巻きもその中心へ // 厚み 12 → 8 セル（34cm → 22cm。2026-09-11 ユーザー指摘）
+  }, { res: 2, depth: 8, z0: 0, side: (d) => { d.r(6, 0, 2, 16, F); d.r(1, 14, 6, 4, F); d.r(0, 18, 8, 30, F); d.r(1, 48, 6, 4, F); d.r(3, 52, 2, 8, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 4), [0, 57, 7], 'y',
+    { w: 2, h: 28, pos: [-1, 57, 8], thick: 1 }), // ネックは表板側 2 セル（胴 8 セルの 1/4。2026-09-16 ユーザー指摘）。渦巻きもその中心へ。指板は表板（z 8）の上に 1 セル // 厚み 12 → 8 セル（34cm → 22cm。2026-09-11 ユーザー指摘）
   // コントラバス 28×76（2倍解像度）。渦巻き・ネック・ふくらみ・くびれ・f 字孔・駒（row 38 = 基本 y 19）・エンドピン。立奏用
   contrabass: () => withScroll(makePart(28, 76, 14, 76, (d) => {
     d.r(11, 4, 6, 14, C.wood2);                                            // ネック（糸巻きは別パーツ）
@@ -557,11 +569,12 @@ export const INSTRUMENT = {
     d.p(7, 33, null); d.p(20, 33, null); d.p(7, 41, null); d.p(20, 41, null);
     d.r(5, 22, 1, 9, '#a0623c'); d.r(3, 44, 1, 14, '#a0623c');              // 艶（ふくらみの円の内側に収める。2026-09-11）
     d.r(8, 38, 1, 9, C.black); d.r(19, 38, 1, 9, C.black);                   // f 字孔（駒の左右、駒を挟んで上下に。2026-09-11）
-    d.r(13, 4, 3, 36, C.black); d.r(13, 4, 1, 36, '#2a2a30');                // 指板：ネックの先端（row 4）から row 39 まで（2026-09-16）
+    // 指板は別の物体（rows 4-39 × cells 13-15。2026-09-16）
     d.r(10, 42, 8, 1, C.ivory);                                            // 駒（胴 rows 16-63 の真ん中より少し下。基本 y=17）
     d.r(13, 43, 2, 10, '#3a3a44'); d.r(12, 53, 4, 10, C.black);             // 弦・テールピース
     d.r(13, 64, 2, 12, C.silver);                                          // エンドピン
-  }, { res: 2, depth: 14, z0: 0, side: (d) => { d.r(11, 4, 3, 14, F); d.r(2, 16, 10, 6, F); d.r(0, 22, 14, 41, F); d.r(6, 64, 2, 12, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 5), [0, 72, 12.5], 'y'), // ネックは表板側 3 セル（胴 14 セルの 1/5。2026-09-16）。渦巻きもその中心へ // 厚み 16 → 14 セル（42cm → 37cm。2026-09-11）
+  }, { res: 2, depth: 14, z0: 0, side: (d) => { d.r(11, 4, 3, 14, F); d.r(2, 16, 10, 6, F); d.r(0, 22, 14, 41, F); d.r(6, 64, 2, 12, F); }, back: STRING_BACK(C.wood) }), scrollPart(C.wood2, 5), [0, 72, 12.5], 'y',
+    { w: 3, h: 36, pos: [-1, 72, 14], thick: 1 }), // ネックは表板側 3 セル（胴 14 セルの 1/5。2026-09-16）。渦巻きもその中心へ。指板は表板（z 14）の上に 1 セル // 厚み 16 → 14 セル（42cm → 37cm。2026-09-11）
   // 弓・指揮棒は 2 倍解像度グリッドで細く（断面 1×1 / 0.5×0.5 基本 px）
   // 弓 52×2（2 倍解像度＝26px。40 から 1.3 倍に延長、2026-09-10 ユーザー指定）。pivot = フロッグ（手元）
   bow: () => makePart(52, 2, 2, 1, (d) => { d.r(0, 0, 52, 1, C.wood2); d.r(2, 1, 48, 1, C.ivory); d.r(0, 0, 3, 2, C.black); }, { res: 2, depth: 2, z0: -1 }),
