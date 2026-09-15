@@ -809,6 +809,7 @@ function settings() {
   return {
     sway: num('sway', 1),
     dynResponse: num('dynResponse', 1),
+    dynSpeed: num('dynSpeed', 1),   // 姿勢が強弱に追いつく速さ（2026-09-15）
     rollSpeed: num('rollSpeed', 3),
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
@@ -1287,7 +1288,7 @@ function animate() {
     const s = settings();
     const beat = engine.beatAt(tm);
     const g = engine.globalEnergyAt(tm);
-    const ctx = { t: tm, dt, beat, settings: s, globalEnergy: g };
+    const ctx = { t: tm, dt, beat, settings: s, globalEnergy: g, bpm: engine.bpmAt(tm) };   // bpm は姿勢の均し（拍の長さ）に使う
 
     const face = (p) => (s.facing === 'conductor' ? p.faceToward(0, CONDUCTOR_Z) : p.faceCamera(camera));
     for (const { puppet, track } of puppets) {

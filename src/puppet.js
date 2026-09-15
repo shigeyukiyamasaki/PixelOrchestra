@@ -503,15 +503,25 @@ export class Puppet {
   update(stRaw, ctx) {
     const { t, dt, beat, settings } = ctx;
     const energy = stRaw.energy;
+    // エネルギー包絡線はアタック 0 ms・半減期 130 ms のノコギリ波なので、そのまま姿勢に掛けると
+    // スローテンポで 1 音ごとに体がピクつく（2026-09-15 ユーザー指摘）。
+    // 姿勢（前傾・膨らみ・頭の角度・体の傾き）は拍の長さに応じた時定数で均した「遅い」エネルギーで動かし、
+    // 速いエネルギーは音の頭の小さな反応（うなずき・弓圧・ストロークの長さ・足元の光）にだけ使う。
+    // 「反応の速さ」スライダー（dynSpeed）で時定数を調整できる（1 = 拍の半分。大きいほど速く追いつく）
+    const beatSec = 60 / Math.max(20, ctx.bpm || 120);
+    const tau = clamp((beatSec * 0.5) / (settings.dynSpeed ?? 1), 0.06, 1.0);
+    this._slowE = approach(this._slowE ?? energy, energy, 1 / tau, dt);
     // 「強弱の反応」スライダー：前傾・楽器の角度・膨らみなど、強さ（velocity/CC）で動く量の倍率。揺れと足元の光には掛けない
     // 上限は「強弱の反応」スライダーの最大値（3）に合わせる。1.5 で頭打ちだと 1.5 より上げても何も変わらなかった（2026-09-12 修正）
-    const st = { ...stRaw, energy: clamp(energy * (settings.dynResponse ?? 1), 0, 3),
-      nextEnergy: clamp((stRaw.nextEnergy ?? 0) * (settings.dynResponse ?? 1), 0, 3) };
+    const dyn = settings.dynResponse ?? 1;
+    const st = { ...stRaw, energy: clamp(energy * dyn, 0, 3),
+      posture: clamp(this._slowE * dyn, 0, 3),
+      nextEnergy: clamp((stRaw.nextEnergy ?? 0) * dyn, 0, 3) };
 
     // 共通：呼吸と拍に同期した体の揺れ
     // 揺れ・呼吸・上下動は腰（spine）から上だけ。下半身と椅子は動かない（2026-09-09 ユーザー指定）
     this.rig.scale.set(MIRROR, 1, 1);
-    const swayAmt = Math.sin(Math.PI * beat.beat + this.phase) * 0.07 * (0.25 + 0.75 * energy) * settings.sway;
+    const swayAmt = Math.sin(Math.PI * beat.beat + this.phase) * 0.07 * (0.25 + 0.75 * this._slowE) * settings.sway;
     this.spine.rotation.set(0, 0, swayAmt);
     this.spine.scale.set(1, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
     this.spine.position.y = SPINE_Y * PX;
@@ -609,7 +619,7 @@ export class Puppet {
   // ---- 弦：弓の接点を固定し、手元が弓の上を滑る。ノートごとに上げ弓/下げ弓を交互、前のストロークの終点から続ける。
   //      休符では弓を弦から離し、次の音の直前に着弦する ----
   _strings(st, { t, dt }) {
-    const { onset, next, age, toNext, active, energy } = st;
+    const { onset, next, age, toNext, active, energy, posture } = st;
     const cfg = this.cfg, bow = cfg.bow, p3 = this.p3;
     const sMin = p3?.sMin ?? bow.sMin, sMax = p3?.sMax ?? bow.sMax;
     if (onset && onset.index !== this.lastOnsetIndex) { // 新しいノート：ストロークの方向と長さ
@@ -710,22 +720,22 @@ export class Puppet {
     // 符号だと音が変わる 1 フレームで上体が反転してワープして見えた（2026-09-12 ユーザー指摘）。
     // bowPos はストローク中を連続的に動くので、この形なら段差が原理的に出ず、上体の揺れが弓と同期する
     const sNorm = clamp((this.bowPos - (sMin + sMax) / 2) / ((sMax - sMin) / 2 || 1), -1, 1);
-    this.spine.rotation.z += MIRROR * 0.06 * sNorm * energy; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
+    this.spine.rotation.z += MIRROR * 0.06 * sNorm * posture; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
     this.spine.position.y -= 0.4 * this._press * PX; // 弓を押し付けた分だけ腰が沈む（強奏で体重が乗る）
     // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
-    this._spineGaze(st, dt, 0.16 * energy, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
+    this._spineGaze(st, dt, 0.16 * posture, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
     if (cfg.chin) { // あごで楽器を挟む：首を楽器側（ローカル -x）へ傾げ、頭がわずかに下がる（下ろしている間は解く）
       const k = 1 - (this._rest ?? 0);
-      this.headPivot.rotation.z += (0.32 + 0.08 * energy) * k;
+      this.headPivot.rotation.z += (0.32 + 0.08 * posture) * k;
       this.headPivot.position.y = (HEAD_Y_PX - 0.8 * k) * PX;
     } else {
-      this.headPivot.rotation.z += -0.1 * energy;
+      this.headPivot.rotation.z += -0.1 * posture;
     }
   }
 
   // ---- 管楽器（木管・金管）：両手は楽器上の点に置き、楽器の動きに追従。息継ぎ→アタック→ベル/角度の変化 ----
   _wind(st, { t, dt }) {
-    const { onset, next, age, toNext, active, energy, pitchNorm } = st;
+    const { onset, next, age, toNext, active, energy, posture, pitchNorm } = st;
     const cfg = this.cfg, inst = this.inst, p3 = this.p3;
     // 息継ぎ：フレーズの直前に肩が上がり（0.35 秒前から）、アタックで落ちる
     // 息継ぎの深さは次の音の強さで変える（強いフレーズの前ほど深く吸う。2026-09-12 ユーザー指定）。
@@ -735,7 +745,7 @@ export class Puppet {
     this._breath = approach(this._breath, breath, 12, dt);
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
     this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack) * PX;
-    this.spine.scale.x = 1 + 0.05 * this._breath + 0.05 * energy;
+    this.spine.scale.x = 1 + 0.05 * this._breath + 0.05 * posture;
 
     // 楽器の角度（種類別）。回転はスプライト面内（ローカル z 軸）。3D 姿勢でもローカル z 回転で「ベルが上がる」になる
     let lift = 0;
@@ -744,9 +754,9 @@ export class Puppet {
     if (inst) {
       let target = 0;
       switch (cfg.kind) {
-        case 'flute':   target = (-0.15 + 0.3 * pitchNorm) * (0.3 + 0.7 * energy); break;
-        case 'reed':    target = -0.3 * energy - 0.15 * this._lift; break;   // ベルが持ち上がる
-        case 'bassoon': target = 0.12 * energy; break;
+        case 'flute':   target = (-0.15 + 0.3 * pitchNorm) * (0.3 + 0.7 * posture); break;
+        case 'reed':    target = -0.3 * posture - 0.15 * this._lift; break;   // ベルが持ち上がる
+        case 'bassoon': target = 0.12 * posture; break;
         case 'bell':    target = (cfg.tiltBias ?? 0) + this._lift; break;      // トランペット/トロンボーン：ベルが上がる（tiltBias で構えの角度を下げる）
         case 'horn':    target = -0.4 * this._lift; break;
         case 'tuba':    target = 0.1 * this._lift; break;
@@ -784,8 +794,8 @@ export class Puppet {
       }
       this.setHand(side, p, dt, 25, hd, cfg.pole?.[side], up); // pole：肘を出す向き（rig 座標）
     }
-    this.headPivot.rotation.z += -0.1 * energy + 0.08 * this._breath; // 息継ぎで少し上を向く
-    this._spineGaze(st, dt, 0.1 * energy - 0.06 * this._breath, cfg.gazeDown ?? 0.05, 0); // 息継ぎで少し反り、吹くと前傾
+    this.headPivot.rotation.z += -0.1 * posture + 0.08 * this._breath; // 息継ぎで少し上を向く
+    this._spineGaze(st, dt, 0.1 * posture - 0.06 * this._breath, cfg.gazeDown ?? 0.05, 0); // 息継ぎで少し反り、吹くと前傾
   }
 
   // ---- 打楽器：構え位置→打点。直前に振りかぶり、打った瞬間に打点、戻る。マレットは打面を向く ----
@@ -849,8 +859,8 @@ export class Puppet {
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);
     }
     const sNow = this._strikeMax ?? 0; this._strikeMax = 0;
-    this._spineGaze(st, dt, 0.06 * st.energy + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
-    this.headPivot.rotation.z += -0.06 * st.energy;
+    this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
+    this.headPivot.rotation.z += -0.06 * st.posture;
   }
 
   // ---- 鍵盤/ハープ：音程で手の位置、押鍵で手首が沈む／弦をはじく ----
@@ -879,8 +889,8 @@ export class Puppet {
         this.setHand(side, p, dt, s > 0.5 ? Infinity : 14, hd, null, PERC_UP); // ハープも甲は真上
       }
     }
-    this.headPivot.rotation.z += -0.06 * st.energy;
-    this._spineGaze(st, dt, 0.1 * st.energy, keys ? 0.3 : 0.15, keys ? 0 : MIRROR * -0.25); // 鍵盤を見る／ハープの弦を見る
+    this.headPivot.rotation.z += -0.06 * st.posture;
+    this._spineGaze(st, dt, 0.1 * st.posture, keys ? 0.3 : 0.15, keys ? 0 : MIRROR * -0.25); // 鍵盤を見る／ハープの弦を見る
   }
 
   // ---- 指揮者：拍子に応じた振り図形（4拍子：下→内→外→上）。イクタスで跳ね、強いほど大きく ----
