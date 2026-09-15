@@ -923,7 +923,14 @@ export class Puppet {
     const mirror = [-C[0] - px * amp * 0.7, C[1] + py * amp * 0.6, C[2]];
     const restL = this.flat ? [-5, 24, 3] : [-5, 22, 7];
     const w = clamp((g - 0.25) / 0.5, 0, 1);
-    this.setHand('L', [lerp(restL[0], mirror[0], w), lerp(restL[1], mirror[1], w), lerp(restL[2], mirror[2], w)], dt, 18);
+    // 左手も右手と同じく、前フレームの前腕の向きに手を沿わせ、手の甲の向きも前腕に合わせる。
+    // 向きの指定なしだと「手の甲を rig の前へ」が既定になるが、指揮者の左手は体の前（+z）へ伸びていて
+    // 手の向きとほぼ平行になるため、基準が潰れて手首がくるくる回っていた（2026-09-16 ユーザー指摘。
+    // 計測：手のロールが 6 秒で 1029°、前腕は 102°）
+    const fdirL = new THREE.Vector3(0, -1, 0).applyQuaternion(this.foreQ.L);
+    const fupL = new THREE.Vector3(0, 0, 1).applyQuaternion(this.foreQ.L);
+    this.setHand('L', [lerp(restL[0], mirror[0], w), lerp(restL[1], mirror[1], w), lerp(restL[2], mirror[2], w)], dt, 18,
+      this.flat ? null : [fdirL.x, fdirL.y, fdirL.z], null, this.flat ? null : [fupL.x, fupL.y, fupL.z]);
     // 拍のうなずき：以前は拍の頭で 0 → 最大へ「瞬間に」跳ねてから直線で戻していたので、毎拍ピクついた
     // （2026-09-15 ユーザー指摘）。60 ms で沈み 180 ms で戻る連続した山にする（時間は秒で決め、
     // 速い拍では拍の 6 割に収める）。大きさは「強弱の反応」を上げても 1.5 で頭打ち（首が跳ねすぎないように）
