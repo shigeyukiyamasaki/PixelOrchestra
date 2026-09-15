@@ -6,7 +6,7 @@
  * 顔・髪（2 倍解像度）、上半身（燕尾服 / ドレス）、脚（ズボン / ロングスカート）、手（肌色）を描く。
  * 同じ MIDI なら座席の seed が同じなので、毎回同じ顔ぶれになる。
  */
-import { makePart, C, roundColumn } from './sprites.js';
+import { makePart, C, roundColumn, PX } from './sprites.js';
 
 const F = '#000';
 
@@ -266,14 +266,35 @@ export function skirtSeated() { // 2 倍解像度（2026-09-10）。寸法は従
  * 掌 3.5px 幅・厚み 2px、指 4 本は先端側 3 セルで分かれ（中指・薬指が長い）厚みは掌の半分、親指は体の内側（R は -x、L は +x）。
  * 肌色は人物ごと（2026-09-10 解像度アップ）
  */
-export function handFor(p, side = 'R') {
+/**
+ * 手。fingers: true だと指 4 本を別パーツにして動かせる（管楽器の運指用。2026-09-16 ユーザー指定）。
+ * その場合は Group を返し、group.userData.fingers に [人差し指, 中指, 薬指, 小指] の順で Mesh が入る。
+ * 各指の pivot は付け根（関節）で、rotation.x をマイナスにすると指先が手の甲側（+z）へ持ち上がる
+ */
+export function handFor(p, side = 'R', { fingers = false } = {}) {
   const tx = side === 'R' ? 1 : 10; // 親指の x（内側）
-  return makePart(12, 12, 6, 2, (d) => {
+  const palm = makePart(12, 12, 6, 2, (d) => {
     d.r(4, 2, 5, 1, p.skin);                                   // 手首側は少し細い
     d.r(3, 3, 7, 5, p.skin);                                   // 掌
     d.r(tx + (side === 'R' ? 1 : 0), 3, 1, 4, p.skin); d.r(tx, 4, 1, 3, p.skin); d.p(tx, 6, p.skin2); // 親指（斜めに出る）
-    for (let i = 0; i < 4; i++) { const x = 3 + i * 2, tip = (i === 1 || i === 2) ? 10 : 9; d.r(x, 8, 1, tip - 8, p.skin); d.p(x, tip, p.skin2); } // 指 4 本
+    if (!fingers) for (let i = 0; i < 4; i++) { const x = 3 + i * 2, tip = (i === 1 || i === 2) ? 10 : 9; d.r(x, 8, 1, tip - 8, p.skin); d.p(x, tip, p.skin2); } // 指 4 本
     d.r(3, 7, 7, 1, p.skin2);                                  // 指の付け根（関節の線）
-  }, { res: 2, depth: 4, z0: -2, accent: `hand|${p.skin}|${side}`,
-       side: (d) => { d.r(0, 2, 4, 6, F); d.r(1, 8, 2, 4, F); } }); // (z, y)：掌は 4 セル厚、指は 2 セル厚
+  }, { res: 2, depth: 4, z0: -2, accent: `hand|${p.skin}|${side}|${fingers ? 'nf' : 'f'}`,
+       side: (d) => { d.r(0, 2, 4, 6, F); if (!fingers) d.r(1, 8, 2, 4, F); } }); // (z, y)：掌は 4 セル厚、指は 2 セル厚
+  if (!fingers) return palm;
+  const g = new THREE.Group();
+  g.add(palm);
+  const cell = PX / 2;
+  const list = [];
+  for (let i = 0; i < 4; i++) {
+    const x = 3 + i * 2, len = (i === 1 || i === 2) ? 3 : 2;   // 中指・薬指が 1 セル長い（元の絵と同じ）
+    const f = makePart(1, len, 0.5, 0, (d) => { d.r(0, 0, 1, len - 1, p.skin); d.p(0, len - 1, p.skin2); },
+                       { res: 2, depth: 2, z0: -1, accent: `finger|${p.skin}|${len}` });
+    f.position.set((x + 0.5 - 6) * cell, -(8 - 2) * cell, 0);   // 付け根＝row 8（pivot row 2 からの差）
+    g.add(f);
+    list.push(f);
+  }
+  // 人差し指 → 小指の順に並べる（親指が内側なので、右手は x の小さい方が人差し指、左手は逆）
+  g.userData.fingers = side === 'R' ? list : list.reverse();
+  return g;
 }

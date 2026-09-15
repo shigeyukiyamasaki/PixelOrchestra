@@ -315,6 +315,8 @@ export class Puppet {
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）。手首ありなら 肘 → 前腕 → 手首 → 手 の 3 関節
     this.arm = {}; this.fore = {}; this.held = {}; this.hand = {}; this.foreQ = {}; this.handGrp = {}; this.handQ = {};
+    this.fingers = {};   // 管楽器だけ：指 4 本の Mesh（人差し指 → 小指）。運指の動きに使う（2026-09-16 ユーザー指定）
+    const withFingers = !this.flat && (this.family === 'woodwind' || this.family === 'brass');
     for (const side of ['L', 'R']) {
       const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, (this.flat ? 3 : 0) * PX);
       const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0);
@@ -328,7 +330,9 @@ export class Puppet {
       if (this.hasWrist) {
         f.add(foreArmNoHand());
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
-        h.add(this.flat ? hand() : handFor(P, side)); f.add(h);
+        const hm = this.flat ? hand() : handFor(P, side, { fingers: withFingers });
+        h.add(hm); f.add(h);
+        this.fingers[side] = hm.userData?.fingers || null;
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
         f.add(foreArm());
@@ -796,6 +800,45 @@ export class Puppet {
     }
     this.headPivot.rotation.z += -0.1 * posture + 0.08 * this._breath; // 息継ぎで少し上を向く
     this._spineGaze(st, dt, 0.1 * posture - 0.06 * this._breath, cfg.gazeDown ?? 0.05, 0); // 息継ぎで少し反り、吹くと前傾
+    this._fingers(st, dt);
+  }
+
+  // ---- 指（管楽器）：簡易運指。音の頭で指が動く（2026-09-16 ユーザー指定） ----
+  // 木管：低い音ほど多くの穴を塞ぐので、音域内の位置（pitchNorm）で「下りる指の本数」を決める。
+  //       順番は左手（人差し指→薬指）→ 右手（人差し指→小指）の 7 本。左手の小指は使わない
+  // 金管：ピストン／ロータリー 3 本。倍音列の同じ位置なら同じ運指なので、音番号を 7 で割った余りで
+  //       実物の組み合わせ（開放・2・1・1+2・2+3・1+3・1+2+3）を割り当てる。トロンボーンはスライドなので指は握ったまま
+  // 動き：下りる = 0、持ち上げる = 手の甲側へ 40°。音の頭（80 ms）は下りている指を少し深く押す（同じ音の連打でも動く）
+  _fingers(st, dt) {
+    const L = this.fingers.L, R = this.fingers.R;
+    if (!L && !R) return;
+    const { onset, age, active, pitchNorm } = st;
+    const cfg = this.cfg;
+    const playing = active.length > 0;
+    const UP = -0.7, REST = -0.25, PRESS = 0.12;
+    const down = { L: [true, true, true, true], R: [true, true, true, true] };
+    if (this.family === 'brass') {
+      const valveHand = cfg.kind === 'horn' ? 'L' : cfg.slide ? null : 'R';
+      if (valveHand && onset) {
+        const combo = [[], [1], [0], [0, 1], [1, 2], [0, 2], [0, 1, 2]][((onset.midi % 7) + 7) % 7];
+        for (let i = 0; i < 3; i++) down[valveHand][i] = combo.includes(i);
+        down[valveHand][3] = true;   // 小指は管に掛けたまま
+      }
+    } else {
+      const n = playing ? Math.round((1 - clamp(pitchNorm ?? 0.5, 0, 1)) * 7) : 0;
+      const order = [['L', 0], ['L', 1], ['L', 2], ['R', 0], ['R', 1], ['R', 2], ['R', 3]];
+      for (let i = 0; i < order.length; i++) { const [sd, k] = order[i]; down[sd][k] = i < n; }
+      down.L[3] = true;
+    }
+    const press = onset && age < 0.08 ? PRESS * (1 - age / 0.08) : 0;
+    for (const side of ['L', 'R']) {
+      const list = this.fingers[side];
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) {
+        const target = !playing ? REST : down[side][i] ? press : UP;
+        list[i].rotation.x = approach(list[i].rotation.x, target, 30, dt);
+      }
+    }
   }
 
   // ---- 打楽器：構え位置→打点。直前に振りかぶり、打った瞬間に打点、戻る。マレットは打面を向く ----
