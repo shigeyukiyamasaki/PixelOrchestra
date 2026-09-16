@@ -203,7 +203,9 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
   color: #fff; opacity: .9; line-height: 1.15; font-family: "DotGothic16", "Hiragino Sans", sans-serif;
   text-shadow: 0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,.6); }
 #tempoHud .bpm { font-size: 18px; }
-#tempoHud .sig { font-size: 30px; }
+#tempoHud .sig { font-size: 30px; transform-origin: right bottom; }
+#tempoHud .sig.pop { animation: sigPop .22s ease-out; }   /* 1 拍目の瞬間に大きくして戻す */
+@keyframes sigPop { from { transform: scale(1.4); } to { transform: scale(1); } }
 /* クレジット：プレビューの左下に重ねる（MIDIOrchestra と同じ作り）。2026-09-13 ユーザー指定 */
 #credits { position: absolute; left: 20px; bottom: 18px; z-index: 2; pointer-events: none;
   display: flex; flex-direction: column; gap: 0; }

@@ -629,6 +629,7 @@ addEventListener('resize', setBarHeight);
 // ---------- テンポ・拍子（プレビューの左上。2026-09-13 ユーザー指定） ----------
 // 拍子は「今の拍／分母」。分子が 1 2 3 4 … と進み、小節の頭で 1 に戻る
 const TEMPO_SIZE = { bpm: 18, sig: 30 };
+let tempoLastBeat = -1;
 let tempoKey = '';
 // 端末ごとの文字の倍率。スマホは画面が小さいぶん、クレジットとテンポ・拍子を小さくする
 // （スマホ横 0.7 / スマホ縦 0.5。2026-09-14 ユーザー指定）
@@ -651,6 +652,9 @@ function applyTempo(s, bpm, beat) {
   b.textContent = `♩= ${Math.round(bpm)}`;
   g.textContent = `${beat.beatInBar + 1}/${beat.beatUnit || 4}`;
   g.style.color = beat.beatInBar === 0 ? '#ffe14d' : '#fff';   // 1 拍目は黄色に点灯（2026-09-16 ユーザー指定）
+  // 1 拍目に入った瞬間だけ大きくして戻す（2026-09-16 ユーザー指定）。クラスを付け直してアニメを頭から再生
+  if (beat.beatInBar === 0 && tempoLastBeat !== 0) { g.classList.remove('pop'); void g.offsetWidth; g.classList.add('pop'); }
+  tempoLastBeat = beat.beatInBar;
 }
 
 // ---------- クレジット（プレビューの左下。2026-09-13 ユーザー指定。MIDIOrchestra を参考に） ----------
