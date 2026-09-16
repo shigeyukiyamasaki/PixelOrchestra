@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260918n">
+  <link rel="stylesheet" href="style.css?v=20260918o">
 </head>
 <body>
   <div id="stageArea">
@@ -59,32 +59,6 @@
   <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
   <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
   </div>
-      <div class="camGroup">
-        <div class="camCol">
-        <div class="camRow">
-      <div class="box" title="カメラの位置（座標）。動かすと中心点も一緒に平行移動する（回転しない）。マウスで回した時もここに反映される">
-        <h3 class="hd">カメラ位置</h3>
-        <div class="row3"><label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="camX">0</b></span><input type="range" id="camX" min="-45" max="45" step="0.5" value="0"></label>
-        <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="camY">9</b></span><input type="range" id="camY" min="0.5" max="50" step="0.5" value="9"></label>
-        <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="camZ">10.5</b></span><input type="range" id="camZ" min="-45" max="70" step="0.5" value="10.5"></label></div>
-      </div>
-      <div class="box" title="カメラが向く中心点（注視点）。ここを動かすと向きが変わる。マウス操作の回転の中心にもなる">
-        <h3 class="hd">カメラ中心点</h3>
-        <div class="row3"><label class="ctl" title="左右"><span>X <b data-value-for="tgtX">0</b></span><input type="range" id="tgtX" min="-30" max="30" step="0.5" value="0"></label>
-        <label class="ctl" title="高さ"><span>Y <b data-value-for="tgtY">3</b></span><input type="range" id="tgtY" min="-5" max="25" step="0.1" value="3"></label>
-        <label class="ctl" title="前後"><span>Z <b data-value-for="tgtZ">-12</b></span><input type="range" id="tgtZ" min="-45" max="25" step="0.5" value="-12"></label></div>
-      </div>
-        </div>
-        <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
-        <!-- プレビューの縦横比を切り替えて、PC / スマホでの見え方を確かめる（2026-09-14 ユーザー指定） -->
-        <div class="viewSize">
-          <button id="viewFree" class="on" title="端末を指定しない（今までどおり、ブラウザの大きさに合わせて 16:9 で表示）">なし</button>
-          <button id="viewPc" title="PC で見たときの画素数（1920×1080）">PC</button>
-          <button id="viewPhoneV" title="スマホを縦にしたとき（論理 390×844）。映る面は正方形 390×390 で、上下は黒帯。左右に写る範囲は PC と同じ">スマホ縦</button>
-          <button id="viewPhoneH" title="スマホを横にしたとき（論理 844×390）。映る面は PC と同じ 16:9 で右寄せ、左が空く">スマホ横</button>
-        </div>
-        </div>
-      </div>
       </div>
   </div>
     <!-- プレビュー：外枠（#viewWrap）＝端末の画面、内側（#view）＝実際に映る面。
@@ -194,6 +168,36 @@
   </header>
 
   <aside id="panel">
+    <!-- カメラ（位置・中心点・視点リセット・端末切替）。右メニューの一番上に固定（2026-09-16 ユーザー指定） -->
+    <div id="camArea">
+      <div class="camGroup">
+        <div class="camCol">
+        <div class="camRow">
+      <div class="box" title="カメラの位置（座標）。動かすと中心点も一緒に平行移動する（回転しない）。マウスで回した時もここに反映される">
+        <h3 class="hd">カメラ位置</h3>
+        <div class="row3"><label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="camX">0</b></span><input type="range" id="camX" min="-45" max="45" step="0.5" value="0"></label>
+        <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="camY">9</b></span><input type="range" id="camY" min="0.5" max="50" step="0.5" value="9"></label>
+        <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="camZ">10.5</b></span><input type="range" id="camZ" min="-45" max="70" step="0.5" value="10.5"></label></div>
+      </div>
+      <div class="box" title="カメラが向く中心点（注視点）。ここを動かすと向きが変わる。マウス操作の回転の中心にもなる">
+        <h3 class="hd">カメラ中心点</h3>
+        <div class="row3"><label class="ctl" title="左右"><span>X <b data-value-for="tgtX">0</b></span><input type="range" id="tgtX" min="-30" max="30" step="0.5" value="0"></label>
+        <label class="ctl" title="高さ"><span>Y <b data-value-for="tgtY">3</b></span><input type="range" id="tgtY" min="-5" max="25" step="0.1" value="3"></label>
+        <label class="ctl" title="前後"><span>Z <b data-value-for="tgtZ">-12</b></span><input type="range" id="tgtZ" min="-45" max="25" step="0.5" value="-12"></label></div>
+      </div>
+        </div>
+        <button id="resetCam" title="視点を初期位置に戻す">視点リセット</button>
+        <!-- プレビューの縦横比を切り替えて、PC / スマホでの見え方を確かめる（2026-09-14 ユーザー指定） -->
+        <div class="viewSize">
+          <button id="viewFree" class="on" title="端末を指定しない（今までどおり、ブラウザの大きさに合わせて 16:9 で表示）">なし</button>
+          <button id="viewPc" title="PC で見たときの画素数（1920×1080）">PC</button>
+          <button id="viewPhoneV" title="スマホを縦にしたとき（論理 390×844）。映る面は正方形 390×390 で、上下は黒帯。左右に写る範囲は PC と同じ">スマホ縦</button>
+          <button id="viewPhoneH" title="スマホを横にしたとき（論理 844×390）。映る面は PC と同じ 16:9 で右寄せ、左が空く">スマホ横</button>
+        </div>
+        </div>
+      </div>
+    </div>
+    <hr class="sep">
     <div class="cols">
       <div class="col">
     <div class="box">

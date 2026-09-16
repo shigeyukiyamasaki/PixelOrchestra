@@ -34,8 +34,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
 /* カメラの箱（位置・中心点・リセット）の右に、自動カメラの箱を並べる（2026-09-14 ユーザー指定） */
-#camBar .camGroup { display: flex; align-items: flex-start; gap: 10px; }
-#camBar .camCol { display: flex; flex-direction: column; gap: 6px; }
+#camArea .camGroup { display: flex; align-items: flex-start; gap: 10px; }
+#panel hr.sep { border: none; border-top: 1px solid var(--line); margin: 12px 0 14px; }   /* カメラ欄と他の区切り */
+#camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
 #viewOverlay { position: absolute; z-index: 3; pointer-events: none; }
@@ -76,21 +77,21 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #viewOverlay .box.onImage { border-color: #000; }   /* 箱の枠線も黒に（端末を問わず。2026-09-15 ユーザー指定） */
 #viewOverlay .box.onImage input[type=range] { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
 #viewOverlay .box.onImage input[type=range]::-moz-range-track { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
-#camBar .camRow { display: flex; align-items: flex-start; gap: 10px; }
-#camBar .camRow > .box { width: 196px; margin: 0; }
+#camArea .camRow { display: flex; align-items: flex-start; gap: 10px; }
+#camArea .camRow > .box { width: 196px; margin: 0; }
 #camBar .camSide .ctl { margin: 5px 0; }
 #camBar .camSide button.wide { width: 100%; margin-top: 4px; padding: 4px 8px; border-radius: 5px;
   border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font: inherit; }
 #camBar .camSide button.wide:hover { border-color: var(--accent); color: var(--accent); }
-#camBar #resetCam { width: 100%; margin: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+#camArea #resetCam { width: 100%; margin: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
-#camBar #resetCam:hover { border-color: var(--accent); color: var(--accent); }
+#camArea #resetCam:hover { border-color: var(--accent); color: var(--accent); }
 /* PC / スマホの切り替え（視点リセットの下）。選んでいる方を黄色にする */
-#camBar .viewSize { display: flex; gap: 6px; margin-top: 6px; }
-#camBar .viewSize button { flex: 1 1 0; padding: 5px 0; border-radius: 6px; border: 1px solid var(--line);
+#camArea .viewSize { display: flex; gap: 6px; margin-top: 6px; }
+#camArea .viewSize button { flex: 1 1 0; padding: 5px 0; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
-#camBar .viewSize button:hover { border-color: var(--accent); color: var(--accent); }
-#camBar .viewSize button.on { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+#camArea .viewSize button:hover { border-color: var(--accent); color: var(--accent); }
+#camArea .viewSize button.on { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
