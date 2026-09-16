@@ -387,7 +387,7 @@ export function setFloorStyle(style) {
  * 光源の切替と太陽光の項目（2026-09-16 ユーザー指定）：
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
- *   sunTemp: 色温度 0〜1  skyColor / groundColor: 太陽光のときの半球光の上下の色（屋内では固定色）
+ *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
@@ -410,6 +410,7 @@ export function setShadows(o = {}) {
     if (Number.isFinite(o.sunTemp) && o.sunTemp !== lightState.sunTemp) { lightState.sunTemp = o.sunTemp; sun.color.copy(sunColorOf(o.sunTemp)); }
     if (o.skyColor) hemi.color.set(o.skyColor);
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
+    else if (stageCtx.groundTex?.avgColor) hemi.groundColor.copy(stageCtx.groundTex.avgColor);   // 床（板目／草原）の平均色
     const az = Number.isFinite(o.sunAzimuth) ? o.sunAzimuth : lightState.sunAz, el = Number.isFinite(o.sunElev) ? o.sunElev : lightState.sunEl;
     if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
       lightState.sunAz = az; lightState.sunEl = el;
@@ -657,6 +658,16 @@ function radialAlphaTexture(inner = 0.75) {
 // 草原（スーパーファミコン風）：色数を絞り、1 ドット = GRASS_DOT px の粒で描く。
 // 地色にディザで濃淡を撒き、その上に「房」（3〜4 ドットの縦線を数本まとめたもの）と小さな花を置く。
 // 乱数は固定シードなので、読み込むたびに模様が変わることはない
+
+// キャンバスの平均色（太陽光の「地面の色」に使う。2026-09-16 ユーザー指定：床の色は平均でよい）。
+// 生成時に 1 回だけ計算し、texture.avgColor に持つ
+function avgColorOf(canvas) {
+  const g = canvas.getContext('2d'), d = g.getImageData(0, 0, canvas.width, canvas.height).data;
+  let r = 0, gg = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 16) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }   // 4 px おきで十分
+  return new THREE.Color(r / n / 255, gg / n / 255, b / n / 255);
+}
+
 function grassTexture() {
   const S = 768, DOT = 4;            // 板目と同じ 768px（床では 40×32 unit に 1 枚）
   const c = document.createElement('canvas');
@@ -691,6 +702,7 @@ function grassTexture() {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
   return tex;
 }
 
@@ -738,6 +750,7 @@ function plankTexture() {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
   return tex;
 }
 

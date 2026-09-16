@@ -225,8 +225,7 @@
         <label class="ctl" title="方角 [度]。舞台中心から見て太陽がどちらにあるか。0 で客席正面、90 で客席から見て右、180 で舞台の奥、270 で左"><span>方角 <b data-value-for="sunAzimuth">30</b></span><input type="range" id="sunAzimuth" min="0" max="360" step="5" value="30"></label>
         <label class="ctl" title="高度 [度]。太陽の高さ。小さいほど朝夕の低い光で影が長い、90 で真上"><span>高度 <b data-value-for="sunElev">55</b></span><input type="range" id="sunElev" min="5" max="90" step="5" value="55"></label>
         <label class="ctl" title="色温度。0 で朝夕の橙、0.5 で昼の白、1 で曇り空の青"><span>色温度 <b data-value-for="sunTemp">0.5</b></span><input type="range" id="sunTemp" min="0" max="1" step="0.05" value="0.5"></label>
-        <label class="ctl row" title="環境光（半球光）の上側の色。屋外では空の色が影の中に乗る"><span>空の色</span><input type="color" id="skyColor" value="#bfd8ff"></label>
-        <label class="ctl row" title="環境光（半球光）の下側の色。地面からの照り返しの色"><span>地面の色</span><input type="color" id="groundColor" value="#6a5a50"></label>
+        <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
       </fieldset>
     </div>
     
@@ -264,6 +263,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260918p"></script>
+  <script type="module" src="src/main.js?v=20260918q"></script>
 </body>
 </html>
