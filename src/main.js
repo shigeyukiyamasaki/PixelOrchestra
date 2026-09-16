@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -1338,7 +1338,7 @@ function animate() {
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },
-                 skyColor: s.bgFlip ? s.bgBottom : s.bgTop });   // 空の色は背景の見た目どおり（反転中は下の色が空）。地面の色は床の平均色（stage 側）
+                 skyColor: s.bgFlip ? s.bgBottom : s.bgTop, bgFlip: s.bgFlip });   // 空の色は背景の見た目どおり（反転中は下の色が空）。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
@@ -1370,6 +1370,7 @@ function animate() {
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
+  updateSky(camera);   // 空の球をカメラに追従
   renderer.render(scene, camera);
 }
 

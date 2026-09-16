@@ -244,6 +244,26 @@ export function createStage(container) {
   const sc = sun.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34; sc.near = 1; sc.far = 150;
   sun.visible = false;
   scene.add(sun, sun.target);
+  // 方向つきの空（案 2。2026-09-16 ユーザー指定）：カメラを中心にした大きな球に、太陽の方角の低い空だけ夕焼け色を重ねる。
+  // 土台は CSS のグラデーション（天頂＝空の色、地平線＝太陽と反対側の色）。深度は書かず最初に描くので舞台は必ず手前
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 } },
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip; varying vec3 vDir;
+      void main(){
+        vec3 d = normalize(vDir);
+        float y = flip > 0.5 ? -d.y : d.y;
+        vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
+        float c = max(0.0, dot(h, normalize(sunDir.xz)));
+        float lobe = c * c;                       // 太陽の方角ほど強い（反対側は 0）
+        float hz = exp(-max(y, 0.0) * 4.0);       // 地平線に近いほど強い（天頂で消える）
+        gl_FragColor = vec4(glowColor, glowAmt * lobe * hz);
+      }`,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), skyMat);
+  sky.renderOrder = -1000; sky.visible = false; sky.frustumCulled = false;
+  scene.add(sky);
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setClearColor(0x000000, 0);
@@ -301,7 +321,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -381,8 +401,12 @@ export function sunFromTime(hour, cloud, facing) {
 }
 // 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
 // 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
+// 太陽側（球に重ねる夕焼け）
 const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f2d9a0'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d']];
 const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f7c97a'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d']];
+// 太陽と反対側（CSS の地平線の色）：青灰 → 地球の影の帯（ピンク〜紫）→ 濃紺。薄雲でピンクが濃くなる
+const HZ_ANTI_CLEAR = [[20, '#bfe0f5'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d']];
+const HZ_ANTI_VIVID = [[20, '#bfe0f5'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d']];
 const _hz = new THREE.Color(), _hz2 = new THREE.Color();
 function keyColor(out, keys, el) {
   if (el >= keys[0][0]) return out.set(keys[0][1]);
@@ -392,15 +416,16 @@ function keyColor(out, keys, el) {
   }
   return out.set(keys[keys.length - 1][1]);
 }
-function horizonColorFromTime(el, cloud) {
-  keyColor(_hz, HZ_CLEAR, el);
-  const vivid = Math.min(1, cloud / 0.5);                 // 薄雲で派手に
-  _hz.lerp(keyColor(_skyTmp, HZ_VIVID, el), vivid);
+function horizonPalette(clear, vivid, el, cloud) {
+  keyColor(_hz, clear, el);
+  _hz.lerp(keyColor(_skyTmp, vivid, el), Math.min(1, cloud / 0.5));   // 薄雲で派手に
   const lum = 0.2126 * _hz.r + 0.7152 * _hz.g + 0.0722 * _hz.b;
   const grey = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(Math.min(1.1, lum / 0.5 + 0.05));   // 厚い雲の灰は明るさに合わせる
   const overcast = Math.max(0, (cloud - 0.5) / 0.5);
   return '#' + _hz.lerp(grey, overcast).getHexString();
 }
+function horizonColorFromTime(el, cloud) { return horizonPalette(HZ_ANTI_CLEAR, HZ_ANTI_VIVID, el, cloud); }   // 反対側（土台）
+function horizonGlowColorFromTime(el, cloud) { return horizonPalette(HZ_CLEAR, HZ_VIVID, el, cloud); }         // 太陽側（球）
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
 // 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く
 const SKY_DAY = new THREE.Color('#2a6fd0'), SKY_LOW = new THREE.Color('#2b3f8f'), SKY_NIGHT = new THREE.Color('#0a1240');   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
@@ -459,8 +484,13 @@ export function setFloorStyle(style) {
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
- *   sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
+ *   bgFlip: 背景を上下反転中なら空の球も反転  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
+/** 空の球をカメラの位置に置く（毎フレーム、描画の直前に呼ぶ）。球はカメラ中心なので視線方向＝頂点方向になる */
+export function updateSky(camera) {
+  if (stageCtx?.sky.visible) stageCtx.sky.position.copy(camera.position);
+}
+
 export function setShadows(o = {}) {
   if (!stageCtx) return;
   const { hemi, spots, sun } = stageCtx;
@@ -469,6 +499,7 @@ export function setShadows(o = {}) {
     const outdoor = o.mode === 'sun';
     for (const sp of spots) sp.visible = !outdoor;
     sun.visible = outdoor;
+    stageCtx.sky.visible = outdoor;
     if (!outdoor) { hemi.color.set(HEMI_SKY_INDOOR); hemi.groundColor.set(HEMI_GROUND_INDOOR); }
   }
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
@@ -510,6 +541,15 @@ export function setShadows(o = {}) {
       const a = deg(az), e = deg(el);
       // 方角 0 = 客席側（+z）から。客席から見て右（+x）が 90。舞台中心 (0,0,-12) を向く
       sun.position.set(SUN_R * Math.cos(e) * Math.sin(a), SUN_R * Math.sin(e), -12 + SUN_R * Math.cos(e) * Math.cos(a));
+      stageCtx.sky.material.uniforms.sunDir.value.set(Math.sin(a), 0, Math.cos(a));
+    }
+    // 太陽側の低い空の色（夕焼け）。反対側の色は CSS の地平線の色が担う。曇天では両方灰色になって差が消える
+    if (Number.isFinite(el)) {
+      const cloud = o.sunAuto ? o.sunAuto.cloud : 0;
+      const u = stageCtx.sky.material.uniforms;
+      u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
+      u.glowAmt.value = 1;
+      u.flip.value = o.bgFlip ? 1 : 0;
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
