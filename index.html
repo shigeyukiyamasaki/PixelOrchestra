@@ -223,7 +223,7 @@
         <!-- 自動（時刻 × 天気 × 舞台の向き。2026-09-16 ユーザー指定：物理に基づく案 B）。手動チェックでこの 3 つは隠れ、下の詳細が出る -->
         <div id="sunAutoSet">
         <label class="ctl" title="時刻。表示は時:分（欄に 18:30 のように打てる）。0:00〜24:00。太陽の高度と方角、色温度、強さがここから決まる。日の出前・日没後は直射が消えて空の明るさだけ残る（薄明）"><span>時刻 <b data-value-for="sunHour">12:00</b></span><input type="range" id="sunHour" min="0" max="24" step="0.25" value="12"></label>
-        <label class="ctl" title="雲量。0 で快晴（直射が強く影がくっきり）、1 で曇天（直射と影が消え、空全体からの青白い光だけになる）"><span>天気（雲量） <b data-value-for="sunCloud">0</b></span><input type="range" id="sunCloud" min="0" max="1" step="0.05" value="0"></label>
+        <label class="ctl" title="雲量。0 で快晴（直射が強く影がくっきり）、0.5 で薄雲の曇り（空が白く明るい、直射と影は薄い）、1 で厚い雨雲（空は暗い灰、直射と影は無い）"><span>天気（雲量） <b data-value-for="sunCloud">0</b></span><input type="range" id="sunCloud" min="0" max="1" step="0.05" value="0"></label>
         <label class="ctl" title="月齢 [日]。0 新月・7.4 上弦・15 満月・22 下弦。月の位置（満月は日没に昇り真夜中に南中、新月は太陽と同じ方向）と明るさ・欠け方が決まる"><span>月齢 <b data-value-for="moonAge">15</b></span><input type="range" id="moonAge" min="0" max="29.5" step="0.5" value="15"></label>
         <label class="ctl" title="舞台が向いている方位 [度]（客席がある方角）。0 北・90 東・180 南・270 西。南向き（既定）だと太陽は客席から見て右（東）から昇り、左（西）へ沈む"><span>舞台の向き <b data-value-for="stageFacing">180</b></span><input type="range" id="stageFacing" min="0" max="345" step="15" value="180"></label>
         </div>
@@ -280,6 +280,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260920e"></script>
+  <script type="module" src="src/main.js?v=20260920g"></script>
 </body>
 </html>
