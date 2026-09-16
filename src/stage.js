@@ -668,7 +668,7 @@ export function setFloorStyle(style) {
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
- *   skyTint: 天空光に空の色相を乗せる（false で白）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
+ *   skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
  *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -860,6 +860,7 @@ export function setShadows(o = {}) {
       const albedo = stageCtx.groundTex.albedo ?? 0.25;
       hemi.groundColor.copy(avg).multiplyScalar((lum > 0.01 ? albedo / lum : 1) * bounce);
       if (o.groundBounce === false) hemi.groundColor.setScalar(albedo * bounce);   // 色を乗せない：同じ明るさの無彩色（2026-09-16 ユーザー指定のチェック）
+      if (o.groundBounceOn === false) hemi.groundColor.setScalar(0);              // 照り返し自体を無くす（下から当たる光ゼロ。2026-09-16）
     }
     // 平行光の位置は「有効な光源」（昼は太陽・夜は月）の方角・高度から
     const az = Number.isFinite(srcAz) ? srcAz : lightState.sunAz, elSrc = Number.isFinite(srcEl) ? srcEl : lightState.sunEl;
