@@ -380,14 +380,14 @@ export function sunFromTime(hour, cloud, facing) {
   return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c) };
 }
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
-// 昼の青 → 低い太陽で深い青紫 → 地平線下は紺 → 夜の黒。雲は灰色へ寄せ、暗いほど灰も暗く
-const SKY_DAY = new THREE.Color('#2a6fd0'), SKY_LOW = new THREE.Color('#2b3f8f'), SKY_DUSK = new THREE.Color('#141a3d'), SKY_NIGHT = new THREE.Color('#05070f');
+// 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く
+const SKY_DAY = new THREE.Color('#2a6fd0'), SKY_LOW = new THREE.Color('#2b3f8f'), SKY_NIGHT = new THREE.Color('#0a1240');   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
 const SKY_OVERCAST = new THREE.Color('#9aa3ad');
 const _sky = new THREE.Color();
 function skyColorFromTime(el, cloud) {
   if (el >= 30) _sky.copy(SKY_DAY);
   else if (el >= 0) _sky.copy(SKY_LOW).lerp(SKY_DAY, el / 30);
-  else if (el >= -12) _sky.copy(SKY_NIGHT).lerp(SKY_DUSK, (el + 12) / 12);
+  else if (el >= -12) _sky.copy(SKY_NIGHT).lerp(SKY_LOW, (el + 12) / 12);   // 高度 0° で上からの色（SKY_LOW）と一致させる
   else _sky.copy(SKY_NIGHT);
   const lum = 0.2126 * _sky.r + 0.7152 * _sky.g + 0.0722 * _sky.b;
   const grey = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(Math.min(1, lum / 0.16 + 0.05));   // 曇りの灰は空の明るさに合わせる
