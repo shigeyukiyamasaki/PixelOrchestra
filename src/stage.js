@@ -611,7 +611,9 @@ export function updateSky(camera) {
   for (let t = 0; t <= 120; t += 0.5) {
     if (insideFloor(camera.position.x + ux / len * t, camera.position.z + uz / len * t)) last = t;
   }
-  const dip = last > 0.5 ? Math.atan2(h, last) : 0;
+  // 上限 6°：高いカメラでは縁の見下ろし角が大きくなりすぎ、19 時（高度 −12°）でも太陽が残る（2026-09-16 ユーザー指摘）。
+  // 6° なら 18:30（高度 −6°＝市民薄明の終わり）にどのカメラでも半分以上隠れ、18:48 頃に沈みきる
+  const dip = Math.min(deg(6), last > 0.5 ? Math.atan2(h, last) : 0);
   stageCtx.sky.material.uniforms.sinDip.value = Math.sin(dip);
   stageCtx.bloom.dip = dip / Math.PI * 180;
 }
