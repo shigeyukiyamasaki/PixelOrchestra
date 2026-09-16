@@ -99,7 +99,7 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #lightBox:has(input[name=lightMode][value=sun]:checked) #spotSet { display: none; }
 #lightBox:not(:has(input[name=lightMode][value=sun]:checked)) #sunSet { display: none; }
 /* 太陽光：自動（時刻・天気・向き）と手動（詳細）は両方見せ、効かない方を薄くして触れなくする（グレーアウト法則。チェック本体は通常表示） */
-#sunSet:has(#sunManual:checked) #sunAutoSet, #sunSet:not(:has(#sunManual:checked)) #sunManualSet { opacity: .45; pointer-events: none; }
+#sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > *:not(.always) { opacity: .45; pointer-events: none; }   /* 時刻から決まらない項目（光の広がり）は自動でも触れる */
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */

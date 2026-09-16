@@ -295,18 +295,21 @@ export function createStage(container) {
   // 土台は CSS のグラデーション（天頂＝空の色、地平線＝太陽と反対側の色）。深度は書かず最初に描くので舞台は必ず手前
   const skyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 },
-                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 } },
+                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 }, spread: { value: 1 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
-      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; varying vec3 vDir;
+      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
         vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
         float c = dot(h, normalize(sunDir.xz));
-        float lobe = pow(clamp(c * 0.55 + 0.45, 0.0, 1.0), 1.5);   // 太陽の方角ほど強い。真横で約 3 割、145° で消える（さらに広め。2026-09-16 ユーザー指定）
-        float hz = exp(-max(y, 0.0) * 2.2);       // 地平線に近いほど強い（天頂で消える）
+        // 太陽の方角ほど強い。spread = 1 で真横に約 3 割・145° で消える（2026-09-16 ユーザー指定の標準）。
+        // spread は「光の広がり」スライダー：0 で太陽の真下だけ、2 で空の大半（方角のオフセットと高さの減衰を一括で伸縮）
+        float k = clamp(0.45 * spread, 0.0, 0.9);
+        float lobe = pow(clamp(c * (1.0 - k) + k, 0.0, 1.0), 1.5);
+        float hz = exp(-max(y, 0.0) * 2.2 / max(0.25, spread));   // 地平線に近いほど強い（天頂で消える）
         float a = glowAmt * lobe * hz;
         // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
         float cs = dot(dd, normalize(sunDir));
@@ -576,7 +579,7 @@ export function setFloorStyle(style) {
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
- *   bgFlip: 背景を上下反転中なら空の球も反転  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
+ *   bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
 function updateDomeLight() {
@@ -745,6 +748,7 @@ export function setShadows(o = {}) {
       u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
       u.glowAmt.value = 1;
       u.flip.value = o.bgFlip ? 1 : 0;
+      if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
       u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 3.2° → 25° 以上で 0.8°（16 時台を小さく。2026-09-16 ユーザー指摘）
       u.sunVis.value = el > -(u.sunRad.value + 0.5) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が地平線に隠れるまで見える（半分沈む）

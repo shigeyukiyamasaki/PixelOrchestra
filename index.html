@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260918s">
+  <link rel="stylesheet" href="style.css?v=20260919y">
 </head>
 <body>
   <div id="stageArea">
@@ -236,6 +236,7 @@
         <label class="ctl row" title="空の色（背景の上端の色。天空光の色みにも使う）。自動では時刻と天気から決まる：昼の青 → 夕方の深い青紫 → 日没後の紺 → 夜の黒、雲が多いほど灰色"><span>空の色</span><input type="color" id="bgTop" value="#0058ff"></label>
         <label class="ctl row" title="地平線の色（背景の下端の色）。自動では時刻と天気から決まる：昼の淡い水色 → 日没前の薄黄 → 日没の橙 → ピンク → 紫 → 濃紺。薄雲で派手に、厚い雲で灰色"><span>地平線の色</span><input type="color" id="bgBottom" value="#bfe0f5"></label>
         <label class="ctl" title="天空光（空全体からの拡散光）の強さ。影の中の明るさ。曇りほど強く、直射の代わりになる"><span>天空光 <b data-value-for="sunAmbient">0.7</b></span><input type="range" id="sunAmbient" min="0" max="3" step="0.01" value="0.7"></label>
+        <label class="ctl always" title="太陽の方角の空に乗る夕焼け色の広がり。方角（真横にどれだけ残るか）と高さ（どこまで届くか）を一括で伸縮する。1 で標準、0 で太陽の真下だけ、2 で空の大半。もや具合に当たるので自動でも触れる"><span>光の広がり <b data-value-for="skyGlowSpread">1</b></span><input type="range" id="skyGlowSpread" min="0" max="2" step="0.05" value="1"></label>
         </div>
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
       </fieldset>
@@ -275,6 +276,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260919x"></script>
+  <script type="module" src="src/main.js?v=20260919y"></script>
 </body>
 </html>
