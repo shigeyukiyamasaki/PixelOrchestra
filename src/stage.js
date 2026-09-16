@@ -424,7 +424,7 @@ const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行
 const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
-const SUN_SET_RED = new THREE.Color('#ff4a1a'), _sunHigh = new THREE.Color();   // 夕日の円盤の色
+const SUN_SET_RED = new THREE.Color('#ff7a1a'), _sunHigh = new THREE.Color();   // 夕日の円盤の色
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
