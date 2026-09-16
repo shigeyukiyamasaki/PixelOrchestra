@@ -33,7 +33,7 @@ const WOOD_INSTRUMENTS = new Set(['violin1', 'violin2', 'viola', 'cello', 'contr
 // 楽器ごとの奏者の身長倍率（楽器は同じ大きさのまま。コントラバス奏者は少し背が高い。2026-09-11 ユーザー指定）
 const PLAYER_TALL = { contrabass: 1.08 };
 const PERC_UP = [0, 1, 0]; // 打楽器の手・マレットの甲の向きヒント（真上）
-const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
+const INST_SCALE_VARIANT = { contrabass: 1.2, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
@@ -135,7 +135,7 @@ const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(C
 // コントラバスは立奏。体の左に立て、表板を右前へ約 34° 向け（Euler y=0.6）、上部を奏者側へ浅く寄りかからせる（x=-0.15）。
 // 顔が楽器に隠れないよう体の左へずらす（2026-09-10 ユーザー指定：実際の構えのように横へ・角度をつける）。
 // 位置・角度は楽器の輪郭が胴・頭・脚（前面 z=3/4/2）に入り込まない組み合わせを数値探索で選んだ（tools/ 相当の一時スクリプト）
-const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.15, 0.6, 0.08));
+const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.8, 0.3, 0.15)); // 約 14° 後ろへ寝かせ、ネックを左肩の横（頭の高さ）に出す（2026-09-16 ユーザー指定：チェロのように寝かせる。数値探索で選定）
 const BASS_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
@@ -154,11 +154,11 @@ const VARIANT = {
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
                 p3: { pos: [0, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 5.0 }, legSpread: 6.5,   // leftHandZ：ネックを表板側へ寄せ（3.5 → 4.5）、指板の厚み分で 5.0（2026-09-16）
                 rest: { bowHand: [9, 13, 9], leftHand: [-6, 15, 9] } }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0, -1, 0] }, /* 右肘は真下（前腕が前へ出て弓と直角になり、手首の曲がりが 9〜59° に収まる。2026-09-11） */ bow: { contact: [0.5, 21], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 34], vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
-                // pos は [-9,0,9] → [-17,0,4]：楽器を奏者の左脇へ寄せ、ネックが左肩の隣に来るように。これで左腕が胴を通らず、
-                // 左手がネックに届く（腕の 82 サンプル中、胴の中 54 → 0。2026-09-16 数値探索）
-                p3: { pos: [-17, 0, 4], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 8.2, leftHandZ: 8.0 },   // ネックを表板側へ寄せ（5.0 → 7.5）、指板の厚み分で 8.0（2026-09-16）
-                rest: { bowHand: [9, 16, 8], leftHand: [-7, 17, 8] } }, // 立奏。体の左に立てかけ、斜めに構える
+  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0, -1, 0] }, /* 右肘は真下（前腕が前へ出て弓と直角になり、手首の曲がりが 9〜59° に収まる。2026-09-11） */ bow: { contact: [0.5, 17], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 29], vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
+                // 楽器は 1.2 倍・エンドピン短縮・14° 後傾で、ネックの付け根が左肩の横（rig で x -11, y 30, z 0）に来る。
+                // 左腕は胴を通らず、肘を曲げた普通の握りで届く（肩から 16px）。2026-09-16 数値探索（300 通り超）で選定
+                p3: { pos: [-13, 0, 7], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 8.2, leftHandZ: 8.0 },   // ネックを表板側へ寄せ（5.0 → 7.5）、指板の厚み分で 8.0（2026-09-16）
+                rest: { bowHand: [9, 16, 8], leftHand: [-9, 19, 5] } }, // 立奏。体の左に寝かせて構える。休みの左手は胴の肩に添える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
   // handDirs = 手首→指先の向き（楽器ローカル）。フルートは下から抱えて指は上へ、縦笛は左右から、金管は上から／横から
