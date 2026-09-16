@@ -652,7 +652,7 @@ export function renderFrame(renderer, scene, camera) {
   if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
   const { el, cloud, vis } = stageCtx.bloom;
-  const high = Math.min(1, Math.max(0, (el - 3) / 17));          // 高い太陽ほど眩しく広い。夕日は弱く狭い
+  const high = Math.min(1, Math.max(0, (el - 3) / 32));          // 高い太陽ほど眩しく広い（3°→35° のなだらかな坂。16 時台に山ができないよう。2026-09-16 ユーザー指摘）
   const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
   // 1) 本編 → 等倍 RT（深度付き）
   renderer.setRenderTarget(post.main); renderer.setClearColor(0x000000, 0); renderer.clear();
