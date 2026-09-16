@@ -587,12 +587,12 @@ export function sunFromTime(hour, cloud, facing, moonAge = 15) {
 }
 // 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
 // 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
-// 太陽側（球に重ねる夕焼け）
-const HZ_CLEAR = [[20, '#00bfff'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d'], [-18, '#05081f']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
-const HZ_VIVID = [[20, '#00bfff'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d'], [-18, '#05081f']];
+// 太陽側（球に重ねる夕焼け）。キーは高度 [deg]。橙は 17:30（6°）に出るよう 2026-09-17 に高い方へ広げた（春秋分：30°=15:30、14°=16:55、6°=17:30、0°=18:00）
+const HZ_CLEAR = [[30, '#00bfff'], [14, '#e8dcc0'], [6, '#f0a860'], [0, '#f27a38'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d'], [-18, '#05081f']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
+const HZ_VIVID = [[30, '#00bfff'], [14, '#f5d9a8'], [6, '#ff9a3c'], [0, '#ff6a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d'], [-18, '#05081f']];
 // 太陽と反対側（CSS の地平線の色）：青灰 → 地球の影の帯（ピンク〜紫）→ 濃紺。薄雲でピンクが濃くなる
-const HZ_ANTI_CLEAR = [[20, '#00bfff'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d'], [-18, '#05081f']];
-const HZ_ANTI_VIVID = [[20, '#00bfff'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_ANTI_CLEAR = [[30, '#00bfff'], [14, '#8fc6ea'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_ANTI_VIVID = [[30, '#00bfff'], [14, '#a9cfec'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d'], [-18, '#05081f']];
 const _hz = new THREE.Color(), _hz2 = new THREE.Color();
 function keyColor(out, keys, el) {
   if (el >= keys[0][0]) return out.set(keys[0][1]);
@@ -899,7 +899,7 @@ export function setShadows(o = {}) {
       u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
       // 夕焼けの層は太陽が低いときだけ（高度 25° 以上で 0）。昼の空は CSS の色がそのまま出る。手動では切って選んだ色どおりに（2026-09-16 ユーザー指摘：層が青を薄めていた）
       // 出始めは高度 15°、二乗でなだらかに（25° 線形だと 16:15 に太陽の周りに淡い円が急に現れて大きく見えた。2026-09-16 ユーザー指摘）
-      const gT = Math.min(1, Math.max(0, (15 - el) / 15));
+      const gT = Math.min(1, Math.max(0, (20 - el) / 20));   // 出始め 20°（夕焼けの時間帯を広げた 2026-09-17）
       u.glowAmt.value = o.sunAuto ? gT * gT : 0;
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
