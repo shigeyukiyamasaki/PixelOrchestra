@@ -325,6 +325,18 @@ export function createStage(container) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), skyMat);
   sky.renderOrder = -1000; sky.visible = false; sky.frustumCulled = false;
   scene.add(sky);
+  // 太陽のグレア（2026-09-16 ユーザー指定：明るさでなく加算の光で眩しさを出す）。Three.js の Lensflare を使う。
+  // 加算合成・深度無視で舞台や奏者の縁を光が越える。太陽が物に隠れている割合はフレームバッファから測って隠れるほど消える。
+  // 3 層：飽和した芯（白）・太陽色の輪・広く薄い輪。大きさと強さは updateSky が毎フレーム高度・雲量から決める
+  const flare = new THREE.Lensflare();
+  const flareEls = [
+    new THREE.LensflareElement(flareTexture(0.0, 0.55), 60, 0, new THREE.Color('#ffffff')),   // 芯
+    new THREE.LensflareElement(flareTexture(0.0, 0.35), 220, 0, new THREE.Color('#ffd28a')),  // 輪
+    new THREE.LensflareElement(flareTexture(0.0, 0.18), 700, 0, new THREE.Color('#ffd28a')),  // 広い輪
+  ];
+  for (const e of flareEls) flare.addElement(e);
+  flare.visible = false;
+  scene.add(flare);
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setClearColor(0x000000, 0);
@@ -382,7 +394,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, flare, flareEls, flareState: { el: 0, cloud: 0, vis: 0 }, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -561,8 +573,23 @@ function updateDomeLight() {
 }
 
 /** 空の球をカメラの位置に置く（毎フレーム、描画の直前に呼ぶ）。球はカメラ中心なので視線方向＝頂点方向になる */
-export function updateSky(camera) {
-  if (stageCtx?.sky.visible) stageCtx.sky.position.copy(camera.position);
+const _flareDir = new THREE.Vector3();
+export function updateSky(camera, renderer) {
+  if (!stageCtx?.sky.visible) return;
+  stageCtx.sky.position.copy(camera.position);
+  // グレア：太陽の方向 120 unit 先（空の球の内側）に置く。大きさは画面の高さに対する割合、強さは高度・雲量から
+  const { flare, flareEls, flareState: fs } = stageCtx;
+  _flareDir.copy(stageCtx.sky.material.uniforms.sunDir.value).normalize();
+  flare.position.copy(camera.position).addScaledVector(_flareDir, 120);
+  const H = renderer ? renderer.domElement.height : 1080;
+  const high = Math.min(1, Math.max(0, (fs.el - 3) / 17));          // 高い太陽ほど眩しい（20° で最大）。夕日は大気減衰で弱い
+  const vis = fs.vis;                                               // 地平線下 0、雲で薄れる
+  const haze = 1 + 0.6 * Math.min(1, fs.cloud / 0.5);               // 薄雲でにじみが広がる
+  const disc = stageCtx.sky.material.uniforms.sunCol.value;
+  const k = vis * (0.35 + 0.65 * high);
+  flareEls[0].size = H * 0.045; flareEls[0].color.setRGB(k, k, k);                                   // 芯：白く飽和
+  flareEls[1].size = H * 0.16 * haze; flareEls[1].color.copy(disc).multiplyScalar(0.9 * k);            // 輪：太陽色
+  flareEls[2].size = H * 0.55 * haze; flareEls[2].color.copy(disc).multiplyScalar(0.35 * k * high);   // 広い輪：高い太陽だけ
 }
 
 export function setShadows(o = {}) {
@@ -574,6 +601,7 @@ export function setShadows(o = {}) {
     for (const sp of spots) sp.visible = !outdoor;
     sun.visible = outdoor;
     stageCtx.sky.visible = outdoor;
+    stageCtx.flare.visible = outdoor;
     if (!outdoor) { hemi.color.set(HEMI_SKY_INDOOR); hemi.groundColor.set(HEMI_GROUND_INDOOR); }
   }
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
@@ -630,8 +658,8 @@ export function setShadows(o = {}) {
       const lowT = Math.min(1, Math.max(0, el / 20));
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
-      const aurT = Math.min(1, Math.max(0, (el - 5) / 15));
-      u.aureole.value = (0.6 + 0.6 * Math.min(1, cloud / 0.5)) * aurT;   // もや・薄雲ほどにじみが強い（前方散乱）
+      u.aureole.value = 0;   // 空の球側のにじみは使わない（グレアは Lensflare が担う。2026-09-16）
+      stageCtx.flareState.el = el; stageCtx.flareState.cloud = cloud; stageCtx.flareState.vis = u.sunVis.value;
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
@@ -876,6 +904,18 @@ function radialAlphaTexture(inner = 0.75) {
 // 地色にディザで濃淡を撒き、その上に「房」（3〜4 ドットの縦線を数本まとめたもの）と小さな花を置く。
 // 乱数は固定シードなので、読み込むたびに模様が変わることはない
 
+// グレア用の放射状テクスチャ：中心 1 → 半径 inner まで 1、外周で 0（滑らかな肩）。輝度は inner の位置で層の性格を変える
+function flareTexture(inner, mid) {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(Math.max(0.01, inner), 'rgba(255,255,255,1)');
+  grad.addColorStop(mid, 'rgba(255,255,255,0.35)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+  return t;
+}
 // キャンバスの平均色（太陽光の「地面の色」に使う。2026-09-16 ユーザー指定：床の色は平均でよい）。
 // 生成時に 1 回だけ計算し、texture.avgColor に持つ
 function avgColorOf(canvas) {

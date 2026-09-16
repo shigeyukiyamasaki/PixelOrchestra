@@ -1370,7 +1370,7 @@ function animate() {
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
-  updateSky(camera);   // 空の球をカメラに追従
+  updateSky(camera, renderer);   // 空の球をカメラに追従・太陽のグレアを更新
   renderer.render(scene, camera);
 }
 
