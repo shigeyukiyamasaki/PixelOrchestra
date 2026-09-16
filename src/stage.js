@@ -895,7 +895,9 @@ export function setShadows(o = {}) {
       const u = stageCtx.sky.material.uniforms;
       u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
       // 夕焼けの層は太陽が低いときだけ（高度 25° 以上で 0）。昼の空は CSS の色がそのまま出る。手動では切って選んだ色どおりに（2026-09-16 ユーザー指摘：層が青を薄めていた）
-      u.glowAmt.value = o.sunAuto ? Math.min(1, Math.max(0, (25 - el) / 25)) : 0;
+      // 出始めは高度 15°、二乗でなだらかに（25° 線形だと 16:15 に太陽の周りに淡い円が急に現れて大きく見えた。2026-09-16 ユーザー指摘）
+      const gT = Math.min(1, Math.max(0, (15 - el) / 15));
+      u.glowAmt.value = o.sunAuto ? gT * gT : 0;
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
