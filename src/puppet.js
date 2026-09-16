@@ -154,14 +154,16 @@ const VARIANT = {
   viola:      { chin: true, spine: true, gaze: true, inst: { pos: [-5, 28, 4], rot: 0.45, mirror: true }, held: { R: 'bow' }, bow: { contact: [0.25, 0], world: 2.3, sMin: 3, sMax: 22 }, leftHand: [5, 0],
                 p3: { pos: [-6, 25.5, 8], quat: VIOLIN_Q, bowDir: VIOLIN_BOW, liftDir: VIOLIN_UP, sMin: 3, sMax: 21, vib: VIOLIN_AXIS, contactZ: 2.5, leftHandZ: 2.1 },   // 同上 1.6 → 2.1
                 rest: { pos: [-2, 14, 12], quat: VIOLIN_REST_Q, bowHand: [8, 12, 9], bowAim: [-1, -0.06, 0.3] } },
-  cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
-                p3: { pos: [0, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 5.0 }, legSpread: 6.5,   // leftHandZ：ネックを表板側へ寄せ（3.5 → 4.5）、指板の厚み分で 5.0（2026-09-16）
+  cello:      { spine: true, gaze: true, floorStand: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
+                // y 1.4：ピンの先が床に着く高さ（計測 -0.1〜-0.5px を補正。2026-09-16）
+                p3: { pos: [0, 1.4, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 5.0 }, legSpread: 6.5,   // leftHandZ：ネックを表板側へ寄せ（3.5 → 4.5）、指板の厚み分で 5.0（2026-09-16）
                 rest: { bowHand: [9, 13, 9], leftHand: [-6, 15, 9] } }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0.6, -0.6, 0.5] }, /* 右肘は外・下・前（真下だと肘が体の後ろ z -0.6 に落ちる。2026-09-16 ユーザー指定）。[0.3,-0.4,1] のように前へ出しすぎると IK が 2 解を行き来して腕が毎フレーム 2〜9px 跳ねる（チラつき）。この向きなら 0.2px */ bow: { contact: [0.5, 14], world: 2.95, sMin: 5, sMax: 15 }, leftHand: [0, 30], // 弓の接点は駒（y 13）のすぐ上。17 だと指板（〜y 14.5）の上で弾いていて、弓を持つ手が指板に重なった。手は弦から 5px 以上離す（2026-09-16 ユーザー指摘） vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
+  contrabass: { spine: true, gaze: true, floorStand: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0.6, -0.6, 0.5] }, /* 右肘は外・下・前（真下だと肘が体の後ろ z -0.6 に落ちる。2026-09-16 ユーザー指定）。[0.3,-0.4,1] のように前へ出しすぎると IK が 2 解を行き来して腕が毎フレーム 2〜9px 跳ねる（チラつき）。この向きなら 0.2px */ bow: { contact: [0.5, 14], world: 2.95, sMin: 5, sMax: 15 }, leftHand: [0, 30], // 弓の接点は駒（y 13）のすぐ上。17 だと指板（〜y 14.5）の上で弾いていて、弓を持つ手が指板に重なった。手は弦から 5px 以上離す（2026-09-16 ユーザー指摘） vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
                 // 楽器は 1.3 倍（一度 1.2 に下げたが、姿勢が決まったので元に戻した）・エンドピン短縮・胴の厚み 2/3・19° 後傾。
-                // 体のすぐ左（x -5）・前（z 16）。前に出すほど左腕が胴を避けやすい：1.3 倍だと z 13 で腕が胴の上部を通り（24 点）、
-                // z 16 で 0 点（2026-09-16 数値探索）。左手はネックの下寄り（y 30。29 以下は肘が胴の上端に入る）。横に離すと「右手が遠い／横にズレすぎ」（ユーザー指摘）
-                p3: { pos: [-5, 0, 16], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 5, sMax: 15, vib: [0, 1, 0], contactZ: 5.7, leftHandZ: 5.5 },   // 胴の厚み 9 セル（4.5px）：駒の上の弦 4.5+1.2、指板の表面 4.5+0.5+0.5（2026-09-16）
+                // 体のすぐ左（x -5）・前（z 18）。前に出すほど左腕が胴を避けやすい：1.3 倍だと z 13 で腕が胴の上部を通り（24 点）、
+                // z 16 で静止時 0 点、強奏の前のめり（12°）中も 0 にするには z 18（2026-09-16 数値探索）。左手はネックの下寄り（y 30。29 以下は肘が胴の上端に入る）。横に離すと「右手が遠い／横にズレすぎ」（ユーザー指摘）
+                // y 1.5：傾きの分だけ下がる最下点（ピンの先）を床に合わせる（計測 -1.3〜-1.7px。2026-09-16）
+                p3: { pos: [-5, 1.5, 18], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 5, sMax: 15, vib: [0, 1, 0], contactZ: 5.7, leftHandZ: 5.5 },   // 胴の厚み 9 セル（4.5px）：駒の上の弦 4.5+1.2、指板の表面 4.5+0.5+0.5（2026-09-16）
                 rest: { bowHand: [9, 16, 8], leftHand: [-9, 19, 5] } }, // 立奏。体の左に寝かせて構える。休みの左手は胴の肩に添える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
@@ -539,6 +541,9 @@ export class Puppet {
     this.headPivot.rotation.y = 0;
     this.headPivot.rotation.x = 0;
 
+    // エンドピンで床に立てる楽器（チェロ・コントラバス）は、上半身が傾いても床に立ったままにする
+    if (this.cfg.floorStand && this.inst && this.p3?.pos) this._standOnFloor();
+
     // 長い休みでは楽器を下ろす（構え ⇄ 下ろしを補間）。手は楽器に付いて動く（2026-09-12 ユーザー指定）
     this._restPose(st, dt, t);
 
@@ -553,6 +558,9 @@ export class Puppet {
 
     // アタックの明滅：発音した瞬間だけ楽器を明るくする（持続は足元の光が示すので不要。2026-09-12 ユーザー指定）
     this._attackFlash(st);
+    // 次フレームの _standOnFloor 用に、今フレームの上半身の回転・位置を控える
+    (this._spineQPrev ??= new THREE.Quaternion()).copy(this.spine.quaternion);
+    (this._spinePosPrev ??= new THREE.Vector3()).copy(this.spine.position);
 
     // 足元の光：baseOpacity × エネルギー × 濃度。指揮者だけは拍で明滅（小節頭は強く、拍の頭で光って減衰）
     this.glow.visible = settings.showGlow;
@@ -570,6 +578,23 @@ export class Puppet {
    * cfg.rest.pos/quat|rot3 があれば楽器の姿勢を補間（手は instPoint で追従）。
    * チェロ・コントラバスのように楽器を動かさないものは cfg.rest.bowHand / leftHand で手だけ下ろす
    */
+  /**
+   * 床に立てる楽器（チェロ・コントラバス）は、上半身が前のめりになっても「ピンの先」が床から動かないようにする。
+   * 楽器は upper（spine の子）の下にあるので、そのままだと腰を支点に回って胴が床に沈む（2026-09-16 ユーザー指摘）。
+   * 実物は体にもたれているので、体と一緒に傾きつつ、ピンの先を支点に回る。それを再現するため、
+   * 向きは upper に任せたまま（体と一緒に傾く）、位置だけ「ピンの先（楽器の原点）が rig 空間の P0 に留まる」よう
+   * 前フレームの spine の回転 R と位置で upper ローカルへ逆変換する（1 フレーム遅れ。傾きは滑らかなので実害なし）。
+   * 楽器を完全に固定する案は、前のめりで肩だけ前へ出て左腕が胴を横切るため不採用
+   */
+  _standOnFloor() {
+    const inst = this.inst, P0 = this.p3.pos;
+    const R = this._spineQPrev || this.spine.quaternion, sp = this._spinePosPrev || this.spine.position;
+    const Rinv = _q.copy(R).invert();
+    // rig 空間の点 P0 → spine ローカル（spine の原点＝腰）→ upper ローカル（upper は腰から -SPINE_Y ずれている）
+    _a.set(P0[0] * PX - sp.x, P0[1] * PX - sp.y, P0[2] * PX - sp.z).applyQuaternion(Rinv);
+    inst.position.set(_a.x, _a.y + SPINE_Y * PX, _a.z);
+  }
+
   _restPose(st, dt, t) {
     const cfg = this.cfg, rest = cfg.rest;
     if (!rest || this.flat) { this._rest = 0; return; }
