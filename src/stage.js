@@ -444,7 +444,15 @@ export function setShadows(o = {}) {
     if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
     if (o.skyColor) hemi.color.set(o.skyColor);
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
-    else if (stageCtx.groundTex?.avgColor) hemi.groundColor.copy(stageCtx.groundTex.avgColor);   // 床（板目／草原）の平均色
+    else if (stageCtx.groundTex?.avgColor) {
+      // 床（板目／草原）の平均色 × 照り返しの倍率（2026-09-16 ユーザー指定：物理に寄せる）。
+      // 地面に当たる光 = 直射の水平面照度（強さ × sin 高度）+ 天空光。天空光と同じ強さで下から当てるので、
+      // 平均色（反射率を含む）に「(直射 + 天空光) ÷ 天空光」を掛ける。曇天・日没後は 1 倍（平均色そのもの）
+      const elForBounce = Number.isFinite(elNow) ? elNow : 0;
+      const direct = sun.intensity * Math.max(0, Math.sin(deg(elForBounce)));
+      const bounce = Math.min(5, 1 + direct / Math.max(0.05, hemi.intensity));
+      hemi.groundColor.copy(stageCtx.groundTex.avgColor).multiplyScalar(bounce);
+    }
     const az = Number.isFinite(sunAz) ? sunAz : lightState.sunAz, el = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
     if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
       lightState.sunAz = az; lightState.sunEl = el;
