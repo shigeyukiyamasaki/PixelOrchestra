@@ -483,7 +483,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0 }, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -682,7 +682,7 @@ export function setFloorStyle(style) {
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
- *   starTwinkle: 星の瞬きの強さ（0〜2、1 で ±25%）  skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
+ *   sunBloom: 太陽の眩しさ（ブルームの強さ。0〜3）  starTwinkle: 星の瞬きの強さ（0〜2、1 で ±25%）  skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
  *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -782,7 +782,7 @@ function blurPass(renderer, src, dst, dx, dy, step) {
 export function renderFrame(renderer, scene, camera) {
   if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
-  const { el, cloud, vis } = stageCtx.bloom;
+  const { el, cloud, vis } = stageCtx.bloom, gain = stageCtx.bloom.gain ?? 1;
   const hT = Math.min(1, Math.max(0, (el - 3) / 32));
   const high = hT * hT;                                          // 高い太陽ほど眩しく広い（3°→35°、二乗で中間を抑える。16 時台に山ができないよう。2026-09-16 ユーザー指摘）
   const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
@@ -803,7 +803,7 @@ export function renderFrame(renderer, scene, camera) {
   // ぼかしの幅は角度で決める（2026-09-16 ユーザー指摘：ピクセル固定だとブラウザが大きいほどブルームが大きく見えた）。
   // 基準は高さ 1080 px（1/4 で 270）・画角 50° → 1° あたり 5.4 テクセル。歩幅をこれに比例させる
   const texPerDeg = post.a.height / (camera.fov || 50);
-  const spread = (0.4 + 1.6 * high) * haze * (texPerDeg / 5.4);
+  const spread = (0.4 + 1.6 * high) * haze * (texPerDeg / 5.4) * (0.7 + 0.3 * Math.min(2, gain));   // 眩しさで広がりも少し増える
   for (const step of [1.0, 2.5, 6.0]) {   // 3 段：芯の周り → 中間 → 広い裾
     blurPass(renderer, post.a, post.b, 1, 0, step * spread);
     blurPass(renderer, post.b, post.a, 0, 1, step * spread);
@@ -812,7 +812,7 @@ export function renderFrame(renderer, scene, camera) {
   post.quad.material = post.compMat;
   post.compMat.uniforms.mainTex.value = post.main.texture;
   post.compMat.uniforms.bloom.value = post.a.texture;
-  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
+  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure * gain;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
   renderer.setRenderTarget(null); renderer.clear();
   renderer.render(post.quadScene, post.quadCam);
 }
@@ -934,6 +934,7 @@ export function setShadows(o = {}) {
       u.poleAxis.value.set(Math.cos(LAT) * Math.sin(pa), Math.sin(LAT), Math.cos(LAT) * Math.cos(pa));
       u.starRot.value = deg((hourForStars - 12) * 15);
       stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = Math.max(u.sunVis.value, 0.6 * u.moonVis.value * u.moonK.value);
+      stageCtx.bloom.gain = Number.isFinite(o.sunBloom) ? o.sunBloom : 1;   // 「太陽の眩しさ」スライダー（2026-09-17）
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
