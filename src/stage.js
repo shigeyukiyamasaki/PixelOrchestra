@@ -514,7 +514,7 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 const SUN_SET_RED = new THREE.Color('#ffd060'), _sunHigh = new THREE.Color();
-const MOON_COL = new THREE.Color('#aab8ea'), MOON_SKY_COL = new THREE.Color('#8fa0d8'), MOON_DISC = new THREE.Color('#e8eefc');   // 月光（青白。プルキンエ現象の再現）
+const MOON_COL = new THREE.Color('#aab8ea'), MOON_DISC = new THREE.Color('#e8eefc');   // 月光の直射は薄い青白（プルキンエ現象の再現）。天空光には色を乗せない
 const _mU = new THREE.Vector3(), _mV = new THREE.Vector3();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
@@ -842,7 +842,7 @@ export function setShadows(o = {}) {
     if (night) { if (lightState.sunTemp !== 'moon') { lightState.sunTemp = 'moon'; sun.color.copy(MOON_COL); } }
     else if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
     if (o.skyTint === false) hemi.color.setRGB(1, 1, 1);   // 空の色を光に乗せない（2026-09-16 ユーザー指定のチェック）
-    else if (night) hemi.color.copy(MOON_SKY_COL);   // 月夜の天空光は青白
+    else if (night) hemi.color.setRGB(1, 1, 1);   // 月夜の天空光は無色（青は乗せない。2026-09-16 ユーザー指示「夕方の黄色だけ」）
     else if (Number.isFinite(sunElNow)) hemi.color.copy(skyLightColorOf(horizonGlowColorFromTime(sunElNow, cloud)));   // 色相は太陽側の地平線（夕焼け）から。青は乗せない
     stageCtx.moonState = { az: mAz, el: mEl, k: mK, sunEl: sunElNow, cloud };
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
