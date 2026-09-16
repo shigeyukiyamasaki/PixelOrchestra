@@ -113,8 +113,8 @@ function mediaSize(tex) {
   return w && h ? { w, h } : null;
 }
 
-// スクリーンのシェーダ：緑（キー色）との色の距離がしきい値より近い画素を捨てる（MIDIOrchestra と同じ判定）。
-// 舞台の照明で色が変わると素材の見た目が変わるので、こちらは陰影を付けない
+// スカイドームのシェーダ：緑（キー色）との色の距離がしきい値より近い画素を捨てる（MIDIOrchestra と同じ判定）。
+// 遠景なので陰影（法線）は付けず、照明の明るさだけを倍率（uLight）で反映する（2026-09-16 ユーザー指定）
 const SCREEN_SHADER = {
   vertexShader: `
     varying vec2 vUv;
@@ -128,7 +128,7 @@ const SCREEN_SHADER = {
   fragmentShader: `
     uniform sampler2D map; uniform float hasMap;
     uniform vec3 keyColor; uniform float keyThr;
-    uniform vec3 tint; uniform float opacity; uniform float flip;
+    uniform vec3 tint; uniform float opacity; uniform float flip; uniform vec3 uLight;
     uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade;
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
@@ -154,9 +154,11 @@ const SCREEN_SHADER = {
         a *= smoothstep(0.0, uFade, vUv.x) * smoothstep(0.0, uFade, 1.0 - vUv.x);
       }
       if (a < 0.01) discard;
-      gl_FragColor = vec4(c.rgb, a);
+      gl_FragColor = vec4(c.rgb * uLight, a);   // 照明の反映（スカイドームは方向を無視した倍率。2026-09-16 ユーザー指定）
     }`,
 };
+// スカイドーム全体で共有する照明の倍率（setShadows が更新）
+const DOME_LIGHT = { value: new THREE.Color(1, 1, 1) };
 function screenMaterial(sc, tex) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -169,6 +171,7 @@ function screenMaterial(sc, tex) {
       flip: { value: sc.flip ? 1 : 0 },
       uRepeat: { value: 1 }, uScroll: { value: 0 }, uLoop: { value: 0 }, uFill: { value: 1 },
       uFade: { value: 0 },
+      uLight: DOME_LIGHT,
     },
     vertexShader: SCREEN_SHADER.vertexShader,
     fragmentShader: SCREEN_SHADER.fragmentShader,
@@ -177,6 +180,50 @@ function screenMaterial(sc, tex) {
     transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1,
     clipping: true,   // ShaderMaterial は明示しないと clippingPlanes が効かない
   });
+}
+
+// スクリーン（キャラクター等）用：照明と影を受ける Lambert に、同じ抜き・繰り返し・端ぼかしを注入する（2026-09-16 ユーザー指定）。
+// uniforms は m.uniforms に置き、呼び出し側は ShaderMaterial の時と同じ書き方で更新できる
+function litScreenMaterial(sc, tex) {
+  const m = new THREE.MeshLambertMaterial({ map: tex || null, transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1 });
+  m.uniforms = {
+    hasMap: { value: tex ? 1 : 0 },
+    keyColor: { value: new THREE.Color(sc.key || '#00ff00') },
+    keyThr: { value: sc.thr ?? 0 },
+    opacity: { value: sc.opacity },        // 参照用（実体は material.opacity）
+    flip: { value: sc.flip ? 1 : 0 },
+    uRepeat: { value: 1 }, uScroll: { value: 0 }, uLoop: { value: 0 }, uFill: { value: 1 },
+    uFade: { value: 0 },
+  };
+  m.opacity = sc.opacity;
+  m.onBeforeCompile = (shader) => {
+    for (const k of Object.keys(m.uniforms)) if (k !== 'opacity') shader.uniforms[k] = m.uniforms[k];
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vScreenUv;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvScreenUv = uv;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float hasMap; uniform vec3 keyColor; uniform float keyThr; uniform float flip;
+        uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade;
+        varying vec2 vScreenUv;`)
+      .replace('#include <map_fragment>', `
+        float u = (flip > 0.5 ? 1.0 - vScreenUv.x : vScreenUv.x) * uRepeat + uScroll;
+        vec2 suv;
+        if (uLoop > 0.5) { float f = fract(u); if (f > uFill) discard; suv = vec2(f / uFill, vScreenUv.y); }
+        else suv = vec2(u, vScreenUv.y);
+        #ifdef USE_MAP
+          vec4 sc = texture2D(map, suv);
+          if (keyThr > 0.0 && distance(sc.rgb, keyColor) < keyThr) discard;
+        #else
+          vec4 sc = vec4(1.0);
+        #endif
+        float sa = sc.a;
+        if (uFade > 0.001) sa *= smoothstep(0.0, uFade, vScreenUv.x) * smoothstep(0.0, uFade, 1.0 - vScreenUv.x);
+        if (sa * diffuseColor.a < 0.01) discard;
+        diffuseColor.rgb *= sc.rgb; diffuseColor.a *= sa;`);
+  };
+  m.customProgramCacheKey = () => 'litScreen' + (tex ? ':map' : '');
+  return m;
 }
 
 /**
@@ -486,6 +533,15 @@ export function setFloorStyle(style) {
  *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
  *   bgFlip: 背景を上下反転中なら空の球も反転  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
+// スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
+function updateDomeLight() {
+  const { hemi, sun } = stageCtx, c = DOME_LIGHT.value;
+  if (lightState.mode !== 'sun') { c.setRGB(1, 1, 1); return; }
+  c.copy(hemi.color).multiplyScalar(hemi.intensity * 0.9);
+  c.r += sun.color.r * sun.intensity * 0.55; c.g += sun.color.g * sun.intensity * 0.55; c.b += sun.color.b * sun.intensity * 0.55;
+  c.r = Math.min(1.2, c.r); c.g = Math.min(1.2, c.g); c.b = Math.min(1.2, c.b);
+}
+
 /** 空の球をカメラの位置に置く（毎フレーム、描画の直前に呼ぶ）。球はカメラ中心なので視線方向＝頂点方向になる */
 export function updateSky(camera) {
   if (stageCtx?.sky.visible) stageCtx.sky.position.copy(camera.position);
@@ -561,6 +617,7 @@ export function setShadows(o = {}) {
     const e = deg(elev), a = deg(spread);
     for (const sp of spots) sp.position.set(sp.userData.side * SPOT_R * Math.cos(e) * Math.sin(a), SPOT_R * Math.sin(e), -12 + SPOT_R * Math.cos(e) * Math.cos(a));
   }
+  updateDomeLight();
 }
 
 /**
@@ -753,7 +810,7 @@ function buildScreens() {
     const period = wid * gap;
     const half = loop ? halfTh : Math.min(halfTh, wid / 2 / r);
     const ctr = loop ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
-    const m = screenMaterial(sc, tex);
+    const m = litScreenMaterial(sc, tex);   // 照明と影を受ける
     if (loop) {
       m.uniforms.uLoop.value = 1;
       m.uniforms.uRepeat.value = (r * half * 2) / period;
@@ -765,6 +822,7 @@ function buildScreens() {
         Math.PI - (ctr + half), half * 2), m,
     );
     mesh.name = `screen:${i}`;
+    mesh.receiveShadow = true;
     mesh.userData.scroll = loop ? { speed: sc.speed || 0, period } : null;
     mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
