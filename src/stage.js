@@ -428,7 +428,7 @@ function horizonColorFromTime(el, cloud) { return horizonPalette(HZ_ANTI_CLEAR, 
 function horizonGlowColorFromTime(el, cloud) { return horizonPalette(HZ_CLEAR, HZ_VIVID, el, cloud); }         // 太陽側（球）
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
 // 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く
-const SKY_DAY = new THREE.Color('#1a6be6'), SKY_LOW = new THREE.Color('#173ca1'), SKY_NIGHT = new THREE.Color('#0a1448');   // 彩度高め（2026-09-16 ユーザー指定）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
+const SKY_DAY = new THREE.Color('#0d66f2'), SKY_LOW = new THREE.Color('#0f37b0'), SKY_NIGHT = new THREE.Color('#071350');   // 彩度高め（2026-09-16 ユーザー指定）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
 const SKY_OVERCAST = new THREE.Color('#9aa3ad');
 const _sky = new THREE.Color();
 function skyColorFromTime(el, cloud) {
