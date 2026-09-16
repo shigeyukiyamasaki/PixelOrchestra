@@ -527,6 +527,7 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 const SUN_SET_RED = new THREE.Color('#ffd060'), _sunHigh = new THREE.Color();
+const GLOW_HIGH = new THREE.Color('#ffd58a'), _glowTmp = new THREE.Color();   // 高い太陽の周りの黄色い光
 const MOON_COL = new THREE.Color('#aab8ea'), MOON_DISC = new THREE.Color('#e8eefc');   // 月光の直射は薄い青白（プルキンエ現象の再現）。天空光には色を乗せない
 const _mU = new THREE.Vector3(), _mV = new THREE.Vector3();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
@@ -847,7 +848,7 @@ export function renderFrame(renderer, scene, camera) {
   // ぼかしの幅は角度で決める（2026-09-16 ユーザー指摘：ピクセル固定だとブラウザが大きいほどブルームが大きく見えた）。
   // 基準は高さ 1080 px（1/4 で 270）・画角 50° → 1° あたり 5.4 テクセル。歩幅をこれに比例させる
   const texPerDeg = post.a.height / (camera.fov || 50);
-  const spread = (0.4 + 2.0 * high) * haze * (texPerDeg / 5.4) * (0.7 + 0.3 * Math.min(2, gain));   // 眩しさで広がりも少し増える
+  const spread = (0.4 + 3.2 * high) * haze * (texPerDeg / 5.4) * (0.7 + 0.3 * Math.min(2, gain));   // 高い太陽の面積を増やす（2.0→3.2。2026-09-17 ユーザー指定）   // 眩しさで広がりも少し増える
   for (const step of [1.0, 2.5, 6.0]) {   // 3 段：芯の周り → 中間 → 広い裾
     blurPass(renderer, post.a, post.b, 1, 0, step * spread);
     blurPass(renderer, post.b, post.a, 0, 1, step * spread);
@@ -973,11 +974,13 @@ export function setShadows(o = {}) {
     // 太陽側の低い空の色（夕焼け）。反対側の色は CSS の地平線の色が担う。曇天では両方灰色になって差が消える
     if (Number.isFinite(el)) {
       const u = stageCtx.sky.material.uniforms;
-      u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
-      // 夕焼けの層は太陽が低いときだけ（高度 25° 以上で 0）。昼の空は CSS の色がそのまま出る。手動では切って選んだ色どおりに（2026-09-16 ユーザー指摘：層が青を薄めていた）
-      // 出始めは高度 15°、二乗でなだらかに（25° 線形だと 16:15 に太陽の周りに淡い円が急に現れて大きく見えた。2026-09-16 ユーザー指摘）
-      const gT = Math.min(1, Math.max(0, (20 - el) / 20));   // 出始め 20°（夕焼けの時間帯を広げた 2026-09-17）
-      u.glowAmt.value = o.sunAuto ? gT * gT : 0;
+      // 層の色：高度 14° 以上は暖かい黄（昼のパレットは青なので使わない）、8°→14° で夕焼けのパレットからつなぐ（2026-09-17 ユーザー指定：高い太陽にも黄色い光を残す）
+      _glowTmp.set(horizonGlowColorFromTime(el, cloud));
+      const warmT = Math.min(1, Math.max(0, (el - 8) / 6));
+      u.glowColor.value.copy(_glowTmp).lerp(GLOW_HIGH, warmT);
+      // 量：出始め 20°・二乗でなだらか（急に現れて大きく見えないよう）。高い太陽でも下限 0.3 を残す（黄色い周囲の光）。手動では無し（選んだ色どおり）
+      const gT = Math.min(1, Math.max(0, (20 - el) / 20));
+      u.glowAmt.value = o.sunAuto ? Math.max(0.3, gT * gT) : 0;
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       if (Number.isFinite(o.starTwinkle)) u.twinkle.value = o.starTwinkle;
