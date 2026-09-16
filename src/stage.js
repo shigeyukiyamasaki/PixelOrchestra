@@ -568,7 +568,7 @@ export function sunFromTime(hour, cloud, facing, moonAge = 15) {
   const cloudMul = c <= 0.5 ? 1 + 1.0 * (c / 0.5) : 2.0 - 1.3 * ((c - 0.5) / 0.5);   // 薄雲は空全体が光って増える（0.5 で 2 倍）、雨雲は暗い（1 で 0.7 倍）
   const skyLight = SKY_BASE * (dayPart + 0.12 * moonBright * tw) * cloudMul;
   const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
-  const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
+  const temp = tEl + (0.5 - tEl) * c;                                // 雲で白へ（青側には寄せない。昼に青かぶりしていた。2026-09-16 ユーザー指摘）
   return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c), horizon: horizonColorFromTime(elDeg, c),
            moonAzimuth: moon.azimuth, moonElev: moon.elev, moonK, moonBright };
 }
