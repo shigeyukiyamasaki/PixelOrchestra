@@ -659,6 +659,7 @@ export function setShadows(o = {}) {
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
       u.aureole.value = 0;   // 空の球側のにじみは使わない（グレアは Lensflare が担う。2026-09-16）
+      u.sunRad.value = 2.4 - 1.4 * Math.min(1, Math.max(0, el / 40));   // 昼ほど小さく：地平線 2.4° → 40° 以上で 1.0°（2026-09-16 ユーザー指定）
       stageCtx.flareState.el = el; stageCtx.flareState.cloud = cloud; stageCtx.flareState.vis = u.sunVis.value;
     }
   }
