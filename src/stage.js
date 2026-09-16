@@ -847,7 +847,7 @@ export function renderFrame(renderer, scene, camera) {
   // ぼかしの幅は角度で決める（2026-09-16 ユーザー指摘：ピクセル固定だとブラウザが大きいほどブルームが大きく見えた）。
   // 基準は高さ 1080 px（1/4 で 270）・画角 50° → 1° あたり 5.4 テクセル。歩幅をこれに比例させる
   const texPerDeg = post.a.height / (camera.fov || 50);
-  const spread = (0.4 + 1.6 * high) * haze * (texPerDeg / 5.4) * (0.7 + 0.3 * Math.min(2, gain));   // 眩しさで広がりも少し増える
+  const spread = (0.4 + 2.0 * high) * haze * (texPerDeg / 5.4) * (0.7 + 0.3 * Math.min(2, gain));   // 眩しさで広がりも少し増える
   for (const step of [1.0, 2.5, 6.0]) {   // 3 段：芯の周り → 中間 → 広い裾
     blurPass(renderer, post.a, post.b, 1, 0, step * spread);
     blurPass(renderer, post.b, post.a, 0, 1, step * spread);
@@ -875,7 +875,7 @@ export function renderFrame(renderer, scene, camera) {
   post.quad.material = post.compMat;
   post.compMat.uniforms.mainTex.value = post.main.texture;
   post.compMat.uniforms.bloom.value = post.a.texture;
-  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure * gain;
+  post.compMat.uniforms.strength.value = vis * (0.5 + 14.0 * high) * renderer.toneMappingExposure * gain;   // 高い太陽ほど強く（8.5→14。夕日は下限 0.5 のまま。2026-09-17 ユーザー指定）
   // 光のかぶり：太陽の画面位置を中心に。高い太陽ほど強く、夕日は弱い。隠れている割合で消える
   const cu = post.compMat.uniforms;
   cu.sunUv.value.set((post.sunNdc.x + 1) / 2, (post.sunNdc.y + 1) / 2);
