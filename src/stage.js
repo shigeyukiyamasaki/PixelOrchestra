@@ -355,6 +355,7 @@ function skyLightColorOf(hex) {
 }
 const LAT = deg(35);   // 北緯 35°（日本）。春秋分（赤緯 0）で計算する
 const SKY_BASE = 0.7;  // 快晴・南中の天空光の基準（半球光の強さ）
+const GROUND_OCCLUSION = 0.35;   // 照り返しの自己遮蔽係数（密集した舞台では足元の地面がほぼ影。直射ぶんに掛ける）
 /**
  * 時刻・雲量・舞台の向きから太陽光の物理量を決める（2026-09-16 ユーザー指定：案 B）
  * @param {number} hour 時刻 [時]（小数可）  @param {number} cloud 雲量 0〜1  @param {number} facing 舞台が向く方位 [deg]（0 北・90 東・180 南・270 西）
@@ -460,7 +461,9 @@ export function setShadows(o = {}) {
       // 平均色の明るさは絵の都合（0.5 前後）なので、実測の反射率（草 0.22・板 0.30）に正規化してから掛ける（2026-09-16 ユーザー指摘：緑が勝ちすぎ）
       const elForBounce = Number.isFinite(elNow) ? elNow : 0;
       const direct = sun.intensity * Math.max(0, Math.sin(deg(elForBounce)));
-      const bounce = Math.min(5, 1 + direct / Math.max(0.05, hemi.intensity));
+      // 自己遮蔽：奏者の足元の地面は本人や周りの影の中なので、照り返しの元になる日向の草は一部だけ（2026-09-16 ユーザー指摘）。
+      // 直射ぶんにだけ 0.35 を掛ける（天空光で照らされた分は影の中でも同じなのでそのまま）
+      const bounce = Math.min(5, 1 + GROUND_OCCLUSION * direct / Math.max(0.05, hemi.intensity));
       const avg = stageCtx.groundTex.avgColor, lum = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
       const albedo = stageCtx.groundTex.albedo ?? 0.25;
       hemi.groundColor.copy(avg).multiplyScalar((lum > 0.01 ? albedo / lum : 1) * bounce);
