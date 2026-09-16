@@ -295,10 +295,10 @@ export function createStage(container) {
   // 土台は CSS のグラデーション（天頂＝空の色、地平線＝太陽と反対側の色）。深度は書かず最初に描くので舞台は必ず手前
   const skyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 },
-                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 } },
+                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
-      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; varying vec3 vDir;
+      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
@@ -312,7 +312,9 @@ export function createStage(container) {
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
         float halo = pow(max(cs, 0.0), 140.0) * 0.5;
-        float sa = sunVis * clamp(disc + halo, 0.0, 1.0);
+        // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
+        float aur = pow(max(cs, 0.0), 12.0) * aureole;
+        float sa = sunVis * clamp(disc + halo + aur, 0.0, 1.0);
         vec3 sunc = mix(sunCol, vec3(1.0), 0.5);
         float outA = sa + a * (1.0 - sa);
         vec3 outC = outA > 1e-4 ? (sunc * sa + glowColor * a * (1.0 - sa)) / outA : glowColor;
@@ -621,6 +623,7 @@ export function setShadows(o = {}) {
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
       u.sunVis.value = el > -1 ? (1 - cloud) * (1 - cloud) : 0;
       u.sunCol.value.copy(sun.color);
+      u.aureole.value = 0.6 + 0.6 * Math.min(1, cloud / 0.5);   // もや・薄雲ほどにじみが強い（前方散乱）
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
