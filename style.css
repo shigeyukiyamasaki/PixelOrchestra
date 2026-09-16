@@ -98,6 +98,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #lightBox .seg { margin: 8px 0 2px; }
 #lightBox:has(input[name=lightMode][value=sun]:checked) #spotSet { display: none; }
 #lightBox:not(:has(input[name=lightMode][value=sun]:checked)) #sunSet { display: none; }
+/* 太陽光：自動（時刻・天気・向き）と手動（方角・高度・色温度・強さ）は排他で出す */
+#sunSet:has(#sunManual:checked) #sunAutoSet { display: none; }
+#sunSet:not(:has(#sunManual:checked)) #sunManualSet { display: none; }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */

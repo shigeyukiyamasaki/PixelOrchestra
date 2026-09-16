@@ -344,6 +344,30 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
+const LAT = deg(35);   // 北緯 35°（日本）。春秋分（赤緯 0）で計算する
+/**
+ * 時刻・雲量・舞台の向きから太陽光の物理量を決める（2026-09-16 ユーザー指定：案 B）
+ * @param {number} hour 時刻 [時]（小数可）  @param {number} cloud 雲量 0〜1  @param {number} facing 舞台が向く方位 [deg]（0 北・90 東・180 南・270 西）
+ * @returns {{azimuth:number, elev:number, temp:number, intensity:number, ambientMul:number}}
+ *   azimuth: 舞台基準の方角（0 客席正面・90 客席から見て右）  elev: 高度 [deg]（負なら地平線下）
+ *   temp: 色温度 0〜1  intensity: 直射の強さ  ambientMul: 天空光（環境光）の倍率
+ */
+export function sunFromTime(hour, cloud, facing) {
+  const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
+  const elev = Math.asin(Math.cos(LAT) * Math.cos(H));               // 赤緯 0 の高度。南中で 90−35 = 55°
+  const azS = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(LAT));  // 南から西回りの方位角
+  const compass = (180 + azS / Math.PI * 180 + 360) % 360;           // 北 0・東 90・南 180・西 270
+  const azimuth = ((facing - compass) % 360 + 360) % 360;            // 舞台基準：客席の方位 − 太陽の方位。東の太陽は南向き舞台で「客席から見て右」
+  const elDeg = elev / Math.PI * 180;
+  const up = Math.max(0, Math.sin(elev));
+  const air = Math.pow(up, 0.35);                                    // 低いほど大気を長く通って弱まる（空気量の近似）
+  const c = Math.min(1, Math.max(0, cloud));
+  const intensity = 1.6 * air * (1 - c) * (1 - c);                   // 雲で直射は消える
+  const ambientMul = (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
+  const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
+  const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
+  return { azimuth, elev: elDeg, temp, intensity, ambientMul };
+}
 /**
  * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number, spotBlur?:number}} o
  *   enabled: 影を落とすか  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
@@ -388,6 +412,7 @@ export function setFloorStyle(style) {
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
+ *   sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev を時刻・天気から決め、環境光にも天空光の倍率を掛ける
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
@@ -406,12 +431,19 @@ export function setShadows(o = {}) {
   }
   if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
   if (lightState.mode === 'sun') {
-    if (Number.isFinite(o.sun)) sun.intensity = o.sun;
-    if (Number.isFinite(o.sunTemp) && o.sunTemp !== lightState.sunTemp) { lightState.sunTemp = o.sunTemp; sun.color.copy(sunColorOf(o.sunTemp)); }
+    let sunI = o.sun, sunT = o.sunTemp, sunAz = o.sunAzimuth, sunEl = o.sunElev, ambMul = 1;
+    if (o.sunAuto) {   // 時刻・天気・舞台の向きから決める（手動でない時）
+      const a = sunFromTime(o.sunAuto.hour, o.sunAuto.cloud, o.sunAuto.facing);
+      sunI = a.intensity; sunT = a.temp; sunAz = a.azimuth; sunEl = a.elev; ambMul = a.ambientMul;
+    }
+    if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient * ambMul;
+    if (Number.isFinite(sunI)) sun.intensity = sunI;
+    sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後）
+    if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
     if (o.skyColor) hemi.color.set(o.skyColor);
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
     else if (stageCtx.groundTex?.avgColor) hemi.groundColor.copy(stageCtx.groundTex.avgColor);   // 床（板目／草原）の平均色
-    const az = Number.isFinite(o.sunAzimuth) ? o.sunAzimuth : lightState.sunAz, el = Number.isFinite(o.sunElev) ? o.sunElev : lightState.sunEl;
+    const az = Number.isFinite(sunAz) ? sunAz : lightState.sunAz, el = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
     if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
       lightState.sunAz = az; lightState.sunEl = el;
       const a = deg(az), e = deg(el);
