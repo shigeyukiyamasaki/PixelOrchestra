@@ -779,14 +779,18 @@ function ensurePost(renderer) {
           // 光条は「一定の太さの線」（線からの垂直距離でガウス減衰）。角度幅だと太陽の近くで鋭く、離れると太くなり実物と逆だった（2026-09-17 ユーザー指摘）。
           // 太陽の近くでは線同士が重なって白く溢れ、離れるほど 1 本ずつ分かれて薄れる
           float rays = 0.0;
-          { float n = 16.0, off = 0.0, w = 0.0045, L = streakL;            // 主 16 本：太め・長い
+          // 幅は根本で太く先で細く（w0 → w1 を距離 L で補間）。到達距離は短め（2026-09-17 ユーザー指定）
+          { float n = 16.0, off = 0.0, w0 = 0.012, w1 = 0.003, L = streakL;            // 主 16 本
             float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
             float perp = d * abs(sin(dphi)); rays += exp(-(perp * perp) / (w * w)) * exp(-d / L); }
-          { float n = 16.0, off = 0.19635, w = 0.003, L = streakL * 0.5;   // 副 16 本：細め・短い
+          { float n = 16.0, off = 0.19635, w0 = 0.008, w1 = 0.002, L = streakL * 0.5;   // 副 16 本
             float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
             float perp = d * abs(sin(dphi)); rays += 0.6 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
-          { float n = 32.0, off = 0.09817, w = 0.002, L = streakL * 0.3;   // 細い 32 本：ごく短い
+          { float n = 32.0, off = 0.09817, w0 = 0.005, w1 = 0.0015, L = streakL * 0.3;  // 細い 32 本
             float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
             float perp = d * abs(sin(dphi)); rays += 0.35 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
           // 太陽の近くは光条を立てず（ウニ状のトゲに見えた。2026-09-17 ユーザー指摘）、丸い芯の光で白く溢れさせる。光条は芯の外でなだらかに立ち上がる
           float core = streak * 0.9 * exp(-(d * d) / (0.035 * 0.035));
@@ -882,7 +886,7 @@ export function renderFrame(renderer, scene, camera) {
   // 光条は夕方に向かって薄れて消える（高さの係数 high に下限を設けず、高度 20° 以下でさらに減らす。2026-09-17 ユーザー指定）
   const lowFade = Math.min(1, Math.max(0, el / 20));
   cu.streak.value = behind ? 0 : 1.2 * vis * frac * high * lowFade * gain * renderer.toneMappingExposure;
-  cu.streakL.value = 0.18 + 0.12 * Math.min(2, gain);
+  cu.streakL.value = 0.11 + 0.07 * Math.min(2, gain);   // 到達距離は短め（旧 0.18+0.12）
   // 光条の回転：太陽の画面位置（中心からのずれ）とカメラの方位から。パンで回り、周回でも回る
   const camYaw = Math.atan2(_flareTmp.x, _flareTmp.z);   // _flareTmp はカメラの向き（上で取得）
   cu.rayRot.value = 0.9 * (cu.sunUv.value.x - 0.5) + 0.5 * (cu.sunUv.value.y - 0.5) + 0.35 * camYaw;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
