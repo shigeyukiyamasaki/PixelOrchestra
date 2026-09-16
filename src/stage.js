@@ -294,17 +294,29 @@ export function createStage(container) {
   // 方向つきの空（案 2。2026-09-16 ユーザー指定）：カメラを中心にした大きな球に、太陽の方角の低い空だけ夕焼け色を重ねる。
   // 土台は CSS のグラデーション（天頂＝空の色、地平線＝太陽と反対側の色）。深度は書かず最初に描くので舞台は必ず手前
   const skyMat = new THREE.ShaderMaterial({
-    uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 } },
+    uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 },
+                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip; varying vec3 vDir;
+    fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
+      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
+        vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
         vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
         float c = dot(h, normalize(sunDir.xz));
         float lobe = pow(clamp(c * 0.55 + 0.45, 0.0, 1.0), 1.5);   // 太陽の方角ほど強い。真横で約 3 割、145° で消える（さらに広め。2026-09-16 ユーザー指定）
         float hz = exp(-max(y, 0.0) * 2.2);       // 地平線に近いほど強い（天頂で消える）
-        gl_FragColor = vec4(glowColor, glowAmt * lobe * hz);
+        float a = glowAmt * lobe * hz;
+        // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
+        float cs = dot(dd, normalize(sunDir));
+        float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
+        float halo = pow(max(cs, 0.0), 140.0) * 0.5;
+        float sa = sunVis * clamp(disc + halo, 0.0, 1.0);
+        vec3 sunc = mix(sunCol, vec3(1.0), 0.5);
+        float outA = sa + a * (1.0 - sa);
+        vec3 outC = outA > 1e-4 ? (sunc * sa + glowColor * a * (1.0 - sa)) / outA : glowColor;
+        gl_FragColor = vec4(outC, outA);
       }`,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
   });
@@ -597,7 +609,7 @@ export function setShadows(o = {}) {
       const a = deg(az), e = deg(el);
       // 方角 0 = 客席側（+z）から。客席から見て右（+x）が 90。舞台中心 (0,0,-12) を向く
       sun.position.set(SUN_R * Math.cos(e) * Math.sin(a), SUN_R * Math.sin(e), -12 + SUN_R * Math.cos(e) * Math.cos(a));
-      stageCtx.sky.material.uniforms.sunDir.value.set(Math.sin(a), 0, Math.cos(a));
+      stageCtx.sky.material.uniforms.sunDir.value.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a));   // 太陽の円盤用に高度も入れる
     }
     // 太陽側の低い空の色（夕焼け）。反対側の色は CSS の地平線の色が担う。曇天では両方灰色になって差が消える
     if (Number.isFinite(el)) {
@@ -606,6 +618,9 @@ export function setShadows(o = {}) {
       u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
       u.glowAmt.value = 1;
       u.flip.value = o.bgFlip ? 1 : 0;
+      // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
+      u.sunVis.value = el > -1 ? (1 - cloud) * (1 - cloud) : 0;
+      u.sunCol.value.copy(sun.color);
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
