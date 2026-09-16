@@ -989,7 +989,10 @@ export function setShadows(o = {}) {
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       if (Number.isFinite(o.starTwinkle)) u.twinkle.value = o.starTwinkle;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
-      u.sunRad.value = 2.4 - 1.6 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 2.4° → 25° 以上で 0.8°（夕日の大きさを控えめに。2026-09-16 ユーザー指定）
+      // 昼ほど小さく。ブルームの高さ係数（renderFrame と同じ ((el−3)/32)²）と連動させ、ブルームが弱まる分だけ円盤が育つ：
+      // 正午 0.8° → 27° で 1.2° → 18° で 1.65° → 6° で 2.25° → 地平線 2.4°（25° で谷ができていた。2026-09-17 ユーザー指摘）
+      const hT2 = Math.min(1, Math.max(0, (el - 3) / 32));
+      u.sunRad.value = 0.8 + 1.6 * (1 - hT2);
       u.sunVis.value = el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）
       // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
       const lowT = Math.min(1, Math.max(0, el / 20));
