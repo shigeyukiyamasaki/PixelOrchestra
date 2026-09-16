@@ -1023,7 +1023,16 @@ renderer.toneMapping = THREE.CustomToneMapping;
 // 背景：上下グラデーション（CSS）。中間地点 = 2 色が半分ずつ混ざる高さ [%]（2026-09-10）
 let bgApplied = '';
 // 上下反転（2026-09-14 ユーザー指定）は見た目だけ。上の色・下の色・中間地点の値は動かさない
-function applyBackground(top, bottom, mid, flip) {
+// CSS の色に、シェーダーと同じ露出＋トーン圧縮（輝度 0.8 以上だけ 1.0 に漸近）を掛ける（2026-09-16 ユーザー指摘：露出が空に効いていなかった）
+function toneHex(hex, exposure) {
+  const c = new THREE.Color(hex).multiplyScalar(exposure);
+  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, knee = 0.8;
+  if (l > knee) { const t = l - knee; c.multiplyScalar((knee + (1 - knee) * (t / (t + (1 - knee)))) / l); }
+  c.r = Math.min(1, c.r); c.g = Math.min(1, c.g); c.b = Math.min(1, c.b);
+  return '#' + c.getHexString();
+}
+function applyBackground(top, bottom, mid, flip, exposure = 1) {
+  top = toneHex(top, exposure); bottom = toneHex(bottom, exposure);
   const css = flip
     ? `linear-gradient(to bottom, ${bottom}, ${100 - mid}%, ${top})`
     : `linear-gradient(to bottom, ${top}, ${mid}%, ${bottom})`;
@@ -1355,7 +1364,7 @@ function animate() {
                  moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, skyTint: s.skyTint, groundBounceOn: s.groundBounceOn, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
-    applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
+    applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める

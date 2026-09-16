@@ -155,6 +155,7 @@ const SCREEN_SHADER = {
       }
       if (a < 0.01) discard;
       gl_FragColor = vec4(c.rgb * uLight, a);   // 照明の反映（スカイドームは方向を無視した倍率。2026-09-16 ユーザー指定）
+      #include <tonemapping_fragment>          // 露出＋トーン圧縮（本編と同じ。2026-09-16）
     }`,
 };
 // スカイドーム全体で共有する照明の倍率（setShadows が更新）
@@ -179,6 +180,7 @@ function screenMaterial(sc, tex) {
     // 抜いた画素は discard するので、透明部分が後ろを消すことはない）。2026-09-13 ユーザー指定
     transparent: true, side: THREE.DoubleSide, depthWrite: sc.opacity >= 1,
     clipping: true,   // ShaderMaterial は明示しないと clippingPlanes が効かない
+    toneMapped: true, // 露出を効かせる（tonemapping_fragment を通す）
   });
 }
 
@@ -373,8 +375,9 @@ export function createStage(container) {
         float outA3 = outA2 + ss * (1.0 - outA2);
         vec3 outC3 = outA3 > 1e-4 ? (outC2 * outA2 + sv.rgb * ss * (1.0 - outA2)) / outA3 : outC2;
         gl_FragColor = vec4(outC3, outA3);
+        #include <tonemapping_fragment>   // 露出＋トーン圧縮（本編と同じ。2026-09-16）
       }`,
-    transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: true,
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), skyMat);
   sky.renderOrder = -1000; sky.visible = false; sky.frustumCulled = false;
@@ -795,7 +798,7 @@ export function renderFrame(renderer, scene, camera) {
   post.quad.material = post.compMat;
   post.compMat.uniforms.mainTex.value = post.main.texture;
   post.compMat.uniforms.bloom.value = post.a.texture;
-  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high);   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し
+  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
   renderer.setRenderTarget(null); renderer.clear();
   renderer.render(post.quadScene, post.quadCam);
 }
