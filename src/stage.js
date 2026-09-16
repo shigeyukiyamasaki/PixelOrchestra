@@ -879,7 +879,9 @@ export function renderFrame(renderer, scene, camera) {
   cu.veil.value = behind ? 0 : 0.18 * vis * frac * (0.25 + 0.75 * high) * gain * renderer.toneMappingExposure;   // 眩しさ 2 で太陽の周りが +50%、画面の遠い所で +5〜10%
   cu.veilR.value = 0.06 + 0.04 * Math.min(2, gain);
   cu.veilCol.value.copy(stageCtx.sky.material.uniforms.sunCol.value).lerp(SUN_WHITE, 0.6);
-  cu.streak.value = behind ? 0 : 1.2 * vis * frac * (0.25 + 0.75 * high) * gain * renderer.toneMappingExposure;
+  // 光条は夕方に向かって薄れて消える（高さの係数 high に下限を設けず、高度 20° 以下でさらに減らす。2026-09-17 ユーザー指定）
+  const lowFade = Math.min(1, Math.max(0, el / 20));
+  cu.streak.value = behind ? 0 : 1.2 * vis * frac * high * lowFade * gain * renderer.toneMappingExposure;
   cu.streakL.value = 0.18 + 0.12 * Math.min(2, gain);   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
   renderer.setRenderTarget(null); renderer.clear();
   renderer.render(post.quadScene, post.quadCam);
