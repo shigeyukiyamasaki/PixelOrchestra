@@ -648,11 +648,12 @@ function ringMapOf(tex, rOut) {
   return m;
 }
 
-/** 床とひな壇の天面の見た目を切り替える（'plank' = 板目 / 'grass' = 草原）。2026-09-13 ユーザー指定 */
+/** 床とひな壇の天面の見た目を切り替える（'plank' = 板目 / 'grass' = 草原 / 'grassDark' = 草原（深緑））。2026-09-13 ユーザー指定 */
 export function setFloorStyle(style) {
   if (!stageCtx) return;
-  if (style === 'grass' && !stageCtx.grassTex) stageCtx.grassTex = grassTexture();
-  const tex = style === 'grass' ? stageCtx.grassTex : stageCtx.floorTex;
+  if (style === 'grass' && !stageCtx.grassTex) stageCtx.grassTex = grassTexture('normal');
+  if (style === 'grassDark' && !stageCtx.grassDarkTex) stageCtx.grassDarkTex = grassTexture('dark');   // 深緑（2026-09-16）
+  const tex = style === 'grass' ? stageCtx.grassTex : style === 'grassDark' ? stageCtx.grassDarkTex : stageCtx.floorTex;
   if (tex === stageCtx.groundTex) return;
   stageCtx.groundTex = tex;
   stageCtx.floorMat.map?.dispose();
@@ -1161,12 +1162,17 @@ function avgColorOf(canvas) {
   return new THREE.Color(r / n / 255, gg / n / 255, b / n / 255);
 }
 
-function grassTexture() {
+// 草原の色セット。'dark' は深緑（2026-09-16 ユーザー指定）
+const GRASS_PALETTES = {
+  normal: { BASE: '#4f9a3e', DARK: '#3b7c2f', LIGHT: '#66b44b', HI: '#86cc63', SOIL: '#6b8f3a' },
+  dark:   { BASE: '#2f6b2a', DARK: '#20511f', LIGHT: '#3d8236', HI: '#4f9a44', SOIL: '#3f6b2c' },
+};
+function grassTexture(palette = 'normal') {
   const S = 768, DOT = 4;            // 板目と同じ 768px（床では 40×32 unit に 1 枚）
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
   const g = c.getContext('2d');
-  const BASE = '#4f9a3e', DARK = '#3b7c2f', LIGHT = '#66b44b', HI = '#86cc63', SOIL = '#6b8f3a';
+  const { BASE, DARK, LIGHT, HI, SOIL } = GRASS_PALETTES[palette] || GRASS_PALETTES.normal;
   let seed = 20260913 >>> 0;
   const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
   const px = (x, y, col) => { g.fillStyle = col; g.fillRect(x * DOT, y * DOT, DOT, DOT); };
