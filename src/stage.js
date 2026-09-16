@@ -588,11 +588,11 @@ export function sunFromTime(hour, cloud, facing, moonAge = 15) {
 // 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
 // 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
 // 太陽側（球に重ねる夕焼け）
-const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d'], [-18, '#05081f']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
-const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_CLEAR = [[20, '#00bfff'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d'], [-18, '#05081f']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
+const HZ_VIVID = [[20, '#00bfff'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d'], [-18, '#05081f']];
 // 太陽と反対側（CSS の地平線の色）：青灰 → 地球の影の帯（ピンク〜紫）→ 濃紺。薄雲でピンクが濃くなる
-const HZ_ANTI_CLEAR = [[20, '#bfe0f5'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d'], [-18, '#05081f']];
-const HZ_ANTI_VIVID = [[20, '#bfe0f5'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_ANTI_CLEAR = [[20, '#00bfff'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_ANTI_VIVID = [[20, '#00bfff'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d'], [-18, '#05081f']];
 const _hz = new THREE.Color(), _hz2 = new THREE.Color();
 function keyColor(out, keys, el) {
   if (el >= keys[0][0]) return out.set(keys[0][1]);
@@ -617,7 +617,7 @@ function horizonColorFromTime(el, cloud) { return horizonPalette(HZ_ANTI_CLEAR, 
 function horizonGlowColorFromTime(el, cloud) { return horizonPalette(HZ_CLEAR, HZ_VIVID, el, cloud); }         // 太陽側（球）
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
 // 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く
-const SKY_DAY = new THREE.Color('#0058ff'), SKY_LOW = new THREE.Color('#062ccc'), SKY_NIGHT = new THREE.Color('#040e5c'), SKY_DEEP = new THREE.Color('#02051c');   // SKY_DEEP = 真夜中（−18° 以下）   // 彩度高め（2026-09-16 ユーザー指定）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
+const SKY_DAY = new THREE.Color('#001f7a'), SKY_LOW = new THREE.Color('#062ccc'), SKY_NIGHT = new THREE.Color('#040e5c'), SKY_DEEP = new THREE.Color('#02051c');   // SKY_DEEP = 真夜中（−18° 以下）   // 昼の空は #001f7a（2026-09-17 ユーザー指定の試し）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
 const SKY_OVERCAST = new THREE.Color('#e9edf2');   // 薄雲の空は明るい白（晴天より明るいことも多い。2026-09-16 ユーザー指摘）
 const SKY_RAIN = new THREE.Color('#6e747c');       // 厚い雨雲の空は暗い灰
 const _sky = new THREE.Color();
