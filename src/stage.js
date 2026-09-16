@@ -302,8 +302,8 @@ export function createStage(container) {
         float y = flip > 0.5 ? -d.y : d.y;
         vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
         float c = dot(h, normalize(sunDir.xz));
-        float lobe = pow(clamp(c * 0.7 + 0.3, 0.0, 1.0), 2.0);   // 太陽の方角ほど強い。真横で約 1 割、120° で消える（広め。2026-09-16 ユーザー指定）
-        float hz = exp(-max(y, 0.0) * 3.0);       // 地平線に近いほど強い（天頂で消える）
+        float lobe = pow(clamp(c * 0.55 + 0.45, 0.0, 1.0), 1.5);   // 太陽の方角ほど強い。真横で約 3 割、145° で消える（さらに広め。2026-09-16 ユーザー指定）
+        float hz = exp(-max(y, 0.0) * 2.2);       // 地平線に近いほど強い（天頂で消える）
         gl_FragColor = vec4(glowColor, glowAmt * lobe * hz);
       }`,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
