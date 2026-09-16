@@ -762,12 +762,20 @@ for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementB
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
 const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id]';
+// 値表示の書式（2026-09-16 ユーザー指定：時刻は時計表記）。toText: 数値 → 表示、fromText: 入力 → 数値（NaN なら不正）
+const VALUE_FMT = {
+  sunHour: {
+    toText: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${h}:${String(m).padStart(2, '0')}`; },
+    fromText: (t) => { const m = /^\s*(\d{1,2})(?::(\d{1,2}))?\s*$/.exec(t); return m ? (+m[1]) + (m[2] ? (+m[2]) / 60 : 0) : (Number.isFinite(parseFloat(t)) ? parseFloat(t) : NaN); },
+  },
+};
+const valueText = (id, v) => (VALUE_FMT[id] ? VALUE_FMT[id].toText(parseFloat(v)) : String(v));
 function refreshValueLabels() {
   for (const el of document.querySelectorAll(RANGE_SEL)) {
     const lab = document.querySelector(`[data-value-for="${el.id}"]`);
     if (!lab) continue;
-    if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = el.value; } // 数値入力欄（編集中は上書きしない）
-    else lab.textContent = el.value;
+    if (lab.tagName === 'INPUT') { if (document.activeElement !== lab) lab.value = valueText(el.id, el.value); } // 数値入力欄（編集中は上書きしない）
+    else lab.textContent = valueText(el.id, el.value);
   }
 }
 // スライダーの値表示を数値入力欄に置き換える（直接入力できる。Enter/フォーカス外しで確定、範囲外はスライダーの範囲に丸める。2026-09-11 ユーザー指定）
@@ -775,15 +783,18 @@ function makeValueInputs() {
   for (const el of document.querySelectorAll(RANGE_SEL)) {
     const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
     if (!lab) continue;
+    const fmt = VALUE_FMT[el.id];
     const num = document.createElement('input');
-    num.type = 'number'; num.className = 'num'; num.dataset.valueFor = el.id;
-    num.min = el.min; num.max = el.max; num.step = el.step || 'any'; num.value = el.value;
-    num.title = '数値を直接入力（Enter で確定）';
+    num.type = fmt ? 'text' : 'number'; num.className = 'num'; num.dataset.valueFor = el.id;
+    if (!fmt) { num.min = el.min; num.max = el.max; num.step = el.step || 'any'; }
+    num.value = valueText(el.id, el.value);
+    num.title = fmt ? '時刻を直接入力（例 18:30。Enter で確定）' : '数値を直接入力（Enter で確定）';
     const commit = () => {
-      if (num.value === '') { num.value = el.value; return; }
-      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), parseFloat(num.value)));
-      if (Number.isNaN(v)) { num.value = el.value; return; }
-      el.value = v; num.value = el.value;
+      if (num.value === '') { num.value = valueText(el.id, el.value); return; }
+      const raw = fmt ? fmt.fromText(num.value) : parseFloat(num.value);
+      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), raw));
+      if (Number.isNaN(v)) { num.value = valueText(el.id, el.value); return; }
+      el.value = v; num.value = valueText(el.id, el.value);
       el.dispatchEvent(new Event('input', { bubbles: true })); // スライダーを動かしたのと同じ経路（保存・反映）
     };
     num.addEventListener('change', commit);
@@ -794,8 +805,8 @@ function makeValueInputs() {
     const spin = document.createElement('span'); spin.className = 'numspin';
     const step = parseFloat(el.step) || 1;
     const bump = (dir) => {
-      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), (parseFloat(num.value) || 0) + dir * step));
-      el.value = v; num.value = el.value;
+      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), (parseFloat(el.value) || 0) + dir * step));
+      el.value = v; num.value = valueText(el.id, el.value);
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     for (const [dir, glyph, title] of [[1, '▲', '増やす'], [-1, '▼', '減らす']]) {
@@ -1031,7 +1042,7 @@ function followSunSliders(s) {
     const el = $(id); if (!el) continue;
     el.value = v;
     const lab = document.querySelector(`[data-value-for="${id}"]`);
-    if (lab) { if (lab.tagName === 'INPUT') lab.value = el.value; else lab.textContent = el.value; }
+    if (lab) { if (lab.tagName === 'INPUT') lab.value = valueText(id, el.value); else lab.textContent = valueText(id, el.value); }
   }
 }
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
