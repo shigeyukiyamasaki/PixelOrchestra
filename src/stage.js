@@ -301,12 +301,12 @@ export function createStage(container) {
                 sinDip: { value: 0 },
                 moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonU: { value: new THREE.Vector3(1, 0, 0) }, moonV: { value: new THREE.Vector3(0, 0, 1) },
                 moonK: { value: 1 }, moonVis: { value: 0 }, moonRad: { value: 1.0 }, moonCol: { value: MOON_DISC.clone() },
-                starVis: { value: 0 }, poleAxis: { value: new THREE.Vector3(0, 0.574, -0.819) }, starRot: { value: 0 }, time: { value: 0 }, twinkle: { value: 1 } },
+                starVis: { value: 0 }, poleAxis: { value: new THREE.Vector3(0, 0.574, -0.819) }, starRot: { value: 0 }, time: { value: 0 }, twinkle: { value: 1 }, haloAmt: { value: 1 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
       uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip;
       uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol; varying vec3 vDir;
-      uniform float starVis; uniform vec3 poleAxis; uniform float starRot; uniform float time; uniform float twinkle;
+      uniform float starVis; uniform vec3 poleAxis; uniform float starRot; uniform float time; uniform float twinkle; uniform float haloAmt;
       // 星（2026-09-16 ユーザー指定）：天球に固定した手続き生成の点。視線を極軸まわりに +時角 回して固定座標に直し、
       // 立方体面の格子（1 面 64×64）ごとに 18% の確率で 1 個置く。明るさは少数だけ強く、ごく弱く瞬く
       float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -365,7 +365,7 @@ export function createStage(container) {
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
         disc *= smoothstep(-0.011, 0.011, dd.y + sinDip);   // 床の縁を見下ろす角（sinDip）より下は沈んで見えない。切れ目は約 ±0.6° でぼかす（大気減光の近似。2026-09-16 ユーザー指定）
-        float halo = pow(max(cs, 0.0), 140.0) * 0.5;
+        float halo = pow(max(cs, 0.0), 140.0) * 0.5 * haloAmt;   // 円盤の暈も「太陽の眩しさ」に連動（0 で円盤だけ。2026-09-17 ユーザー指定）
         // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
         float aur = pow(max(cs, 0.0), 12.0) * aureole;
         float sa = sunVis * clamp(disc + halo + aur, 0.0, 1.0);
@@ -1012,6 +1012,7 @@ export function setShadows(o = {}) {
       u.starRot.value = deg((hourForStars - 12) * 15);
       stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = Math.max(u.sunVis.value, 0.6 * u.moonVis.value * u.moonK.value);
       stageCtx.bloom.gain = Number.isFinite(o.sunBloom) ? o.sunBloom : 1;   // 「太陽の眩しさ」スライダー（2026-09-17）
+      u.haloAmt.value = Math.min(1, stageCtx.bloom.gain);
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
