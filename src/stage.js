@@ -350,7 +350,7 @@ export function createStage(container) {
         vec3 sdn = normalize(sunDir);
         // 太陽中心の成分：角度のガウス減衰。幅は「光の広がり」で 0 → ±12°、1 → ±57°、2 → ±100°（16:30 に巨大化した緩い減衰を廃止。2026-09-16）
         float ang = acos(clamp(dot(dd, sdn), -1.0, 1.0));
-        float sigma = radians(12.0 + 22.5 * spread);   // 値 2 で旧 1 と同じ ±57°（高い太陽側だけ半分の効き。2026-09-17 ユーザー指定）
+        float sigma = radians(12.0 + 45.0 * spread);
         float lobe3 = exp(-(ang * ang) / (sigma * sigma));
         // 地平線に沿う成分（夕日用）：方角の一致度 × 地平線からの高さ。spread で横と高さを伸縮
         vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
@@ -886,8 +886,8 @@ export function renderFrame(renderer, scene, camera) {
   cu.veilCol.value.copy(stageCtx.sky.material.uniforms.sunCol.value).lerp(SUN_WHITE, 0.6);
   // 光条は夕方に向かって薄れて消える（高さの係数 high に下限を設けず、高度 20° 以下でさらに減らす。2026-09-17 ユーザー指定）
   const lowFade = Math.min(1, Math.max(0, el / 20));
-  cu.streak.value = behind ? 0 : 1.2 * vis * frac * high * lowFade * gain * renderer.toneMappingExposure;
-  cu.streakL.value = 0.11 + 0.07 * Math.min(2, gain);   // 到達距離は短め（旧 0.18+0.12）
+  cu.streak.value = behind ? 0 : 0.6 * vis * frac * high * lowFade * gain * renderer.toneMappingExposure;   // 眩しさに対して半分の効き（値 2 で旧 1。2026-09-17 ユーザー指定）
+  cu.streakL.value = 0.11 + 0.035 * Math.min(2, gain);   // 到達距離：眩しさに対して半分の効き（値 2 で旧 1）
   // 光条の回転：太陽の画面位置（中心からのずれ）とカメラの方位から。パンで回り、周回でも回る
   const camYaw = Math.atan2(_flareTmp.x, _flareTmp.z);   // _flareTmp はカメラの向き（上で取得）
   cu.rayRot.value = 0.9 * (cu.sunUv.value.x - 0.5) + 0.5 * (cu.sunUv.value.y - 0.5) + 0.35 * camYaw;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
