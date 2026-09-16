@@ -135,7 +135,10 @@ const CELLO_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(C
 // コントラバスは立奏。体の左に立て、表板を右前へ約 34° 向け（Euler y=0.6）、上部を奏者側へ浅く寄りかからせる（x=-0.15）。
 // 顔が楽器に隠れないよう体の左へずらす（2026-09-10 ユーザー指定：実際の構えのように横へ・角度をつける）。
 // 位置・角度は楽器の輪郭が胴・頭・脚（前面 z=3/4/2）に入り込まない組み合わせを数値探索で選んだ（tools/ 相当の一時スクリプト）
-const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.8, 0.3, 0.15)); // 約 14° 後ろへ寝かせ、ネックを左肩の横（頭の高さ）に出す（2026-09-16 ユーザー指定：チェロのように寝かせる。数値探索で選定）
+// 約 19° 後傾（弦の軸で実測。-0.8 では 34° で寝かせすぎ、と 2026-09-16 ユーザー指摘）。
+// 向き（y）は -0.1：+0.3 だと表板の x 軸が奏者側へ向き、弓が手前へ引かれて右手が体の前に出なかった（手首 z 1〜2px）。
+// -0.1 なら弓が表板に沿って横に走り、右手は体の前（z 8〜9px）で左右 13px 動く
+const BASS_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.45, -0.1, 0.15));
 const BASS_BOW = (() => { const v = new THREE.Vector3(-1, 0, 0).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BASS_Q); return [v.x, v.y, v.z]; })();
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
@@ -154,10 +157,11 @@ const VARIANT = {
   cello:      { spine: true, gaze: true, inst: { pos: [2, 2, 4], rot: 0 }, held: { R: 'bow' }, bow: { contact: [0.5, 18.25], world: 2.95, sMin: 2, sMax: 16 }, leftHand: [-0.5, 24], vib: [0, 1, 0], // 弓の接点は胴の上端 row 14 と駒 row 33 の中間 row 23.5（基本 y=18.25）
                 p3: { pos: [0, 1, 18], quat: CELLO_Q, bowDir: CELLO_BOW, liftDir: CELLO_UP, sMin: 2, sMax: 16, vib: [0, 1, 0], contactZ: 5.2, leftHandZ: 5.0 }, legSpread: 6.5,   // leftHandZ：ネックを表板側へ寄せ（3.5 → 4.5）、指板の厚み分で 5.0（2026-09-16）
                 rest: { bowHand: [9, 13, 9], leftHand: [-6, 15, 9] } }, // エンドピンは足より前、上部は胸。膝を開いて挟む。体の左（向かって右）へ 4.5 ずらす（2026-09-10 ユーザー指定）
-  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0, -1, 0] }, /* 右肘は真下（前腕が前へ出て弓と直角になり、手首の曲がりが 9〜59° に収まる。2026-09-11） */ bow: { contact: [0.5, 17], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 29], vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
-                // 楽器は 1.2 倍・エンドピン短縮・14° 後傾で、ネックの付け根が左肩の横（rig で x -11, y 30, z 0）に来る。
-                // 左腕は胴を通らず、肘を曲げた普通の握りで届く（肩から 16px）。2026-09-16 数値探索（300 通り超）で選定
-                p3: { pos: [-13, 0, 7], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 8.2, leftHandZ: 8.0 },   // ネックを表板側へ寄せ（5.0 → 7.5）、指板の厚み分で 8.0（2026-09-16）
+  contrabass: { spine: true, gaze: true, inst: { pos: [3, 0, 4], rot: 0 }, held: { R: 'bow' }, pole: { R: [0.6, -0.6, 0.5] }, /* 右肘は外・下・前（真下だと肘が体の後ろ z -0.6 に落ちる。2026-09-16 ユーザー指定）。[0.3,-0.4,1] のように前へ出しすぎると IK が 2 解を行き来して腕が毎フレーム 2〜9px 跳ねる（チラつき）。この向きなら 0.2px */ bow: { contact: [0.5, 17], world: 2.95, sMin: 2, sMax: 15 }, leftHand: [0, 31], vib: [0, 1, 0], // 左手はネック（胴の上端 row 16 = y 30 より上）を持つ。胴を腕が貫通していたため（2026-09-16 ユーザー指摘）
+                // 楽器は 1.2 倍・エンドピン短縮・胴の厚み 2/3・19° 後傾。体のすぐ左（x -5）・前（z 13）。
+                // 前に出すほど左腕が胴を避けやすく、体側へ寄せられる（z 13 なら x -4 まで通らない。2026-09-16 数値探索）。
+                // 左手はネックの上寄り（y 31）：29 だと前腕が胴の上部を通る。横に離す（x -9〜-14）と「右手が遠い／横にズレすぎ」（ユーザー指摘）
+                p3: { pos: [-5, 0, 13], quat: BASS_Q, bowDir: BASS_BOW, liftDir: BASS_UP, sMin: 2, sMax: 15, vib: [0, 1, 0], contactZ: 5.7, leftHandZ: 5.5 },   // 胴の厚み 9 セル（4.5px）：駒の上の弦 4.5+1.2、指板の表面 4.5+0.5+0.5（2026-09-16）
                 rest: { bowHand: [9, 16, 8], leftHand: [-9, 19, 5] } }, // 立奏。体の左に寝かせて構える。休みの左手は胴の肩に添える
   // 木管・金管：hands = 楽器ローカル px。p3.rot3 = 3D の姿勢（Euler）
   // 吹き口の高さ ≒ 32（頭の付け根 29.5 + 2.5）
@@ -696,7 +700,12 @@ export class Puppet {
       a.addScaledVector(v3(d), -a.dot(v3(d)));
       if (a.lengthSq() < 1e-4) a.set(-n[0], -n[1], -n[2]);
       a.normalize();
-      rightHandDir = [a.x, a.y, a.z];
+      // 前フレームの前腕 → 手の向き → 手首の位置 → IK → 前腕、の循環なので、肘の向き（pole）によっては
+      // 2 つの解を毎フレーム行き来して腕がチラつく（コントラバスで肘を前に出した時。2026-09-16 ユーザー指摘）。
+      // 手の向きを時定数 ≒ 50 ms で均して循環を切る
+      if (!this._rhDir) this._rhDir = a.clone();
+      else { this._rhDir.lerp(a, 1 - Math.exp(-20 * dt)); if (this._rhDir.lengthSq() < 1e-6) this._rhDir.copy(a); this._rhDir.normalize(); }
+      rightHandDir = [this._rhDir.x, this._rhDir.y, this._rhDir.z];
     }
     this.setHand('R', this._restHand(handR, cfg.rest?.bowHand), dt, Infinity, rightHandDir, cfg.pole?.R, this.hasWrist ? n : null); // pole：肘の向き（コントラバスは肘を外・上に出して前腕を弓と直角に）
     // 下ろしている間の弓の向き。既定は下へ垂らす。
