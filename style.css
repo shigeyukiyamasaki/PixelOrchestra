@@ -93,11 +93,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar .viewSize button.on { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; }
-/* 見出しは他のメニューと同じ .hd（2026-09-16 ユーザー指定）。ボタンと説明文は見出しの中に置き、灰背景に合わせて濃い色にする */
-#screenBar .head { gap: 10px; }
-#screenBar .head button { border-color: #0b1020; color: #0b1020; font-weight: 400; }
-#screenBar .head button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
-#screenBar .hint { color: #3a3a44; font-size: 11px; font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 見出しは他のメニューと同じ .hd で文字だけ（2026-09-16 ユーザー指定）。ボタンと説明文はその下の行 */
+#screenBar .head { display: flex; align-items: center; gap: 10px; margin: -2px 0 6px; }
+#screenBar .hint { color: var(--muted); font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
 #screenBar button:hover { border-color: var(--accent); color: var(--accent); }
 #screenRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
