@@ -315,7 +315,7 @@ export function createStage(container) {
         // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
-        disc *= smoothstep(-0.0015, 0.0015, dd.y + sinDip);   // 床の縁を見下ろす角（sinDip）より下は沈んで見えない（浮島の縁に沈む。2026-09-16 ユーザー指定）
+        disc *= smoothstep(-0.011, 0.011, dd.y + sinDip);   // 床の縁を見下ろす角（sinDip）より下は沈んで見えない。切れ目は約 ±0.6° でぼかす（大気減光の近似。2026-09-16 ユーザー指定）
         float halo = pow(max(cs, 0.0), 140.0) * 0.5;
         // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
         float aur = pow(max(cs, 0.0), 12.0) * aureole;
@@ -346,7 +346,7 @@ export function createStage(container) {
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
-        disc *= smoothstep(-0.0015, 0.0015, dd.y + sinDip);   // 床の縁より下は無し
+        disc *= smoothstep(-0.011, 0.011, dd.y + sinDip);   // 床の縁より下は無し（切れ目は約 ±0.6° でぼかす）
         float a = sunVis * disc;
         if (a < 0.002) discard;
         gl_FragColor = vec4(sunCol * gain * a, a);
