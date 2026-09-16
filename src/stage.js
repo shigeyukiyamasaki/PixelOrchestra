@@ -888,7 +888,7 @@ export function setShadows(o = {}) {
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
-      u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 3.2° → 25° 以上で 0.8°（16 時台を小さく。2026-09-16 ユーザー指摘）
+      u.sunRad.value = 2.4 - 1.6 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 2.4° → 25° 以上で 0.8°（夕日の大きさを控えめに。2026-09-16 ユーザー指定）
       u.sunVis.value = el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）
       // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
       const lowT = Math.min(1, Math.max(0, el / 20));
