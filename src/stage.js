@@ -350,7 +350,7 @@ export function createStage(container) {
         vec3 sdn = normalize(sunDir);
         // 太陽中心の成分：角度のガウス減衰。幅は「光の広がり」で 0 → ±12°、1 → ±57°、2 → ±100°（16:30 に巨大化した緩い減衰を廃止。2026-09-16）
         float ang = acos(clamp(dot(dd, sdn), -1.0, 1.0));
-        float sigma = radians(12.0 + 45.0 * spread);
+        float sigma = radians(12.0 + 22.5 * spread);   // 値 2 で旧 1 と同じ ±57°（高い太陽側だけ半分の効き。2026-09-17 ユーザー指定）
         float lobe3 = exp(-(ang * ang) / (sigma * sigma));
         // 地平線に沿う成分（夕日用）：方角の一致度 × 地平線からの高さ。spread で横と高さを伸縮
         vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
