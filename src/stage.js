@@ -344,6 +344,15 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
+// 背景の空の色 → 天空光の色。背景は描画用の濃い色なので、そのまま光にすると影側が真っ青になる（2026-09-16 ユーザー指摘）。
+// 白へ 65% 寄せて彩度を落とし、明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする（色相は背景に追従）
+const _skyTmp = new THREE.Color();
+function skyLightColorOf(hex) {
+  const c = _skyTmp.set(hex).lerp(SUN_WHITE, 0.65);
+  const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  if (lum > 0.01) c.multiplyScalar(1 / lum);
+  return c;
+}
 const LAT = deg(35);   // 北緯 35°（日本）。春秋分（赤緯 0）で計算する
 const SKY_BASE = 0.7;  // 快晴・南中の天空光の基準（半球光の強さ）
 /**
@@ -442,16 +451,19 @@ export function setShadows(o = {}) {
     if (Number.isFinite(sunI)) sun.intensity = (Number.isFinite(elNow) && elNow <= 0) ? 0 : sunI;   // 地平線下なら直射なし（手動でも物理どおり）
     sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後）
     if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
-    if (o.skyColor) hemi.color.set(o.skyColor);
+    if (o.skyColor) hemi.color.copy(skyLightColorOf(o.skyColor));
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
     else if (stageCtx.groundTex?.avgColor) {
       // 床（板目／草原）の平均色 × 照り返しの倍率（2026-09-16 ユーザー指定：物理に寄せる）。
       // 地面に当たる光 = 直射の水平面照度（強さ × sin 高度）+ 天空光。天空光と同じ強さで下から当てるので、
       // 平均色（反射率を含む）に「(直射 + 天空光) ÷ 天空光」を掛ける。曇天・日没後は 1 倍（平均色そのもの）
+      // 平均色の明るさは絵の都合（0.5 前後）なので、実測の反射率（草 0.22・板 0.30）に正規化してから掛ける（2026-09-16 ユーザー指摘：緑が勝ちすぎ）
       const elForBounce = Number.isFinite(elNow) ? elNow : 0;
       const direct = sun.intensity * Math.max(0, Math.sin(deg(elForBounce)));
       const bounce = Math.min(5, 1 + direct / Math.max(0.05, hemi.intensity));
-      hemi.groundColor.copy(stageCtx.groundTex.avgColor).multiplyScalar(bounce);
+      const avg = stageCtx.groundTex.avgColor, lum = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
+      const albedo = stageCtx.groundTex.albedo ?? 0.25;
+      hemi.groundColor.copy(avg).multiplyScalar((lum > 0.01 ? albedo / lum : 1) * bounce);
     }
     const az = Number.isFinite(sunAz) ? sunAz : lightState.sunAz, el = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
     if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
@@ -745,6 +757,7 @@ function grassTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
+  tex.albedo = 0.22;              // 草地の反射率（実測の目安 0.2〜0.25）
   return tex;
 }
 
@@ -793,6 +806,7 @@ function plankTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
+  tex.albedo = 0.30;              // 木の床の反射率（目安 0.25〜0.35）
   return tex;
 }
 
