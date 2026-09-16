@@ -395,14 +395,14 @@ export function createStage(container) {
   const sunOnlyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: skyMat.uniforms.sunDir, sunCol: skyMat.uniforms.sunCol, sunVis: skyMat.uniforms.sunVis, sunRad: skyMat.uniforms.sunRad, flip: skyMat.uniforms.flip, sinDip: skyMat.uniforms.sinDip,
                 moonDir: skyMat.uniforms.moonDir, moonU: skyMat.uniforms.moonU, moonV: skyMat.uniforms.moonV, moonK: skyMat.uniforms.moonK, moonVis: skyMat.uniforms.moonVis, moonRad: skyMat.uniforms.moonRad, moonCol: skyMat.uniforms.moonCol,
-                sceneDepth: { value: null }, resolution: { value: new THREE.Vector2(1, 1) }, gain: { value: 1 } },
+                sceneDepth: { value: null }, resolution: { value: new THREE.Vector2(1, 1) }, gain: { value: 1 }, ignoreDepth: { value: 0 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float flip; uniform float sinDip;
       uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol;
-      uniform sampler2D sceneDepth; uniform vec2 resolution; uniform float gain; varying vec3 vDir;
+      uniform sampler2D sceneDepth; uniform vec2 resolution; uniform float gain; uniform float ignoreDepth; varying vec3 vDir;
       void main(){
         // 本編で何か描かれている画素（深度 < 1）は太陽が隠れている
-        float dep = texture2D(sceneDepth, gl_FragCoord.xy / resolution).r;
+        float dep = ignoreDepth > 0.5 ? 1.0 : texture2D(sceneDepth, gl_FragCoord.xy / resolution).r;
         if (dep < 0.9999) discard;
         vec3 d = normalize(vDir);
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
@@ -725,7 +725,8 @@ export function updateSky(camera) {
 // ---------- 太陽だけの選択的ブルーム（2026-09-16 ユーザー指定・方式 A） ----------
 // 本編 → 等倍のオフスクリーン（深度テクスチャ付き）。太陽の円盤だけ → 1/4 解像度（本編の深度で隠れた所は捨てる）→ ガウスぼかし。
 // 最後に本編を最近傍で 1:1 転写しながらぼかした太陽を加算する。本編のドット絵には一切ぼかしが掛からない
-const post = { w: 0, h: 0, main: null, a: null, b: null, quadScene: null, quadCam: null, quad: null, blurMat: null, compMat: null };
+const post = { w: 0, h: 0, main: null, a: null, b: null, quadScene: null, quadCam: null, quad: null, blurMat: null, compMat: null,
+               probe: null, probeMat: null, px8: new Uint8Array(4), sunNdc: new THREE.Vector3(), half: false };
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 function ensurePost(renderer) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -736,8 +737,11 @@ function ensurePost(renderer) {
   post.main.depthTexture = new THREE.DepthTexture(size.x, size.y);
   post.main.depthTexture.type = THREE.UnsignedIntType;
   const bw = Math.max(1, Math.round(size.x / 4)), bh = Math.max(1, Math.round(size.y / 4));
-  post.a = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-  post.b = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  // ブルーム用は 16bit 浮動小数（WebGL2）：暗い裾の精度と増幅の飽和を避ける。無い環境は 8bit
+  post.half = !!(renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float'));
+  const bt = post.half ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  post.a = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });
+  post.b = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });
   if (!post.quadScene) {
     post.quadScene = new THREE.Scene();
     post.quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -755,17 +759,42 @@ function ensurePost(renderer) {
       depthTest: false, depthWrite: false, toneMapped: false,
     });
     post.compMat = new THREE.ShaderMaterial({
-      uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 } },
+      uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 },
+                  sunUv: { value: new THREE.Vector2(0.5, 0.5) }, aspect: { value: 1.78 }, veil: { value: 0 }, veilR: { value: 0.1 }, veilCol: { value: new THREE.Color(1, 1, 1) },
+                  streak: { value: 0 }, streakL: { value: 0.3 } },
       vertexShader: QUAD_VS,
-      fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength; varying vec2 vUv;
+      fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength;
+        uniform vec2 sunUv; uniform float aspect; uniform float veil; uniform float veilR; uniform vec3 veilCol; uniform float streak; uniform float streakL; varying vec2 vUv;
         void main(){
           vec4 m = texture2D(mainTex, vUv);              // 本編（premultiplied）。等倍・最近傍なのでそのまま
           vec3 b = texture2D(bloom, vUv).rgb * strength; // ぼかした太陽を加算
-          float bl = max(b.r, max(b.g, b.b));
-          gl_FragColor = vec4(m.rgb + b, min(1.0, m.a + bl));
+          // 光のかぶり（ヴェイリング・グレア。2026-09-17 ユーザー指定）：太陽からの距離 d（画面の高さ = 1）に対して 1/(1+(d/r)²) の長い裾で
+          // 画面全体に白っぽい光を足す。手前の物の上にも乗る（目・レンズの散乱の再現）。veil は見えている割合と眩しさで決まる
+          vec2 dv = (vUv - sunUv) * vec2(aspect, 1.0);
+          float d = length(dv);
+          float g = veil / (1.0 + (d * d) / (veilR * veilR));
+          // 放射状の光条（2026-09-17 ユーザー指定：巨大な太陽でなく、直視できない眩しさ）。回折の再現。
+          // 3 層：主 16 本（細く長い）＋ 副 16 本（間に、短め）＋ 細い 32 本（ごく短い）。長さ streakL（画面の高さ = 1）で指数減衰（本数は 2026-09-17 ユーザー指定で増やした）
+          float phi = atan(dv.y, dv.x);
+          // 輪郭は柔らかく（指数を下げて縁をなだらかに。2026-09-17 ユーザー指摘）
+          float r1 = pow(abs(cos(phi * 8.0)), 14.0);
+          float r2 = pow(abs(cos(phi * 8.0 + 0.19635)), 28.0) * 0.6;
+          float r3 = pow(abs(cos(phi * 16.0 + 0.09817)), 48.0) * 0.35;
+          float rays = (r1 * exp(-d / streakL) + r2 * exp(-d / (streakL * 0.5)) + r3 * exp(-d / (streakL * 0.3))) * streak * 0.75;
+          vec3 v = veilCol * (g + rays);
+          vec3 add = b + v;
+          float al = max(add.r, max(add.g, add.b));
+          gl_FragColor = vec4(m.rgb + add, min(1.0, m.a + al));
         }`,
       depthTest: false, depthWrite: false, toneMapped: false, transparent: true, blending: THREE.NoBlending,
     });
+    post.probeMat = new THREE.ShaderMaterial({
+      uniforms: { tex: { value: null }, uv: { value: new THREE.Vector2(0.5, 0.5) } },
+      vertexShader: QUAD_VS,
+      fragmentShader: 'uniform sampler2D tex; uniform vec2 uv; void main(){ gl_FragColor = vec4(texture2D(tex, uv).rgb, 1.0); }',
+      depthTest: false, depthWrite: false, toneMapped: false,
+    });
+    post.probe = new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
     post.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post.blurMat);
     post.quadScene.add(post.quad);
   }
@@ -779,6 +808,7 @@ function blurPass(renderer, src, dst, dx, dy, step) {
   renderer.render(post.quadScene, post.quadCam);
 }
 /** 1 フレーム描く。屋外（太陽あり）なら太陽だけのブルームを掛け、屋内なら従来どおり直接描く */
+const _flareTmp = new THREE.Vector3();
 export function renderFrame(renderer, scene, camera) {
   if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
@@ -808,11 +838,39 @@ export function renderFrame(renderer, scene, camera) {
     blurPass(renderer, post.a, post.b, 1, 0, step * spread);
     blurPass(renderer, post.b, post.a, 0, 1, step * spread);
   }
+  // 見えている割合（2026-09-17）：ぼかし済みの太陽中心 1 画素 ÷ 隠れていない時の理論値（半径 r・ガウス σ の円盤の中心値 1 − exp(−r²/2σ²)）
+  const sunDir = stageCtx.sky.material.uniforms.sunDir.value;
+  post.sunNdc.copy(camera.position).addScaledVector(sunDir, 100).project(camera);
+  const behind = post.sunNdc.z > 1 || sunDir.dot(camera.getWorldDirection(_flareTmp)) < 0;
+  let frac = 0;
+  const sx = (post.sunNdc.x + 1) / 2, sy = (post.sunNdc.y + 1) / 2;
+  if (!behind && sx >= 0 && sx <= 1 && sy >= 0 && sy <= 1) {
+    // 1×1 の 8bit RT に太陽中心の値を写して読む（浮動小数 RT を直接読まない）
+    post.quad.material = post.probeMat;
+    post.probeMat.uniforms.tex.value = post.a.texture; post.probeMat.uniforms.uv.value.set(sx, sy);
+    renderer.setRenderTarget(post.probe); renderer.render(post.quadScene, post.quadCam);
+    renderer.readRenderTargetPixels(post.probe, 0, 0, 1, 1, post.px8);
+    const v = Math.max(post.px8[0], post.px8[1], post.px8[2]) / 255;
+    const su = stageCtx.sky.material.uniforms, sc = su.sunCol.value, cmax = Math.max(sc.r, sc.g, sc.b, 1e-3);
+    const rTex = su.sunRad.value * texPerDeg;                                   // 円盤の半径 [texel]
+    const sigma = 3 * spread * Math.sqrt(1 + 2.5 * 2.5 + 6 * 6);                 // 3 段のガウスの合成 σ [texel]（13 タップ ≈ σ 3）
+    const expected = 1 - Math.exp(-(rTex * rTex) / (2 * sigma * sigma));
+    frac = Math.min(1, Math.max(0, (v / cmax) / Math.max(1e-4, expected) / Math.max(0.05, vis)));
+  }
   // 4) 本編を 1:1 転写しつつ加算
   post.quad.material = post.compMat;
   post.compMat.uniforms.mainTex.value = post.main.texture;
   post.compMat.uniforms.bloom.value = post.a.texture;
-  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure * gain;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
+  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high) * renderer.toneMappingExposure * gain;
+  // 光のかぶり：太陽の画面位置を中心に。高い太陽ほど強く、夕日は弱い。隠れている割合で消える
+  const cu = post.compMat.uniforms;
+  cu.sunUv.value.set((post.sunNdc.x + 1) / 2, (post.sunNdc.y + 1) / 2);
+  cu.aspect.value = post.main.width / post.main.height;
+  cu.veil.value = behind ? 0 : 0.18 * vis * frac * (0.25 + 0.75 * high) * gain * renderer.toneMappingExposure;   // 眩しさ 2 で太陽の周りが +50%、画面の遠い所で +5〜10%
+  cu.veilR.value = 0.06 + 0.04 * Math.min(2, gain);
+  cu.veilCol.value.copy(stageCtx.sky.material.uniforms.sunCol.value).lerp(SUN_WHITE, 0.6);
+  cu.streak.value = behind ? 0 : 1.2 * vis * frac * (0.25 + 0.75 * high) * gain * renderer.toneMappingExposure;
+  cu.streakL.value = 0.18 + 0.12 * Math.min(2, gain);   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
   renderer.setRenderTarget(null); renderer.clear();
   renderer.render(post.quadScene, post.quadCam);
 }
