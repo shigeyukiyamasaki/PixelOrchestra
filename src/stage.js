@@ -298,11 +298,37 @@ export function createStage(container) {
                 sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 }, spread: { value: 1 },
                 sinDip: { value: 0 },
                 moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonU: { value: new THREE.Vector3(1, 0, 0) }, moonV: { value: new THREE.Vector3(0, 0, 1) },
-                moonK: { value: 1 }, moonVis: { value: 0 }, moonRad: { value: 1.0 }, moonCol: { value: MOON_DISC.clone() } },
+                moonK: { value: 1 }, moonVis: { value: 0 }, moonRad: { value: 1.0 }, moonCol: { value: MOON_DISC.clone() },
+                starVis: { value: 0 }, poleAxis: { value: new THREE.Vector3(0, 0.574, -0.819) }, starRot: { value: 0 }, time: { value: 0 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
       uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip;
       uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol; varying vec3 vDir;
+      uniform float starVis; uniform vec3 poleAxis; uniform float starRot; uniform float time;
+      // 星（2026-09-16 ユーザー指定）：天球に固定した手続き生成の点。視線を極軸まわりに +時角 回して固定座標に直し、
+      // 立方体面の格子（1 面 64×64）ごとに 18% の確率で 1 個置く。明るさは少数だけ強く、ごく弱く瞬く
+      float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      vec3 rotAxis(vec3 v, vec3 k, float ang) { float c = cos(ang), s = sin(ang); return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c); }
+      vec4 stars(vec3 d) {
+        vec3 sd = rotAxis(d, normalize(poleAxis), starRot);
+        vec3 a = abs(sd); vec2 uv; float face;
+        if (a.x >= a.y && a.x >= a.z) { uv = sd.yz / a.x; face = sd.x > 0.0 ? 0.0 : 1.0; }
+        else if (a.y >= a.z) { uv = sd.xz / a.y; face = sd.y > 0.0 ? 2.0 : 3.0; }
+        else { uv = sd.xy / a.z; face = sd.z > 0.0 ? 4.0 : 5.0; }
+        const float N = 64.0;
+        vec2 g = (uv * 0.5 + 0.5) * N; vec2 cell = floor(g); vec2 f = g - cell;
+        vec2 id = cell + face * 101.0;
+        float h = hash21(id);
+        if (h > 0.18) return vec4(0.0);
+        vec2 pos = vec2(hash21(id + 7.1), hash21(id + 13.7)) * 0.7 + 0.15;
+        float b = hash21(id + 3.3); b = b * b * b;                 // 少数だけ明るい
+        float r = 0.035 + 0.06 * b;                                // 半径（格子単位。1 格子 ≈ 1.4°）
+        float st = smoothstep(r + 0.02, r, length(f - pos));
+        float tw = 0.75 + 0.25 * sin(time * 2.0 + h * 60.0);       // 瞬き
+        float col = hash21(id + 21.9);
+        vec3 c = col < 0.2 ? vec3(0.8, 0.88, 1.0) : (col > 0.85 ? vec3(1.0, 0.93, 0.8) : vec3(1.0));
+        return vec4(c, st * (0.3 + 0.7 * b) * tw);
+      }
       // 月の円盤（欠けあり）：接平面の座標 (u,v) を半径で正規化し、明暗境界 u = (1−2k)·sqrt(1−v²) より太陽側を明るく
       float moonDisc(vec3 dd) {
         float cm = dot(dd, normalize(moonDir));
@@ -340,7 +366,13 @@ export function createStage(container) {
         float md = moonVis * moonDisc(dd) * smoothstep(-0.011, 0.011, dd.y + sinDip);
         float outA2 = md + outA * (1.0 - md);
         vec3 outC2 = outA2 > 1e-4 ? (moonCol * md + outC * outA * (1.0 - md)) / outA2 : outC;
-        gl_FragColor = vec4(outC2, outA2);
+        // 星（一番下の層。夕焼け・太陽・月の下に置く＝それらが有る所では隠れる）。月の近くは月明かりで薄れ、床の縁で切れる
+        vec4 sv = stars(dd);
+        float ss = starVis * sv.a * smoothstep(-0.011, 0.011, dd.y + sinDip)
+                 * (1.0 - 0.85 * moonVis * moonK * smoothstep(0.975, 1.0, dot(dd, normalize(moonDir))));
+        float outA3 = outA2 + ss * (1.0 - outA2);
+        vec3 outC3 = outA3 > 1e-4 ? (outC2 * outA2 + sv.rgb * ss * (1.0 - outA2)) / outA3 : outC2;
+        gl_FragColor = vec4(outC3, outA3);
       }`,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
   });
@@ -626,7 +658,7 @@ export function setFloorStyle(style) {
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
- *   bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
+ *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
 function updateDomeLight() {
@@ -648,6 +680,7 @@ export function updateSky(camera) {
   if (!stageCtx?.sky.visible) return;
   stageCtx.sky.position.copy(camera.position);
   stageCtx.sunOnly.position.copy(camera.position);
+  stageCtx.sky.material.uniforms.time.value = performance.now() / 1000;   // 星の瞬き
   // 太陽が沈むライン（2026-09-16 ユーザー指定）：目の高さ（水平）ではなく、カメラから太陽の方角に見える床の縁を見下ろす角。
   // 地球の丸みによる水平線の下がりは 0.1° 未満で無視できる。このシーンで「地面が終わって見える」のは床の縁なので、そこに沈める。
   // 太陽の方角へ 0.5 unit 刻みで進み、床の中にいた最後の距離（縁）を取る。床を通らない向きなら目の高さ（0）
@@ -858,6 +891,13 @@ export function setShadows(o = {}) {
         const dusk = Math.min(1, Math.max(0, -el / 6));
         u.moonVis.value = mEl > -(u.moonRad.value + 0.5 + stageCtx.bloom.dip) ? dusk * (1 - cloud) * (1 - cloud) : 0;
       } else u.moonVis.value = 0;
+      // 星：太陽が −6° を過ぎてから −15° にかけて現れる。雲で隠れる。極軸は北（舞台基準の方角 = 舞台の向き）・仰角 = 緯度、回転は時角
+      const facing = o.sunAuto ? o.sunAuto.facing : (Number.isFinite(o.stageFacing) ? o.stageFacing : 180);
+      const hourForStars = o.sunAuto ? o.sunAuto.hour : (Number.isFinite(o.hour) ? o.hour : 12);
+      u.starVis.value = Math.min(1, Math.max(0, (-el - 6) / 9)) * (1 - cloud) * (1 - cloud);
+      const pa = deg(facing);
+      u.poleAxis.value.set(Math.cos(LAT) * Math.sin(pa), Math.sin(LAT), Math.cos(LAT) * Math.cos(pa));
+      u.starRot.value = deg((hourForStars - 12) * 15);
       stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = Math.max(u.sunVis.value, 0.6 * u.moonVis.value * u.moonK.value);
     }
   }

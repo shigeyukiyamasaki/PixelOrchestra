@@ -1351,7 +1351,7 @@ function animate() {
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
-                 moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright,
+                 moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
