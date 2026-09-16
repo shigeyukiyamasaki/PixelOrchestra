@@ -311,6 +311,7 @@ export function createStage(container) {
         // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
+        disc *= smoothstep(-0.0015, 0.0015, dd.y);   // 地平線（水平）より下は沈んで見えない（半分沈んだ太陽。2026-09-16 ユーザー指定）
         float halo = pow(max(cs, 0.0), 140.0) * 0.5;
         // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
         float aur = pow(max(cs, 0.0), 12.0) * aureole;
@@ -341,6 +342,7 @@ export function createStage(container) {
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
+        disc *= smoothstep(-0.0015, 0.0015, dd.y);   // 地平線より下は無し
         float a = sunVis * disc;
         if (a < 0.002) discard;
         gl_FragColor = vec4(sunCol * gain * a, a);
@@ -449,7 +451,7 @@ const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行
 const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
-const SUN_SET_RED = new THREE.Color('#ffb830'), _sunHigh = new THREE.Color();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
+const SUN_SET_RED = new THREE.Color('#ffd060'), _sunHigh = new THREE.Color();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
@@ -492,8 +494,8 @@ export function sunFromTime(hour, cloud, facing) {
 // 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
 // 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
 // 太陽側（球に重ねる夕焼け）
-const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f2d9a0'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d']];
-const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f7c97a'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d']];
+const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
+const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d']];
 // 太陽と反対側（CSS の地平線の色）：青灰 → 地球の影の帯（ピンク〜紫）→ 濃紺。薄雲でピンクが濃くなる
 const HZ_ANTI_CLEAR = [[20, '#bfe0f5'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d']];
 const HZ_ANTI_VIVID = [[20, '#bfe0f5'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d']];
@@ -652,7 +654,8 @@ export function renderFrame(renderer, scene, camera) {
   if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
   const { el, cloud, vis } = stageCtx.bloom;
-  const high = Math.min(1, Math.max(0, (el - 3) / 32));          // 高い太陽ほど眩しく広い（3°→35° のなだらかな坂。16 時台に山ができないよう。2026-09-16 ユーザー指摘）
+  const hT = Math.min(1, Math.max(0, (el - 3) / 32));
+  const high = hT * hT;                                          // 高い太陽ほど眩しく広い（3°→35°、二乗で中間を抑える。16 時台に山ができないよう。2026-09-16 ユーザー指摘）
   const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
   // 1) 本編 → 等倍 RT（深度付き）
   renderer.setRenderTarget(post.main); renderer.setClearColor(0x000000, 0); renderer.clear();
@@ -743,13 +746,13 @@ export function setShadows(o = {}) {
       u.glowAmt.value = 1;
       u.flip.value = o.bgFlip ? 1 : 0;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
-      u.sunVis.value = el > -1 ? (1 - cloud) * (1 - cloud) : 0;
+      u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 3.2° → 25° 以上で 0.8°（16 時台を小さく。2026-09-16 ユーザー指摘）
+      u.sunVis.value = el > -(u.sunRad.value + 0.5) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が地平線に隠れるまで見える（半分沈む）
       // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
       const lowT = Math.min(1, Math.max(0, el / 20));
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
       u.aureole.value = 0;   // 空の球側のにじみは使わない（眩しさは renderFrame の選択的ブルームが担う。2026-09-16）
-      u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 40));   // 昼ほど小さく：地平線 3.2° → 40° 以上で 0.8°（2026-09-16 ユーザー指定）
       stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = u.sunVis.value;
     }
   }
