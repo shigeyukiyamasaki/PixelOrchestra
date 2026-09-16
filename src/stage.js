@@ -776,12 +776,22 @@ function ensurePost(renderer) {
           // 放射状の光条（2026-09-17 ユーザー指定：巨大な太陽でなく、直視できない眩しさ）。回折の再現。
           // 3 層：主 16 本（細く長い）＋ 副 16 本（間に、短め）＋ 細い 32 本（ごく短い）。長さ streakL（画面の高さ = 1）で指数減衰（本数は 2026-09-17 ユーザー指定で増やした）
           float phi = atan(dv.y, dv.x);
-          // 輪郭は柔らかく（指数を下げて縁をなだらかに。2026-09-17 ユーザー指摘）
-          float r1 = pow(abs(cos(phi * 8.0)), 14.0);
-          float r2 = pow(abs(cos(phi * 8.0 + 0.19635)), 28.0) * 0.6;
-          float r3 = pow(abs(cos(phi * 16.0 + 0.09817)), 48.0) * 0.35;
-          float rays = (r1 * exp(-d / streakL) + r2 * exp(-d / (streakL * 0.5)) + r3 * exp(-d / (streakL * 0.3))) * streak * 0.75;
-          vec3 v = veilCol * (g + rays);
+          // 光条は「一定の太さの線」（線からの垂直距離でガウス減衰）。角度幅だと太陽の近くで鋭く、離れると太くなり実物と逆だった（2026-09-17 ユーザー指摘）。
+          // 太陽の近くでは線同士が重なって白く溢れ、離れるほど 1 本ずつ分かれて薄れる
+          float rays = 0.0;
+          { float n = 16.0, off = 0.0, w = 0.0045, L = streakL;            // 主 16 本：太め・長い
+            float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float perp = d * abs(sin(dphi)); rays += exp(-(perp * perp) / (w * w)) * exp(-d / L); }
+          { float n = 16.0, off = 0.19635, w = 0.003, L = streakL * 0.5;   // 副 16 本：細め・短い
+            float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float perp = d * abs(sin(dphi)); rays += 0.6 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
+          { float n = 32.0, off = 0.09817, w = 0.002, L = streakL * 0.3;   // 細い 32 本：ごく短い
+            float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float perp = d * abs(sin(dphi)); rays += 0.35 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
+          // 太陽の近くは光条を立てず（ウニ状のトゲに見えた。2026-09-17 ユーザー指摘）、丸い芯の光で白く溢れさせる。光条は芯の外でなだらかに立ち上がる
+          float core = streak * 0.9 * exp(-(d * d) / (0.035 * 0.035));
+          rays *= streak * 0.75 * smoothstep(0.02, 0.12, d);
+          vec3 v = veilCol * (g + core + rays);
           vec3 add = b + v;
           float al = max(add.r, max(add.g, add.b));
           gl_FragColor = vec4(m.rgb + add, min(1.0, m.a + al));
