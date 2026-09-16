@@ -345,14 +345,16 @@ export function createStage(container) {
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
-        vec2 h = normalize(d.xz + vec2(1e-5, 0.0));
-        float c = dot(h, normalize(sunDir.xz));
-        // 太陽の方角ほど強い。spread = 1 で真横に約 3 割・145° で消える（2026-09-16 ユーザー指定の標準）。
-        // spread は「光の広がり」スライダー：0 で太陽の真下だけ、2 で空の大半（方角のオフセットと高さの減衰を一括で伸縮）
+        // 夕焼けの層：太陽の 3D 方向（方角＋高度）との角度差で決める（2026-09-16 ユーザー指摘：高度を見ていなかった）。
+        // spread は「光の広がり」スライダー：0 で太陽のすぐ近くだけ、1 で標準、2 で空の大半
+        vec3 sdn = normalize(sunDir);
+        float c3 = dot(dd, sdn);                                   // 太陽との角度の cos（1 = 太陽の方向）
         float k = clamp(0.45 * spread, 0.0, 0.9);
-        float lobe = pow(clamp(c * (1.0 - k) + k, 0.0, 1.0), 1.5);
-        float hz = exp(-max(y, 0.0) * 2.2 / max(0.25, spread));   // 地平線に近いほど強い（天頂で消える）
-        float a = glowAmt * lobe * hz;
+        float lobe = pow(clamp(c3 * (1.0 - k) + k, 0.0, 1.0), 1.5);
+        // 太陽が低い間（高度 0→15°）は地平線に沿って横に伸びる重みを残し、高くなるほど太陽を中心とした放射状へ
+        float hz = exp(-max(y, 0.0) * 2.2 / max(0.25, spread));
+        float lowSun = 1.0 - clamp(sdn.y / 0.26, 0.0, 1.0);        // sin15° ≈ 0.26
+        float a = glowAmt * lobe * mix(1.0, hz, lowSun);
         // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
