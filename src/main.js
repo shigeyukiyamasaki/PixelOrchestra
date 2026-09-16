@@ -1338,7 +1338,7 @@ function animate() {
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },
-                 skyColor: s.bgFlip ? s.bgBottom : s.bgTop, bgFlip: s.bgFlip });   // 空の色は背景の見た目どおり（反転中は下の色が空）。地面の色は床の平均色（stage 側）
+                 bgFlip: s.bgFlip });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）

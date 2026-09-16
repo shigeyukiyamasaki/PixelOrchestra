@@ -341,7 +341,7 @@ export function createStage(container) {
   controls.minDistance = 5;
   controls.maxDistance = 90;
   controls.minPolarAngle = deg(12);
-  controls.maxPolarAngle = deg(89); // ほぼ床の高さまで下りられる（2026-09-09 ユーザー要望）
+  controls.maxPolarAngle = deg(170); // 床の高さまで下り、さらに見上げられる（太陽を画面に入れるため。2026-09-16 ユーザー指定）。カメラ Y の下限 0.5 で床には潜らない
   // 水平方向の制限なし（ボクセル化で全周から見られる。2026-09-09）
   controls.update();
 
@@ -425,11 +425,14 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
-// 背景の空の色 → 天空光の色。背景は描画用の濃い色なので、そのまま光にすると影側が真っ青になる（2026-09-16 ユーザー指摘）。
-// 白へ 65% 寄せて彩度を落とし、明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする（色相は背景に追従）
+// 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
+// 2026-09-16 ユーザー指定：色を付けるのは夕焼けの黄〜橙だけ。青に寄るほど無色（白）に近づける。
+// 「暖かさ」= 赤 − 青（橙 #f28a3c → 1、薄黄 #f2d9a0 → 0.5、水色・紺 → 0）に比例して白から色へ寄せる
 function skyLightColorOf(hex) {
-  const c = _skyTmp.set(hex).lerp(SUN_WHITE, 0.65);
+  const c = _skyTmp.set(hex);
+  const warmth = Math.min(1, Math.max(0, (c.r - c.b) * 1.5));
+  c.lerp(SUN_WHITE, 1 - 0.7 * warmth);
   const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
   if (lum > 0.01) c.multiplyScalar(1 / lum);
   return c;
@@ -544,7 +547,7 @@ export function setFloorStyle(style) {
  * 光源の切替と太陽光の項目（2026-09-16 ユーザー指定）：
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
- *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
+ *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   bgFlip: 背景を上下反転中なら空の球も反転  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -589,7 +592,7 @@ export function setShadows(o = {}) {
     if (Number.isFinite(sunI)) sun.intensity = (Number.isFinite(elNow) && elNow <= 0) ? 0 : sunI;   // 地平線下なら直射なし（手動でも物理どおり）
     sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後）
     if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
-    if (o.skyColor) hemi.color.copy(skyLightColorOf(o.skyColor));
+    if (Number.isFinite(elNow)) hemi.color.copy(skyLightColorOf(horizonGlowColorFromTime(elNow, o.sunAuto ? o.sunAuto.cloud : 0)));   // 色相は太陽側の地平線（夕焼け）から。青は乗せない
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
     else if (stageCtx.groundTex?.avgColor) {
       // 床（板目／草原）の平均色 × 照り返しの倍率（2026-09-16 ユーザー指定：物理に寄せる）。
