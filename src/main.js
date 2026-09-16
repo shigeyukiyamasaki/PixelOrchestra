@@ -829,7 +829,7 @@ function settings() {
     labelSize: num('labelSize', 1), // パート名（2026-09-12）
     labelOutline: num('labelOutline', 3), labelY: num('labelY', 0),   // 白縁の太さ・頭上からの高さ（2026-09-13）
     floorStyle: $('floorStyle')?.value === 'grass' ? 'grass' : 'plank', // 床の絵（板目／草原）
-    showShadows: $('showShadows').checked,
+    showShadows: true,   // 影は常に落とす（2026-09-16 ユーザー指定でチェックを廃止。2D の板のときだけ下で自動オフ）
     ambient: num('ambient', 0.7),
     spotIntensity: num('spotIntensity', 1.6),
     spotElev: num('spotElev', 40),
