@@ -761,10 +761,10 @@ function ensurePost(renderer) {
     post.compMat = new THREE.ShaderMaterial({
       uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 },
                   sunUv: { value: new THREE.Vector2(0.5, 0.5) }, aspect: { value: 1.78 }, veil: { value: 0 }, veilR: { value: 0.1 }, veilCol: { value: new THREE.Color(1, 1, 1) },
-                  streak: { value: 0 }, streakL: { value: 0.3 } },
+                  streak: { value: 0 }, streakL: { value: 0.3 }, rayRot: { value: 0 } },
       vertexShader: QUAD_VS,
       fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength;
-        uniform vec2 sunUv; uniform float aspect; uniform float veil; uniform float veilR; uniform vec3 veilCol; uniform float streak; uniform float streakL; varying vec2 vUv;
+        uniform vec2 sunUv; uniform float aspect; uniform float veil; uniform float veilR; uniform vec3 veilCol; uniform float streak; uniform float streakL; uniform float rayRot; varying vec2 vUv;
         void main(){
           vec4 m = texture2D(mainTex, vUv);              // 本編（premultiplied）。等倍・最近傍なのでそのまま
           vec3 b = texture2D(bloom, vUv).rgb * strength; // ぼかした太陽を加算
@@ -775,7 +775,7 @@ function ensurePost(renderer) {
           float g = veil / (1.0 + (d * d) / (veilR * veilR));
           // 放射状の光条（2026-09-17 ユーザー指定：巨大な太陽でなく、直視できない眩しさ）。回折の再現。
           // 3 層：主 16 本（細く長い）＋ 副 16 本（間に、短め）＋ 細い 32 本（ごく短い）。長さ streakL（画面の高さ = 1）で指数減衰（本数は 2026-09-17 ユーザー指定で増やした）
-          float phi = atan(dv.y, dv.x);
+          float phi = atan(dv.y, dv.x) + rayRot;   // rayRot：カメラの向きと太陽の画面位置で回る（レンズフレアの動き。2026-09-17 ユーザー指定）
           // 光条は「一定の太さの線」（線からの垂直距離でガウス減衰）。角度幅だと太陽の近くで鋭く、離れると太くなり実物と逆だった（2026-09-17 ユーザー指摘）。
           // 太陽の近くでは線同士が重なって白く溢れ、離れるほど 1 本ずつ分かれて薄れる
           float rays = 0.0;
@@ -882,7 +882,10 @@ export function renderFrame(renderer, scene, camera) {
   // 光条は夕方に向かって薄れて消える（高さの係数 high に下限を設けず、高度 20° 以下でさらに減らす。2026-09-17 ユーザー指定）
   const lowFade = Math.min(1, Math.max(0, el / 20));
   cu.streak.value = behind ? 0 : 1.2 * vis * frac * high * lowFade * gain * renderer.toneMappingExposure;
-  cu.streakL.value = 0.18 + 0.12 * Math.min(2, gain);   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
+  cu.streakL.value = 0.18 + 0.12 * Math.min(2, gain);
+  // 光条の回転：太陽の画面位置（中心からのずれ）とカメラの方位から。パンで回り、周回でも回る
+  const camYaw = Math.atan2(_flareTmp.x, _flareTmp.z);   // _flareTmp はカメラの向き（上で取得）
+  cu.rayRot.value = 0.9 * (cu.sunUv.value.x - 0.5) + 0.5 * (cu.sunUv.value.y - 0.5) + 0.35 * camYaw;   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し。露出も掛ける
   renderer.setRenderTarget(null); renderer.clear();
   renderer.render(post.quadScene, post.quadCam);
 }
