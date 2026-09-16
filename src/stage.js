@@ -315,7 +315,7 @@ export function createStage(container) {
         // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
         float aur = pow(max(cs, 0.0), 12.0) * aureole;
         float sa = sunVis * clamp(disc + halo + aur, 0.0, 1.0);
-        vec3 sunc = mix(sunCol, vec3(1.0), 0.5);
+        vec3 sunc = sunCol;   // 色は JS 側で高度に応じて決める（高いと白っぽく、夕日は赤橙）
         float outA = sa + a * (1.0 - sa);
         vec3 outC = outA > 1e-4 ? (sunc * sa + glowColor * a * (1.0 - sa)) / outA : glowColor;
         gl_FragColor = vec4(outC, outA);
@@ -424,6 +424,7 @@ const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行
 const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
+const SUN_SET_RED = new THREE.Color('#ff4a1a'), _sunHigh = new THREE.Color();   // 夕日の円盤の色
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
@@ -625,8 +626,12 @@ export function setShadows(o = {}) {
       u.flip.value = o.bgFlip ? 1 : 0;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
       u.sunVis.value = el > -1 ? (1 - cloud) * (1 - cloud) : 0;
-      u.sunCol.value.copy(sun.color);
-      u.aureole.value = 0.6 + 0.6 * Math.min(1, cloud / 0.5);   // もや・薄雲ほどにじみが強い（前方散乱）
+      // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
+      const lowT = Math.min(1, Math.max(0, el / 20));
+      u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
+      // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
+      const aurT = Math.min(1, Math.max(0, (el - 5) / 15));
+      u.aureole.value = (0.6 + 0.6 * Math.min(1, cloud / 0.5)) * aurT;   // もや・薄雲ほどにじみが強い（前方散乱）
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
