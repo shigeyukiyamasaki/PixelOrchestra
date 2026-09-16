@@ -852,6 +852,7 @@ function settings() {
     sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
     sunManual: $('sunManual').checked, sunHour: num('sunHour', 12), sunCloud: num('sunCloud', 0), stageFacing: num('stageFacing', 180),
     sunAmbient: num('sunAmbient', 0.7), skyGlowSpread: num('skyGlowSpread', 1),
+    skyTint: $('skyTint').checked, groundBounce: $('groundBounce').checked,   // 空色の影響・床の照り返しの色（2026-09-16）
     moonAge: num('moonAge', 15), moonAzimuth: num('moonAzimuth', 180), moonElev: num('moonElev', 30), moonBright: num('moonBright', 1),   // 月（2026-09-16）
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
@@ -1352,7 +1353,7 @@ function animate() {
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
                  moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour,
-                 bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
+                 bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, skyTint: s.skyTint, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）

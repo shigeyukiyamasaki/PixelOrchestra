@@ -668,6 +668,7 @@ export function setFloorStyle(style) {
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
+ *   skyTint: 天空光に空の色相を乗せる（false で白）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
  *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -840,7 +841,8 @@ export function setShadows(o = {}) {
     sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後・新月）
     if (night) { if (lightState.sunTemp !== 'moon') { lightState.sunTemp = 'moon'; sun.color.copy(MOON_COL); } }
     else if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
-    if (night) hemi.color.copy(MOON_SKY_COL);   // 月夜の天空光は青白
+    if (o.skyTint === false) hemi.color.setRGB(1, 1, 1);   // 空の色を光に乗せない（2026-09-16 ユーザー指定のチェック）
+    else if (night) hemi.color.copy(MOON_SKY_COL);   // 月夜の天空光は青白
     else if (Number.isFinite(sunElNow)) hemi.color.copy(skyLightColorOf(horizonGlowColorFromTime(sunElNow, cloud)));   // 色相は太陽側の地平線（夕焼け）から。青は乗せない
     stageCtx.moonState = { az: mAz, el: mEl, k: mK, sunEl: sunElNow, cloud };
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
@@ -857,6 +859,7 @@ export function setShadows(o = {}) {
       const avg = stageCtx.groundTex.avgColor, lum = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
       const albedo = stageCtx.groundTex.albedo ?? 0.25;
       hemi.groundColor.copy(avg).multiplyScalar((lum > 0.01 ? albedo / lum : 1) * bounce);
+      if (o.groundBounce === false) hemi.groundColor.setScalar(albedo * bounce);   // 色を乗せない：同じ明るさの無彩色（2026-09-16 ユーザー指定のチェック）
     }
     // 平行光の位置は「有効な光源」（昼は太陽・夜は月）の方角・高度から
     const az = Number.isFinite(srcAz) ? srcAz : lightState.sunAz, elSrc = Number.isFinite(srcEl) ? srcEl : lightState.sunEl;
