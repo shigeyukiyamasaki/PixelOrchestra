@@ -295,10 +295,11 @@ export function createStage(container) {
   // 土台は CSS のグラデーション（天頂＝空の色、地平線＝太陽と反対側の色）。深度は書かず最初に描くので舞台は必ず手前
   const skyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 },
-                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 }, spread: { value: 1 } },
+                sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 }, spread: { value: 1 },
+                sinDip: { value: 0 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
-      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; varying vec3 vDir;
+      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip; varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
@@ -314,7 +315,7 @@ export function createStage(container) {
         // 太陽の円盤（見かけの半径 sunRad 度、縁を 0.4 度ぼかす）と弱いハロー。夕焼けの層の上に通常合成（2026-09-16 ユーザー指定）
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
-        disc *= smoothstep(-0.0015, 0.0015, dd.y);   // 地平線（水平）より下は沈んで見えない（半分沈んだ太陽。2026-09-16 ユーザー指定）
+        disc *= smoothstep(-0.0015, 0.0015, dd.y + sinDip);   // 床の縁を見下ろす角（sinDip）より下は沈んで見えない（浮島の縁に沈む。2026-09-16 ユーザー指定）
         float halo = pow(max(cs, 0.0), 140.0) * 0.5;
         // にじみ（周日光環）：太陽に近いほど明るく、約 20° で半分・40° でほぼ 0 のなだらかな勾配（2026-09-16 ユーザー指定）
         float aur = pow(max(cs, 0.0), 12.0) * aureole;
@@ -332,10 +333,10 @@ export function createStage(container) {
   // 太陽だけの選択的ブルーム（2026-09-16 ユーザー指定・方式 A）。太陽の円盤だけをレイヤー 1 の球に描き、
   // 本編の深度で隠れた画素を捨ててからぼかし、本編に加算する（renderFrame）。本編のドット絵はぼかさない
   const sunOnlyMat = new THREE.ShaderMaterial({
-    uniforms: { sunDir: skyMat.uniforms.sunDir, sunCol: skyMat.uniforms.sunCol, sunVis: skyMat.uniforms.sunVis, sunRad: skyMat.uniforms.sunRad, flip: skyMat.uniforms.flip,
+    uniforms: { sunDir: skyMat.uniforms.sunDir, sunCol: skyMat.uniforms.sunCol, sunVis: skyMat.uniforms.sunVis, sunRad: skyMat.uniforms.sunRad, flip: skyMat.uniforms.flip, sinDip: skyMat.uniforms.sinDip,
                 sceneDepth: { value: null }, resolution: { value: new THREE.Vector2(1, 1) }, gain: { value: 1 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float flip;
+    fragmentShader: `uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float flip; uniform float sinDip;
       uniform sampler2D sceneDepth; uniform vec2 resolution; uniform float gain; varying vec3 vDir;
       void main(){
         // 本編で何か描かれている画素（深度 < 1）は太陽が隠れている
@@ -345,7 +346,7 @@ export function createStage(container) {
         vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
         float cs = dot(dd, normalize(sunDir));
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
-        disc *= smoothstep(-0.0015, 0.0015, dd.y);   // 地平線より下は無し
+        disc *= smoothstep(-0.0015, 0.0015, dd.y + sinDip);   // 床の縁より下は無し
         float a = sunVis * disc;
         if (a < 0.002) discard;
         gl_FragColor = vec4(sunCol * gain * a, a);
@@ -412,7 +413,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0 }, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0 }, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -591,9 +592,28 @@ function updateDomeLight() {
 }
 
 /** 空の球をカメラの位置に置く（毎フレーム、描画の直前に呼ぶ）。球はカメラ中心なので視線方向＝頂点方向になる */
+// 床（浮島）の中か：手前と左右は直線、奥はひな壇に沿った弧（createStage の Shape と同じ定義）
+function insideFloor(x, z) {
+  if (Math.abs(x) > FLOOR_X_HALF || z > FLOOR_Z_FRONT) return false;
+  const dz = z - SEAT_SHIFT_Z;   // 弧の中心は z = SEAT_SHIFT_Z
+  return x * x + dz * dz <= FLOOR_BACK_R * FLOOR_BACK_R;
+}
 export function updateSky(camera) {
-  if (stageCtx?.sky.visible) stageCtx.sky.position.copy(camera.position);
-  if (stageCtx?.sunOnly.visible) stageCtx.sunOnly.position.copy(camera.position);
+  if (!stageCtx?.sky.visible) return;
+  stageCtx.sky.position.copy(camera.position);
+  stageCtx.sunOnly.position.copy(camera.position);
+  // 太陽が沈むライン（2026-09-16 ユーザー指定）：目の高さ（水平）ではなく、カメラから太陽の方角に見える床の縁を見下ろす角。
+  // 地球の丸みによる水平線の下がりは 0.1° 未満で無視できる。このシーンで「地面が終わって見える」のは床の縁なので、そこに沈める。
+  // 太陽の方角へ 0.5 unit 刻みで進み、床の中にいた最後の距離（縁）を取る。床を通らない向きなら目の高さ（0）
+  const d = stageCtx.sky.material.uniforms.sunDir.value, h = Math.max(0.05, camera.position.y);
+  const ux = d.x, uz = d.z, len = Math.hypot(ux, uz) || 1;
+  let last = -1;
+  for (let t = 0; t <= 120; t += 0.5) {
+    if (insideFloor(camera.position.x + ux / len * t, camera.position.z + uz / len * t)) last = t;
+  }
+  const dip = last > 0.5 ? Math.atan2(h, last) : 0;
+  stageCtx.sky.material.uniforms.sinDip.value = Math.sin(dip);
+  stageCtx.bloom.dip = dip / Math.PI * 180;
 }
 
 // ---------- 太陽だけの選択的ブルーム（2026-09-16 ユーザー指定・方式 A） ----------
@@ -751,7 +771,7 @@ export function setShadows(o = {}) {
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
       u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 3.2° → 25° 以上で 0.8°（16 時台を小さく。2026-09-16 ユーザー指摘）
-      u.sunVis.value = el > -(u.sunRad.value + 0.5) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が地平線に隠れるまで見える（半分沈む）
+      u.sunVis.value = el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）
       // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
       const lowT = Math.min(1, Math.max(0, el / 20));
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
