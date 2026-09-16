@@ -789,6 +789,10 @@ function ensurePost(renderer) {
             float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
             float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
             float perp = d * abs(sin(dphi)); rays += 0.6 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
+          { float n = 24.0, off = 0.13, w0 = 0.010, w1 = 0.0025, L = streakL * 0.7;   // 中間の 24 本（2026-09-17 ユーザー指定で追加）
+            float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
+            float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
+            float perp = d * abs(sin(dphi)); rays += 0.5 * exp(-(perp * perp) / (w * w)) * exp(-d / L); }
           { float n = 32.0, off = 0.09817, w0 = 0.005, w1 = 0.0015, L = streakL * 0.3;  // 細い 32 本
             float dphi = mod(phi - off + 3.14159265 / n, 6.28318531 / n) - 3.14159265 / n;
             float w = mix(w0, w1, clamp(d / L, 0.0, 1.0));
