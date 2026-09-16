@@ -797,7 +797,10 @@ export function renderFrame(renderer, scene, camera) {
   renderer.shadowMap.autoUpdate = autoShadow;
   camera.layers.set(0);
   // 3) ガウスぼかし（縦横 × 2 反復。2 回目は歩幅を広げて裾を伸ばす）
-  const spread = (0.4 + 1.6 * high) * haze;
+  // ぼかしの幅は角度で決める（2026-09-16 ユーザー指摘：ピクセル固定だとブラウザが大きいほどブルームが大きく見えた）。
+  // 基準は高さ 1080 px（1/4 で 270）・画角 50° → 1° あたり 5.4 テクセル。歩幅をこれに比例させる
+  const texPerDeg = post.a.height / (camera.fov || 50);
+  const spread = (0.4 + 1.6 * high) * haze * (texPerDeg / 5.4);
   for (const step of [1.0, 2.5, 6.0]) {   // 3 段：芯の周り → 中間 → 広い裾
     blurPass(renderer, post.a, post.b, 1, 0, step * spread);
     blurPass(renderer, post.b, post.a, 0, 1, step * spread);
