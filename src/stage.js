@@ -325,18 +325,31 @@ export function createStage(container) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), skyMat);
   sky.renderOrder = -1000; sky.visible = false; sky.frustumCulled = false;
   scene.add(sky);
-  // 太陽のグレア（2026-09-16 ユーザー指定：明るさでなく加算の光で眩しさを出す）。Three.js の Lensflare を使う。
-  // 加算合成・深度無視で舞台や奏者の縁を光が越える。太陽が物に隠れている割合はフレームバッファから測って隠れるほど消える。
-  // 3 層：飽和した芯（白）・太陽色の輪・広く薄い輪。大きさと強さは updateSky が毎フレーム高度・雲量から決める
-  const flare = new THREE.Lensflare();
-  const flareEls = [
-    new THREE.LensflareElement(flareTexture(0.0, 0.55), 60, 0, new THREE.Color('#ffffff')),   // 芯
-    new THREE.LensflareElement(flareTexture(0.0, 0.35), 220, 0, new THREE.Color('#ffd28a')),  // 輪
-    new THREE.LensflareElement(flareTexture(0.0, 0.18), 700, 0, new THREE.Color('#ffd28a')),  // 広い輪
-  ];
-  for (const e of flareEls) flare.addElement(e);
-  flare.visible = false;
-  scene.add(flare);
+  // 太陽だけの選択的ブルーム（2026-09-16 ユーザー指定・方式 A）。太陽の円盤だけをレイヤー 1 の球に描き、
+  // 本編の深度で隠れた画素を捨ててからぼかし、本編に加算する（renderFrame）。本編のドット絵はぼかさない
+  const sunOnlyMat = new THREE.ShaderMaterial({
+    uniforms: { sunDir: skyMat.uniforms.sunDir, sunCol: skyMat.uniforms.sunCol, sunVis: skyMat.uniforms.sunVis, sunRad: skyMat.uniforms.sunRad, flip: skyMat.uniforms.flip,
+                sceneDepth: { value: null }, resolution: { value: new THREE.Vector2(1, 1) }, gain: { value: 1 } },
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float flip;
+      uniform sampler2D sceneDepth; uniform vec2 resolution; uniform float gain; varying vec3 vDir;
+      void main(){
+        // 本編で何か描かれている画素（深度 < 1）は太陽が隠れている
+        float dep = texture2D(sceneDepth, gl_FragCoord.xy / resolution).r;
+        if (dep < 0.9999) discard;
+        vec3 d = normalize(vDir);
+        vec3 dd = flip > 0.5 ? vec3(d.x, -d.y, d.z) : d;
+        float cs = dot(dd, normalize(sunDir));
+        float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
+        float a = sunVis * disc;
+        if (a < 0.002) discard;
+        gl_FragColor = vec4(sunCol * gain * a, a);
+      }`,
+    transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide, toneMapped: false,
+  });
+  const sunOnly = new THREE.Mesh(sky.geometry, sunOnlyMat);
+  sunOnly.layers.set(1); sunOnly.frustumCulled = false; sunOnly.visible = false;
+  scene.add(sunOnly);
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setClearColor(0x000000, 0);
@@ -394,7 +407,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, flare, flareEls, flareState: { el: 0, cloud: 0, vis: 0 }, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0 }, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -573,23 +586,100 @@ function updateDomeLight() {
 }
 
 /** 空の球をカメラの位置に置く（毎フレーム、描画の直前に呼ぶ）。球はカメラ中心なので視線方向＝頂点方向になる */
-const _flareDir = new THREE.Vector3();
-export function updateSky(camera, renderer) {
-  if (!stageCtx?.sky.visible) return;
-  stageCtx.sky.position.copy(camera.position);
-  // グレア：太陽の方向 120 unit 先（空の球の内側）に置く。大きさは画面の高さに対する割合、強さは高度・雲量から
-  const { flare, flareEls, flareState: fs } = stageCtx;
-  _flareDir.copy(stageCtx.sky.material.uniforms.sunDir.value).normalize();
-  flare.position.copy(camera.position).addScaledVector(_flareDir, 120);
-  const H = renderer ? renderer.domElement.height : 1080;
-  const high = Math.min(1, Math.max(0, (fs.el - 3) / 17));          // 高い太陽ほど眩しい（20° で最大）。夕日は大気減衰で弱い
-  const vis = fs.vis;                                               // 地平線下 0、雲で薄れる
-  const haze = 1 + 0.6 * Math.min(1, fs.cloud / 0.5);               // 薄雲でにじみが広がる
-  const disc = stageCtx.sky.material.uniforms.sunCol.value;
-  const k = vis * (0.12 + 0.88 * high);   // 夕日はグレアをほぼ消して円盤をくっきり見せる（2026-09-16 ユーザー指摘）
-  flareEls[0].size = H * 0.035; flareEls[0].color.setRGB(k, k, k);                                   // 芯：白く飽和
-  flareEls[1].size = H * 0.12 * haze; flareEls[1].color.copy(disc).multiplyScalar(0.9 * k);            // 輪：太陽色
-  flareEls[2].size = H * 0.55 * haze; flareEls[2].color.copy(disc).multiplyScalar(0.35 * k * high);   // 広い輪：高い太陽だけ
+export function updateSky(camera) {
+  if (stageCtx?.sky.visible) stageCtx.sky.position.copy(camera.position);
+  if (stageCtx?.sunOnly.visible) stageCtx.sunOnly.position.copy(camera.position);
+}
+
+// ---------- 太陽だけの選択的ブルーム（2026-09-16 ユーザー指定・方式 A） ----------
+// 本編 → 等倍のオフスクリーン（深度テクスチャ付き）。太陽の円盤だけ → 1/4 解像度（本編の深度で隠れた所は捨てる）→ ガウスぼかし。
+// 最後に本編を最近傍で 1:1 転写しながらぼかした太陽を加算する。本編のドット絵には一切ぼかしが掛からない
+const post = { w: 0, h: 0, main: null, a: null, b: null, quadScene: null, quadCam: null, quad: null, blurMat: null, compMat: null };
+const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+function ensurePost(renderer) {
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  if (post.main && post.w === size.x && post.h === size.y) return;
+  post.w = size.x; post.h = size.y;
+  for (const k of ['main', 'a', 'b']) post[k]?.dispose();
+  post.main = new THREE.WebGLRenderTarget(size.x, size.y, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+  post.main.depthTexture = new THREE.DepthTexture(size.x, size.y);
+  post.main.depthTexture.type = THREE.UnsignedIntType;
+  const bw = Math.max(1, Math.round(size.x / 4)), bh = Math.max(1, Math.round(size.y / 4));
+  post.a = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  post.b = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  if (!post.quadScene) {
+    post.quadScene = new THREE.Scene();
+    post.quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    post.blurMat = new THREE.ShaderMaterial({
+      uniforms: { tex: { value: null }, dir: { value: new THREE.Vector2(1, 0) }, texel: { value: new THREE.Vector2(1, 1) } },
+      vertexShader: QUAD_VS,
+      fragmentShader: `uniform sampler2D tex; uniform vec2 dir; uniform vec2 texel; varying vec2 vUv;
+        void main(){
+          // 13 タップのガウス（σ ≈ 3 タップ）。dir × texel でステップ幅を変えて広げる
+          float w[7]; w[0]=0.1964; w[1]=0.1746; w[2]=0.1210; w[3]=0.0656; w[4]=0.0276; w[5]=0.0090; w[6]=0.0023;
+          vec4 c = texture2D(tex, vUv) * w[0];
+          for (int i = 1; i < 7; i++) { vec2 o = dir * texel * float(i); c += (texture2D(tex, vUv + o) + texture2D(tex, vUv - o)) * w[i]; }
+          gl_FragColor = c;
+        }`,
+      depthTest: false, depthWrite: false, toneMapped: false,
+    });
+    post.compMat = new THREE.ShaderMaterial({
+      uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 } },
+      vertexShader: QUAD_VS,
+      fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength; varying vec2 vUv;
+        void main(){
+          vec4 m = texture2D(mainTex, vUv);              // 本編（premultiplied）。等倍・最近傍なのでそのまま
+          vec3 b = texture2D(bloom, vUv).rgb * strength; // ぼかした太陽を加算
+          float bl = max(b.r, max(b.g, b.b));
+          gl_FragColor = vec4(m.rgb + b, min(1.0, m.a + bl));
+        }`,
+      depthTest: false, depthWrite: false, toneMapped: false, transparent: true, blending: THREE.NoBlending,
+    });
+    post.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post.blurMat);
+    post.quadScene.add(post.quad);
+  }
+}
+function blurPass(renderer, src, dst, dx, dy, step) {
+  post.quad.material = post.blurMat;
+  post.blurMat.uniforms.tex.value = src.texture;
+  post.blurMat.uniforms.dir.value.set(dx, dy);
+  post.blurMat.uniforms.texel.value.set(step / src.width, step / src.height);
+  renderer.setRenderTarget(dst); renderer.clear();
+  renderer.render(post.quadScene, post.quadCam);
+}
+/** 1 フレーム描く。屋外（太陽あり）なら太陽だけのブルームを掛け、屋内なら従来どおり直接描く */
+export function renderFrame(renderer, scene, camera) {
+  if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
+  ensurePost(renderer);
+  const { el, cloud, vis } = stageCtx.bloom;
+  const high = Math.min(1, Math.max(0, (el - 3) / 17));          // 高い太陽ほど眩しく広い。夕日は弱く狭い
+  const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
+  // 1) 本編 → 等倍 RT（深度付き）
+  renderer.setRenderTarget(post.main); renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(scene, camera);
+  // 2) 太陽の円盤だけ → 1/4 RT。本編の深度で隠れた画素は捨てる
+  const u = stageCtx.sunOnly.material.uniforms;
+  u.sceneDepth.value = post.main.depthTexture; u.resolution.value.set(post.a.width, post.a.height);
+  u.gain.value = 1;                                              // RT は 8bit なので増幅は合成時（ぼかしの後）に掛ける
+  camera.layers.set(1);
+  const autoShadow = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;   // 影の再計算は本編だけ
+  renderer.setRenderTarget(post.a); renderer.clear();
+  renderer.render(scene, camera);
+  renderer.shadowMap.autoUpdate = autoShadow;
+  camera.layers.set(0);
+  // 3) ガウスぼかし（縦横 × 2 反復。2 回目は歩幅を広げて裾を伸ばす）
+  const spread = (0.4 + 1.6 * high) * haze;
+  for (const step of [1.0, 2.5, 6.0]) {   // 3 段：芯の周り → 中間 → 広い裾
+    blurPass(renderer, post.a, post.b, 1, 0, step * spread);
+    blurPass(renderer, post.b, post.a, 0, 1, step * spread);
+  }
+  // 4) 本編を 1:1 転写しつつ加算
+  post.quad.material = post.compMat;
+  post.compMat.uniforms.mainTex.value = post.main.texture;
+  post.compMat.uniforms.bloom.value = post.a.texture;
+  post.compMat.uniforms.strength.value = vis * (0.5 + 8.5 * high);   // ぼかしで薄まった分を増幅。芯は白く飽和する。夕日（high 0）はほぼ無し
+  renderer.setRenderTarget(null); renderer.clear();
+  renderer.render(post.quadScene, post.quadCam);
 }
 
 export function setShadows(o = {}) {
@@ -601,7 +691,7 @@ export function setShadows(o = {}) {
     for (const sp of spots) sp.visible = !outdoor;
     sun.visible = outdoor;
     stageCtx.sky.visible = outdoor;
-    stageCtx.flare.visible = outdoor;
+    stageCtx.sunOnly.visible = outdoor;
     if (!outdoor) { hemi.color.set(HEMI_SKY_INDOOR); hemi.groundColor.set(HEMI_GROUND_INDOOR); }
   }
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
@@ -658,9 +748,9 @@ export function setShadows(o = {}) {
       const lowT = Math.min(1, Math.max(0, el / 20));
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
-      u.aureole.value = 0;   // 空の球側のにじみは使わない（グレアは Lensflare が担う。2026-09-16）
+      u.aureole.value = 0;   // 空の球側のにじみは使わない（眩しさは renderFrame の選択的ブルームが担う。2026-09-16）
       u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 40));   // 昼ほど小さく：地平線 3.2° → 40° 以上で 0.8°（2026-09-16 ユーザー指定）
-      stageCtx.flareState.el = el; stageCtx.flareState.cloud = cloud; stageCtx.flareState.vis = u.sunVis.value;
+      stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = u.sunVis.value;
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
@@ -905,18 +995,6 @@ function radialAlphaTexture(inner = 0.75) {
 // 地色にディザで濃淡を撒き、その上に「房」（3〜4 ドットの縦線を数本まとめたもの）と小さな花を置く。
 // 乱数は固定シードなので、読み込むたびに模様が変わることはない
 
-// グレア用の放射状テクスチャ：中心 1 → 半径 inner まで 1、外周で 0（滑らかな肩）。輝度は inner の位置で層の性格を変える
-function flareTexture(inner, mid) {
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d'), grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(Math.max(0.01, inner), 'rgba(255,255,255,1)');
-  grad.addColorStop(mid, 'rgba(255,255,255,0.35)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, S, S);
-  const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
-  return t;
-}
 // キャンバスの平均色（太陽光の「地面の色」に使う。2026-09-16 ユーザー指定：床の色は平均でよい）。
 // 生成時に 1 回だけ計算し、texture.avgColor に持つ
 function avgColorOf(canvas) {

@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -1370,8 +1370,8 @@ function animate() {
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
-  updateSky(camera, renderer);   // 空の球をカメラに追従・太陽のグレアを更新
-  renderer.render(scene, camera);
+  updateSky(camera);   // 空の球をカメラに追従
+  renderFrame(renderer, scene, camera);   // 屋外なら太陽だけの選択的ブルーム付きで描く
 }
 
 // URL パラメータ ?midi=path で自動読み込み（公開デモ・動作確認用）
