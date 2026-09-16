@@ -359,9 +359,9 @@ const GROUND_OCCLUSION = 0.35;   // 照り返しの自己遮蔽係数（密集�
 /**
  * 時刻・雲量・舞台の向きから太陽光の物理量を決める（2026-09-16 ユーザー指定：案 B）
  * @param {number} hour 時刻 [時]（小数可）  @param {number} cloud 雲量 0〜1  @param {number} facing 舞台が向く方位 [deg]（0 北・90 東・180 南・270 西）
- * @returns {{azimuth:number, elev:number, temp:number, intensity:number, skyLight:number, sky:string}}
+ * @returns {{azimuth:number, elev:number, temp:number, intensity:number, skyLight:number, sky:string, horizon:string}}
  *   azimuth: 舞台基準の方角（0 客席正面・90 客席から見て右）  elev: 高度 [deg]（負なら地平線下）
- *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ  sky: 空の上端の色 [hex]
+ *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ  sky: 空の上端の色 [hex]  horizon: 地平線の色 [hex]
  */
 export function sunFromTime(hour, cloud, facing) {
   const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
@@ -377,7 +377,29 @@ export function sunFromTime(hour, cloud, facing) {
   const skyLight = SKY_BASE * (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
   const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
   const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
-  return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c) };
+  return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c), horizon: horizonColorFromTime(elDeg, c) };
+}
+// 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
+// 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
+const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f2d9a0'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d']];
+const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f7c97a'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d']];
+const _hz = new THREE.Color(), _hz2 = new THREE.Color();
+function keyColor(out, keys, el) {
+  if (el >= keys[0][0]) return out.set(keys[0][1]);
+  for (let i = 1; i < keys.length; i++) {
+    const [e1, c1] = keys[i - 1], [e0, c0] = keys[i];
+    if (el >= e0) return out.set(c0).lerp(_hz2.set(c1), (el - e0) / (e1 - e0));
+  }
+  return out.set(keys[keys.length - 1][1]);
+}
+function horizonColorFromTime(el, cloud) {
+  keyColor(_hz, HZ_CLEAR, el);
+  const vivid = Math.min(1, cloud / 0.5);                 // 薄雲で派手に
+  _hz.lerp(keyColor(_skyTmp, HZ_VIVID, el), vivid);
+  const lum = 0.2126 * _hz.r + 0.7152 * _hz.g + 0.0722 * _hz.b;
+  const grey = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(Math.min(1.1, lum / 0.5 + 0.05));   // 厚い雲の灰は明るさに合わせる
+  const overcast = Math.max(0, (cloud - 0.5) / 0.5);
+  return '#' + _hz.lerp(grey, overcast).getHexString();
 }
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
 // 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く

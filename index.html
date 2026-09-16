@@ -27,7 +27,7 @@
   <div class="box">
   <h3 class="hd">背景</h3>
   <!-- 上の色（bgTop）は太陽光の詳細「空の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
-  <label class="ctl row" title="背景の下端の色"><span>下の色</span><input type="color" id="bgBottom" value="#0b0b16"></label>
+  <!-- 下の色（bgBottom）も太陽光の詳細「地平線の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
   <label class="ctl" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
   <label class="chk2" title="プレビューでの見え方だけを上下反転する（上の色・下の色・中間地点の値はそのまま）"><input type="checkbox" id="bgFlip"> 上下を反転</label>
   <label class="ctl row" title="床とひな壇の天面の絵"><span>床</span>
@@ -234,6 +234,7 @@
         <label class="ctl" title="高度 [度]。太陽の高さ。小さいほど朝夕の低い光で影が長い、90 で真上。0 以下は地平線下（直射なし）"><span>高度 <b data-value-for="sunElev">55</b></span><input type="range" id="sunElev" min="-15" max="90" step="1" value="55"></label>
         <label class="ctl" title="色温度。0 で朝夕の橙、0.5 で昼の白、1 で曇り空の青"><span>色温度 <b data-value-for="sunTemp">0.5</b></span><input type="range" id="sunTemp" min="0" max="1" step="0.01" value="0.5"></label>
         <label class="ctl row" title="空の色（背景の上端の色。天空光の色みにも使う）。自動では時刻と天気から決まる：昼の青 → 夕方の深い青紫 → 日没後の紺 → 夜の黒、雲が多いほど灰色"><span>空の色</span><input type="color" id="bgTop" value="#2a6fd0"></label>
+        <label class="ctl row" title="地平線の色（背景の下端の色）。自動では時刻と天気から決まる：昼の淡い水色 → 日没前の薄黄 → 日没の橙 → ピンク → 紫 → 濃紺。薄雲で派手に、厚い雲で灰色"><span>地平線の色</span><input type="color" id="bgBottom" value="#bfe0f5"></label>
         <label class="ctl" title="天空光（空全体からの拡散光）の強さ。影の中の明るさ。曇りほど強く、直射の代わりになる"><span>天空光 <b data-value-for="sunAmbient">0.7</b></span><input type="range" id="sunAmbient" min="0" max="3" step="0.01" value="0.7"></label>
         </div>
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
@@ -274,6 +275,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260918z"></script>
+  <script type="module" src="src/main.js?v=20260919a"></script>
 </body>
 </html>
