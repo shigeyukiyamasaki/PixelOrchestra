@@ -652,8 +652,9 @@ function applyTempo(s, bpm, beat) {
   b.textContent = `♩= ${Math.round(bpm)}`;
   g.textContent = `${beat.beatInBar + 1}/${beat.beatUnit || 4}`;
   g.style.color = beat.beatInBar === 0 ? '#ffe14d' : '#fff';   // 1 拍目は黄色に点灯（2026-09-16 ユーザー指定）
-  // 1 拍目に入った瞬間だけ大きくして戻す（2026-09-16 ユーザー指定）。クラスを付け直してアニメを頭から再生
-  if (beat.beatInBar === 0 && tempoLastBeat !== 0) { g.classList.remove('pop'); void g.offsetWidth; g.classList.add('pop'); }
+  // 1 拍目に入った瞬間だけ大きくして戻す（2026-09-16 ユーザー指定）。クラスを付け直してアニメを頭から再生。
+  // クラス名は汎用の pop を避ける（Arc の拡張機能が .pop を画面中央固定にしていて拍子が飛んだ。2026-09-16）
+  if (beat.beatInBar === 0 && tempoLastBeat !== 0) { g.classList.remove('beatPop'); void g.offsetWidth; g.classList.add('beatPop'); }
   tempoLastBeat = beat.beatInBar;
 }
 
