@@ -1026,7 +1026,7 @@ function followSunSliders(s) {
   if (key === sunFollowKey) return;
   sunFollowKey = key;
   const a = sunFromTime(s.sunHour, s.sunCloud, s.stageFacing);
-  const vals = { sunIntensity: a.intensity.toFixed(2), sunAzimuth: Math.round(a.azimuth), sunElev: Math.round(a.elev), sunTemp: a.temp.toFixed(2), sunAmbient: a.skyLight.toFixed(2) };
+  const vals = { sunIntensity: a.intensity.toFixed(2), sunAzimuth: Math.round(a.azimuth), sunElev: Math.round(a.elev), sunTemp: a.temp.toFixed(2), sunAmbient: a.skyLight.toFixed(2), bgTop: a.sky };
   for (const [id, v] of Object.entries(vals)) {
     const el = $(id); if (!el) continue;
     el.value = v;
@@ -1334,7 +1334,7 @@ function animate() {
       labelYApplied = s.labelY;
       labels.children.forEach((sp) => { sp.position.y = (sp.userData.baseY ?? sp.position.y) + s.labelY; });
     }
-    if (s.lightMode === 'sun' && !s.sunManual) followSunSliders(s);   // 自動のとき詳細スライダーを計算値に追従させる
+    if (s.lightMode === 'sun' && !s.sunManual) { followSunSliders(s); s.bgTop = $('bgTop').value; }   // 自動のとき詳細スライダー（空の色も）を計算値に追従させる
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },

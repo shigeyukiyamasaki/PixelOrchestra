@@ -359,9 +359,9 @@ const GROUND_OCCLUSION = 0.35;   // 照り返しの自己遮蔽係数（密集�
 /**
  * 時刻・雲量・舞台の向きから太陽光の物理量を決める（2026-09-16 ユーザー指定：案 B）
  * @param {number} hour 時刻 [時]（小数可）  @param {number} cloud 雲量 0〜1  @param {number} facing 舞台が向く方位 [deg]（0 北・90 東・180 南・270 西）
- * @returns {{azimuth:number, elev:number, temp:number, intensity:number, skyLight:number}}
+ * @returns {{azimuth:number, elev:number, temp:number, intensity:number, skyLight:number, sky:string}}
  *   azimuth: 舞台基準の方角（0 客席正面・90 客席から見て右）  elev: 高度 [deg]（負なら地平線下）
- *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ
+ *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ  sky: 空の上端の色 [hex]
  */
 export function sunFromTime(hour, cloud, facing) {
   const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
@@ -377,7 +377,21 @@ export function sunFromTime(hour, cloud, facing) {
   const skyLight = SKY_BASE * (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
   const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
   const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
-  return { azimuth, elev: elDeg, temp, intensity, skyLight };
+  return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c) };
+}
+// 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
+// 昼の青 → 低い太陽で深い青紫 → 地平線下は紺 → 夜の黒。雲は灰色へ寄せ、暗いほど灰も暗く
+const SKY_DAY = new THREE.Color('#2a6fd0'), SKY_LOW = new THREE.Color('#2b3f8f'), SKY_DUSK = new THREE.Color('#141a3d'), SKY_NIGHT = new THREE.Color('#05070f');
+const SKY_OVERCAST = new THREE.Color('#9aa3ad');
+const _sky = new THREE.Color();
+function skyColorFromTime(el, cloud) {
+  if (el >= 30) _sky.copy(SKY_DAY);
+  else if (el >= 0) _sky.copy(SKY_LOW).lerp(SKY_DAY, el / 30);
+  else if (el >= -12) _sky.copy(SKY_NIGHT).lerp(SKY_DUSK, (el + 12) / 12);
+  else _sky.copy(SKY_NIGHT);
+  const lum = 0.2126 * _sky.r + 0.7152 * _sky.g + 0.0722 * _sky.b;
+  const grey = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(Math.min(1, lum / 0.16 + 0.05));   // 曇りの灰は空の明るさに合わせる
+  return '#' + _sky.lerp(grey, cloud).getHexString();
 }
 /**
  * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number, spotBlur?:number}} o
