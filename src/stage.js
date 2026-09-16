@@ -234,6 +234,16 @@ export function createStage(container) {
     scene.add(sp, sp.target);
     spots.push(sp);
   }
+  // 太陽光（屋外。2026-09-16 ユーザー指定）：平行光 1 本。スポットライトとは併用せず setShadows の mode で切り替える。
+  // 影は直交カメラで舞台全体（±34 unit）を覆う。位置は方角・高度から setShadows が置く
+  const sun = new THREE.DirectionalLight('#ffffff', 1.2);
+  sun.target.position.set(0, 0, -12);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
+  const sc = sun.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34; sc.near = 1; sc.far = 150;
+  sun.visible = false;
+  scene.add(sun, sun.target);
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setClearColor(0x000000, 0);
@@ -291,7 +301,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, seats: [] };
   buildRisers([]);
 
   // 指揮台
@@ -327,8 +337,13 @@ export function createStage(container) {
 }
 
 // 照明の状態。setShadows で切り替える（名前は互換のため）
-let lightState = { enabled: true, elev: null, spread: null, cone: null, blur: null };
+let lightState = { enabled: true, elev: null, spread: null, cone: null, blur: null, mode: 'spot', sunAz: null, sunEl: null, sunTemp: null };
 const SPOT_R = 40; // スポットライトと舞台中心 (0,0,-12) の距離 [unit]
+const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行光なので向きだけが効く。影カメラの範囲に入る距離ならよい）
+const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
+// 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
+const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
+function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 /**
  * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number, spotBlur?:number}} o
  *   enabled: 影を落とすか  ambient: 環境光の強さ（影の中の明るさ）  spot: スポットライトの強さ
@@ -368,14 +383,41 @@ export function setFloorStyle(style) {
   buildRisers(stageCtx.seats);   // ひな壇の天面も同じ地面の絵にする
 }
 
+/**
+ * 光源の切替と太陽光の項目（2026-09-16 ユーザー指定）：
+ *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
+ *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
+ *   sunTemp: 色温度 0〜1  skyColor / groundColor: 太陽光のときの半球光の上下の色（屋内では固定色）
+ */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
-  const { hemi, spots } = stageCtx;
+  const { hemi, spots, sun } = stageCtx;
+  if (o.mode && o.mode !== lightState.mode) {
+    lightState.mode = o.mode;
+    const outdoor = o.mode === 'sun';
+    for (const sp of spots) sp.visible = !outdoor;
+    sun.visible = outdoor;
+    if (!outdoor) { hemi.color.set(HEMI_SKY_INDOOR); hemi.groundColor.set(HEMI_GROUND_INDOOR); }
+  }
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
     lightState.enabled = !!o.enabled;
     for (const sp of spots) sp.castShadow = lightState.enabled;
+    sun.castShadow = lightState.enabled;
   }
   if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
+  if (lightState.mode === 'sun') {
+    if (Number.isFinite(o.sun)) sun.intensity = o.sun;
+    if (Number.isFinite(o.sunTemp) && o.sunTemp !== lightState.sunTemp) { lightState.sunTemp = o.sunTemp; sun.color.copy(sunColorOf(o.sunTemp)); }
+    if (o.skyColor) hemi.color.set(o.skyColor);
+    if (o.groundColor) hemi.groundColor.set(o.groundColor);
+    const az = Number.isFinite(o.sunAzimuth) ? o.sunAzimuth : lightState.sunAz, el = Number.isFinite(o.sunElev) ? o.sunElev : lightState.sunEl;
+    if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
+      lightState.sunAz = az; lightState.sunEl = el;
+      const a = deg(az), e = deg(el);
+      // 方角 0 = 客席側（+z）から。客席から見て右（+x）が 90。舞台中心 (0,0,-12) を向く
+      sun.position.set(SUN_R * Math.cos(e) * Math.sin(a), SUN_R * Math.sin(e), -12 + SUN_R * Math.cos(e) * Math.cos(a));
+    }
+  }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;
   if (Number.isFinite(o.spotCone) && o.spotCone !== lightState.cone) { lightState.cone = o.spotCone; for (const sp of spots) sp.angle = deg(o.spotCone); }
   if (Number.isFinite(o.spotBlur) && o.spotBlur !== lightState.blur) { lightState.blur = o.spotBlur; for (const sp of spots) sp.penumbra = o.spotBlur; } // 輪郭のぼけ（2026-09-12 ユーザー指定）

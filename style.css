@@ -86,12 +86,18 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camArea #resetCam { width: 100%; margin: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
 #camArea #resetCam:hover { border-color: var(--accent); color: var(--accent); }
-/* PC / スマホの切り替え（視点リセットの下）。選んでいる方を黄色にする */
-#camArea .viewSize { display: flex; gap: 6px; margin-top: 6px; }
-#camArea .viewSize button { flex: 1 1 0; padding: 5px 0; border-radius: 6px; border: 1px solid var(--line);
-  background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
-#camArea .viewSize button:hover { border-color: var(--accent); color: var(--accent); }
-#camArea .viewSize button.on { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+/* セグメント切替（端末の PC / スマホ、照明のスポット / 太陽光で共用）。選んでいる方を黄色にする。
+   button.on でも、label の中のラジオが checked でも同じ見た目 */
+.seg { display: flex; gap: 6px; margin-top: 6px; }
+.seg > button, .seg > label { flex: 1 1 0; padding: 5px 0; border-radius: 6px; border: 1px solid var(--line); text-align: center;
+  background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; margin: 0; display: block; position: relative; }
+.seg > label > input[type=radio] { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.seg > button:hover, .seg > label:hover { border-color: var(--accent); color: var(--accent); }
+.seg > button.on, .seg > label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+/* 照明：選んでいる光源の欄だけ出す（2026-09-16 ユーザー指定） */
+#lightBox .seg { margin: 8px 0 2px; }
+#lightBox:has(input[name=lightMode][value=sun]:checked) #spotSet { display: none; }
+#lightBox:not(:has(input[name=lightMode][value=sun]:checked)) #sunSet { display: none; }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */

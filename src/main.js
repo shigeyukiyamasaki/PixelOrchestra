@@ -836,6 +836,10 @@ function settings() {
     spotSpread: num('spotSpread', 30),
     spotCone: num('spotCone', 30),
     spotBlur: num('spotBlur', 0.5),
+    // 光源の切替と太陽光（2026-09-16 ユーザー指定）
+    lightMode: radioValue('lightMode') === 'sun' ? 'sun' : 'spot',
+    sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
+    skyColor: $('skyColor').value, groundColor: $('groundColor').value,
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
@@ -1313,7 +1317,8 @@ function animate() {
       labelYApplied = s.labelY;
       labels.children.forEach((sp) => { sp.position.y = (sp.userData.baseY ?? sp.position.y) + s.labelY; });
     }
-    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur });
+    setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
+                 mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp, skyColor: s.skyColor, groundColor: s.groundColor });
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
