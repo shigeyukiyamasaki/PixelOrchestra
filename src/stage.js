@@ -345,12 +345,13 @@ const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内�
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 const LAT = deg(35);   // 北緯 35°（日本）。春秋分（赤緯 0）で計算する
+const SKY_BASE = 0.7;  // 快晴・南中の天空光の基準（半球光の強さ）
 /**
  * 時刻・雲量・舞台の向きから太陽光の物理量を決める（2026-09-16 ユーザー指定：案 B）
  * @param {number} hour 時刻 [時]（小数可）  @param {number} cloud 雲量 0〜1  @param {number} facing 舞台が向く方位 [deg]（0 北・90 東・180 南・270 西）
- * @returns {{azimuth:number, elev:number, temp:number, intensity:number, ambientMul:number}}
+ * @returns {{azimuth:number, elev:number, temp:number, intensity:number, skyLight:number}}
  *   azimuth: 舞台基準の方角（0 客席正面・90 客席から見て右）  elev: 高度 [deg]（負なら地平線下）
- *   temp: 色温度 0〜1  intensity: 直射の強さ  ambientMul: 天空光（環境光）の倍率
+ *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ
  */
 export function sunFromTime(hour, cloud, facing) {
   const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
@@ -363,10 +364,10 @@ export function sunFromTime(hour, cloud, facing) {
   const air = Math.pow(up, 0.35);                                    // 低いほど大気を長く通って弱まる（空気量の近似）
   const c = Math.min(1, Math.max(0, cloud));
   const intensity = 1.6 * air * (1 - c) * (1 - c);                   // 雲で直射は消える
-  const ambientMul = (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
+  const skyLight = SKY_BASE * (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
   const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
   const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
-  return { azimuth, elev: elDeg, temp, intensity, ambientMul };
+  return { azimuth, elev: elDeg, temp, intensity, skyLight };
 }
 /**
  * @param {{enabled?:boolean, ambient?:number, spot?:number, spotElev?:number, spotSpread?:number, spotCone?:number, spotBlur?:number}} o
@@ -412,7 +413,7 @@ export function setFloorStyle(style) {
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  skyColor: 太陽光のときの半球光の上色（背景の空の色）  groundColor: 下色。省略時は床テクスチャの平均色（屋内では固定色）
- *   sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev を時刻・天気から決め、環境光にも天空光の倍率を掛ける
+ *   sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 export function setShadows(o = {}) {
   if (!stageCtx) return;
@@ -429,15 +430,16 @@ export function setShadows(o = {}) {
     for (const sp of spots) sp.castShadow = lightState.enabled;
     sun.castShadow = lightState.enabled;
   }
-  if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient;
+  if (Number.isFinite(o.ambient) && lightState.mode !== 'sun') hemi.intensity = o.ambient;   // 屋内の環境光（跳ね返り光）
   if (lightState.mode === 'sun') {
-    let sunI = o.sun, sunT = o.sunTemp, sunAz = o.sunAzimuth, sunEl = o.sunElev, ambMul = 1;
+    let sunI = o.sun, sunT = o.sunTemp, sunAz = o.sunAzimuth, sunEl = o.sunElev, sky = o.sunAmbient;
     if (o.sunAuto) {   // 時刻・天気・舞台の向きから決める（手動でない時）
       const a = sunFromTime(o.sunAuto.hour, o.sunAuto.cloud, o.sunAuto.facing);
-      sunI = a.intensity; sunT = a.temp; sunAz = a.azimuth; sunEl = a.elev; ambMul = a.ambientMul;
+      sunI = a.intensity; sunT = a.temp; sunAz = a.azimuth; sunEl = a.elev; sky = a.skyLight;
     }
-    if (Number.isFinite(o.ambient)) hemi.intensity = o.ambient * ambMul;
-    if (Number.isFinite(sunI)) sun.intensity = sunI;
+    if (Number.isFinite(sky)) hemi.intensity = sky;   // 天空光。屋外の環境光はこれ（屋内の「環境光」とは別の値）
+    const elNow = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
+    if (Number.isFinite(sunI)) sun.intensity = (Number.isFinite(elNow) && elNow <= 0) ? 0 : sunI;   // 地平線下なら直射なし（手動でも物理どおり）
     sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後）
     if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
     if (o.skyColor) hemi.color.set(o.skyColor);

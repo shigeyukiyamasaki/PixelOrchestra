@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -840,6 +840,7 @@ function settings() {
     lightMode: radioValue('lightMode') === 'sun' ? 'sun' : 'spot',
     sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
     sunManual: $('sunManual').checked, sunHour: num('sunHour', 12), sunCloud: num('sunCloud', 0), stageFacing: num('stageFacing', 180),
+    sunAmbient: num('sunAmbient', 0.7),
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
@@ -1016,6 +1017,22 @@ function applyBackground(top, bottom, mid, flip) {
   if (css === bgApplied) return;
   bgApplied = css;
   $('view').style.background = css;
+}
+// 太陽光・自動のとき、詳細（強さ・方角・高度・色温度・天空光）のスライダーに計算値を入れて追従させる（2026-09-16 ユーザー指定）。
+// 手動に切り替えた時はその値から始められる。input イベントは出さない（保存は次の操作時にまとめて）
+let sunFollowKey = '';
+function followSunSliders(s) {
+  const key = `${s.sunHour}|${s.sunCloud}|${s.stageFacing}`;
+  if (key === sunFollowKey) return;
+  sunFollowKey = key;
+  const a = sunFromTime(s.sunHour, s.sunCloud, s.stageFacing);
+  const vals = { sunIntensity: a.intensity.toFixed(2), sunAzimuth: Math.round(a.azimuth), sunElev: Math.round(a.elev), sunTemp: a.temp.toFixed(2), sunAmbient: a.skyLight.toFixed(2) };
+  for (const [id, v] of Object.entries(vals)) {
+    const el = $(id); if (!el) continue;
+    el.value = v;
+    const lab = document.querySelector(`[data-value-for="${id}"]`);
+    if (lab) { if (lab.tagName === 'INPUT') lab.value = el.value; else lab.textContent = el.value; }
+  }
 }
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
@@ -1317,9 +1334,10 @@ function animate() {
       labelYApplied = s.labelY;
       labels.children.forEach((sp) => { sp.position.y = (sp.userData.baseY ?? sp.position.y) + s.labelY; });
     }
+    if (s.lightMode === 'sun' && !s.sunManual) followSunSliders(s);   // 自動のとき詳細スライダーを計算値に追従させる
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
-                 sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },
+                 sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },
                  skyColor: s.bgFlip ? s.bgBottom : s.bgTop });   // 空の色は背景の見た目どおり（反転中は下の色が空）。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);
