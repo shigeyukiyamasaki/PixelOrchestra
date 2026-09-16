@@ -535,10 +535,10 @@ function domeRow(d, i) {
 }
 
 function renderScreens() {
-  const box = $('screenRows');
-  if (!box) return;
-  box.textContent = '';
-  domes.forEach((d, i) => box.appendChild(domeRow(d, i)));     // 遠景（3 層固定）を先頭に
+  const box = $('screenRows'), dbox = $('domeRows');
+  if (!box || !dbox) return;
+  box.textContent = ''; dbox.textContent = '';
+  domes.forEach((d, i) => dbox.appendChild(domeRow(d, i)));    // 遠景（3 層固定）は左のセクションへ
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
   // 右端の「＋」でカードを増やす
   const add = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: 'スクリーンを 1 枚増やす' });

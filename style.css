@@ -92,9 +92,14 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #camBar .viewSize button:hover { border-color: var(--accent); color: var(--accent); }
 #camBar .viewSize button.on { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
-#screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; }
+#screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
+/* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
+#domeSec { flex: 0 1 724px; min-width: 0; display: flex; flex-direction: column; }
+#screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+#domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: auto; }
 /* 見出しは他のメニューと同じ .hd で文字だけ（2026-09-16 ユーザー指定）。ボタンと説明文はその下の行 */
 #screenBar .head { display: flex; align-items: center; gap: 10px; margin: -2px 0 6px; }
+#screenBar .head button { flex: none; white-space: nowrap; }
 #screenBar .hint { color: var(--muted); font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
 #screenBar button:hover { border-color: var(--accent); color: var(--accent); }
