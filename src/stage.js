@@ -301,12 +301,12 @@ export function createStage(container) {
                 sinDip: { value: 0 },
                 moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonU: { value: new THREE.Vector3(1, 0, 0) }, moonV: { value: new THREE.Vector3(0, 0, 1) },
                 moonK: { value: 1 }, moonVis: { value: 0 }, moonRad: { value: 1.0 }, moonCol: { value: MOON_DISC.clone() },
-                starVis: { value: 0 }, poleAxis: { value: new THREE.Vector3(0, 0.574, -0.819) }, starRot: { value: 0 }, time: { value: 0 } },
+                starVis: { value: 0 }, poleAxis: { value: new THREE.Vector3(0, 0.574, -0.819) }, starRot: { value: 0 }, time: { value: 0 }, twinkle: { value: 1 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
       uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip;
       uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol; varying vec3 vDir;
-      uniform float starVis; uniform vec3 poleAxis; uniform float starRot; uniform float time;
+      uniform float starVis; uniform vec3 poleAxis; uniform float starRot; uniform float time; uniform float twinkle;
       // 星（2026-09-16 ユーザー指定）：天球に固定した手続き生成の点。視線を極軸まわりに +時角 回して固定座標に直し、
       // 立方体面の格子（1 面 64×64）ごとに 18% の確率で 1 個置く。明るさは少数だけ強く、ごく弱く瞬く
       float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -326,7 +326,7 @@ export function createStage(container) {
         float b = hash21(id + 3.3); b = b * b * b;                 // 少数だけ明るい
         float r = 0.035 + 0.06 * b;                                // 半径（格子単位。1 格子 ≈ 1.4°）
         float st = smoothstep(r + 0.02, r, length(f - pos));
-        float tw = 0.75 + 0.25 * sin(time * 2.0 + h * 60.0);       // 瞬き
+        float tw = 1.0 - 0.25 * twinkle * (1.0 - sin(time * 2.0 + h * 60.0));   // 瞬き：twinkle=1 で ±25%（スライダー。2026-09-16）
         float col = hash21(id + 21.9);
         vec3 c = col < 0.2 ? vec3(0.8, 0.88, 1.0) : (col > 0.85 ? vec3(1.0, 0.93, 0.8) : vec3(1.0));
         return vec4(c, st * (0.3 + 0.7 * b) * tw);
@@ -679,7 +679,7 @@ export function setFloorStyle(style) {
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
- *   skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
+ *   starTwinkle: 星の瞬きの強さ（0〜2、1 で ±25%）  skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
  *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -900,6 +900,7 @@ export function setShadows(o = {}) {
       u.glowAmt.value = o.sunAuto ? gT * gT : 0;
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
+      if (Number.isFinite(o.starTwinkle)) u.twinkle.value = o.starTwinkle;
       // 太陽そのもの：地平線下では消す。雲で薄れる（(1−雲量)²）。色は直射の色
       u.sunRad.value = 2.4 - 1.6 * Math.min(1, Math.max(0, el / 25));   // 昼ほど小さく：地平線 2.4° → 25° 以上で 0.8°（夕日の大きさを控えめに。2026-09-16 ユーザー指定）
       u.sunVis.value = el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）
