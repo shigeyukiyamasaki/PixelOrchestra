@@ -436,7 +436,7 @@ const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行
 const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
-const SUN_SET_RED = new THREE.Color('#ff9a1a'), _sunHigh = new THREE.Color();   // 夕日の円盤の色
+const SUN_SET_RED = new THREE.Color('#ffb830'), _sunHigh = new THREE.Color();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
@@ -586,9 +586,9 @@ export function updateSky(camera, renderer) {
   const vis = fs.vis;                                               // 地平線下 0、雲で薄れる
   const haze = 1 + 0.6 * Math.min(1, fs.cloud / 0.5);               // 薄雲でにじみが広がる
   const disc = stageCtx.sky.material.uniforms.sunCol.value;
-  const k = vis * (0.35 + 0.65 * high);
-  flareEls[0].size = H * 0.045; flareEls[0].color.setRGB(k, k, k);                                   // 芯：白く飽和
-  flareEls[1].size = H * 0.16 * haze; flareEls[1].color.copy(disc).multiplyScalar(0.9 * k);            // 輪：太陽色
+  const k = vis * (0.12 + 0.88 * high);   // 夕日はグレアをほぼ消して円盤をくっきり見せる（2026-09-16 ユーザー指摘）
+  flareEls[0].size = H * 0.035; flareEls[0].color.setRGB(k, k, k);                                   // 芯：白く飽和
+  flareEls[1].size = H * 0.12 * haze; flareEls[1].color.copy(disc).multiplyScalar(0.9 * k);            // 輪：太陽色
   flareEls[2].size = H * 0.55 * haze; flareEls[2].color.copy(disc).multiplyScalar(0.35 * k * high);   // 広い輪：高い太陽だけ
 }
 
@@ -659,7 +659,7 @@ export function setShadows(o = {}) {
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
       u.aureole.value = 0;   // 空の球側のにじみは使わない（グレアは Lensflare が担う。2026-09-16）
-      u.sunRad.value = 2.4 - 1.4 * Math.min(1, Math.max(0, el / 40));   // 昼ほど小さく：地平線 2.4° → 40° 以上で 1.0°（2026-09-16 ユーザー指定）
+      u.sunRad.value = 3.2 - 2.4 * Math.min(1, Math.max(0, el / 40));   // 昼ほど小さく：地平線 3.2° → 40° 以上で 0.8°（2026-09-16 ユーザー指定）
       stageCtx.flareState.el = el; stageCtx.flareState.cloud = cloud; stageCtx.flareState.vis = u.sunVis.value;
     }
   }
