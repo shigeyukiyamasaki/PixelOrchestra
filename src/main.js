@@ -1005,13 +1005,15 @@ function footprintOf(track) {
 }
 
 // トーンマッピング（2026-09-10）：スポットを強くした時の白飛びを抑える。「ハイライトのみ」固定（2026-09-10 ユーザー確定。Reinhard/ACES は彩度が落ちるので廃止）
-// 輝度 0.8 までは素通し（色も彩度もそのまま）、それ以上だけ 1.0 に漸近するよう圧縮。
-// 圧縮は輝度に対して行い RGB を同じ比率で縮めるので色相・彩度が変わらない（ACES は 1.0 以下でも彩度が落ちるという指摘への対応）
+// 最大チャンネル 0.8 までは素通し（色も彩度もそのまま）、それ以上だけ 1.0 に漸近するよう圧縮。
+// RGB を同じ比率で縮めるので色相・彩度が変わらない（ACES は 1.0 以下でも彩度が落ちるという指摘への対応）。
+// 判定を輝度にしていた時は赤・青主体の色が輝度 0.8 未満のまま R/B だけ 1.0 を超えてクリップし、露出を上げると色が抜けた（2026-09-16 修正）
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   'vec3 CustomToneMapping( vec3 color ) { return color; }',
   `vec3 CustomToneMapping( vec3 color ) {
     color *= toneMappingExposure;
-    float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+    // 判定は輝度ではなく最大チャンネル（2026-09-16 ユーザー指摘：輝度判定だと赤・青が先にクリップして色が抜ける）
+    float l = max( color.r, max( color.g, color.b ) );
     const float knee = 0.8;
     if ( l <= knee ) return color;
     float t = l - knee;
@@ -1026,7 +1028,7 @@ let bgApplied = '';
 // CSS の色に、シェーダーと同じ露出＋トーン圧縮（輝度 0.8 以上だけ 1.0 に漸近）を掛ける（2026-09-16 ユーザー指摘：露出が空に効いていなかった）
 function toneHex(hex, exposure) {
   const c = new THREE.Color(hex).multiplyScalar(exposure);
-  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, knee = 0.8;
+  const l = Math.max(c.r, c.g, c.b), knee = 0.8;   // 判定は最大チャンネル（シェーダーと同じ）
   if (l > knee) { const t = l - knee; c.multiplyScalar((knee + (1 - knee) * (t / (t + (1 - knee)))) / l); }
   c.r = Math.min(1, c.r); c.g = Math.min(1, c.g); c.b = Math.min(1, c.b);
   return '#' + c.getHexString();
