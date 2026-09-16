@@ -472,6 +472,7 @@ export function createStage(container) {
   const floor = new THREE.Mesh(new THREE.ShapeGeometry(sh, 64), floorMat);
   floor.rotation.x = -Math.PI / 2;
   addStage(floor, -40);
+  const skirt = new THREE.Group(); skirt.name = 'floorSkirt'; scene.add(skirt);   // 床の厚み（外周の側面）。buildFloorSkirt で組む
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
   const risers = new THREE.Group();
@@ -482,8 +483,9 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0 }, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0 }, seats: [] };
   buildRisers([]);
+  buildFloorSkirt();
 
   // 指揮台
   // 指揮台：高さ 0.6・赤茶色（2026-09-10 ユーザー指定）
@@ -671,6 +673,7 @@ export function setFloorStyle(style) {
   stageCtx.floorMat.map = floorMapOf(tex);
   stageCtx.floorMat.needsUpdate = true;
   buildRisers(stageCtx.seats);   // ひな壇の天面も同じ地面の絵にする
+  buildFloorSkirt();             // 床の側面の絵も床のスタイルに合わせる
 }
 
 /**
@@ -959,6 +962,35 @@ export function setStageDepthWrite(on) {
   for (const m of stageMats) m.depthWrite = stageDepthWrite;
 }
 
+/** 床の厚み（2026-09-17 ユーザー指定）：床の外周（前・左右・奥の弧）に、ひな壇の 1 段目と同じ高さ・同じ側面の絵の壁を付ける。天面は y=0 のまま */
+export function buildFloorSkirt() {
+  if (!stageCtx) return;
+  const { skirt, stageMat } = stageCtx;
+  skirt.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
+  skirt.clear();
+  const h = ROWS.woodwind.h;                                  // 1 段目と同じ高さ
+  const X = FLOOR_X_HALF, F = FLOOR_Z_FRONT, R = FLOOR_BACK_R, cy = -SEAT_SHIFT_Z;
+  const yEdge = cy + Math.sqrt(Math.max(0, R * R - X * X)); // 左右の辺と弧が交わる位置（shape 座標。世界の z = −yEdge）
+  const mat = (uLen) => stageMat({ ...wallSkin(uLen, h, '#5f4c2f'), side: THREE.DoubleSide });
+  const add = (mesh) => { mesh.receiveShadow = true; mesh.renderOrder = -41; skirt.add(mesh); };
+  // 前（z = +F、+z を向く）
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(2 * X, h), mat(2 * X));
+  front.position.set(0, -h / 2, F); add(front);
+  // 左右（x = ±X、外向き）。z は +F 〜 −yEdge
+  const sideLen = F + yEdge;
+  for (const sgn of [-1, 1]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sideLen, h), mat(sideLen));
+    m.position.set(sgn * X, -h / 2, (F - yEdge) / 2);
+    m.rotation.y = sgn * Math.PI / 2;
+    add(m);
+  }
+  // 奥の弧（中心 (0, SEAT_SHIFT_Z)・半径 R）。ひな壇の壁と同じく CylinderGeometry の角 φ = π − θ（θ は −z から）
+  const thE = Math.atan2(X, yEdge - cy);
+  const segs = Math.max(8, Math.ceil((2 * thE) / deg(4)));
+  const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, segs, 1, true, Math.PI - thE, 2 * thE), mat(R * 2 * thE));
+  back.position.set(0, -h / 2, SEAT_SHIFT_Z); add(back);
+}
+
 export function buildRisers(seats) {
   if (!stageCtx) return;
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
@@ -1237,7 +1269,7 @@ let wallImgTex = null;
 // 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
 wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
   t.needsUpdate = true;
-  if (stageCtx && stageCtx.seats) buildRisers(stageCtx.seats);
+  if (stageCtx && stageCtx.seats) { buildRisers(stageCtx.seats); buildFloorSkirt(); }
 });
 wallImgTex.magFilter = THREE.NearestFilter; wallImgTex.minFilter = THREE.NearestFilter;
 wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
@@ -1245,7 +1277,8 @@ wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
 /** 壁 1 枚ぶんの材質。草原の時は土の絵、板目の時は従来どおりの無地（2026-09-13 ユーザー指定） */
 function wallSkin(uLen, vLen, col) {
   const img = wallImgTex.image;
-  if (!img || stageCtx.groundTex !== stageCtx.grassTex) return { color: col };
+  const isGrass = stageCtx.groundTex === stageCtx.grassTex || stageCtx.groundTex === stageCtx.grassDarkTex;
+  if (!img || !isGrass) return { color: col };
   const m = wallImgTex.clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
   const tw = img.width / WALL_DPU, th = img.height / WALL_DPU;
