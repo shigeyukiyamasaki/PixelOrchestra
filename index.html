@@ -233,7 +233,7 @@
         <label class="ctl" title="方角 [度]。舞台中心から見て太陽がどちらにあるか。0 で客席正面、90 で客席から見て右、180 で舞台の奥、270 で左"><span>方角 <b data-value-for="sunAzimuth">30</b></span><input type="range" id="sunAzimuth" min="0" max="360" step="1" value="30"></label>
         <label class="ctl" title="高度 [度]。太陽の高さ。小さいほど朝夕の低い光で影が長い、90 で真上。0 以下は地平線下（直射なし）"><span>高度 <b data-value-for="sunElev">55</b></span><input type="range" id="sunElev" min="-15" max="90" step="1" value="55"></label>
         <label class="ctl" title="色温度。0 で朝夕の橙、0.5 で昼の白、1 で曇り空の青"><span>色温度 <b data-value-for="sunTemp">0.5</b></span><input type="range" id="sunTemp" min="0" max="1" step="0.01" value="0.5"></label>
-        <label class="ctl row" title="空の色（背景の上端の色。天空光の色みにも使う）。自動では時刻と天気から決まる：昼の青 → 夕方の深い青紫 → 日没後の紺 → 夜の黒、雲が多いほど灰色"><span>空の色</span><input type="color" id="bgTop" value="#0d66f2"></label>
+        <label class="ctl row" title="空の色（背景の上端の色。天空光の色みにも使う）。自動では時刻と天気から決まる：昼の青 → 夕方の深い青紫 → 日没後の紺 → 夜の黒、雲が多いほど灰色"><span>空の色</span><input type="color" id="bgTop" value="#0058ff"></label>
         <label class="ctl row" title="地平線の色（背景の下端の色）。自動では時刻と天気から決まる：昼の淡い水色 → 日没前の薄黄 → 日没の橙 → ピンク → 紫 → 濃紺。薄雲で派手に、厚い雲で灰色"><span>地平線の色</span><input type="color" id="bgBottom" value="#bfe0f5"></label>
         <label class="ctl" title="天空光（空全体からの拡散光）の強さ。影の中の明るさ。曇りほど強く、直射の代わりになる"><span>天空光 <b data-value-for="sunAmbient">0.7</b></span><input type="range" id="sunAmbient" min="0" max="3" step="0.01" value="0.7"></label>
         </div>
@@ -275,6 +275,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260919k"></script>
+  <script type="module" src="src/main.js?v=20260919l"></script>
 </body>
 </html>
