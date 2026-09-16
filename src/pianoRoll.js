@@ -7,6 +7,7 @@
  * 「後方の壁を流れる」モードは 2026-09-14 にユーザー指定で撤去した。
  */
 import { PX } from './sprites.js';
+import { SEAT_SHIFT_Z } from './stage.js';   // 座席の弧の中心（列の幅方向＝弧の接線を出すため）
 
 const FLASH_SEC = 0.12;       // 着弾後に明るく光る時間
 export const HEAD_Y = 52 * PX; // パート名ラベルの高さ（体 34px + 頭 12px + 余白）
@@ -109,9 +110,14 @@ export class PianoRoll {
         new THREE.PlaneGeometry(1, 0.05),
         new THREE.MeshBasicMaterial({ color: seat.track.color, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
       );
+      // 列の幅方向（音程の横並び）は世界座標で固定：座席の弧の接線（客席から見て左→右が +）。
+      // カメラ向きの回転と一緒に回すと、幅の広い列（1st バイオリン）で中心から離れた音が回って位置がずれて見えた（2026-09-16 ユーザー指摘）
+      const rx = cx, rz = cz - SEAT_SHIFT_Z, rl = Math.hypot(rx, rz) || 1;
+      const tx = -rz / rl, tz = rx / rl;
       line.position.set(cx, ps[0].y + LAND_Y, cz);
+      line.rotation.y = Math.atan2(-tz, tx);   // 板の x 軸を接線に合わせる（y 回転 θ で x→(cosθ, 0, −sinθ)）
       this.overheadGroup.add(line);
-      this.columns.set(seat.track, { x: cx, y: ps[0].y + LAND_Y, z: cz, spread, width: 1, yaw: 0, quat: new THREE.Quaternion(), line });
+      this.columns.set(seat.track, { x: cx, y: ps[0].y + LAND_Y, z: cz, spread, width: 1, tx, tz, yaw: 0, quat: new THREE.Quaternion(), line });
     }
   }
 
@@ -142,7 +148,7 @@ export class PianoRoll {
     for (const i of this._lastVisible) { mesh.setMatrixAt(i, zeroM); halo.setMatrixAt(i, zeroM); }
     this._lastVisible.clear();
 
-    // 列ごとにカメラの方位へ向ける（円筒ビルボード）。着弾ラインも同じ向き
+    // ノートの板だけカメラの方位へ向ける（円筒ビルボード）。横並びと着弾ラインは世界座標で固定
     const cam = this.camera.position;
     for (const [tr, c] of this.columns) {
       const range = tr.maxPitch - tr.minPitch + 1;
@@ -150,7 +156,6 @@ export class PianoRoll {
       c.line.scale.x = c.width;
       c.yaw = Math.atan2(cam.x - c.x, cam.z - c.z);
       c.quat.setFromAxisAngle(this._yAxis, c.yaw);
-      c.line.quaternion.copy(c.quat);
     }
 
     // 表示対象：end > t - tail かつ time < t + lookahead。time 昇順なので二分探索で開始点を探す
@@ -169,10 +174,12 @@ export class PianoRoll {
       const range = tr.maxPitch - tr.minPitch + 1;
       const semi = col.width / range; // 通常は SEMITONE_W。列幅上限に当たった時だけ詰まる
       const w = semi * 0.9;
-      const localX = -col.width / 2 + (n.midi - tr.minPitch + 0.5) * semi; // 列の中で音程を横に展開
-      // 列のビルボード回転（yaw）に合わせて横オフセットを世界座標へ（y 回転で x→(cos, 0, -sin)）
-      const x = col.x + Math.cos(col.yaw) * localX;
-      const z = col.z - Math.sin(col.yaw) * localX;
+      // 列の中で音程を横に展開。基準は音域の中央ではなく平均音高：外れ値（キースイッチ等の低い音）で音域が広がっても、
+      // 鳴っている音の塊がパート名（重心）の真上に来る（2026-09-16 ユーザー指摘：1st バイオリンがずれる）
+      const localX = (n.midi - tr.meanPitch) * semi;
+      // 横オフセットは座席の弧の接線（世界座標で固定）に沿って置く
+      const x = col.x + col.tx * localX;
+      const z = col.z + col.tz * localX;
       const baseY = col.y;
       const quat = col.quat;
 
