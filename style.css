@@ -205,7 +205,7 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #tempoHud .bpm { font-size: 18px; }
 #tempoHud .sig { font-size: 30px; transform-origin: right bottom; }
 #tempoHud .sig.beatPop { animation: sigPop .22s ease-out; }   /* 1 拍目の瞬間に大きくして戻す */
-@keyframes sigPop { from { transform: scale(1.4); } to { transform: scale(1); } }
+@keyframes sigPop { from { transform: scale(1.4); color: #ffe14d; } to { transform: scale(1); color: #fff; } }
 /* クレジット：プレビューの左下に重ねる（MIDIOrchestra と同じ作り）。2026-09-13 ユーザー指定 */
 #credits { position: absolute; left: 20px; bottom: 18px; z-index: 2; pointer-events: none;
   display: flex; flex-direction: column; gap: 0; }
