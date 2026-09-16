@@ -502,10 +502,15 @@ function scrollPart(neckColor, r = 3) {
        } });
 }
 /** 胴と糸巻きをまとめる（pos は 2 倍解像度 px、pivot 基準。axis: 'x' = ネックが +x、'y' = ネックが +y） */
-/** 指板：胴・ネックの表板の上に乗る別の物体（厚み thick セル）。pivot は左上（2026-09-16 ユーザー指定：塗りでなく厚みを持たせる） */
+/** 指板：胴・ネックの表板の上に乗る別の物体（厚み thick セル）。pivot は左上（2026-09-16 ユーザー指定：塗りでなく厚みを持たせる）。
+ *  弦は塗りで表す：横向き（バイオリン）は上半分の行、縦向きで幅 2（チェロ）は片側の列、幅 3（コントラバス）は両端の 2 列をグレーに */
 function fingerboardPart(w, h, thick = 1) {
-  return makePart(w, h, 0, 0, (d) => { d.r(0, 0, w, h, C.black); d.r(0, 0, w, 1, '#2a2a30'); },
-                  { res: 2, depth: thick, z0: 0, accent: `fb|${w}x${h}x${thick}` });
+  return makePart(w, h, 0, 0, (d) => {
+    d.r(0, 0, w, h, C.black);
+    const G = '#2a2a30';
+    if (h > w) { d.r(0, 0, 1, h, G); if (w >= 3) d.r(w - 1, 0, 1, h, G); }   // 縦向き：片側（幅 3 なら両端）
+    else d.r(0, 0, w, 1, G);                                                  // 横向き：上の行
+  }, { res: 2, depth: thick, z0: 0, accent: `fb|${w}x${h}x${thick}` });
 }
 /** 胴 + 渦巻き（+ 指板）。pos はセル単位（VOX）。fb = { w, h, pos:[x,y,z], thick }：z は表板の面（胴の depth の端）に置く */
 function withScroll(body, scroll, pos, axis = 'x', fb = null) {
@@ -514,7 +519,8 @@ function withScroll(body, scroll, pos, axis = 'x', fb = null) {
   if (axis === 'y') scroll.rotation.z = Math.PI / 2;
   g.add(body, scroll);
   if (fb) {
-    const f = fingerboardPart(fb.w, fb.h, fb.thick ?? 1);
+    const thick = fb.thick ?? 1;
+    const f = fingerboardPart(fb.w, fb.h, thick);
     f.position.set(fb.pos[0] * VOX, fb.pos[1] * VOX, fb.pos[2] * VOX);
     g.add(f);
   }
