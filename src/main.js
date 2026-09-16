@@ -650,6 +650,7 @@ function applyTempo(s, bpm, beat) {
   g.style.fontSize = `${TEMPO_SIZE.sig * s.tempoScale * ds}px`;
   b.textContent = `♩= ${Math.round(bpm)}`;
   g.textContent = `${beat.beatInBar + 1}/${beat.beatUnit || 4}`;
+  g.style.color = beat.beatInBar === 0 ? '#ffe14d' : '#fff';   // 1 拍目は黄色に点灯（2026-09-16 ユーザー指定）
 }
 
 // ---------- クレジット（プレビューの左下。2026-09-13 ユーザー指定。MIDIOrchestra を参考に） ----------
