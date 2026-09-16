@@ -852,6 +852,7 @@ function settings() {
     sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
     sunManual: $('sunManual').checked, sunHour: num('sunHour', 12), sunCloud: num('sunCloud', 0), stageFacing: num('stageFacing', 180),
     sunAmbient: num('sunAmbient', 0.7), skyGlowSpread: num('skyGlowSpread', 1),
+    moonAge: num('moonAge', 15), moonAzimuth: num('moonAzimuth', 180), moonElev: num('moonElev', 30), moonBright: num('moonBright', 1),   // 月（2026-09-16）
     exposure: num('exposure', 1),
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
@@ -1033,11 +1034,12 @@ function applyBackground(top, bottom, mid, flip) {
 // 手動に切り替えた時はその値から始められる。input イベントは出さない（保存は次の操作時にまとめて）
 let sunFollowKey = '';
 function followSunSliders(s) {
-  const key = `${s.sunHour}|${s.sunCloud}|${s.stageFacing}`;
+  const key = `${s.sunHour}|${s.sunCloud}|${s.stageFacing}|${s.moonAge}`;
   if (key === sunFollowKey) return;
   sunFollowKey = key;
-  const a = sunFromTime(s.sunHour, s.sunCloud, s.stageFacing);
-  const vals = { sunIntensity: a.intensity.toFixed(2), sunAzimuth: Math.round(a.azimuth), sunElev: Math.round(a.elev), sunTemp: a.temp.toFixed(2), sunAmbient: a.skyLight.toFixed(2), bgTop: a.sky, bgBottom: a.horizon };
+  const a = sunFromTime(s.sunHour, s.sunCloud, s.stageFacing, s.moonAge);
+  const vals = { sunIntensity: a.intensity.toFixed(2), sunAzimuth: Math.round(a.azimuth), sunElev: Math.round(a.elev), sunTemp: a.temp.toFixed(2), sunAmbient: a.skyLight.toFixed(2), bgTop: a.sky, bgBottom: a.horizon,
+                 moonAzimuth: Math.round(a.moonAzimuth), moonElev: Math.round(a.moonElev), moonBright: a.moonK.toFixed(2) };
   for (const [id, v] of Object.entries(vals)) {
     const el = $(id); if (!el) continue;
     el.value = v;
@@ -1348,7 +1350,8 @@ function animate() {
     if (s.lightMode === 'sun' && !s.sunManual) { followSunSliders(s); s.bgTop = $('bgTop').value; s.bgBottom = $('bgBottom').value; }   // 自動のとき詳細スライダー（空の色も）を計算値に追従させる
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
                  mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
-                 sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing },
+                 sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
+                 moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     applyToneMapping(s.exposure);
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip);

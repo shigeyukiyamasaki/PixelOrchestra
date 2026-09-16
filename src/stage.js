@@ -296,10 +296,23 @@ export function createStage(container) {
   const skyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: { value: new THREE.Vector3(0, 0, 1) }, glowColor: { value: new THREE.Color('#f28a3c') }, glowAmt: { value: 0 }, flip: { value: 0 },
                 sunCol: { value: new THREE.Color('#ffffff') }, sunVis: { value: 0 }, sunRad: { value: 2.0 }, aureole: { value: 0.7 }, spread: { value: 1 },
-                sinDip: { value: 0 } },
+                sinDip: { value: 0 },
+                moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonU: { value: new THREE.Vector3(1, 0, 0) }, moonV: { value: new THREE.Vector3(0, 0, 1) },
+                moonK: { value: 1 }, moonVis: { value: 0 }, moonRad: { value: 1.0 }, moonCol: { value: MOON_DISC.clone() } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 glowColor; uniform float glowAmt; uniform float flip;
-      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip; varying vec3 vDir;
+      uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float aureole; uniform float spread; uniform float sinDip;
+      uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol; varying vec3 vDir;
+      // 月の円盤（欠けあり）：接平面の座標 (u,v) を半径で正規化し、明暗境界 u = (1−2k)·sqrt(1−v²) より太陽側を明るく
+      float moonDisc(vec3 dd) {
+        float cm = dot(dd, normalize(moonDir));
+        float disc = smoothstep(cos(radians(moonRad + 0.25)), cos(radians(moonRad)), cm);
+        float sr = sin(radians(moonRad));
+        float u = dot(dd, moonU) / sr, v = clamp(dot(dd, moonV) / sr, -1.0, 1.0);
+        float term = (1.0 - 2.0 * moonK) * sqrt(max(0.0, 1.0 - v * v));
+        float lit = smoothstep(term - 0.08, term + 0.08, u);
+        return disc * (0.06 + 0.94 * lit);   // 影の側も地球照でうっすら
+      }
       void main(){
         vec3 d = normalize(vDir);
         float y = flip > 0.5 ? -d.y : d.y;
@@ -323,7 +336,11 @@ export function createStage(container) {
         vec3 sunc = sunCol;   // 色は JS 側で高度に応じて決める（高いと白っぽく、夕日は赤橙）
         float outA = sa + a * (1.0 - sa);
         vec3 outC = outA > 1e-4 ? (sunc * sa + glowColor * a * (1.0 - sa)) / outA : glowColor;
-        gl_FragColor = vec4(outC, outA);
+        // 月（夕焼けの層と太陽の上に通常合成）。床の縁より下は沈む
+        float md = moonVis * moonDisc(dd) * smoothstep(-0.011, 0.011, dd.y + sinDip);
+        float outA2 = md + outA * (1.0 - md);
+        vec3 outC2 = outA2 > 1e-4 ? (moonCol * md + outC * outA * (1.0 - md)) / outA2 : outC;
+        gl_FragColor = vec4(outC2, outA2);
       }`,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, toneMapped: false,
   });
@@ -334,9 +351,11 @@ export function createStage(container) {
   // 本編の深度で隠れた画素を捨ててからぼかし、本編に加算する（renderFrame）。本編のドット絵はぼかさない
   const sunOnlyMat = new THREE.ShaderMaterial({
     uniforms: { sunDir: skyMat.uniforms.sunDir, sunCol: skyMat.uniforms.sunCol, sunVis: skyMat.uniforms.sunVis, sunRad: skyMat.uniforms.sunRad, flip: skyMat.uniforms.flip, sinDip: skyMat.uniforms.sinDip,
+                moonDir: skyMat.uniforms.moonDir, moonU: skyMat.uniforms.moonU, moonV: skyMat.uniforms.moonV, moonK: skyMat.uniforms.moonK, moonVis: skyMat.uniforms.moonVis, moonRad: skyMat.uniforms.moonRad, moonCol: skyMat.uniforms.moonCol,
                 sceneDepth: { value: null }, resolution: { value: new THREE.Vector2(1, 1) }, gain: { value: 1 } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunVis; uniform float sunRad; uniform float flip; uniform float sinDip;
+      uniform vec3 moonDir; uniform vec3 moonU; uniform vec3 moonV; uniform float moonK; uniform float moonVis; uniform float moonRad; uniform vec3 moonCol;
       uniform sampler2D sceneDepth; uniform vec2 resolution; uniform float gain; varying vec3 vDir;
       void main(){
         // 本編で何か描かれている画素（深度 < 1）は太陽が隠れている
@@ -348,8 +367,15 @@ export function createStage(container) {
         float disc = smoothstep(cos(radians(sunRad + 0.4)), cos(radians(sunRad)), cs);
         disc *= smoothstep(-0.011, 0.011, dd.y + sinDip);   // 床の縁より下は無し（切れ目は約 ±0.6° でぼかす）
         float a = sunVis * disc;
-        if (a < 0.002) discard;
-        gl_FragColor = vec4(sunCol * gain * a, a);
+        // 月（明るい側だけ。太陽より弱いにじみ）
+        float cm = dot(dd, normalize(moonDir));
+        float mdisc = smoothstep(cos(radians(moonRad + 0.25)), cos(radians(moonRad)), cm) * smoothstep(-0.011, 0.011, dd.y + sinDip);
+        float sr = sin(radians(moonRad));
+        float mu = dot(dd, moonU) / sr, mv = clamp(dot(dd, moonV) / sr, -1.0, 1.0);
+        float lit = smoothstep((1.0 - 2.0 * moonK) * sqrt(max(0.0, 1.0 - mv * mv)) - 0.08, (1.0 - 2.0 * moonK) * sqrt(max(0.0, 1.0 - mv * mv)) + 0.08, mu);
+        float ma = moonVis * mdisc * lit * 0.5;
+        if (a + ma < 0.002) discard;
+        gl_FragColor = vec4(sunCol * gain * a + moonCol * ma, min(1.0, a + ma));
       }`,
     transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide, toneMapped: false,
   });
@@ -455,7 +481,9 @@ const SUN_R = 60;  // 太陽光の光源と舞台中心の距離 [unit]（平行
 const HEMI_SKY_INDOOR = '#ffffff', HEMI_GROUND_INDOOR = '#6a5a50';   // 屋内（スポットライト）の半球光の色
 // 色温度 0〜1 → 光の色。0 = 朝夕の橙、0.5 = 昼の白、1 = 曇り空の青
 const SUN_WARM = new THREE.Color('#ffd2a0'), SUN_WHITE = new THREE.Color('#ffffff'), SUN_COOL = new THREE.Color('#cfe0ff');
-const SUN_SET_RED = new THREE.Color('#ffd060'), _sunHigh = new THREE.Color();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
+const SUN_SET_RED = new THREE.Color('#ffd060'), _sunHigh = new THREE.Color();
+const MOON_COL = new THREE.Color('#aab8ea'), MOON_SKY_COL = new THREE.Color('#8fa0d8'), MOON_DISC = new THREE.Color('#e8eefc');   // 月光（青白。プルキンエ現象の再現）
+const _mU = new THREE.Vector3(), _mV = new THREE.Vector3();   // 夕日の円盤の色（周りの夕焼け #f28a3c より明るく、輪郭が立つ。2026-09-16）
 function sunColorOf(t) { return t < 0.5 ? SUN_WARM.clone().lerp(SUN_WHITE, t * 2) : SUN_WHITE.clone().lerp(SUN_COOL, (t - 0.5) * 2); }
 // 地平線（太陽側）の色 → 天空光の色。明るさは 1 に正規化して「天空光」の強さだけで明るさが決まるようにする
 const _skyTmp = new THREE.Color();
@@ -479,30 +507,46 @@ const GROUND_OCCLUSION = 0.35;   // 照り返しの自己遮蔽係数（密集�
  *   azimuth: 舞台基準の方角（0 客席正面・90 客席から見て右）  elev: 高度 [deg]（負なら地平線下）
  *   temp: 色温度 0〜1  intensity: 直射の強さ  skyLight: 天空光（半球光）の強さ  sky: 空の上端の色 [hex]  horizon: 地平線の色 [hex]
  */
-export function sunFromTime(hour, cloud, facing) {
-  const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
-  const elev = Math.asin(Math.cos(LAT) * Math.cos(H));               // 赤緯 0 の高度。南中で 90−35 = 55°
+// 時角 H [rad] から高度 [deg] と舞台基準の方角 [deg] を出す（赤緯 0 = 春秋分。太陽も月も同じ式）
+function skyPos(H, facing) {
+  const elev = Math.asin(Math.cos(LAT) * Math.cos(H));               // 南中で 90−35 = 55°
   const azS = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(LAT));  // 南から西回りの方位角
   const compass = (180 + azS / Math.PI * 180 + 360) % 360;           // 北 0・東 90・南 180・西 270
-  const azimuth = ((facing - compass) % 360 + 360) % 360;            // 舞台基準：客席の方位 − 太陽の方位。東の太陽は南向き舞台で「客席から見て右」
-  const elDeg = elev / Math.PI * 180;
-  const up = Math.max(0, Math.sin(elev));
+  const azimuth = ((facing - compass) % 360 + 360) % 360;            // 舞台基準：客席の方位 − 天体の方位。東は南向き舞台で「客席から見て右」
+  return { azimuth, elev: elev / Math.PI * 180 };
+}
+export const MOON_CYCLE = 29.53;   // 朔望月 [日]
+export function sunFromTime(hour, cloud, facing, moonAge = 15) {
+  const H = deg((hour - 12) * 15);                                   // 時角。正午 0、午前が負
+  const { azimuth, elev: elDeg } = skyPos(H, facing);
+  const up = Math.max(0, Math.sin(deg(elDeg)));
   const air = Math.pow(up, 0.35);                                    // 低いほど大気を長く通って弱まる（空気量の近似）
   const c = Math.min(1, Math.max(0, cloud));
   const intensity = 1.6 * air * (1 - c) * (1 - c);                   // 雲で直射は消える
-  const skyLight = SKY_BASE * (0.35 + 0.65 * Math.sqrt(up || 0)) * (1 + 1.2 * c);   // 天空光。日没後も薄明の分は残し、曇りは拡散光が増える
+  // 月（2026-09-16 ユーザー指定）：月齢ぶんだけ太陽から時角が遅れる（満月 = 半周遅れ = 太陽の正反対）。
+  // 照らされている割合 k は位相角から。明るさは k^3（半月は満月の 1/8 程度。衝効果の近似）
+  const phase = (moonAge % MOON_CYCLE) / MOON_CYCLE;
+  const moon = skyPos(H - phase * Math.PI * 2, facing);
+  const moonK = (1 - Math.cos(phase * Math.PI * 2)) / 2;
+  const moonUp = Math.max(0, Math.sin(deg(moon.elev)));
+  const moonBright = moonK * moonK * moonK * Math.pow(moonUp, 0.35) * (1 - c) * (1 - c);   // 0〜1（満月・南中・快晴で 1）
+  // 天空光：昼は高度で、日没後は薄明の減衰（0° で 0.35 → −18° で星明かりの床 0.04）、月夜は月が少し足す。曇りは拡散光が増える
+  const tw = Math.min(1, Math.max(0, -elDeg / 18));
+  const dayPart = elDeg >= 0 ? 0.35 + 0.65 * Math.sqrt(up) : 0.35 * (1 - tw) + 0.04 * tw;
+  const skyLight = SKY_BASE * (dayPart + 0.12 * moonBright * tw) * (1 + 1.2 * c);
   const tEl = Math.min(0.5, 0.5 * Math.max(0, elDeg) / 30);          // 地平線で橙、30° 以上で白
   const temp = tEl + (0.85 - tEl) * c;                               // 雲で青白へ
-  return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c), horizon: horizonColorFromTime(elDeg, c) };
+  return { azimuth, elev: elDeg, temp, intensity, skyLight, sky: skyColorFromTime(elDeg, c), horizon: horizonColorFromTime(elDeg, c),
+           moonAzimuth: moon.azimuth, moonElev: moon.elev, moonK, moonBright };
 }
 // 地平線の色を高度と雲量から決める（2026-09-16 ユーザー指定：夕焼けのシミュレート。方向は無視）。
 // 橙になるのは太陽が地平線の ±6° にいる間だけ。薄雲（雲量 〜0.5）は色を派手に、厚い雲は灰色へ
 // 太陽側（球に重ねる夕焼け）
-const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
-const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d']];
+const HZ_CLEAR = [[20, '#bfe0f5'], [6, '#f0c268'], [0, '#f28a3c'], [-4, '#e46f7a'], [-8, '#6b4a8c'], [-12, '#131c4d'], [-18, '#05081f']];   // 6° は円盤より暗い橙寄り（円盤の輪郭を立てる）
+const HZ_VIVID = [[20, '#bfe0f5'], [6, '#f5b552'], [0, '#ff7a1f'], [-4, '#ff5f7e'], [-8, '#7a3fa0'], [-12, '#131c4d'], [-18, '#05081f']];
 // 太陽と反対側（CSS の地平線の色）：青灰 → 地球の影の帯（ピンク〜紫）→ 濃紺。薄雲でピンクが濃くなる
-const HZ_ANTI_CLEAR = [[20, '#bfe0f5'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d']];
-const HZ_ANTI_VIVID = [[20, '#bfe0f5'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d']];
+const HZ_ANTI_CLEAR = [[20, '#bfe0f5'], [6, '#c6d4ea'], [0, '#a9a6c9'], [-4, '#7a6ea6'], [-8, '#45407e'], [-12, '#131c4d'], [-18, '#05081f']];
+const HZ_ANTI_VIVID = [[20, '#bfe0f5'], [6, '#d2cfe6'], [0, '#c9a0bd'], [-4, '#8e6aa8'], [-8, '#4d3f8a'], [-12, '#131c4d'], [-18, '#05081f']];
 const _hz = new THREE.Color(), _hz2 = new THREE.Color();
 function keyColor(out, keys, el) {
   if (el >= keys[0][0]) return out.set(keys[0][1]);
@@ -524,14 +568,15 @@ function horizonColorFromTime(el, cloud) { return horizonPalette(HZ_ANTI_CLEAR, 
 function horizonGlowColorFromTime(el, cloud) { return horizonPalette(HZ_CLEAR, HZ_VIVID, el, cloud); }         // 太陽側（球）
 // 空の上端の色を高度と雲量から決める（2026-09-16 ユーザー指定）。
 // 昼の青 → 低い太陽で深い青紫 → 地平線下は濃紺。雲は灰色へ寄せ、暗いほど灰も暗く
-const SKY_DAY = new THREE.Color('#0058ff'), SKY_LOW = new THREE.Color('#062ccc'), SKY_NIGHT = new THREE.Color('#040e5c');   // 彩度高め（2026-09-16 ユーザー指定）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
+const SKY_DAY = new THREE.Color('#0058ff'), SKY_LOW = new THREE.Color('#062ccc'), SKY_NIGHT = new THREE.Color('#040e5c'), SKY_DEEP = new THREE.Color('#02051c');   // SKY_DEEP = 真夜中（−18° 以下）   // 彩度高め（2026-09-16 ユーザー指定）   // 夜（−12°）は薄明の濃紺。黒にしない（2026-09-16 ユーザー指摘）
 const SKY_OVERCAST = new THREE.Color('#9aa3ad');
 const _sky = new THREE.Color();
 function skyColorFromTime(el, cloud) {
   if (el >= 30) _sky.copy(SKY_DAY);
   else if (el >= 0) _sky.copy(SKY_LOW).lerp(SKY_DAY, el / 30);
   else if (el >= -12) _sky.copy(SKY_NIGHT).lerp(SKY_LOW, (el + 12) / 12);   // 高度 0° で上からの色（SKY_LOW）と一致させる
-  else _sky.copy(SKY_NIGHT);
+  else if (el >= -18) _sky.copy(SKY_DEEP).lerp(SKY_NIGHT, (el + 18) / 6);   // 天文薄明：−18° でほぼ黒
+  else _sky.copy(SKY_DEEP);
   const lum = 0.2126 * _sky.r + 0.7152 * _sky.g + 0.0722 * _sky.b;
   const grey = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(Math.min(1, lum / 0.16 + 0.05));   // 曇りの灰は空の明るさに合わせる
   return '#' + _sky.lerp(grey, cloud).getHexString();
@@ -580,6 +625,7 @@ export function setFloorStyle(style) {
  *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
+ *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
  *   bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
@@ -730,16 +776,30 @@ export function setShadows(o = {}) {
   if (Number.isFinite(o.ambient) && lightState.mode !== 'sun') hemi.intensity = o.ambient;   // 屋内の環境光（跳ね返り光）
   if (lightState.mode === 'sun') {
     let sunI = o.sun, sunT = o.sunTemp, sunAz = o.sunAzimuth, sunEl = o.sunElev, sky = o.sunAmbient;
-    if (o.sunAuto) {   // 時刻・天気・舞台の向きから決める（手動でない時）
-      const a = sunFromTime(o.sunAuto.hour, o.sunAuto.cloud, o.sunAuto.facing);
+    let mAz = o.moonAzimuth, mEl = o.moonElev, mK = o.moonBright;   // 月：方角・高度・照らされている割合（手動）
+    const cloud = o.sunAuto ? o.sunAuto.cloud : 0;
+    if (o.sunAuto) {   // 時刻・天気・舞台の向き・月齢から決める（手動でない時）
+      const a = sunFromTime(o.sunAuto.hour, o.sunAuto.cloud, o.sunAuto.facing, o.sunAuto.moonAge);
       sunI = a.intensity; sunT = a.temp; sunAz = a.azimuth; sunEl = a.elev; sky = a.skyLight;
+      mAz = a.moonAzimuth; mEl = a.moonElev; mK = a.moonK;
     }
     if (Number.isFinite(sky)) hemi.intensity = sky;   // 天空光。屋外の環境光はこれ（屋内の「環境光」とは別の値）
-    const elNow = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
-    if (Number.isFinite(sunI)) sun.intensity = (Number.isFinite(elNow) && elNow <= 0) ? 0 : sunI;   // 地平線下なら直射なし（手動でも物理どおり）
-    sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後）
-    if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
-    if (Number.isFinite(elNow)) hemi.color.copy(skyLightColorOf(horizonGlowColorFromTime(elNow, o.sunAuto ? o.sunAuto.cloud : 0)));   // 色相は太陽側の地平線（夕焼け）から。青は乗せない
+    const sunElNow = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
+    // 夜（太陽が −6° 以下＝市民薄明の終わり）は月が光源になる（2026-09-16 ユーザー指定）。
+    // 満月・南中・快晴の月光を「目が慣れた状態」として昼の約 25% の強さ・青白（プルキンエ現象）で描く。40 万倍の差は表示できない
+    const night = Number.isFinite(sunElNow) && sunElNow <= -6;
+    const moonUp = Number.isFinite(mEl) ? Math.max(0, Math.sin(deg(mEl))) : 0;
+    const moonI = night && Number.isFinite(mK) ? 0.4 * mK * mK * mK * Math.pow(moonUp, 0.35) * (1 - cloud) * (1 - cloud) : 0;
+    const srcAz = night ? mAz : sunAz, srcEl = night ? mEl : sunEl;
+    const elNow = Number.isFinite(srcEl) ? srcEl : lightState.sunEl;
+    if (night) sun.intensity = moonI;
+    else if (Number.isFinite(sunI)) sun.intensity = (Number.isFinite(elNow) && elNow <= 0) ? 0 : sunI;   // 地平線下なら直射なし（手動でも物理どおり）
+    sun.castShadow = lightState.enabled && sun.intensity > 0.03;   // 直射が消えたら影も消す（曇天・日没後・新月）
+    if (night) { if (lightState.sunTemp !== 'moon') { lightState.sunTemp = 'moon'; sun.color.copy(MOON_COL); } }
+    else if (Number.isFinite(sunT) && sunT !== lightState.sunTemp) { lightState.sunTemp = sunT; sun.color.copy(sunColorOf(sunT)); }
+    if (night) hemi.color.copy(MOON_SKY_COL);   // 月夜の天空光は青白
+    else if (Number.isFinite(sunElNow)) hemi.color.copy(skyLightColorOf(horizonGlowColorFromTime(sunElNow, cloud)));   // 色相は太陽側の地平線（夕焼け）から。青は乗せない
+    stageCtx.moonState = { az: mAz, el: mEl, k: mK, sunEl: sunElNow, cloud };
     if (o.groundColor) hemi.groundColor.set(o.groundColor);
     else if (stageCtx.groundTex?.avgColor) {
       // 床（板目／草原）の平均色 × 照り返しの倍率（2026-09-16 ユーザー指定：物理に寄せる）。
@@ -755,17 +815,22 @@ export function setShadows(o = {}) {
       const albedo = stageCtx.groundTex.albedo ?? 0.25;
       hemi.groundColor.copy(avg).multiplyScalar((lum > 0.01 ? albedo / lum : 1) * bounce);
     }
-    const az = Number.isFinite(sunAz) ? sunAz : lightState.sunAz, el = Number.isFinite(sunEl) ? sunEl : lightState.sunEl;
-    if (Number.isFinite(az) && Number.isFinite(el) && (az !== lightState.sunAz || el !== lightState.sunEl)) {
-      lightState.sunAz = az; lightState.sunEl = el;
-      const a = deg(az), e = deg(el);
+    // 平行光の位置は「有効な光源」（昼は太陽・夜は月）の方角・高度から
+    const az = Number.isFinite(srcAz) ? srcAz : lightState.sunAz, elSrc = Number.isFinite(srcEl) ? srcEl : lightState.sunEl;
+    if (Number.isFinite(az) && Number.isFinite(elSrc) && (az !== lightState.sunAz || elSrc !== lightState.sunEl)) {
+      lightState.sunAz = az; lightState.sunEl = elSrc;
+      const a = deg(az), e = deg(elSrc);
       // 方角 0 = 客席側（+z）から。客席から見て右（+x）が 90。舞台中心 (0,0,-12) を向く
       sun.position.set(SUN_R * Math.cos(e) * Math.sin(a), SUN_R * Math.sin(e), -12 + SUN_R * Math.cos(e) * Math.cos(a));
-      stageCtx.sky.material.uniforms.sunDir.value.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a));   // 太陽の円盤用に高度も入れる
+    }
+    // 太陽の円盤の向き（光源が月でも太陽の位置は太陽のまま）
+    const el = Number.isFinite(sunEl) ? sunEl : sunElNow;
+    if (Number.isFinite(sunAz) && Number.isFinite(el)) {
+      const a = deg(sunAz), e = deg(el);
+      stageCtx.sky.material.uniforms.sunDir.value.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a));
     }
     // 太陽側の低い空の色（夕焼け）。反対側の色は CSS の地平線の色が担う。曇天では両方灰色になって差が消える
     if (Number.isFinite(el)) {
-      const cloud = o.sunAuto ? o.sunAuto.cloud : 0;
       const u = stageCtx.sky.material.uniforms;
       u.glowColor.value.set(horizonGlowColorFromTime(el, cloud));
       u.glowAmt.value = 1;
@@ -779,7 +844,21 @@ export function setShadows(o = {}) {
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
       // にじみは高い太陽だけ（5° 以下で 0、20° で最大）。夕日は大気減衰でギラつかず円盤がそのまま見える
       u.aureole.value = 0;   // 空の球側のにじみは使わない（眩しさは renderFrame の選択的ブルームが担う。2026-09-16）
-      stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = u.sunVis.value;
+      // 月の円盤（2026-09-16 ユーザー指定）：太陽が地平線下の間だけ見せる（−0〜−6° で現れる）。欠け方は太陽の方向から
+      if (Number.isFinite(mAz) && Number.isFinite(mEl)) {
+        const ma = deg(mAz), me = deg(mEl);
+        u.moonDir.value.set(Math.cos(me) * Math.sin(ma), Math.sin(me), Math.cos(me) * Math.cos(ma));
+        // 欠けの向き：月から見た太陽の方向を、月の位置での接平面に射影した単位ベクトル。直交ベクトルも
+        const sd = u.sunDir.value, md = u.moonDir.value;
+        _mU.copy(sd).addScaledVector(md, -sd.dot(md));
+        if (_mU.lengthSq() < 1e-6) _mU.set(1, 0, 0); else _mU.normalize();
+        _mV.crossVectors(md, _mU).normalize();
+        u.moonU.value.copy(_mU); u.moonV.value.copy(_mV);
+        u.moonK.value = Number.isFinite(mK) ? mK : 1;
+        const dusk = Math.min(1, Math.max(0, -el / 6));
+        u.moonVis.value = mEl > -(u.moonRad.value + 0.5 + stageCtx.bloom.dip) ? dusk * (1 - cloud) * (1 - cloud) : 0;
+      } else u.moonVis.value = 0;
+      stageCtx.bloom.el = el; stageCtx.bloom.cloud = cloud; stageCtx.bloom.vis = Math.max(u.sunVis.value, 0.6 * u.moonVis.value * u.moonK.value);
     }
   }
   if (Number.isFinite(o.spot)) for (const sp of spots) sp.intensity = o.spot;

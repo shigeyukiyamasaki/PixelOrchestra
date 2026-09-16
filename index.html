@@ -219,11 +219,12 @@
         <label class="ctl" title="円錐の輪郭のぼけ。0 で境界がくっきり、1 で中心から外へなだらかに消える"><span>ぼけ <b data-value-for="spotBlur">0.5</b></span><input type="range" id="spotBlur" min="0" max="1" step="0.05" value="0.5"></label>
       </fieldset>
       <fieldset class="sub" id="sunSet" title="屋外の太陽光（平行光）。時刻と天気から物理的に決める（北緯 35°・春秋分）。手動にすると方角・高度・色温度・強さを直接決められる">
-        <legend>太陽光</legend>
+        <legend>太陽・月</legend>
         <!-- 自動（時刻 × 天気 × 舞台の向き。2026-09-16 ユーザー指定：物理に基づく案 B）。手動チェックでこの 3 つは隠れ、下の詳細が出る -->
         <div id="sunAutoSet">
-        <label class="ctl" title="時刻。表示は時:分（欄に 18:30 のように打てる）。5:00〜19:00。太陽の高度と方角、色温度、強さがここから決まる。日の出前・日没後は直射が消えて空の明るさだけ残る（薄明）"><span>時刻 <b data-value-for="sunHour">12:00</b></span><input type="range" id="sunHour" min="5" max="19" step="0.25" value="12"></label>
+        <label class="ctl" title="時刻。表示は時:分（欄に 18:30 のように打てる）。0:00〜24:00。太陽の高度と方角、色温度、強さがここから決まる。日の出前・日没後は直射が消えて空の明るさだけ残る（薄明）"><span>時刻 <b data-value-for="sunHour">12:00</b></span><input type="range" id="sunHour" min="0" max="24" step="0.25" value="12"></label>
         <label class="ctl" title="雲量。0 で快晴（直射が強く影がくっきり）、1 で曇天（直射と影が消え、空全体からの青白い光だけになる）"><span>天気（雲量） <b data-value-for="sunCloud">0</b></span><input type="range" id="sunCloud" min="0" max="1" step="0.05" value="0"></label>
+        <label class="ctl" title="月齢 [日]。0 新月・7.4 上弦・15 満月・22 下弦。月の位置（満月は日没に昇り真夜中に南中、新月は太陽と同じ方向）と明るさ・欠け方が決まる"><span>月齢 <b data-value-for="moonAge">15</b></span><input type="range" id="moonAge" min="0" max="29.5" step="0.5" value="15"></label>
         <label class="ctl" title="舞台が向いている方位 [度]（客席がある方角）。0 北・90 東・180 南・270 西。南向き（既定）だと太陽は客席から見て右（東）から昇り、左（西）へ沈む"><span>舞台の向き <b data-value-for="stageFacing">180</b></span><input type="range" id="stageFacing" min="0" max="345" step="15" value="180"></label>
         </div>
         <label class="chk2" title="時刻・天気から決めるのをやめて、下の詳細を直接決める。外している間は詳細に計算値が入って追従する"><input type="checkbox" id="sunManual"> 詳細を手動で</label>
@@ -236,6 +237,9 @@
         <label class="ctl row" title="空の色（背景の上端の色。天空光の色みにも使う）。自動では時刻と天気から決まる：昼の青 → 夕方の深い青紫 → 日没後の紺 → 夜の黒、雲が多いほど灰色"><span>空の色</span><input type="color" id="bgTop" value="#0058ff"></label>
         <label class="ctl row" title="地平線の色（背景の下端の色）。自動では時刻と天気から決まる：昼の淡い水色 → 日没前の薄黄 → 日没の橙 → ピンク → 紫 → 濃紺。薄雲で派手に、厚い雲で灰色"><span>地平線の色</span><input type="color" id="bgBottom" value="#bfe0f5"></label>
         <label class="ctl" title="天空光（空全体からの拡散光）の強さ。影の中の明るさ。曇りほど強く、直射の代わりになる"><span>天空光 <b data-value-for="sunAmbient">0.7</b></span><input type="range" id="sunAmbient" min="0" max="3" step="0.01" value="0.7"></label>
+        <label class="ctl" title="月の方角 [度]。0 で客席正面、90 で客席から見て右"><span>月の方角 <b data-value-for="moonAzimuth">180</b></span><input type="range" id="moonAzimuth" min="0" max="360" step="1" value="180"></label>
+        <label class="ctl" title="月の高度 [度]。0 以下は地平線下"><span>月の高度 <b data-value-for="moonElev">30</b></span><input type="range" id="moonElev" min="-15" max="90" step="1" value="30"></label>
+        <label class="ctl" title="月の照らされている割合。1 で満月、0.5 で半月、0 で新月（見えない）。明るさは割合の 3 乗"><span>月の明るさ <b data-value-for="moonBright">1</b></span><input type="range" id="moonBright" min="0" max="1" step="0.01" value="1"></label>
         <label class="ctl always" title="太陽の方角の空に乗る夕焼け色の広がり。方角（真横にどれだけ残るか）と高さ（どこまで届くか）を一括で伸縮する。1 で標準、0 で太陽の真下だけ、2 で空の大半。もや具合に当たるので自動でも触れる"><span>光の広がり <b data-value-for="skyGlowSpread">1</b></span><input type="range" id="skyGlowSpread" min="0" max="2" step="0.05" value="1"></label>
         </div>
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
@@ -276,6 +280,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260920c"></script>
+  <script type="module" src="src/main.js?v=20260920d"></script>
 </body>
 </html>
