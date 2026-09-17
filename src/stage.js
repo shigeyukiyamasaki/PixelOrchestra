@@ -60,7 +60,7 @@ export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を�
 // 手前は指揮者（z = -2.1）の背後 5 ほど。ぼかしは無し（縁ははっきり出る）
 export const FLOOR_X_HALF = 18;   // 左右の縁（±x）
 export const FLOOR_Z_FRONT = 3;   // 手前の縁
-export const FLOOR_BACK_R = 29.5; // 奥の縁は一番奥のひな壇の外径（29）に沿わせた弧（2026-09-13 ユーザー指定「雛壇のところでカット」）
+export const FLOOR_BACK_R = 29;   // 奥の縁は一番奥のひな壇の外径（29）と同じ弧（2026-09-13 ユーザー指定「雛壇のところでカット」。0.5 はみ出していたのを、ひな壇の背面の壁と面一に。2026-09-17 ユーザー指定）
 
 const deg = (d) => (d * Math.PI) / 180;
 // 打楽器の後ろに置く、奏者のいないひな壇（キャラクター等を置く想定。2026-09-13 ユーザー指定）。
@@ -1199,7 +1199,10 @@ export function buildRisers(seats) {
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
     // 段の縁の色は天面の地面に合わせる（草原なら草と同じ黄緑、板目なら土色）。2026-09-13 ユーザー指定
     // 天面は「地面の絵 × col（奥の段ほど少し暗い灰）」なので、縁も同じ col を掛けて段ごとの明るさを揃える
-    const rimCol = new THREE.Color(stageCtx.groundTex === stageCtx.grassTex ? '#66b44b' : '#b08a55').multiply(new THREE.Color(col));
+    // 深緑の草原も草の色に（それぞれの色セットの LIGHT。2026-09-17 ユーザー指定）
+    const rimBase = stageCtx.groundTex === stageCtx.grassTex ? GRASS_PALETTES.normal.LIGHT
+      : stageCtx.groundTex === stageCtx.grassDarkTex ? GRASS_PALETTES.dark.LIGHT : '#b08a55';
+    const rimCol = new THREE.Color(rimBase).multiply(new THREE.Color(col));
     const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.07, 6, segs * 2, thMax - thMin), matC({ color: rimCol }));
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
@@ -1393,7 +1396,7 @@ function grassTexture(palette = 'normal') {
 // 壁の土（草原の床の時だけ使う）：ドット絵の画像を 1 unit = WALL_DPU ドットの実寸でループさせる。
 // 絵は参考画像（2026-09-13 ユーザー提供）から元のドットを復元し、左右がつながる窓を切り出したもの。
 // ?wall=<画像URL> で差し替えて試せる
-const WALL_DPU = 6;            // 1 unit あたりのドット数（草原の床の 192 ドット ÷ 32 unit と同じ）
+const WALL_DPU = 6;            // 1 unit あたりのドット数（草原の床の 192 ドット ÷ 32 unit と同じ）。草原の tileScale を掛けて使う
 const WALL_IMG = new URLSearchParams(location.search).get('wall') || 'assets/wall_dirt.png';
 let wallImgTex = null;
 // 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
@@ -1404,14 +1407,41 @@ wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
 wallImgTex.magFilter = THREE.NearestFilter; wallImgTex.minFilter = THREE.NearestFilter;
 wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
 
+// 壁が絵 1 枚より高い時、絵をそのまま縦に繰り返すと「草との境目」が壁の途中にもう一度出てしまう。
+// 上端だけ境目の絵にして、その下は土の行だけを繰り返した絵を、壁の高さ（ドット行数）ごとに組む（2026-09-17 ユーザー指定）。
+// 絵の構成は wall_dirt.png の前提：上 2 行が草との境目、最下 1 行が次の層の境目、その間が土
+const WALL_TOP_ROWS = 2, WALL_BOTTOM_ROWS = 1;
+const wallCanvasCache = new Map();   // 行数 → canvas
+function wallCanvasOf(img, rows) {
+  let c = wallCanvasCache.get(rows);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = img.width; c.height = rows;
+  const g = c.getContext('2d');
+  const first = img.height - WALL_BOTTOM_ROWS;                 // 1 周目：境目＋土（最下行は使わない）
+  const body = first - WALL_TOP_ROWS;                          // 2 周目以降：土だけ
+  g.drawImage(img, 0, 0, img.width, first, 0, 0, img.width, first);
+  // 土の層は 1 段おきに絵の半分だけ横へずらす（レンガ積み。単調な繰り返しに見せない。2026-09-17 ユーザー指定）
+  const half = Math.floor(img.width / 2);
+  for (let y = first, i = 1; y < rows; y += body, i++) {
+    const dx = i % 2 ? half : 0;
+    for (const x of dx ? [dx - img.width, dx] : [0]) g.drawImage(img, 0, WALL_TOP_ROWS, img.width, body, x, y, img.width, body);   // はみ出した分は反対側から回り込ませる
+  }
+  wallCanvasCache.set(rows, c);
+  return c;
+}
+
 /** 壁 1 枚ぶんの材質。草原の時は土の絵、板目の時は従来どおりの無地（2026-09-13 ユーザー指定） */
 function wallSkin(uLen, vLen, col) {
   const img = wallImgTex.image;
   const isGrass = stageCtx.groundTex === stageCtx.grassTex || stageCtx.groundTex === stageCtx.grassDarkTex;
   if (!img || !isGrass) return { color: col };
-  const m = wallImgTex.clone(); m.needsUpdate = true;
+  const dpu = WALL_DPU * (stageCtx.groundTex.tileScale || 1);   // 草原のタイルを細かくしたら壁のドットも同じ大きさに（2026-09-17 ユーザー指定）
+  const rows = Math.max(1, Math.ceil(vLen * dpu - 1e-6));
+  const m = new THREE.CanvasTexture(wallCanvasOf(img, rows));
+  m.magFilter = THREE.NearestFilter; m.minFilter = THREE.NearestFilter;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  const tw = img.width / WALL_DPU, th = img.height / WALL_DPU;
+  const tw = img.width / dpu, th = rows / dpu;
   m.repeat.set(uLen / tw, vLen / th);
   m.offset.set(0, 1 - vLen / th);   // 絵の上端（草との境目）を壁の上端に合わせ、足りない下側は切る
   m.__disposable = true;            // 作り直しのたびに捨てる（天面の地面テクスチャは共有なので捨てない）
