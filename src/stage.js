@@ -841,7 +841,7 @@ function blurPass(renderer, src, dst, dx, dy, step) {
 }
 /** 1 フレーム描く。屋外（太陽あり）なら太陽だけのブルームを掛け、屋内なら従来どおり直接描く */
 const _flareTmp = new THREE.Vector3();
-export function renderFrame(renderer, scene, camera, bloomAll = 0) {
+export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.7) {
   const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
   if (!sunPass && bloomAll <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
@@ -855,7 +855,7 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0) {
   // 全体ブルーム（2026-09-17）：本編の明るい部分を抜いて 1/4 RT でぼかす（2 段）。太陽のブルームとは別系統
   const texPerDegAll = post.c.height / (camera.fov || 50);
   if (bloomAll > 0.001) {
-    post.quad.material = post.brightMat; post.brightMat.uniforms.tex.value = post.main.texture;
+    post.quad.material = post.brightMat; post.brightMat.uniforms.tex.value = post.main.texture; post.brightMat.uniforms.thr.value = bloomThr;
     renderer.setRenderTarget(post.c); renderer.clear(); renderer.render(post.quadScene, post.quadCam);
     const sp = 1.2 * (texPerDegAll / 5.4);
     blurPass(renderer, post.c, post.d, 1, 0, sp); blurPass(renderer, post.d, post.c, 0, 1, sp);

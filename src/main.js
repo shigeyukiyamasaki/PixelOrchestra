@@ -855,7 +855,7 @@ function settings() {
     starTwinkle: num('starTwinkle', 1), sunBloom: num('sunBloom', 1.5),
     skyTint: $('skyTint').checked, groundBounceOn: $('groundBounceOn').checked, groundBounce: $('groundBounce').checked,   // 空色の影響・床の照り返しの色（2026-09-16）
     moonAge: num('moonAge', 15), moonAzimuth: num('moonAzimuth', 180), moonElev: num('moonElev', 30), moonBright: num('moonBright', 1),   // 月（2026-09-16）
-    exposure: num('exposure', 1), bloomAll: num('bloomAll', 0),   // 画面全体のブルーム（2026-09-17）
+    exposure: num('exposure', 1), bloomAll: num('bloomAll', 0), bloomThr: num('bloomThr', 0.7),   // 画面全体のブルームと閾値（2026-09-17）
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
     showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
@@ -1060,7 +1060,7 @@ function followSunSliders(s) {
     if (lab) { if (lab.tagName === 'INPUT') lab.value = valueText(id, el.value); else lab.textContent = valueText(id, el.value); }
   }
 }
-let lastBloomAll = 0;
+let lastBloomAll = 0, lastBloomThr = 0.7;
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 // 弓の向きの共有台帳。キーは「音符の時刻 | 音の長さ」なので、同じパートの中はもちろん、
@@ -1367,7 +1367,7 @@ function animate() {
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
                  moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour, horizonHex: s.bgBottom,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, starTwinkle: s.starTwinkle, sunBloom: s.sunBloom, skyTint: s.skyTint, groundBounceOn: s.groundBounceOn, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
-    applyToneMapping(s.exposure); lastBloomAll = s.bloomAll;
+    applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
@@ -1399,7 +1399,7 @@ function animate() {
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
   updateSky(camera);   // 空の球をカメラに追従
-  renderFrame(renderer, scene, camera, lastBloomAll);   // 太陽のブルーム・全体のブルームを掛けて描く
+  renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
 }
 
 // URL パラメータ ?midi=path で自動読み込み（公開デモ・動作確認用）
