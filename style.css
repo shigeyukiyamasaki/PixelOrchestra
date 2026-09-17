@@ -103,7 +103,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */
 body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45; pointer-events: none; }   /* 照り返しがオフなら「色を乗せる」は効かない（グレーアウト法則） */
 /* 固定欄のレンズ箱（カメラ側の処理）：端末切替の下 */
-#camArea #lensBox { margin: 10px 0 0; width: 402px; }   /* 時刻から決まらない項目（光の広がり）は自動でも触れる */
+#camArea #lensBox { margin: 10px 0 0; width: 402px; }
+#lensBox .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }   /* 2 列（左：露出・ブルーム／右：太陽の眩しさ・ブルーム閾値。2026-09-17 ユーザー指定） */   /* 時刻から決まらない項目（光の広がり）は自動でも触れる */
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
