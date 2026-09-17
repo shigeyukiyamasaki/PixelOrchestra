@@ -607,7 +607,7 @@ function horizonPalette(clear, vivid, el, cloud) {
   keyColor(_hz, clear, el);
   _hz.lerp(keyColor(_skyTmp, vivid, el), Math.min(1, cloud / 0.5));   // 薄雲で派手に（朝夕）
   const lum = 0.2126 * _hz.r + 0.7152 * _hz.g + 0.0722 * _hz.b;
-  const bright = Math.min(1, lum / 0.5 + 0.05);   // 夜は曇りも暗い（1 を超えると 16 進変換で桁あふれするので上限 1）
+  const bright = Math.max(daylightOf(el), Math.min(1, lum / 0.5 + 0.05));   // 曇りの明るさは太陽の高度で。薄明では晴れの地平線の明るさを下限に（上限 1）
   // 昼の薄雲は白く（朝夕は派手な色を残す）。厚い雨雲は暗い灰へ（2026-09-16 ユーザー指摘）
   const dayness = Math.min(1, Math.max(0, el / 10));
   _hz.lerp(_skyTmp.copy(SKY_OVERCAST).multiplyScalar(bright), Math.min(1, cloud / 0.5) * dayness);
@@ -622,14 +622,17 @@ const SKY_DAY = new THREE.Color('#001f7a'), SKY_LOW = new THREE.Color('#062ccc')
 const SKY_OVERCAST = new THREE.Color('#e9edf2');   // 薄雲の空は明るい白（晴天より明るいことも多い。2026-09-16 ユーザー指摘）
 const SKY_RAIN = new THREE.Color('#6e747c');       // 厚い雨雲の空は暗い灰
 const _sky = new THREE.Color();
+// 昼夜の明るさ 0.03〜1：高度 6° 以上で 1、−6° で床値（曇りの空・地平線の色に掛ける）
+function daylightOf(el) { const t = Math.min(1, Math.max(0, (el + 6) / 12)); return 0.03 + 0.97 * t * t * (3 - 2 * t); }
 function skyColorFromTime(el, cloud) {
   if (el >= 30) _sky.copy(SKY_DAY);
   else if (el >= 0) _sky.copy(SKY_LOW).lerp(SKY_DAY, el / 30);
   else if (el >= -12) _sky.copy(SKY_NIGHT).lerp(SKY_LOW, (el + 12) / 12);   // 高度 0° で上からの色（SKY_LOW）と一致させる
   else if (el >= -18) _sky.copy(SKY_DEEP).lerp(SKY_NIGHT, (el + 18) / 6);   // 天文薄明：−18° でほぼ黒
   else _sky.copy(SKY_DEEP);
+  // 曇りの明るさは太陽の高度で決める（空の色の輝度に比例させると、昼の空を濃い紺にした時に曇りまで灰色になった。2026-09-17 ユーザー指摘）
   const lum = 0.2126 * _sky.r + 0.7152 * _sky.g + 0.0722 * _sky.b;
-  const bright = Math.min(1, lum / 0.32 + 0.05);   // 夜・夕方は曇りも暗い（空の明るさに合わせる。昼 #0058ff の輝度 0.32 で 1）
+  const bright = Math.max(daylightOf(el), Math.min(1, lum / 0.32 + 0.05));   // 薄明では晴れの空の明るさを下限に（曇りが真っ黒にならない）
   // 雲量 0〜0.5：薄雲＝白へ。0.5〜1：厚い雨雲＝暗い灰へ（2026-09-16 ユーザー指摘）
   const white = _skyTmp.copy(SKY_OVERCAST).multiplyScalar(bright);
   _sky.lerp(white, Math.min(1, cloud / 0.5));
