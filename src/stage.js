@@ -684,7 +684,7 @@ export function setFloorStyle(style) {
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
  *   sunBloom: 太陽の眩しさ（ブルームの強さ。0〜3）  starTwinkle: 星の瞬きの強さ（0〜2、1 で ±25%）  skyTint: 天空光に空の色相を乗せる（false で白）  groundBounceOn: 照り返し自体（false で下からの光ゼロ）  groundBounce: 照り返しに床の色を乗せる（false で同じ明るさの無彩色）
- *   stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
+ *   horizonHex: 手動のとき夕焼けの層に使う「地平線の色」  stageFacing / hour: 手動のとき星の回転に使う舞台の向きと時刻  bgFlip: 背景を上下反転中なら空の球も反転  skyGlowSpread: 夕焼けの広がり（0〜2、1 標準）  sunAmbient: 天空光の強さ（太陽光・手動）  sunAuto: {hour, cloud, facing} があれば sun/sunTemp/sunAzimuth/sunElev/sunAmbient を時刻・天気から決める
  */
 // スカイドームの明るさ（方向を無視）：屋外は 天空光 + 直射 × 0.55、屋内は素材どおり（舞台照明は空に届かない）
 function updateDomeLight() {
@@ -979,12 +979,16 @@ export function setShadows(o = {}) {
     if (Number.isFinite(el)) {
       const u = stageCtx.sky.material.uniforms;
       // 層の色：高度 14° 以上は暖かい黄（昼のパレットは青なので使わない）、8°→14° で夕焼けのパレットからつなぐ（2026-09-17 ユーザー指定：高い太陽にも黄色い光を残す）
-      _glowTmp.set(horizonGlowColorFromTime(el, cloud));
-      const warmT = Math.min(1, Math.max(0, (el - 8) / 6));
-      u.glowColor.value.copy(_glowTmp).lerp(GLOW_HIGH, warmT);
-      // 量：出始め 20°・二乗でなだらか（急に現れて大きく見えないよう）。高い太陽でも下限 0.3 を残す（黄色い周囲の光）。手動では無し（選んだ色どおり）
+      if (o.sunAuto) {
+        _glowTmp.set(horizonGlowColorFromTime(el, cloud));
+        const warmT = Math.min(1, Math.max(0, (el - 8) / 6));
+        u.glowColor.value.copy(_glowTmp).lerp(GLOW_HIGH, warmT);
+      } else if (o.horizonHex) {
+        u.glowColor.value.set(o.horizonHex);   // 手動：選んだ「地平線の色」で広げる（計算色を塗ると選んだ色が出ない。2026-09-17 ユーザー指定で層は残す）
+      }
+      // 量：出始め 20°・二乗でなだらか（急に現れて大きく見えないよう）。高い太陽でも下限 0.3 を残す（黄色い周囲の光）。手動も同じ
       const gT = Math.min(1, Math.max(0, (20 - el) / 20));
-      u.glowAmt.value = o.sunAuto ? Math.max(0.3, gT * gT) : 0;
+      u.glowAmt.value = Math.max(0.3, gT * gT);
       u.flip.value = o.bgFlip ? 1 : 0;
       if (Number.isFinite(o.skyGlowSpread)) u.spread.value = o.skyGlowSpread;
       if (Number.isFinite(o.starTwinkle)) u.twinkle.value = o.starTwinkle;
