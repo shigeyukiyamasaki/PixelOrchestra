@@ -651,7 +651,8 @@ function skyColorFromTime(el, cloud) {
 function floorMapOf(tex) {
   const m = tex.clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  m.repeat.set(1 / 40, 1 / 32);
+  const k = tex.tileScale || 1;   // 草原はタイルを細かく（2 倍。2026-09-17 ユーザー指定）
+  m.repeat.set(k / 40, k / 32);
   return m;
 }
 
@@ -661,8 +662,9 @@ function floorMapOf(tex) {
 function ringMapOf(tex, rOut) {
   const m = tex.clone(); m.needsUpdate = true;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  m.repeat.set(2 * rOut / 40, 2 * rOut / 32);
-  m.offset.set(-rOut / 40, -rOut / 32);
+  const k = tex.tileScale || 1;
+  m.repeat.set(k * 2 * rOut / 40, k * 2 * rOut / 32);
+  m.offset.set(-k * rOut / 40, -k * rOut / 32);
   m.__disposable = true;            // 作り直しのたびに捨てる（元の共有テクスチャは触らない）
   return m;
 }
@@ -1384,6 +1386,7 @@ function grassTexture(palette = 'normal') {
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
   tex.albedo = 0.22;              // 草地の反射率（実測の目安 0.2〜0.25）
+  tex.tileScale = 2;              // タイルを細かく（1 枚 20×16 unit。2026-09-17 ユーザー指定）
   return tex;
 }
 
