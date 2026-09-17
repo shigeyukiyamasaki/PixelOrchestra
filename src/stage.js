@@ -271,6 +271,8 @@ export function createStage(container) {
   //   スポットライト 2 灯：客席側の上手・下手から舞台中央を照らす舞台照明。影付き・縁ぼかし。仰角・左右の開き・円錐の広がりは setShadows で
   const hemi = new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.7);
   scene.add(hemi);
+  const amb = new THREE.AmbientLight('#ffffff', 0);   // 環境光（跳ね返り）。屋外では天空光に少し足す（2026-09-17）
+  scene.add(amb);
   const spots = [];
   for (const side of [-1, 1]) {
     const sp = new THREE.SpotLight('#fff1d6', 1.6, 110, deg(30), 0.5, 1.0);
@@ -483,7 +485,7 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -928,7 +930,7 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
 
 export function setShadows(o = {}) {
   if (!stageCtx) return;
-  const { hemi, spots, sun } = stageCtx;
+  const { hemi, amb, spots, sun } = stageCtx;
   // 光源の使用／不使用（環境と独立。併用可。2026-09-17 ユーザー指定）：太陽・月は屋外のときだけ
   const outdoorNow = (o.mode || lightState.mode) === 'sun';
   const useSun = outdoorNow && o.sunOn !== false, useSpot = o.spotOn !== false;
@@ -946,7 +948,10 @@ export function setShadows(o = {}) {
     for (const sp of spots) sp.castShadow = lightState.enabled;
     sun.castShadow = lightState.enabled;
   }
-  if (Number.isFinite(o.ambient) && lightState.mode !== 'sun') hemi.intensity = o.ambient;   // 屋内の環境光（跳ね返り光）
+  if (Number.isFinite(o.ambient)) {
+    if (lightState.mode !== 'sun') { hemi.intensity = o.ambient; amb.intensity = 0; }   // 屋内：半球光（上白・下茶）が環境光
+    else amb.intensity = 0.25 * o.ambient;                                            // 屋外：天空光に少し足す（周囲からの跳ね返り相当）
+  }
   if (lightState.mode === 'sun') {
     let sunI = o.sun, sunT = o.sunTemp, sunAz = o.sunAzimuth, sunEl = o.sunElev, sky = o.sunAmbient;
     let mAz = o.moonAzimuth, mEl = o.moonElev, mK = o.moonBright;   // 月：方角・高度・照らされている割合（手動）

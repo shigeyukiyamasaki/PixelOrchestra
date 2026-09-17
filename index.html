@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260922h">
+  <link rel="stylesheet" href="style.css?v=20260922i">
 </head>
 <body>
   <div id="stageArea">
@@ -205,17 +205,10 @@
     <div class="cols">
       <div class="col">
     <div class="box" id="lightBox">
-      <h3 class="hd">環境</h3>
-      <!-- 環境（世界がどこか）は排他：屋内（ホール）／屋外。空・天空光か環境光か・時刻・天気・月齢・星が決まる。
-           光源（太陽・月／スポットライト）は別の箱で使用／不使用を選び、併用できる（2026-09-17 ユーザー指定）。ラジオなので設定の自動保存に乗る -->
-      <div class="seg" title="環境。屋内（ホール）か屋外か">
-        <label><input type="radio" name="lightMode" value="spot" checked>屋内</label>
-        <label><input type="radio" name="lightMode" value="sun">屋外</label>
-      </div>
-      <fieldset class="sub" id="indoorSet" title="屋内（ホール）">
-        <legend>屋内</legend>
-        <label class="ctl" title="環境光（ホールの壁や床からの跳ね返り光の近似）の強さ。影の中の明るさが変わる。小さいほど影が濃い"><span>環境光 <b data-value-for="ambient">0.7</b></span><input type="range" id="ambient" min="0" max="1.5" step="0.05" value="0.7"></label>
-      </fieldset>
+      <h3 class="hd">空</h3>
+      <!-- 空（屋外）はチェック 1 つ。オフ＝ホール（空も時刻も無い）。光源は別の箱で使用／不使用を選び併用できる（2026-09-17 ユーザー指定）。
+           旧「屋内／屋外」ラジオ（lightMode）の保存値は loadSettings で読み替える -->
+      <label class="chk2" title="屋外（空・時刻・天気）。オフでホール（空・時刻・星は無く、光源は環境光とスポットライトなど）"><input type="checkbox" id="outdoor" checked> 屋外（空・時刻・天気）</label>
       <fieldset class="sub" id="sunSet" title="屋外の太陽光（平行光）。時刻と天気から物理的に決める（北緯 35°・春秋分）。手動にすると方角・高度・色温度・強さを直接決められる">
         <legend>屋外（太陽・月）</legend>
         <!-- 自動（時刻 × 天気 × 舞台の向き。2026-09-16 ユーザー指定：物理に基づく案 B）。手動チェックでこの 3 つは隠れ、下の詳細が出る -->
@@ -250,7 +243,8 @@
     <!-- 光源：使用／不使用で併用できる（2026-09-17 ユーザー指定）。太陽・月は屋外のときだけ選べる -->
     <div class="box" id="srcBox">
       <h3 class="hd">光源</h3>
-      <label class="chk2" id="sunOnRow" title="太陽と月（屋外のときだけ）。時刻に追従する平行光と、空の太陽・月の円盤"><input type="checkbox" id="sunOn" checked> 太陽・月</label>
+      <label class="ctl" title="環境光（壁・床・舞台装置からの跳ね返り光の近似）。屋内では主役、屋外では天空光に少し足す。影の中の明るさが変わる"><span>環境光 <b data-value-for="ambient">0.7</b></span><input type="range" id="ambient" min="0" max="1.5" step="0.05" value="0.7"></label>
+      <label class="chk2" id="sunOnRow" title="太陽と月（空がオンのときだけ）。時刻に追従する平行光と、空の太陽・月の円盤"><input type="checkbox" id="sunOn" checked> 太陽・月</label>
       <label class="chk2" title="客席側の上手・下手から舞台中央を照らすスポットライト 2 灯。屋外でも使える（夜の野外コンサート）"><input type="checkbox" id="spotOn" checked> スポットライト</label>
       <div id="spotParams">
         <label class="ctl" title="スポットライトの強さ"><span>強さ <b data-value-for="spotIntensity">1.6</b></span><input type="range" id="spotIntensity" min="0" max="4" step="0.1" value="1.6"></label>
@@ -305,6 +299,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260922h"></script>
+  <script type="module" src="src/main.js?v=20260922i"></script>
 </body>
 </html>

@@ -97,14 +97,13 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 照明：選んでいる光源の欄だけ出す（2026-09-16 ユーザー指定） */
 #lightBox .seg { margin: 8px 0 2px; }
 /* 屋内／屋外はボタンで切り替えるので、欄の枠線と凡例は出さない（2026-09-17 ユーザー指定） */
-#indoorSet, #sunSet { border: none; border-radius: 0; margin: 4px 0 0; padding: 0; }
-#indoorSet > legend, #sunSet > legend { display: none; }
+#sunSet { border: none; border-radius: 0; margin: 4px 0 0; padding: 0; }
+#sunSet > legend { display: none; }
 /* 光源：太陽・月は屋内では選べない、スポットのパラメータはオフなら効かない（グレーアウト法則） */
-body:has(input[name=lightMode][value=spot]:checked) #sunOnRow { opacity: .45; pointer-events: none; }
+body:not(:has(#outdoor:checked)) #sunOnRow { opacity: .45; pointer-events: none; }
 body:has(#spotOn:not(:checked)) #spotParams > * { opacity: .45; pointer-events: none; }
 #spotParams { margin-left: 18px; }
-#lightBox:has(input[name=lightMode][value=sun]:checked) #indoorSet { display: none; }
-#lightBox:not(:has(input[name=lightMode][value=sun]:checked)) #sunSet { display: none; }
+#lightBox:not(:has(#outdoor:checked)) #sunSet { display: none; }   /* 屋外オフ（ホール）なら空の項目は出さない */
 /* 太陽光：自動（時刻・天気・向き）と手動（詳細）は両方見せ、効かない方を薄くして触れなくする（グレーアウト法則。チェック本体は通常表示） */
 #sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > *:not(.always) { opacity: .45; pointer-events: none; }
 label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */

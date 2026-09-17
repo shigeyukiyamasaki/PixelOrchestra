@@ -753,6 +753,8 @@ function loadSettings() {
     const el = document.querySelector(`#panel input[type=radio][name="${name}"][value="${data[name]}"]`);
     if (el) el.checked = true;
   }
+  // 互換：旧「屋内／屋外」ラジオ（lightMode）で保存されていたら「屋外」チェックへ読み替える（2026-09-17）
+  if (!('outdoor' in data) && 'lightMode' in data) $('outdoor').checked = data.lightMode === 'sun';
 }
 let saveTimer = null;
 for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementById(id)?.addEventListener('input', () => {
@@ -848,7 +850,7 @@ function settings() {
     spotCone: num('spotCone', 30),
     spotBlur: num('spotBlur', 0.5),
     // 光源の切替と太陽光（2026-09-16 ユーザー指定）
-    lightMode: radioValue('lightMode') === 'sun' ? 'sun' : 'spot',
+    lightMode: $('outdoor').checked ? 'sun' : 'spot',   // 屋外チェック（旧ラジオ lightMode の値名は stage.js との受け渡しで残す）
     sunOn: $('sunOn').checked, spotOn: $('spotOn').checked,   // 光源の使用／不使用（併用可。2026-09-17）
     sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
     sunManual: $('sunManual').checked, sunHour: num('sunHour', 12), sunCloud: num('sunCloud', 0), stageFacing: num('stageFacing', 180),
