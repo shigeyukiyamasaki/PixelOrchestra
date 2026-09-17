@@ -1325,7 +1325,7 @@ const WEATHER_SHADER = {
     uniform vec4 uBolt;       // x: 稲妻の横位置 0〜1 / y: 乱数の種 / z: 下端の高さ 0〜1 / w: 稲妻を描くか
     uniform float uBloomPass; // 1 = 全体ブルームの素材として描いている（renderFrame）。本編の深度で隠れた画素は捨てる
     uniform sampler2D uDepth; uniform vec2 uRes;
-    // 輝き（2026-09-17 ユーザー指定）：一部の粒が一瞬だけ白熱して十字形に光る。光源（太陽・月）の方角に近いほど、逆光なほど当たりやすい
+    // 輝き（2026-09-17 ユーザー指定）：一部の粒が一瞬だけ白熱して光る（雨は先頭の短い縦棒、雪は十字形）。光源（太陽・月）の方角に近いほど、逆光なほど当たりやすい
     uniform float uGlint;     // 「輝き」スライダー 0〜2
     uniform vec4 uSun;        // x: 光源の方角の横位置（面の 0〜1。外にもなる） / y: 方角に寄る分の量（逆光の度合い × 光量） / z: 横位置の差 → 角度の尺度 / w: どこでも光る分の量
     uniform vec3 uGlintCol;   // きらめきの色（光源の色を白に寄せたもの）
@@ -1335,7 +1335,7 @@ const WEATHER_SHADER = {
     float h11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
     float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     // 雨：ドット d を通る筋を調べる。x: 筋の中か / y: 筋の先頭（一番下）のドットか / z: その筋が今きらめいているか。
-    // 風のぶん斜めに傾けた「筋」ごとに、周期・長さ・位相を乱数で決めて流す。十字の腕を描くため、隣のドットからも呼ぶ
+    // 風のぶん斜めに傾けた「筋」ごとに、周期・長さ・位相を乱数で決めて流す。きらめきの縦棒を描くため、下のドットからも呼ぶ
     vec3 rainAt(vec2 d, float slot, float prob) {
       float cx = d.x + floor(d.y * uWind * 0.6);
       if (h11(cx) >= uAmount * 0.55) return vec3(0.0);
@@ -1357,17 +1357,18 @@ const WEATHER_SHADER = {
       float slot = floor(uTime * 6.0);
       float ang = (vUv.x - uSun.x) * uSun.z;
       float prob = uGlint * (0.02 * uSun.w + 0.10 * uSun.y * exp(-ang * ang)) + uStorm * 0.35 * min(1.0, uGlint);
-      float glint = 0.0;   // 1 = きらめきの芯、0.7 = 十字の腕
+      float glint = 0.0;   // 1 = きらめきの芯、0.7 = 腕（雨は下の 1 ドット、雪は上下左右）
       if (uType > 0.5 && uType < 1.5) {
         vec3 s = rainAt(d, slot, prob);
         float fx = fract(vUv.x * uCells.x) - 0.5;   // ドットの中での横位置（中央が 0）。筋はドットの中央に細く描く
-        if (s.x > 0.5) {
-          if (s.y * s.z > 0.5) glint = 1.0;          // きらめいている筋の先頭：ドットいっぱいに光る
-          else if (abs(fx) < uWidth * 0.5) o = s.z > 0.5 ? vec4(mix(vec3(0.72, 0.82, 1.0), uGlintCol, 0.7), 0.9 * uAlpha) : vec4(vec3(0.72, 0.82, 1.0), 0.6 * uAlpha);
+        bool thin = abs(fx) < uWidth * 0.5;          // 筋の幅の内側か。きらめきの縦棒も筋と同じ太さにする（ドットいっぱいだと太すぎた。2026-09-17 ユーザー指定）
+        if (thin && s.x > 0.5) {
+          if (s.y * s.z > 0.5) glint = 1.0;          // きらめいている筋の先頭
+          else o = s.z > 0.5 ? vec4(mix(vec3(0.72, 0.82, 1.0), uGlintCol, 0.7), 0.9 * uAlpha) : vec4(vec3(0.72, 0.82, 1.0), 0.6 * uAlpha);
         }
-        if (glint < 0.5 && prob > 0.0) {             // 十字の腕：左右と下のドットが、きらめいている先頭の隣か
-          vec3 a = rainAt(d + vec2(1.0, 0.0), slot, prob), b = rainAt(d - vec2(1.0, 0.0), slot, prob), c = rainAt(d + vec2(0.0, 1.0), slot, prob);
-          if (a.y * a.z + b.y * b.z + c.y * c.z > 0.5) glint = 0.7;
+        if (thin && glint < 0.5 && prob > 0.0) {     // 雨は縦棒だけ（十字にしない。2026-09-17 ユーザー指定）：きらめいている先頭の、すぐ下のドットも光らせる
+          vec3 c = rainAt(d + vec2(0.0, 1.0), slot, prob);
+          if (c.y * c.z > 0.5) glint = 0.7;
         }
       } else if (uType > 1.5) {
         // 雪：7 ドット角のマスに 1 粒。全体を下へ送り、粒ごとに左右へゆらす
