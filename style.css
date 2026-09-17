@@ -103,7 +103,7 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 body:not(:has(#outdoor:checked)) #sunOnRow { opacity: .45; pointer-events: none; }
 body:has(#spotOn:not(:checked)) #spotParams > * { opacity: .45; pointer-events: none; }
 #spotParams { margin-left: 18px; }
-#lightBox:not(:has(#outdoor:checked)) #sunSet { display: none; }   /* 屋外オフ（ホール）なら空の項目は出さない */
+#lightBox:not(:has(#outdoor:checked)) #sunSet > * { opacity: .45; pointer-events: none; }   /* 屋外オフ（ホール）でも畳まず、効かない状態として薄く（2026-09-17 ユーザー指定） */
 /* 太陽光：自動（時刻・天気・向き）と手動（詳細）は両方見せ、効かない方を薄くして触れなくする（グレーアウト法則。チェック本体は通常表示） */
 #sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > *:not(.always) { opacity: .45; pointer-events: none; }
 label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */
