@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20260922f">
+  <link rel="stylesheet" href="style.css?v=20260922h">
 </head>
 <body>
   <div id="stageArea">
@@ -205,21 +205,16 @@
     <div class="cols">
       <div class="col">
     <div class="box" id="lightBox">
-      <h3 class="hd">光源</h3>
-      <!-- 光源の切替（2026-09-16 ユーザー指定）。屋内のスポットライトと屋外の太陽光は併用せず、どちらか一方。
-           選んでいない方の値も消さずに残す（切り替え戻せば元どおり）。ラジオなので設定の自動保存に乗る -->
-      <div class="seg" title="光源。屋内はスポットライト、屋外は太陽と月">
+      <h3 class="hd">環境</h3>
+      <!-- 環境（世界がどこか）は排他：屋内（ホール）／屋外。空・天空光か環境光か・時刻・天気・月齢・星が決まる。
+           光源（太陽・月／スポットライト）は別の箱で使用／不使用を選び、併用できる（2026-09-17 ユーザー指定）。ラジオなので設定の自動保存に乗る -->
+      <div class="seg" title="環境。屋内（ホール）か屋外か">
         <label><input type="radio" name="lightMode" value="spot" checked>屋内</label>
         <label><input type="radio" name="lightMode" value="sun">屋外</label>
       </div>
-      <fieldset class="sub" id="spotSet" title="客席側の上手・下手から舞台中央を照らすスポットライト 2 灯">
-        <legend>屋内（スポットライト 2 灯）</legend>
+      <fieldset class="sub" id="indoorSet" title="屋内（ホール）">
+        <legend>屋内</legend>
         <label class="ctl" title="環境光（ホールの壁や床からの跳ね返り光の近似）の強さ。影の中の明るさが変わる。小さいほど影が濃い"><span>環境光 <b data-value-for="ambient">0.7</b></span><input type="range" id="ambient" min="0" max="1.5" step="0.05" value="0.7"></label>
-        <label class="ctl" title="スポットライトの強さ"><span>強さ <b data-value-for="spotIntensity">1.6</b></span><input type="range" id="spotIntensity" min="0" max="4" step="0.1" value="1.6"></label>
-        <label class="ctl" title="仰角 [度]。舞台中心から見た光源の高さ。小さいほど低い位置から浅い角度で当たり影が長い、90 で真上"><span>仰角 <b data-value-for="spotElev">40</b></span><input type="range" id="spotElev" min="10" max="90" step="5" value="40"></label>
-        <label class="ctl" title="2 灯の左右の開き [度]。客席正面から左右に何度ずつ離れた位置に置くか。0 で正面 1 灯分、90 で真横"><span>左右の開き <b data-value-for="spotSpread">30</b></span><input type="range" id="spotSpread" min="0" max="90" step="5" value="30"></label>
-        <label class="ctl" title="光の円錐の広がり（半頂角）[度]。小さいと中央だけ、大きいと舞台全体"><span>広がり <b data-value-for="spotCone">30</b></span><input type="range" id="spotCone" min="10" max="60" step="2" value="30"></label>
-        <label class="ctl" title="円錐の輪郭のぼけ。0 で境界がくっきり、1 で中心から外へなだらかに消える"><span>ぼけ <b data-value-for="spotBlur">0.5</b></span><input type="range" id="spotBlur" min="0" max="1" step="0.05" value="0.5"></label>
       </fieldset>
       <fieldset class="sub" id="sunSet" title="屋外の太陽光（平行光）。時刻と天気から物理的に決める（北緯 35°・春秋分）。手動にすると方角・高度・色温度・強さを直接決められる">
         <legend>屋外（太陽・月）</legend>
@@ -246,16 +241,29 @@
         <label class="ctl always" title="太陽の周りの空に乗る夕焼け色の広がり（太陽の方角と高度を中心にした角度の広さ）。1 で標準、0 で太陽のすぐ近くだけ、2 で空の大半。もや具合に当たるので自動でも触れる"><span>光の広がり <b data-value-for="skyGlowSpread">1</b></span><input type="range" id="skyGlowSpread" min="0" max="2" step="0.05" value="1"></label>
         <label class="ctl always" title="星の瞬きの強さ。0 で瞬かない、1 で ±25%、2 で ±50%"><span>星の瞬き <b data-value-for="starTwinkle">1</b></span><input type="range" id="starTwinkle" min="0" max="2" step="0.05" value="1"></label>
         <label class="chk2 always" title="天空光（空全体からの光）に夕焼けの暖色（黄〜橙）を乗せる。青は乗せない。オフで常に無色（白）の光"><input type="checkbox" id="skyTint" checked> 空の色を光に乗せる</label>
+        <label class="ctl always" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
+        <label class="chk2 always" title="プレビューでの見え方だけを上下反転する（上の色・下の色・中間地点の値はそのまま）"><input type="checkbox" id="bgFlip"> 上下を反転</label>
         </div>
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
       </fieldset>
     </div>
+    <!-- 光源：使用／不使用で併用できる（2026-09-17 ユーザー指定）。太陽・月は屋外のときだけ選べる -->
+    <div class="box" id="srcBox">
+      <h3 class="hd">光源</h3>
+      <label class="chk2" id="sunOnRow" title="太陽と月（屋外のときだけ）。時刻に追従する平行光と、空の太陽・月の円盤"><input type="checkbox" id="sunOn" checked> 太陽・月</label>
+      <label class="chk2" title="客席側の上手・下手から舞台中央を照らすスポットライト 2 灯。屋外でも使える（夜の野外コンサート）"><input type="checkbox" id="spotOn" checked> スポットライト</label>
+      <div id="spotParams">
+        <label class="ctl" title="スポットライトの強さ"><span>強さ <b data-value-for="spotIntensity">1.6</b></span><input type="range" id="spotIntensity" min="0" max="4" step="0.1" value="1.6"></label>
+        <label class="ctl" title="仰角 [度]。舞台中心から見た光源の高さ。小さいほど低い位置から浅い角度で当たり影が長い、90 で真上"><span>仰角 <b data-value-for="spotElev">40</b></span><input type="range" id="spotElev" min="10" max="90" step="5" value="40"></label>
+        <label class="ctl" title="2 灯の左右の開き [度]。客席正面から左右に何度ずつ離れた位置に置くか。0 で正面 1 灯分、90 で真横"><span>左右の開き <b data-value-for="spotSpread">30</b></span><input type="range" id="spotSpread" min="0" max="90" step="5" value="30"></label>
+        <label class="ctl" title="光の円錐の広がり（半頂角）[度]。小さいと中央だけ、大きいと舞台全体"><span>広がり <b data-value-for="spotCone">30</b></span><input type="range" id="spotCone" min="10" max="60" step="2" value="30"></label>
+        <label class="ctl" title="円錐の輪郭のぼけ。0 で境界がくっきり、1 で中心から外へなだらかに消える"><span>ぼけ <b data-value-for="spotBlur">0.5</b></span><input type="range" id="spotBlur" min="0" max="1" step="0.05" value="0.5"></label>
+      </div>
+    </div>
       <div class="box">
-    <h3 class="hd">背景</h3>
+    <h3 class="hd">床</h3>
     <!-- 上の色（bgTop）は太陽光の詳細「空の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
     <!-- 下の色（bgBottom）も太陽光の詳細「地平線の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
-    <label class="ctl" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
-    <label class="chk2" title="プレビューでの見え方だけを上下反転する（上の色・下の色・中間地点の値はそのまま）"><input type="checkbox" id="bgFlip"> 上下を反転</label>
     <label class="ctl row" title="床とひな壇の天面の絵"><span>床</span>
     <select id="floorStyle"><option value="plank">板目</option><option value="grass">草原</option><option value="grassDark">草原（深緑）</option></select>
     </label>
@@ -297,6 +305,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260922g"></script>
+  <script type="module" src="src/main.js?v=20260922h"></script>
 </body>
 </html>

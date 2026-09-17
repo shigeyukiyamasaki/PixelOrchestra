@@ -682,7 +682,7 @@ export function setFloorStyle(style) {
 
 /**
  * 光源の切替と太陽光の項目（2026-09-16 ユーザー指定）：
- *   mode: 'spot'（屋内。スポットライト 2 灯）| 'sun'（屋外。太陽光 1 本）。併用しない
+ *   mode: 'spot'（屋内）| 'sun'（屋外）＝環境。光源は sunOn（太陽・月。屋外のみ）と spotOn（スポットライト。両方で可）で併用できる
  *   sun: 太陽光の強さ  sunAzimuth: 方角 [deg]（0 で客席正面、90 で客席から見て右、180 で奥）  sunElev: 高度 [deg]（90 で真上）
  *   sunTemp: 色温度 0〜1  groundColor: 半球光の下色。省略時は床テクスチャの平均色 × 照り返し（屋内では固定色）。上色は太陽側の地平線色の暖色成分だけ
  *   moonAzimuth / moonElev / moonBright: 月の方角・高度・照らされている割合（手動）。自動では sunAuto.moonAge（月齢）から
@@ -929,13 +929,16 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
 export function setShadows(o = {}) {
   if (!stageCtx) return;
   const { hemi, spots, sun } = stageCtx;
+  // 光源の使用／不使用（環境と独立。併用可。2026-09-17 ユーザー指定）：太陽・月は屋外のときだけ
+  const outdoorNow = (o.mode || lightState.mode) === 'sun';
+  const useSun = outdoorNow && o.sunOn !== false, useSpot = o.spotOn !== false;
+  for (const sp of spots) sp.visible = useSpot;
+  sun.visible = useSun;
+  stageCtx.sunOnly.visible = useSun;
   if (o.mode && o.mode !== lightState.mode) {
     lightState.mode = o.mode;
     const outdoor = o.mode === 'sun';
-    for (const sp of spots) sp.visible = !outdoor;
-    sun.visible = outdoor;
     stageCtx.sky.visible = outdoor;
-    stageCtx.sunOnly.visible = outdoor;
     if (!outdoor) { hemi.color.set(HEMI_SKY_INDOOR); hemi.groundColor.set(HEMI_GROUND_INDOOR); }
   }
   if (o.enabled !== undefined && o.enabled !== lightState.enabled) {
@@ -1023,7 +1026,7 @@ export function setShadows(o = {}) {
       // 17:00（高度 12°）まではほぼ据え置き（0.8° → 1.0°）、夕焼けが色づいてから 2.4° へ育つ（2026-09-17 ユーザー指定）
       const pre = Math.min(1, Math.max(0, (25 - el) / 13)), post = Math.min(1, Math.max(0, (12 - el) / 12));
       u.sunRad.value = 0.8 + 0.2 * pre + 1.4 * post;
-      u.sunVis.value = el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）
+      u.sunVis.value = (useSun && el > -(u.sunRad.value + 0.5 + stageCtx.bloom.dip)) ? (1 - cloud) * (1 - cloud) : 0;   // 円盤の上端が床の縁に隠れるまで見える（半分沈む）。太陽・月オフなら無し
       // 円盤の色：高度 20° 以上は直射の色を白へ半分寄せた色、地平線に向かって実際の夕日の赤橙へ（2026-09-16 ユーザー指定）
       const lowT = Math.min(1, Math.max(0, el / 20));
       u.sunCol.value.copy(SUN_SET_RED).lerp(_sunHigh.copy(sun.color).lerp(SUN_WHITE, 0.5), lowT);
@@ -1041,7 +1044,7 @@ export function setShadows(o = {}) {
         u.moonU.value.copy(_mU); u.moonV.value.copy(_mV);
         u.moonK.value = Number.isFinite(mK) ? mK : 1;
         const dusk = Math.min(1, Math.max(0, -el / 6));
-        u.moonVis.value = mEl > -(u.moonRad.value + 0.5 + stageCtx.bloom.dip) ? dusk * (1 - cloud) * (1 - cloud) : 0;
+        u.moonVis.value = (useSun && mEl > -(u.moonRad.value + 0.5 + stageCtx.bloom.dip)) ? dusk * (1 - cloud) * (1 - cloud) : 0;
       } else u.moonVis.value = 0;
       // 星：太陽が −6° を過ぎてから −15° にかけて現れる。雲で隠れる。極軸は北（舞台基準の方角 = 舞台の向き）・仰角 = 緯度、回転は時角
       const facing = o.sunAuto ? o.sunAuto.facing : (Number.isFinite(o.stageFacing) ? o.stageFacing : 180);

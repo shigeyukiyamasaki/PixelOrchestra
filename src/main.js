@@ -849,6 +849,7 @@ function settings() {
     spotBlur: num('spotBlur', 0.5),
     // 光源の切替と太陽光（2026-09-16 ユーザー指定）
     lightMode: radioValue('lightMode') === 'sun' ? 'sun' : 'spot',
+    sunOn: $('sunOn').checked, spotOn: $('spotOn').checked,   // 光源の使用／不使用（併用可。2026-09-17）
     sunIntensity: num('sunIntensity', 1.2), sunAzimuth: num('sunAzimuth', 30), sunElev: num('sunElev', 55), sunTemp: num('sunTemp', 0.5),
     sunManual: $('sunManual').checked, sunHour: num('sunHour', 12), sunCloud: num('sunCloud', 0), stageFacing: num('stageFacing', 180),
     sunAmbient: num('sunAmbient', 0.7), skyGlowSpread: num('skyGlowSpread', 1),
@@ -1363,7 +1364,7 @@ function animate() {
     }
     if (s.lightMode === 'sun' && !s.sunManual) { followSunSliders(s); s.bgTop = $('bgTop').value; s.bgBottom = $('bgBottom').value; }   // 自動のとき詳細スライダー（空の色も）を計算値に追従させる
     setShadows({ enabled: s.showShadows && s.partStyle !== 'sprite', ambient: s.ambient, spot: s.spotIntensity, spotElev: s.spotElev, spotSpread: s.spotSpread, spotCone: s.spotCone, spotBlur: s.spotBlur,
-                 mode: s.lightMode, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
+                 mode: s.lightMode, sunOn: s.sunOn, spotOn: s.spotOn, sun: s.sunIntensity, sunAzimuth: s.sunAzimuth, sunElev: s.sunElev, sunTemp: s.sunTemp,
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
                  moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour, horizonHex: s.bgBottom,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, starTwinkle: s.starTwinkle, sunBloom: s.sunBloom, skyTint: s.skyTint, groundBounceOn: s.groundBounceOn, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
