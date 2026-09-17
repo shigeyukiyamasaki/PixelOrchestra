@@ -135,8 +135,6 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #weatherCard .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
 #weatherCard .numspin button:last-child { border-radius: 0 0 4px 0; }
 #weatherCard .numspin button:hover { color: var(--accent); border-color: var(--accent); }
-/* 「奥行き」「高さ」はスクリーンに映す時だけ効く。スカイドームの間は薄くして触れなくする（グレーアウト法則。ラジオ本体は通常表示） */
-#weatherCard:not(:has(input[name="weatherTarget"][value="screen"]:checked)) .onlyScreen { opacity: .45; pointer-events: none; }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 :is(#screenBar, #camBar) .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }

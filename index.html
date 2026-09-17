@@ -18,8 +18,8 @@
         <div class="hd">スカイドーム</div>
         <div id="domeBody">
         <div id="domeRows"></div>
-        <!-- 天気（雨・雪・雷）：スカイドーム 3 枚それぞれのすぐ後ろに降らせる（2026-09-17 ユーザー指定）。雲量は右メニューの「空・時刻」 -->
-        <div class="screen weather" id="weatherCard" title="スカイドーム 3 枚それぞれの雲のすぐ後ろに、雨や雪を降らせる（舞台の奥だけ。屋外のときだけ出る）。奥の層ほど細かく・遅く・薄い。空の暗さは右メニュー「空・時刻」の雲量で決める。粒は雲と同じく、再生中だけ動く">
+        <!-- 天気（雨・雪・雷）：一番奥のひな壇の上に立つ 3 枚の面に降らせる（下段のスクリーンと同じ仕組み。2026-09-17 ユーザー指定）。雲量は右メニューの「空・時刻」 -->
+        <div class="screen weather" id="weatherCard" title="一番奥のひな壇の上に、雨や雪を降らせる（下段のスクリーンと同じ弧・同じ幅。屋外のときだけ出る）。面は奥・中・手前の 3 枚で、キャラクターの前にも後ろにも降る。奥の層ほど細かく・遅く・薄い。空の暗さは右メニュー「空・時刻」の雲量で決める。粒は雲と同じく、再生中だけ動く">
           <div class="wname">天気</div>
           <div class="ctl radio" title="降らせるもの"><span>種類</span>
             <label><input type="radio" name="weatherType" value="none" checked> なし</label>
@@ -31,14 +31,10 @@
           <label class="ctl" title="雨の筋の太さ（1 ドットの幅に対する割合）。0.3 でドットの幅の 3 割、小さいほど細い。雪には効かない"><span>雨の太さ <b data-value-for="weatherWidth">0.3</b></span><input type="range" id="weatherWidth" min="0.1" max="0.3" step="0.05" value="0.3"></label>
           <label class="ctl" title="雨・雪が落ちる速さの倍率。1 が標準（雨は手前の層で 1 秒に 60 ドット、雪は約 6 ドット）。コマ数を変えても 1 秒に落ちる距離は変わらない"><span>落ちる速さ <b data-value-for="weatherSpeed">1</b></span><input type="range" id="weatherSpeed" min="0.1" max="3" step="0.05" value="1"></label>
           <label class="ctl" title="粒の動きのコマ数 [コマ/秒]。小さいほどカクカクしたドット絵らしい動き、30 でなめらか。速さは変わらない"><span>コマ数 <b data-value-for="weatherFps">12</b></span><input type="range" id="weatherFps" min="2" max="30" step="1" value="12"></label>
+          <label class="ctl" title="輝き。一部の粒が一瞬だけ白熱して十字形に光り、その粒だけブルームでにじむ（にじみは右メニュー「レンズ」のブルームが 0 より大きい時）。0 できらめかない。太陽・月の方角に近い所ほど、光源が舞台の奥側（逆光）にあるほどよく光り、色も光源に合う。雷の間は一斉に光る"><span>輝き <b data-value-for="weatherGlint">1</b></span><input type="range" id="weatherGlint" min="0" max="2" step="0.05" value="1"></label>
           <label class="ctl" title="雷の頻度 [回/分]。0 で鳴らない。一番奥の空が光って雲の輪郭が浮かび、舞台も一瞬照らされる。6 割は稲妻の線つき。種類が「なし」でも雷だけ出せる"><span>雷の頻度 <b data-value-for="weatherThunder">0</b></span><input type="range" id="weatherThunder" min="0" max="30" step="1" value="0"></label>
-          <!-- 映す先（2026-09-17 ユーザー指定）：スカイドーム方式は据え置き、スクリーン方式と切り替えて見比べる。下の 2 つはスクリーンの時だけ効く -->
-          <div class="ctl radio" title="雨・雪・雷を映す面。スカイドーム：3 枚の雲それぞれのすぐ後ろ（空いっぱい）。スクリーン：一番奥のひな壇の上に立つ面（下段のスクリーンと同じ仕組み。幅は舞台の左右まで）"><span>映す先</span>
-            <label><input type="radio" name="weatherTarget" value="dome" checked> スカイドーム</label>
-            <label><input type="radio" name="weatherTarget" value="screen"> スクリーン</label>
-          </div>
-          <label class="ctl onlyScreen" title="3 層のうち「中の層」の奥行き。ひな壇の上での前後位置（0 = 手前の辺 / 1 = 奥の辺。下段のスクリーンの「奥行き」と同じ意味）。奥の層は一番奥（1）、手前の層は一番手前（0）に固定。値の大小どおりにキャラクターの前後に入る"><span>奥行き <b data-value-for="weatherPos">0.5</b></span><input type="range" id="weatherPos" min="0" max="1" step="0.01" value="0.5"></label>
-          <label class="ctl onlyScreen" title="スクリーンの高さ [unit]。下端はひな壇の天面。上の 4 割は粒を間引いて消していく"><span>高さ <b data-value-for="weatherHeight">12</b></span><input type="range" id="weatherHeight" min="2" max="40" step="0.5" value="12"></label>
+          <label class="ctl" title="3 層のうち「中の層」の奥行き。ひな壇の上での前後位置（0 = 手前の辺 / 1 = 奥の辺。下段のスクリーンの「奥行き」と同じ意味）。奥の層は一番奥（1）、手前の層は一番手前（0）に固定。値の大小どおりにキャラクターの前後に入る"><span>奥行き <b data-value-for="weatherPos">0.5</b></span><input type="range" id="weatherPos" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="ctl" title="面の高さ [unit]。下端はひな壇の天面。上の 4 割は粒を間引いて消していく"><span>高さ <b data-value-for="weatherHeight">12</b></span><input type="range" id="weatherHeight" min="2" max="40" step="0.5" value="12"></label>
         </div>
         </div>
       </section>

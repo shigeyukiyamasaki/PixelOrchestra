@@ -1284,17 +1284,16 @@ function buildDomes() {
     mesh.renderOrder = -200 + k;                    // 何よりも先に描く
     g.add(mesh);
   });
-  buildWeather();   // ドームの半径・高さ・範囲に合わせて天気の層も組み直す
 }
 
 // ---- 天気（雨・雪・雷）。2026-09-17 ユーザー指定 ----
-// スカイドーム 1 枚ごとに、同じ中心・同じ範囲の円筒をそのすぐ後ろへ立て、雨や雪の粒をシェーダーで描く（素材は要らない。雲は手前に残る）。
+// 一番奥のひな壇の上に、下段のスクリーンと同じ弧・同じ切り口の面を 3 枚立て、雨や雪の粒をシェーダーで描く（素材は要らない）。
+// 3 枚はひな壇の奥行きの 奥・中・手前 に離して置くので、キャラクターのスクリーンの前にも後ろにも降る。
 // 奥の層ほど粒を細かく・遅く・薄くして奥行きを出す。粒はドットの格子に合わせ、コマ送りで動かす（既定 12 コマ/秒。ドット絵の見た目を保つ）。
-// 雷は一番奥の層だけが光る：手前の雲は暗いままなので、逆光で雲の輪郭が浮かぶ。同時に舞台も一瞬照らす（flashLight）。
+// 雷は一番奥の層だけが光る。同時に舞台も一瞬照らす（flashLight）。
 // どれも「時刻 → 状態」の純関数（updateScreens と同じ。後でオフラインに書き出しても同じ絵になる）。
-const WEATHER_H = 48;          // 円筒の高さ [unit]。上 40% はドットを間引いて消していく
-const WEATHER_BACK = 0.2;      // ドームの何 unit 後ろに立てるか
-// 奥 → 手前の順（ドームを半径の大きい順に並べた時の番号）。dot: 1 ドットの大きさ [unit]、fall: 雨が 1 秒に落ちるドット数（速さ 1 のとき）、alpha: 濃さ
+// ※ スカイドーム 3 枚の後ろに映す方式も試したが却下（2026-09-17）。コードはコミット fb918a1 に残っている
+// 奥 → 手前の順。dot: 1 ドットの大きさ [unit]、fall: 雨が 1 秒に落ちるドット数（速さ 1 のとき）、alpha: 濃さ
 const WEATHER_LAYERS = [
   { dot: 0.11, fall: 36, alpha: 0.45 },
   { dot: 0.16, fall: 48, alpha: 0.7 },
@@ -1326,24 +1325,50 @@ const WEATHER_SHADER = {
     uniform vec4 uBolt;       // x: 稲妻の横位置 0〜1 / y: 乱数の種 / z: 下端の高さ 0〜1 / w: 稲妻を描くか
     uniform float uBloomPass; // 1 = 全体ブルームの素材として描いている（renderFrame）。本編の深度で隠れた画素は捨てる
     uniform sampler2D uDepth; uniform vec2 uRes;
+    // 輝き（2026-09-17 ユーザー指定）：一部の粒が一瞬だけ白熱して十字形に光る。光源（太陽・月）の方角に近いほど、逆光なほど当たりやすい
+    uniform float uGlint;     // 「輝き」スライダー 0〜2
+    uniform vec4 uSun;        // x: 光源の方角の横位置（面の 0〜1。外にもなる） / y: 方角に寄る分の量（逆光の度合い × 光量） / z: 横位置の差 → 角度の尺度 / w: どこでも光る分の量
+    uniform vec3 uGlintCol;   // きらめきの色（光源の色を白に寄せたもの）
+    uniform float uStorm;     // 雷の明るさ 0〜1（全層。光っている間は一斉にきらめく）
     varying vec2 vUv;
     #include <clipping_planes_pars_fragment>
     float h11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
     float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    // 雨：ドット d を通る筋を調べる。x: 筋の中か / y: 筋の先頭（一番下）のドットか / z: その筋が今きらめいているか。
+    // 風のぶん斜めに傾けた「筋」ごとに、周期・長さ・位相を乱数で決めて流す。十字の腕を描くため、隣のドットからも呼ぶ
+    vec3 rainAt(vec2 d, float slot, float prob) {
+      float cx = d.x + floor(d.y * uWind * 0.6);
+      if (h11(cx) >= uAmount * 0.55) return vec3(0.0);
+      float P = 26.0 + floor(h11(cx + 7.3) * 30.0);
+      float L = 6.0 + floor(h11(cx + 3.1) * 8.0);   // 粒の長さ 6〜13 ドット（3〜6 の 2 倍。2026-09-17 ユーザー指定）
+      float ph = floor(h11(cx + 11.7) * P);
+      float fall = floor(uTime * uFall * uSpeed * (0.85 + 0.3 * h11(cx + 5.5)));
+      float y = d.y + fall + ph, m = mod(y, P);
+      if (m >= L) return vec3(0.0);
+      float n = floor(y / P);                        // この筋の通し番号（同じ列を次々に落ちてくる粒を区別する）
+      return vec3(1.0, m < 0.5 ? 1.0 : 0.0, h21(vec2(cx * 1.7 + n * 13.1, slot + n * 3.3)) < prob ? 1.0 : 0.0);
+    }
     void main() {
       #include <clipping_planes_fragment>
       if (uBloomPass > 0.5 && gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 0.00002) discard;   // 奏者・舞台・不透明な雲の後ろ
       vec2 d = floor(vUv * uCells);   // ドットの座標（x: 左から、y: 下から）
       vec4 o = vec4(0.0);
+      // きらめきの当たりやすさ（粒 1 つ・時間枠 1 つあたりの確率）。時間枠は 1/6 秒：12 コマ/秒なら 2 コマ光る
+      float slot = floor(uTime * 6.0);
+      float ang = (vUv.x - uSun.x) * uSun.z;
+      float prob = uGlint * (0.02 * uSun.w + 0.10 * uSun.y * exp(-ang * ang)) + uStorm * 0.35 * min(1.0, uGlint);
+      float glint = 0.0;   // 1 = きらめきの芯、0.7 = 十字の腕
       if (uType > 0.5 && uType < 1.5) {
-        // 雨：風のぶん斜めに傾けた「筋」ごとに、周期・長さ・位相を乱数で決めて流す
-        float cx = d.x + floor(d.y * uWind * 0.6);
-        float P = 26.0 + floor(h11(cx + 7.3) * 30.0);
-        float L = 6.0 + floor(h11(cx + 3.1) * 8.0);   // 粒の長さ 6〜13 ドット（3〜6 の 2 倍。2026-09-17 ユーザー指定）
-        float ph = floor(h11(cx + 11.7) * P);
-        float fall = floor(uTime * uFall * uSpeed * (0.85 + 0.3 * h11(cx + 5.5)));
+        vec3 s = rainAt(d, slot, prob);
         float fx = fract(vUv.x * uCells.x) - 0.5;   // ドットの中での横位置（中央が 0）。筋はドットの中央に細く描く
-        if (abs(fx) < uWidth * 0.5 && h11(cx) < uAmount * 0.55 && mod(d.y + fall + ph, P) < L) o = vec4(vec3(0.72, 0.82, 1.0), 0.6 * uAlpha);
+        if (s.x > 0.5) {
+          if (s.y * s.z > 0.5) glint = 1.0;          // きらめいている筋の先頭：ドットいっぱいに光る
+          else if (abs(fx) < uWidth * 0.5) o = s.z > 0.5 ? vec4(mix(vec3(0.72, 0.82, 1.0), uGlintCol, 0.7), 0.9 * uAlpha) : vec4(vec3(0.72, 0.82, 1.0), 0.6 * uAlpha);
+        }
+        if (glint < 0.5 && prob > 0.0) {             // 十字の腕：左右と下のドットが、きらめいている先頭の隣か
+          vec3 a = rainAt(d + vec2(1.0, 0.0), slot, prob), b = rainAt(d - vec2(1.0, 0.0), slot, prob), c = rainAt(d + vec2(0.0, 1.0), slot, prob);
+          if (a.y * a.z + b.y * b.z + c.y * c.z > 0.5) glint = 0.7;
+        }
       } else if (uType > 1.5) {
         // 雪：7 ドット角のマスに 1 粒。全体を下へ送り、粒ごとに左右へゆらす
         float G = 7.0;
@@ -1354,14 +1379,19 @@ const WEATHER_SHADER = {
         if (r < uAmount * 0.8) {
           vec2 fp = 1.0 + floor(vec2(h21(cell + 3.7), h21(cell + 9.1)) * (G - 3.0));
           fp.x = clamp(fp.x + floor(sin(uTime * 1.3 + r * 40.0) * 1.5 + 0.5), 0.0, G - 1.0);
-          if (abs(loc.x - fp.x) < 0.5 && abs(loc.y - fp.y) < 0.5) o = vec4(vec3(1.0), 0.95 * uAlpha);
+          vec2 df = abs(loc - fp);
+          bool g = h21(cell * 1.3 + vec2(slot, slot * 0.37)) < prob * 1.5;   // 雪は粒が小さく遅いので、少し当たりやすく
+          if (df.x < 0.5 && df.y < 0.5) { o = vec4(vec3(1.0), 0.95 * uAlpha); if (g) glint = 1.0; }
+          else if (g && df.x + df.y < 1.5 && (df.x < 0.5 || df.y < 0.5)) glint = 0.7;   // 十字の腕（上下左右の隣）
         }
       }
       // 上と左右の端は、ドットを乱数で間引いて消していく（半透明にしない＝ドット絵のまま）
       float keep = (1.0 - smoothstep(0.6, 1.0, vUv.y));
       if (uFade > 0.001) keep *= smoothstep(0.0, uFade, vUv.x) * smoothstep(0.0, uFade, 1.0 - vUv.x);
-      if (h21(d + 0.5) > keep) o.a = 0.0;
+      if (h21(d + 0.5) > keep) { o.a = 0.0; glint = 0.0; }
       o.rgb *= max(uLight, vec3(0.12));   // 夜でも粒が完全には消えないように
+      // きらめきは自分で光る（照明の倍率は掛けない）。ブルームの素材へ描く時だけ 2.5 倍にして、光った粒だけを強くにじませる
+      if (glint > 0.0) o = vec4(uGlintCol * (0.6 + 0.4 * glint) * (uBloomPass > 0.5 ? 2.5 : 1.0), glint * mix(0.6, 1.0, uAlpha));
       // 雷：空（この層）が稲妻の方角を中心に光る。明るさは 5 段に丸め、段の間はドットで混ぜる
       if (uFlash > 0.001) {
         float dx = (vUv.x - uBolt.x) * 3.0;
@@ -1388,17 +1418,20 @@ const WEATHER_SHADER = {
 // レイヤー 1 は太陽の円盤（sunOnly）が使っている
 const WEATHER_LAYER = 2;
 const WEATHER_BLOOM = { pass: { value: 0 }, depth: { value: null }, res: { value: new THREE.Vector2(1, 1) } };
-let weatherState = { type: 'none', amount: 0.5, wind: 0.2, thunder: 0, fps: 12, speed: 1, width: 0.3, target: 'dome', pos: 0.5, height: 12 };
+const WEATHER_GLINT_COL = { value: new THREE.Color(1, 1, 1) };   // きらめきの色（全層で共有。updateWeather が光源の色から決める）
+const GLINT_SIGMA = 0.6;       // 光源の方角から、きらめきやすさが落ちていく角度の幅 [rad]
+const _wDir = new THREE.Vector3(), _wWhite = new THREE.Color(1, 1, 1), _wStorm = new THREE.Color(0.9, 0.95, 1);
+let weatherState = { type: 'none', amount: 0.5, wind: 0.2, thunder: 0, fps: 12, speed: 1, width: 0.3, pos: 0.5, height: 12, glint: 1 };
 
 /** 天気の設定。type: 'none' | 'rain' | 'snow'、amount: 降りの強さ 0〜1、wind: 風 −1〜1、thunder: 雷の頻度 [回/分]（0 でなし）、
  *  fps: 粒の動きのコマ数 [1/s]、speed: 落ちる速さの倍率（コマ数を変えても 1 秒に落ちる距離は変わらない）、width: 雨の筋の太さ（ドット幅に対する割合）、
- *  target: 映す先 'dome'（スカイドーム 3 枚の後ろ）| 'screen'（一番奥のひな壇の上のスクリーン）、pos: スクリーンの奥行き 0〜1、height: スクリーンの高さ [unit] */
+ *  pos: 中の層の奥行き 0〜1（奥の層は 1、手前の層は 0 に固定）、height: 面の高さ [unit]、glint: 輝き 0〜2（0 できらめかない） */
 export function setWeather(o = {}) {
   const was = weatherState, now = { ...weatherState, ...o };
   weatherState = now;
   const need = (w) => w.type !== 'none' || w.thunder > 0;
-  // 要らない時は層ごと外す（描画の負荷を残さない）。映す先や面の寸法が変わった時も組み直す
-  if (need(was) !== need(now) || was.target !== now.target || (now.target === 'screen' && (was.pos !== now.pos || was.height !== now.height))) buildWeather();
+  // 要らない時は層ごと外す（描画の負荷を残さない）。面の位置・寸法が変わった時も組み直す
+  if (need(was) !== need(now) || was.pos !== now.pos || was.height !== now.height) buildWeather();
 }
 
 function buildWeather() {
@@ -1417,6 +1450,7 @@ function buildWeather() {
         uCells: { value: new THREE.Vector2(Math.round((r * phiLen) / L.dot), Math.round(h / L.dot)) },
         uLight: DOME_LIGHT,
         uFlash: { value: 0 }, uBolt: { value: new THREE.Vector4(0.5, 0, 0.1, 0) },
+        uGlint: { value: 0 }, uSun: { value: new THREE.Vector4(0.5, 0, 1, 0) }, uGlintCol: WEATHER_GLINT_COL, uStorm: { value: 0 },
         uBloomPass: WEATHER_BLOOM.pass, uDepth: WEATHER_BLOOM.depth, uRes: WEATHER_BLOOM.res,   // 全層で共有（renderFrame が切り替える）
       },
       vertexShader: WEATHER_SHADER.vertexShader, fragmentShader: WEATHER_SHADER.fragmentShader,
@@ -1429,41 +1463,24 @@ function buildWeather() {
     return mesh;
   };
 
-  if (weatherState.target === 'screen' && stageCtx.screenBase) {
-    // スクリーンに映す（2026-09-17 ユーザー指定。スカイドーム方式と見比べる用）：一番奥のひな壇の上に、下段のスクリーンと同じ弧・同じ切り口で立てる。
-    // 粒の大きさ・3 層の設定・速さ・雷はスカイドーム方式と同じ。違いは映す面と、その置き場所
-    const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
-    const pos = Math.max(0, Math.min(1, weatherState.pos ?? 0.5));
-    const h = Math.max(1, weatherState.height ?? 12);
-    // 3 層をひな壇の奥行きいっぱいに離して置く（2026-09-17 ユーザー指定）：奥の層 = 一番奥（1）、中の層 = 「奥行き」スライダー、手前の層 = 一番手前（0）。
-    // キャラクターのスクリーンの前にも後ろにも降る
-    const layerPos = [1, pos, 0];
-    WEATHER_LAYERS.forEach((L, k) => {
-      const lp = layerPos[k];
-      const r = rIn + (rOut - rIn) * lp;
-      // キャラクターのスクリーンとの前後：buildScreens は奥（pos 大）から k = 0,1,2… の順に ro − 1 + k × 0.05 で描く。
-      // 天気の各層は「自分より奥のスクリーンの枚数」ぶんだけ後＝その直後に描く
-      const nFar = screenList.filter((sc) => sc.pos > lp).length;
-      // 円筒の角 φ = π − θ（θ は −z から。ひな壇の壁・スクリーンと同じ）
-      const mesh = sheet({ r, phi0: Math.PI - thMax, phiLen: thMax - thMin, h, yBottom: y, L, fade: 0.08, clip, segs });
-      mesh.name = `weather:screen:${k}`;
-      mesh.renderOrder = ro - 1 + (nFar - 0.5) * 0.05 + k * 0.001;
-      mesh.userData.far = k === 0;
-      g.add(mesh);
-    });
-    return;
-  }
-
-  // スカイドームに映す：ドームと同じ並び（半径の大きい＝奥から）。表示していないドームには天気も出さない
-  const order = domeList.map((d, i) => ({ d, i })).sort((a, b) => b.d.r - a.d.r);
-  order.forEach(({ d, i }, k) => {
-    if (d.show === false) return;
-    const L = WEATHER_LAYERS[Math.min(k, WEATHER_LAYERS.length - 1)];
-    const span = deg(Math.max(20, Math.min(360, d.span ?? 180)));
-    // 正面（舞台の奥 −z）を中心に span ぶん。下端をドームの地平線に合わせる
-    const mesh = sheet({ r: d.r + WEATHER_BACK, phi0: Math.PI - span / 2, phiLen: span, h: WEATHER_H, yBottom: d.y ?? 0, L, fade: d.fade, segs: 96 });
-    mesh.name = `weather:${i}`;
-    mesh.renderOrder = -200 + k - 0.5;              // 同じ層のドーム（雲）より先に描く＝雲の後ろ
+  if (!stageCtx.screenBase) return;   // スクリーンを立てる段（BACK_ROWS の screen: true）が無ければ出さない
+  const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
+  const pos = Math.max(0, Math.min(1, weatherState.pos ?? 0.5));
+  const h = Math.max(1, weatherState.height ?? 12);
+  // 3 層をひな壇の奥行きいっぱいに離して置く（2026-09-17 ユーザー指定）：奥の層 = 一番奥（1）、中の層 = 「奥行き」スライダー、手前の層 = 一番手前（0）。
+  // キャラクターのスクリーンの前にも後ろにも降る
+  const layerPos = [1, pos, 0];
+  WEATHER_LAYERS.forEach((L, k) => {
+    const lp = layerPos[k];
+    const r = rIn + (rOut - rIn) * lp;
+    // キャラクターのスクリーンとの前後：buildScreens は奥（pos 大）から k = 0,1,2… の順に ro − 1 + k × 0.05 で描く。
+    // 天気の各層は「自分より奥のスクリーンの枚数」ぶんだけ後＝その直後に描く
+    const nFar = screenList.filter((sc) => sc.pos > lp).length;
+    // 円筒の角 φ = π − θ（θ は −z から。ひな壇の壁・スクリーンと同じ）。左右の端は幅の 8% だけ粒を間引いて切り口をやわらげる
+    const mesh = sheet({ r, phi0: Math.PI - thMax, phiLen: thMax - thMin, h, yBottom: y, L, fade: 0.08, clip, segs });
+    mesh.name = `weather:${k}`;
+    mesh.userData.th = { min: thMin, max: thMax };   // 面の左端・右端の方角（−z から +x へ）。光源の方角を面の横位置に直すのに使う
+    mesh.renderOrder = ro - 1 + (nFar - 0.5) * 0.05 + k * 0.001;
     mesh.userData.far = k === 0;                    // 雷で光るのは一番奥の層だけ
     g.add(mesh);
   });
@@ -1502,10 +1519,22 @@ export function updateWeather(t) {
   if (!on) return;
   const type = w.type === 'rain' ? 1 : w.type === 'snow' ? 2 : 0;
   const fps = Math.max(1, w.fps || 12), tq = Math.floor(t * fps) / fps;   // コマの刻みに切り捨てる
+  // 輝き：空に見えている太陽・月（空の球の円盤）の向き・色・見えている度合いから決める。
+  // 舞台を照らす直射の強さは使わない：夕方は直射がほぼ 0 になり、逆光の雨がいちばん映える時にきらめきが消えてしまう（2026-09-17 実測）
+  const su = stageCtx.sky.material.uniforms;
+  const sunAmt = Math.sqrt(Math.max(0, su.sunVis.value)), moonAmt = 0.7 * Math.sqrt(Math.max(0, su.moonVis.value * su.moonK.value));   // 雲で薄れる分は平方根でやわらげる
+  const useMoon = moonAmt > sunAmt, amt = Math.min(1, useMoon ? moonAmt : sunAmt);
+  _wDir.copy(useMoon ? su.moonDir.value : su.sunDir.value);    // 舞台 → 光源（+z が客席側、−z が舞台の奥）
+  const hx = Math.hypot(_wDir.x, _wDir.z) || 1;
+  const thL = Math.atan2(_wDir.x, -_wDir.z);                   // 光源の方角（−z = 舞台の奥 から、+x = 客席から見て右 へ）
+  const back = Math.max(0, -_wDir.z / hx);                     // 逆光の度合い（光源が舞台の奥側にあるほど 1）
+  WEATHER_GLINT_COL.value.copy(useMoon ? su.moonCol.value : su.sunCol.value).lerp(_wWhite, 0.35).multiplyScalar(0.6 + 0.4 * amt).lerp(_wStorm, flash);   // 夕方は金〜赤橙、月は青白。雷の間は稲妻の色
   for (const m of weather.children) {
-    const u = m.material.uniforms;
+    const u = m.material.uniforms, th = m.userData.th;
     u.uTime.value = tq; u.uSpeed.value = w.speed; u.uWidth.value = w.width;
     u.uType.value = type; u.uAmount.value = w.amount; u.uWind.value = w.wind;
+    u.uGlint.value = w.glint ?? 1; u.uStorm.value = flash;
+    u.uSun.value.set((thL - th.min) / (th.max - th.min), back * amt, (th.max - th.min) / GLINT_SIGMA, 0.4 + 0.6 * amt);
     u.uFlash.value = m.userData.far ? flash : 0;
     if (m.userData.far && bolt) u.uBolt.value.set(bolt.x, bolt.seed, bolt.low, 1); else u.uBolt.value.w = 0;
   }
@@ -1559,7 +1588,7 @@ function buildScreens() {
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
   });
-  if (weatherState.target === 'screen') buildWeather();   // 天気をスクリーンに映している時は、土台の寸法と前後の順が変わるので組み直す
+  buildWeather();   // 天気の面も同じ土台に立つ。土台の寸法と、キャラクターとの前後の順が変わるので組み直す
 }
 
 // 中心 1 → 半径 inner までは不透明、外周で 0 になる放射状のアルファ（円ジオメトリの UV は外接正方形に 0..1）

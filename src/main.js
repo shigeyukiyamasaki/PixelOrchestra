@@ -834,8 +834,7 @@ function settings() {
     weatherType: ['rain', 'snow'].includes(radioValue('weatherType')) ? radioValue('weatherType') : 'none',
     weatherAmount: num('weatherAmount', 0.5), weatherWind: num('weatherWind', 0.2), weatherThunder: num('weatherThunder', 0),
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
-    weatherTarget: radioValue('weatherTarget') === 'screen' ? 'screen' : 'dome',   // 映す先（スカイドーム方式と見比べる用。2026-09-17）
-    weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12),
+    weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
     instFlash: num('instFlash', 1), // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
     rollSpeed: num('rollSpeed', 3),
     rollHeight: num('rollHeight', 7),
@@ -1386,7 +1385,7 @@ function animate() {
     controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
     setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed, fps: s.weatherFps, width: s.weatherWidth,
-                 target: s.weatherTarget, pos: s.weatherPos, height: s.weatherHeight });
+                 pos: s.weatherPos, height: s.weatherHeight, glint: s.weatherGlint });
     updateWeather(t);      // 雨・雪・雷も時刻から決める（setShadows の後：屋外かどうかを見る）
     applyTempo(s, engine.bpmAt(tm), beat);
     applyCredits(s);
