@@ -730,13 +730,13 @@ export function updateSky(camera) {
 // 本編 → 等倍のオフスクリーン（深度テクスチャ付き）。太陽の円盤だけ → 1/4 解像度（本編の深度で隠れた所は捨てる）→ ガウスぼかし。
 // 最後に本編を最近傍で 1:1 転写しながらぼかした太陽を加算する。本編のドット絵には一切ぼかしが掛からない
 const post = { w: 0, h: 0, main: null, a: null, b: null, quadScene: null, quadCam: null, quad: null, blurMat: null, compMat: null,
-               probe: null, probeMat: null, px8: new Uint8Array(4), sunNdc: new THREE.Vector3(), half: false };
+               probe: null, probeMat: null, px8: new Uint8Array(4), sunNdc: new THREE.Vector3(), half: false, c: null, d: null, brightMat: null };
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 function ensurePost(renderer) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   if (post.main && post.w === size.x && post.h === size.y) return;
   post.w = size.x; post.h = size.y;
-  for (const k of ['main', 'a', 'b']) post[k]?.dispose();
+  for (const k of ['main', 'a', 'b']) post[k]?.dispose();   // c, d は下で
   post.main = new THREE.WebGLRenderTarget(size.x, size.y, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
   post.main.depthTexture = new THREE.DepthTexture(size.x, size.y);
   post.main.depthTexture.type = THREE.UnsignedIntType;
@@ -746,6 +746,9 @@ function ensurePost(renderer) {
   const bt = post.half ? THREE.HalfFloatType : THREE.UnsignedByteType;
   post.a = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });
   post.b = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });
+  for (const k of ['c', 'd']) post[k]?.dispose();
+  post.c = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });   // 全体ブルーム用
+  post.d = new THREE.WebGLRenderTarget(bw, bh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, type: bt });
   if (!post.quadScene) {
     post.quadScene = new THREE.Scene();
     post.quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -763,11 +766,11 @@ function ensurePost(renderer) {
       depthTest: false, depthWrite: false, toneMapped: false,
     });
     post.compMat = new THREE.ShaderMaterial({
-      uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 },
+      uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 }, bloomAll: { value: null }, strengthAll: { value: 0 },
                   sunUv: { value: new THREE.Vector2(0.5, 0.5) }, aspect: { value: 1.78 }, veil: { value: 0 }, veilR: { value: 0.1 }, veilCol: { value: new THREE.Color(1, 1, 1) },
                   streak: { value: 0 }, streakL: { value: 0.3 }, rayRot: { value: 0 } },
       vertexShader: QUAD_VS,
-      fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength;
+      fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength; uniform sampler2D bloomAll; uniform float strengthAll;
         uniform vec2 sunUv; uniform float aspect; uniform float veil; uniform float veilR; uniform vec3 veilCol; uniform float streak; uniform float streakL; uniform float rayRot; varying vec2 vUv;
         void main(){
           vec4 m = texture2D(mainTex, vUv);              // 本編（premultiplied）。等倍・最近傍なのでそのまま
@@ -804,11 +807,18 @@ function ensurePost(renderer) {
           float core = streak * 0.9 * exp(-(d * d) / (0.035 * 0.035));
           rays *= streak * 0.75 * smoothstep(0.02, 0.12, d);
           vec3 v = veilCol * (g + core + rays);
-          vec3 add = b + v;
+          vec3 add = b + v + texture2D(bloomAll, vUv).rgb * strengthAll;   // 画面全体のブルーム（カメラ側）
           float al = max(add.r, max(add.g, add.b));
           gl_FragColor = vec4(m.rgb + add, min(1.0, m.a + al));
         }`,
       depthTest: false, depthWrite: false, toneMapped: false, transparent: true, blending: THREE.NoBlending,
+    });
+    post.brightMat = new THREE.ShaderMaterial({   // 本編の明るい部分を抜く（全体ブルーム用。2026-09-17）
+      uniforms: { tex: { value: null }, thr: { value: 0.7 } },
+      vertexShader: QUAD_VS,
+      fragmentShader: `uniform sampler2D tex; uniform float thr; varying vec2 vUv;
+        void main(){ vec4 c = texture2D(tex, vUv); float m = max(c.r, max(c.g, c.b)); float k = max(0.0, m - thr) / max(1e-3, m); gl_FragColor = vec4(c.rgb * k, c.a); }`,
+      depthTest: false, depthWrite: false, toneMapped: false,
     });
     post.probeMat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, uv: { value: new THREE.Vector2(0.5, 0.5) } },
@@ -831,26 +841,38 @@ function blurPass(renderer, src, dst, dx, dy, step) {
 }
 /** 1 フレーム描く。屋外（太陽あり）なら太陽だけのブルームを掛け、屋内なら従来どおり直接描く */
 const _flareTmp = new THREE.Vector3();
-export function renderFrame(renderer, scene, camera) {
-  if (!stageCtx?.sunOnly.visible || stageCtx.bloom.vis <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
+export function renderFrame(renderer, scene, camera, bloomAll = 0) {
+  const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
+  if (!sunPass && bloomAll <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   ensurePost(renderer);
-  const { el, cloud, vis } = stageCtx.bloom, gain = stageCtx.bloom.gain ?? 1;
+  const { el, cloud } = stageCtx.bloom, gain = stageCtx.bloom.gain ?? 1, vis = sunPass ? stageCtx.bloom.vis : 0;
   const hT = Math.min(1, Math.max(0, (el - 3) / 32));
   const high = hT * hT;                                          // 高い太陽ほど眩しく広い（3°→35°、二乗で中間を抑える。16 時台に山ができないよう。2026-09-16 ユーザー指摘）
   const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
   // 1) 本編 → 等倍 RT（深度付き）
   renderer.setRenderTarget(post.main); renderer.setClearColor(0x000000, 0); renderer.clear();
   renderer.render(scene, camera);
+  // 全体ブルーム（2026-09-17）：本編の明るい部分を抜いて 1/4 RT でぼかす（2 段）。太陽のブルームとは別系統
+  const texPerDegAll = post.c.height / (camera.fov || 50);
+  if (bloomAll > 0.001) {
+    post.quad.material = post.brightMat; post.brightMat.uniforms.tex.value = post.main.texture;
+    renderer.setRenderTarget(post.c); renderer.clear(); renderer.render(post.quadScene, post.quadCam);
+    const sp = 1.2 * (texPerDegAll / 5.4);
+    blurPass(renderer, post.c, post.d, 1, 0, sp); blurPass(renderer, post.d, post.c, 0, 1, sp);
+    blurPass(renderer, post.c, post.d, 1, 0, 3 * sp); blurPass(renderer, post.d, post.c, 0, 1, 3 * sp);
+  }
   // 2) 太陽の円盤だけ → 1/4 RT。本編の深度で隠れた画素は捨てる
   const u = stageCtx.sunOnly.material.uniforms;
   u.sceneDepth.value = post.main.depthTexture; u.resolution.value.set(post.a.width, post.a.height);
-  u.gain.value = 1;                                              // RT は 8bit なので増幅は合成時（ぼかしの後）に掛ける
-  camera.layers.set(1);
-  const autoShadow = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;   // 影の再計算は本編だけ
+  u.gain.value = 1;                                              // 増幅は合成時（ぼかしの後）に掛ける
   renderer.setRenderTarget(post.a); renderer.clear();
-  renderer.render(scene, camera);
-  renderer.shadowMap.autoUpdate = autoShadow;
-  camera.layers.set(0);
+  if (sunPass) {
+    camera.layers.set(1);
+    const autoShadow = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;   // 影の再計算は本編だけ
+    renderer.render(scene, camera);
+    renderer.shadowMap.autoUpdate = autoShadow;
+    camera.layers.set(0);
+  }
   // 3) ガウスぼかし（縦横 × 2 反復。2 回目は歩幅を広げて裾を伸ばす）
   // ぼかしの幅は角度で決める（2026-09-16 ユーザー指摘：ピクセル固定だとブラウザが大きいほどブルームが大きく見えた）。
   // 基準は高さ 1080 px（1/4 で 270）・画角 50° → 1° あたり 5.4 テクセル。歩幅をこれに比例させる
@@ -883,6 +905,8 @@ export function renderFrame(renderer, scene, camera) {
   post.quad.material = post.compMat;
   post.compMat.uniforms.mainTex.value = post.main.texture;
   post.compMat.uniforms.bloom.value = post.a.texture;
+  post.compMat.uniforms.bloomAll.value = post.c.texture;
+  post.compMat.uniforms.strengthAll.value = bloomAll > 0.001 ? 1.6 * bloomAll : 0;
   post.compMat.uniforms.strength.value = vis * (0.5 + 14.0 * high) * renderer.toneMappingExposure * gain;   // 高い太陽ほど強く（8.5→14。夕日は下限 0.5 のまま。2026-09-17 ユーザー指定）
   // 光のかぶり：太陽の画面位置を中心に。高い太陽ほど強く、夕日は弱い。隠れている割合で消える
   const cu = post.compMat.uniforms;

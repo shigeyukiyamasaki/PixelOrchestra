@@ -203,6 +203,7 @@
     <div class="box" id="lightBox">
       <h3 class="hd">照明</h3>
       <label class="ctl" title="露出（全体の明るさ）。明るい部分（輝度 0.8 以上）は白飛びしないよう自動で圧縮される（色・彩度は保つ）"><span>露出 <b data-value-for="exposure">1</b></span><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1"></label>
+      <label class="ctl" title="画面全体のブルーム（カメラ側の処理）。明るい部分（最大チャンネル 0.7 以上）がにじむ。0 で無し（後処理なし）"><span>ブルーム <b data-value-for="bloomAll">0</b></span><input type="range" id="bloomAll" min="0" max="1" step="0.05" value="0"></label>
       <!-- 光源の切替（2026-09-16 ユーザー指定）。屋内のスポットライトと屋外の太陽光は併用せず、どちらか一方。
            選んでいない方の値も消さずに残す（切り替え戻せば元どおり）。ラジオなので設定の自動保存に乗る -->
       <div class="seg" title="光源。屋内はスポットライト、屋外は太陽光">
@@ -285,6 +286,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260921z"></script>
+  <script type="module" src="src/main.js?v=20260922a"></script>
 </body>
 </html>
