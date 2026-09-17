@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
@@ -732,8 +732,10 @@ function setupCredits() {
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset'));   // プリセットの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
-const RADIO_NAMES = () => [...new Set([...document.querySelectorAll('#panel input[type=radio][name]')].map((el) => el.name))];
-const radioValue = (name) => document.querySelector(`#panel input[type=radio][name="${name}"]:checked`)?.value;
+// 対象は右メニューと上段（天気の種類。2026-09-17）
+const RADIO_AREA = ':is(#panel, #camBar)';
+const RADIO_NAMES = () => [...new Set([...document.querySelectorAll(`${RADIO_AREA} input[type=radio][name]`)].map((el) => el.name))];
+const radioValue = (name) => document.querySelector(`${RADIO_AREA} input[type=radio][name="${name}"]:checked`)?.value;
 
 function saveSettings() {
   const data = {};
@@ -750,7 +752,7 @@ function loadSettings() {
   }
   for (const name of RADIO_NAMES()) {
     if (!(name in data)) continue;
-    const el = document.querySelector(`#panel input[type=radio][name="${name}"][value="${data[name]}"]`);
+    const el = document.querySelector(`${RADIO_AREA} input[type=radio][name="${name}"][value="${data[name]}"]`);
     if (el) el.checked = true;
   }
   // 互換：旧「屋内／屋外」ラジオ（lightMode）で保存されていたら「屋外」チェックへ読み替える（2026-09-17）
@@ -828,6 +830,13 @@ function settings() {
     sway: num('sway', 1),
     dynResponse: num('dynResponse', 1),
     dynSpeed: num('dynSpeed', 1),   // 姿勢が強弱に追いつく速さ（2026-09-15）
+    // 天気（スカイドームの欄。2026-09-17 ユーザー指定）
+    weatherType: ['rain', 'snow'].includes(radioValue('weatherType')) ? radioValue('weatherType') : 'none',
+    weatherAmount: num('weatherAmount', 0.5), weatherWind: num('weatherWind', 0.2), weatherThunder: num('weatherThunder', 0),
+    weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
+    weatherTarget: radioValue('weatherTarget') === 'screen' ? 'screen' : 'dome',   // 映す先（スカイドーム方式と見比べる用。2026-09-17）
+    weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12),
+    instFlash: num('instFlash', 1), // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
     rollSpeed: num('rollSpeed', 3),
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
@@ -1376,6 +1385,9 @@ function animate() {
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
+    setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed, fps: s.weatherFps, width: s.weatherWidth,
+                 target: s.weatherTarget, pos: s.weatherPos, height: s.weatherHeight });
+    updateWeather(t);      // 雨・雪・雷も時刻から決める（setShadows の後：屋外かどうかを見る）
     applyTempo(s, engine.bpmAt(tm), beat);
     applyCredits(s);
     logo.visible = s.showTitle;

@@ -105,59 +105,80 @@ body:has(#spotOn:not(:checked)) #spotParams > * { opacity: .45; pointer-events: 
 #spotParams { margin-left: 18px; }
 #lightBox:not(:has(#outdoor:checked)) #sunSet > * { opacity: .45; pointer-events: none; }   /* 屋外オフ（ホール）でも畳まず、効かない状態として薄く（2026-09-17 ユーザー指定） */
 /* 太陽光：自動（時刻・天気・向き）と手動（詳細）は両方見せ、効かない方を薄くして触れなくする（グレーアウト法則。チェック本体は通常表示） */
-#sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > *:not(.always) { opacity: .45; pointer-events: none; }
+#sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > * { opacity: .45; pointer-events: none; }
 label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */
 body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45; pointer-events: none; }   /* 照り返しがオフなら「色を乗せる」は効かない（グレーアウト法則） */
 /* 固定欄のレンズ箱（カメラ側の処理）：端末切替の下 */
 #camArea #lensBox { margin: 10px 0 0; width: 402px; }
-#lensBox .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }   /* 2 列（左：露出・ブルーム／右：太陽の眩しさ・ブルーム閾値。2026-09-17 ユーザー指定） */   /* 時刻から決まらない項目（光の広がり）は自動でも触れる */
+#lensBox .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }   /* 2 列（左：露出・ブルーム／右：太陽の眩しさ・ブルーム閾値。2026-09-17 ユーザー指定） */
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
-#domeSec { flex: 0 1 724px; min-width: 0; display: flex; flex-direction: column; }
+#domeSec { flex: 0 1 968px; min-width: 0; display: flex; flex-direction: column; font-size: 12px; }   /* 上段（#camBar）へ移した。カードの見た目は #screenBar と共通（2026-09-17 ユーザー指定） */
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+/* スカイドームのカード 3 枚の右に「天気」のカードを固定で置く（#domeRows は描き直されるので、その外。2026-09-17 ユーザー指定） */
+#domeBody { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+#domeBody > #domeRows { flex: 0 1 auto; min-width: 0; }
+#weatherCard { align-self: flex-start; }
+#weatherCard .wname { font-weight: 600; }
+#weatherCard .ctl { margin: 0; }
+/* 項目が多いので、スライダーは「ラベル＋数値欄 ｜ スライダー」の横 1 行に詰める（2 行組みだとカードが上段でいちばん高くなり、プレビューを縮めた。2026-09-17 実測 395×220 → 284×160） */
+#weatherCard label.ctl { display: grid; grid-template-columns: 10em minmax(0, 1fr); align-items: center; gap: 0 6px; }   /* 左の列は一番長いラベル「落ちる速さ」＋数値欄の幅。数値欄を縦に揃える */
+#weatherCard label.ctl input.num { width: 40px; }
+#weatherCard label.ctl > span { display: flex; align-items: center; justify-content: space-between; gap: 4px; white-space: nowrap; }
+#weatherCard label.ctl input[type=range] { width: 100%; min-width: 0; margin: 0; }
+#weatherCard .ctl.radio { gap: 2px 7px; flex-wrap: nowrap; white-space: nowrap; }
+#weatherCard .ctl.radio > span { flex: 0 0 auto; min-width: 3.2em; }
+#weatherCard .ctl.radio label { gap: 2px; }
+/* 数値欄の ▲▼：上段のボタン用スタイル（余白 2px 8px・12px）が効いて縦に膨らむので、本来の形に戻す */
+#weatherCard .numspin button { padding: 0; font-size: 8px; line-height: 1; border-radius: 0; border: 1px solid var(--line); color: var(--muted); }
+#weatherCard .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
+#weatherCard .numspin button:last-child { border-radius: 0 0 4px 0; }
+#weatherCard .numspin button:hover { color: var(--accent); border-color: var(--accent); }
+/* 「奥行き」「高さ」はスクリーンに映す時だけ効く。スカイドームの間は薄くして触れなくする（グレーアウト法則。ラジオ本体は通常表示） */
+#weatherCard:not(:has(input[name="weatherTarget"][value="screen"]:checked)) .onlyScreen { opacity: .45; pointer-events: none; }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
-#screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
-#screenBar .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
-#screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
-#screenBar button:hover { border-color: var(--accent); color: var(--accent); }
+:is(#screenBar, #camBar) .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
+:is(#screenBar, #camBar) .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
+:is(#screenBar, #camBar) button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
+:is(#screenBar, #camBar) button:hover { border-color: var(--accent); color: var(--accent); }
 #screenRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 
 /* 幅は 1.5 倍、スライダーの間隔は右パネル（.ctl の margin 8px）と同じくらい。2026-09-13 ユーザー指定 */
-#screenBar .screen { flex: 0 0 236px; display: flex; flex-direction: column; gap: 7px;
+:is(#screenBar, #camBar) .screen { flex: 0 0 236px; display: flex; flex-direction: column; gap: 7px;
                      border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-#screenBar .screen .thumb { display: flex; flex-direction: column; align-items: center; gap: 2px;
+:is(#screenBar, #camBar) .screen .thumb { display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 2px; background: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; color: inherit; font: inherit; }
-#screenBar .screen .thumb:hover { border-color: var(--accent); }
-#screenBar .screen .thumb img, #screenBar .screen .thumb video {
+:is(#screenBar, #camBar) .screen .thumb:hover { border-color: var(--accent); }
+:is(#screenBar, #camBar) .screen .thumb img, :is(#screenBar, #camBar) .screen .thumb video {
   width: 100%; height: 96px; object-fit: contain; display: block; image-rendering: pixelated;
   /* 透過の素材が見えるように市松模様を敷く */
   background-color: #2a3050;
   background-image: linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%),
                     linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%);
   background-size: 10px 10px; background-position: 0 0, 5px 5px; }
-#screenBar .screen .thumb .ph { width: 100%; height: 96px; display: flex; align-items: center; justify-content: center;
+:is(#screenBar, #camBar) .screen .thumb .ph { width: 100%; height: 96px; display: flex; align-items: center; justify-content: center;
   color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; }
-#screenBar .screen .thumb .cap { align-self: stretch; font-size: 10px; color: var(--muted); text-align: center;
+:is(#screenBar, #camBar) .screen .thumb .cap { align-self: stretch; font-size: 10px; color: var(--muted); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#screenBar .screen .name { width: 100%; background: none; border: 1px solid var(--line); color: inherit;
+:is(#screenBar, #camBar) .screen .name { width: 100%; background: none; border: 1px solid var(--line); color: inherit;
   border-radius: 4px; padding: 1px 4px; font: inherit; }
-#screenBar .screen .sld { display: grid; grid-template-columns: 4em minmax(0, 1fr) 2.8em; align-items: center; gap: 0 6px; }
-#screenBar .screen .sld > span { color: var(--muted); white-space: nowrap; }
-#screenBar .screen .sld input[type=range] { width: 100%; min-width: 0; margin: 0; }
-#screenBar .screen .sld b { font-weight: 400; text-align: right; }
-#screenBar .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
-#screenBar .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
-#screenBar .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
-#screenBar .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
-#screenBar .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
+:is(#screenBar, #camBar) .screen .sld { display: grid; grid-template-columns: 4em minmax(0, 1fr) 2.8em; align-items: center; gap: 0 6px; }
+:is(#screenBar, #camBar) .screen .sld > span { color: var(--muted); white-space: nowrap; }
+:is(#screenBar, #camBar) .screen .sld input[type=range] { width: 100%; min-width: 0; margin: 0; }
+:is(#screenBar, #camBar) .screen .sld b { font-weight: 400; text-align: right; }
+:is(#screenBar, #camBar) .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
+:is(#screenBar, #camBar) .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
+:is(#screenBar, #camBar) .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+:is(#screenBar, #camBar) .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+:is(#screenBar, #camBar) .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
 /* スカイドーム（遠景。3 層固定）はスクリーンと見分けが付くよう枠の色を変える */
-#screenBar .screen.dome { border-color: rgba(226, 179, 72, .45); }
-#screenBar .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
-#screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
+:is(#screenBar, #camBar) .screen.dome { border-color: rgba(226, 179, 72, .45); }
+:is(#screenBar, #camBar) .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
+:is(#screenBar, #camBar) .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }
-#screenBar .addCard:hover { border-color: var(--accent); color: var(--accent); }
+:is(#screenBar, #camBar) .addCard:hover { border-color: var(--accent); color: var(--accent); }
 
 /* 素材のカラム表示（Finder のカラム表示と同じ操作。2026-09-13 ユーザー指定）。
    position: fixed を外すと本文の流れに入り込んで左パネルの下に出るので注意 */

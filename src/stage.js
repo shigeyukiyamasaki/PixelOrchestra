@@ -484,8 +484,12 @@ export function createStage(container) {
   screens.position.z = SEAT_SHIFT_Z;
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
+  const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  scene.add(weather);
+  const flashLight = new THREE.AmbientLight('#cfe0ff', 0);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
+  scene.add(flashLight);
+  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -862,6 +866,19 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
     post.quad.material = post.brightMat; post.brightMat.uniforms.tex.value = post.main.texture; post.brightMat.uniforms.thr.value = bloomThr;
     renderer.setRenderTarget(post.c); renderer.clear(); renderer.render(post.quadScene, post.quadCam);
     const sp = 1.2 * (texPerDegAll / 5.4);
+    // 天気（雨・雪・雷）を素材へ描き足す：天気の層だけを、本編の深度で隠れた画素を捨てながら
+    if (stageCtx.weather.visible && stageCtx.weather.children.length) {
+      WEATHER_BLOOM.pass.value = 1; WEATHER_BLOOM.depth.value = post.main.depthTexture; WEATHER_BLOOM.res.value.set(post.c.width, post.c.height);
+      const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
+      renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
+      camera.layers.set(WEATHER_LAYER);
+      renderer.setRenderTarget(post.c); renderer.render(scene, camera);
+      camera.layers.set(0);
+      renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
+      // 深度の参照は必ず外す：持たせたままだと、次のフレームで本編（post.main）を描く時に
+      // 「描き込み先の深度テクスチャを同時に読む」状態になり、WebGL が INVALID_OPERATION を出す
+      WEATHER_BLOOM.pass.value = 0; WEATHER_BLOOM.depth.value = null;
+    }
     blurPass(renderer, post.c, post.d, 1, 0, sp); blurPass(renderer, post.d, post.c, 0, 1, sp);
     blurPass(renderer, post.c, post.d, 1, 0, 3 * sp); blurPass(renderer, post.d, post.c, 0, 1, 3 * sp);
   }
@@ -1267,6 +1284,231 @@ function buildDomes() {
     mesh.renderOrder = -200 + k;                    // 何よりも先に描く
     g.add(mesh);
   });
+  buildWeather();   // ドームの半径・高さ・範囲に合わせて天気の層も組み直す
+}
+
+// ---- 天気（雨・雪・雷）。2026-09-17 ユーザー指定 ----
+// スカイドーム 1 枚ごとに、同じ中心・同じ範囲の円筒をそのすぐ後ろへ立て、雨や雪の粒をシェーダーで描く（素材は要らない。雲は手前に残る）。
+// 奥の層ほど粒を細かく・遅く・薄くして奥行きを出す。粒はドットの格子に合わせ、コマ送りで動かす（既定 12 コマ/秒。ドット絵の見た目を保つ）。
+// 雷は一番奥の層だけが光る：手前の雲は暗いままなので、逆光で雲の輪郭が浮かぶ。同時に舞台も一瞬照らす（flashLight）。
+// どれも「時刻 → 状態」の純関数（updateScreens と同じ。後でオフラインに書き出しても同じ絵になる）。
+const WEATHER_H = 48;          // 円筒の高さ [unit]。上 40% はドットを間引いて消していく
+const WEATHER_BACK = 0.2;      // ドームの何 unit 後ろに立てるか
+// 奥 → 手前の順（ドームを半径の大きい順に並べた時の番号）。dot: 1 ドットの大きさ [unit]、fall: 雨が 1 秒に落ちるドット数（速さ 1 のとき）、alpha: 濃さ
+const WEATHER_LAYERS = [
+  { dot: 0.11, fall: 36, alpha: 0.45 },
+  { dot: 0.16, fall: 48, alpha: 0.7 },
+  { dot: 0.24, fall: 60, alpha: 1.0 },
+];
+const WEATHER_SHADER = {
+  vertexShader: `
+    varying vec2 vUv;
+    #include <clipping_planes_pars_vertex>
+    void main() {
+      vUv = vec2(1.0 - uv.x, uv.y);   // 円筒を内側（客席側）から見るので左右を返す：x が増える向き = 客席から見て右
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mvPosition;
+      #include <clipping_planes_vertex>
+    }`,
+  fragmentShader: `
+    uniform float uTime;      // コマの刻みに切り捨てた時刻 [s]（コマ数は updateWeather が決める）
+    uniform float uSpeed;     // 落ちる速さの倍率
+    uniform float uWidth;     // 雨の筋の太さ（1 ドットの幅に対する割合 0〜1）
+    uniform float uType;      // 0 なし / 1 雨 / 2 雪
+    uniform float uAmount;    // 降りの強さ 0〜1
+    uniform float uWind;      // 風 −1〜1（正で右へ流れる）
+    uniform float uFall;      // 雨が 1 秒に落ちるドット数（速さ 1 のとき）
+    uniform float uAlpha;
+    uniform float uFade;      // 左右の端を消していく幅（範囲に対する割合）
+    uniform vec2 uCells;      // 横・縦のドット数
+    uniform vec3 uLight;      // スカイドームと共通の照明の倍率
+    uniform float uFlash;     // 雷の明るさ 0〜1（一番奥の層だけ）
+    uniform vec4 uBolt;       // x: 稲妻の横位置 0〜1 / y: 乱数の種 / z: 下端の高さ 0〜1 / w: 稲妻を描くか
+    uniform float uBloomPass; // 1 = 全体ブルームの素材として描いている（renderFrame）。本編の深度で隠れた画素は捨てる
+    uniform sampler2D uDepth; uniform vec2 uRes;
+    varying vec2 vUv;
+    #include <clipping_planes_pars_fragment>
+    float h11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+    float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    void main() {
+      #include <clipping_planes_fragment>
+      if (uBloomPass > 0.5 && gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 0.00002) discard;   // 奏者・舞台・不透明な雲の後ろ
+      vec2 d = floor(vUv * uCells);   // ドットの座標（x: 左から、y: 下から）
+      vec4 o = vec4(0.0);
+      if (uType > 0.5 && uType < 1.5) {
+        // 雨：風のぶん斜めに傾けた「筋」ごとに、周期・長さ・位相を乱数で決めて流す
+        float cx = d.x + floor(d.y * uWind * 0.6);
+        float P = 26.0 + floor(h11(cx + 7.3) * 30.0);
+        float L = 6.0 + floor(h11(cx + 3.1) * 8.0);   // 粒の長さ 6〜13 ドット（3〜6 の 2 倍。2026-09-17 ユーザー指定）
+        float ph = floor(h11(cx + 11.7) * P);
+        float fall = floor(uTime * uFall * uSpeed * (0.85 + 0.3 * h11(cx + 5.5)));
+        float fx = fract(vUv.x * uCells.x) - 0.5;   // ドットの中での横位置（中央が 0）。筋はドットの中央に細く描く
+        if (abs(fx) < uWidth * 0.5 && h11(cx) < uAmount * 0.55 && mod(d.y + fall + ph, P) < L) o = vec4(vec3(0.72, 0.82, 1.0), 0.6 * uAlpha);
+      } else if (uType > 1.5) {
+        // 雪：7 ドット角のマスに 1 粒。全体を下へ送り、粒ごとに左右へゆらす
+        float G = 7.0;
+        float fy = floor(uTime * uSpeed * 6.0 * (0.6 + 0.4 * uFall / 60.0));   // 雪は 1 秒に 5〜6 ドット（速さ 1 のとき）
+        vec2 q = vec2(d.x - floor(fy * uWind * 1.2), d.y + fy);
+        vec2 cell = floor(q / G), loc = q - cell * G;
+        float r = h21(cell);
+        if (r < uAmount * 0.8) {
+          vec2 fp = 1.0 + floor(vec2(h21(cell + 3.7), h21(cell + 9.1)) * (G - 3.0));
+          fp.x = clamp(fp.x + floor(sin(uTime * 1.3 + r * 40.0) * 1.5 + 0.5), 0.0, G - 1.0);
+          if (abs(loc.x - fp.x) < 0.5 && abs(loc.y - fp.y) < 0.5) o = vec4(vec3(1.0), 0.95 * uAlpha);
+        }
+      }
+      // 上と左右の端は、ドットを乱数で間引いて消していく（半透明にしない＝ドット絵のまま）
+      float keep = (1.0 - smoothstep(0.6, 1.0, vUv.y));
+      if (uFade > 0.001) keep *= smoothstep(0.0, uFade, vUv.x) * smoothstep(0.0, uFade, 1.0 - vUv.x);
+      if (h21(d + 0.5) > keep) o.a = 0.0;
+      o.rgb *= max(uLight, vec3(0.12));   // 夜でも粒が完全には消えないように
+      // 雷：空（この層）が稲妻の方角を中心に光る。明るさは 5 段に丸め、段の間はドットで混ぜる
+      if (uFlash > 0.001) {
+        float dx = (vUv.x - uBolt.x) * 3.0;
+        float gl = uFlash * (0.3 + 0.7 * exp(-dx * dx)) * (0.45 + 0.55 * vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+        gl *= smoothstep(0.0, 0.3, vUv.x) * smoothstep(0.0, 0.3, 1.0 - vUv.x);   // 層の端に光の切れ目を出さない
+        gl = floor(gl * 5.0 + h21(d + 1.5)) / 5.0 * 0.85;   // 段の境目はドットの乱数で混ぜる（輪郭線にしない）
+        float a2 = gl + o.a * (1.0 - gl);
+        if (a2 > 0.001) o = vec4((vec3(0.85, 0.9, 1.0) * gl + o.rgb * o.a * (1.0 - gl)) / a2, a2);
+        if (uBolt.w > 0.5 && vUv.y > uBolt.z && vUv.y < 0.8) {
+          // 稲妻：5 ドットごとの節を乱数で左右に振り、節の間を直線でつなぐ（太さ 2 ドット）
+          float S = 5.0, k = floor(d.y / S), f = (d.y - k * S) / S;
+          float o0 = (h11(k + uBolt.y * 91.0) - 0.5) * 16.0, o1 = (h11(k + 1.0 + uBolt.y * 91.0) - 0.5) * 16.0;
+          float bx = floor(uBolt.x * uCells.x + mix(o0, o1, f) + 0.5);
+          if (d.x - bx > -0.5 && d.x - bx < 1.5) o = vec4(1.0);
+        }
+      }
+      if (o.a < 0.01) discard;
+      gl_FragColor = o;
+      #include <tonemapping_fragment>
+    }`,
+};
+// 全体ブルームの対象にする（2026-09-17 ユーザー指定）：本編の「明るい部分」とは別に、天気の層だけを
+// ブルームの素材（1/4 の絵）へ描き足す。閾値に関係なく光る。本編の 8bit の絵では粒が空に紛れて閾値を超えないため。
+// レイヤー 1 は太陽の円盤（sunOnly）が使っている
+const WEATHER_LAYER = 2;
+const WEATHER_BLOOM = { pass: { value: 0 }, depth: { value: null }, res: { value: new THREE.Vector2(1, 1) } };
+let weatherState = { type: 'none', amount: 0.5, wind: 0.2, thunder: 0, fps: 12, speed: 1, width: 0.3, target: 'dome', pos: 0.5, height: 12 };
+
+/** 天気の設定。type: 'none' | 'rain' | 'snow'、amount: 降りの強さ 0〜1、wind: 風 −1〜1、thunder: 雷の頻度 [回/分]（0 でなし）、
+ *  fps: 粒の動きのコマ数 [1/s]、speed: 落ちる速さの倍率（コマ数を変えても 1 秒に落ちる距離は変わらない）、width: 雨の筋の太さ（ドット幅に対する割合）、
+ *  target: 映す先 'dome'（スカイドーム 3 枚の後ろ）| 'screen'（一番奥のひな壇の上のスクリーン）、pos: スクリーンの奥行き 0〜1、height: スクリーンの高さ [unit] */
+export function setWeather(o = {}) {
+  const was = weatherState, now = { ...weatherState, ...o };
+  weatherState = now;
+  const need = (w) => w.type !== 'none' || w.thunder > 0;
+  // 要らない時は層ごと外す（描画の負荷を残さない）。映す先や面の寸法が変わった時も組み直す
+  if (need(was) !== need(now) || was.target !== now.target || (now.target === 'screen' && (was.pos !== now.pos || was.height !== now.height))) buildWeather();
+}
+
+function buildWeather() {
+  if (!stageCtx) return;
+  const g = stageCtx.weather;
+  g.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+  g.clear();
+  if (weatherState.type === 'none' && !(weatherState.thunder > 0)) return;
+  // 面を 1 枚作る。r: 半径、phi0 / phiLen: 円筒の角（+z から）、h: 高さ、yBottom: 下端の高さ、L: 層の設定、fade: 左右の端を消す幅、clip: 切り口
+  const sheet = ({ r, phi0, phiLen, h, yBottom, L, fade, clip, segs }) => {
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }, uSpeed: { value: 1 }, uWidth: { value: 0.3 }, uType: { value: 0 }, uAmount: { value: 0 }, uWind: { value: 0 },
+        uFall: { value: L.fall }, uAlpha: { value: L.alpha },
+        uFade: { value: Math.max(0, Math.min(0.49, fade ?? 0)) },
+        uCells: { value: new THREE.Vector2(Math.round((r * phiLen) / L.dot), Math.round(h / L.dot)) },
+        uLight: DOME_LIGHT,
+        uFlash: { value: 0 }, uBolt: { value: new THREE.Vector4(0.5, 0, 0.1, 0) },
+        uBloomPass: WEATHER_BLOOM.pass, uDepth: WEATHER_BLOOM.depth, uRes: WEATHER_BLOOM.res,   // 全層で共有（renderFrame が切り替える）
+      },
+      vertexShader: WEATHER_SHADER.vertexShader, fragmentShader: WEATHER_SHADER.fragmentShader,
+      transparent: true, side: THREE.DoubleSide, depthWrite: false, clipping: true, toneMapped: true,
+    });
+    if (clip) m.clippingPlanes = clip;
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segs, 1, true, phi0, phiLen), m);
+    mesh.position.set(0, yBottom + h / 2, SEAT_SHIFT_Z);
+    mesh.layers.enable(WEATHER_LAYER);              // 本編（0）に加えて、ブルーム用の描画でも拾う
+    return mesh;
+  };
+
+  if (weatherState.target === 'screen' && stageCtx.screenBase) {
+    // スクリーンに映す（2026-09-17 ユーザー指定。スカイドーム方式と見比べる用）：一番奥のひな壇の上に、下段のスクリーンと同じ弧・同じ切り口で立てる。
+    // 粒の大きさ・3 層の設定・速さ・雷はスカイドーム方式と同じ。違いは映す面と、その置き場所
+    const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
+    const pos = Math.max(0, Math.min(1, weatherState.pos ?? 0.5));
+    const h = Math.max(1, weatherState.height ?? 12);
+    // 3 層をひな壇の奥行きいっぱいに離して置く（2026-09-17 ユーザー指定）：奥の層 = 一番奥（1）、中の層 = 「奥行き」スライダー、手前の層 = 一番手前（0）。
+    // キャラクターのスクリーンの前にも後ろにも降る
+    const layerPos = [1, pos, 0];
+    WEATHER_LAYERS.forEach((L, k) => {
+      const lp = layerPos[k];
+      const r = rIn + (rOut - rIn) * lp;
+      // キャラクターのスクリーンとの前後：buildScreens は奥（pos 大）から k = 0,1,2… の順に ro − 1 + k × 0.05 で描く。
+      // 天気の各層は「自分より奥のスクリーンの枚数」ぶんだけ後＝その直後に描く
+      const nFar = screenList.filter((sc) => sc.pos > lp).length;
+      // 円筒の角 φ = π − θ（θ は −z から。ひな壇の壁・スクリーンと同じ）
+      const mesh = sheet({ r, phi0: Math.PI - thMax, phiLen: thMax - thMin, h, yBottom: y, L, fade: 0.08, clip, segs });
+      mesh.name = `weather:screen:${k}`;
+      mesh.renderOrder = ro - 1 + (nFar - 0.5) * 0.05 + k * 0.001;
+      mesh.userData.far = k === 0;
+      g.add(mesh);
+    });
+    return;
+  }
+
+  // スカイドームに映す：ドームと同じ並び（半径の大きい＝奥から）。表示していないドームには天気も出さない
+  const order = domeList.map((d, i) => ({ d, i })).sort((a, b) => b.d.r - a.d.r);
+  order.forEach(({ d, i }, k) => {
+    if (d.show === false) return;
+    const L = WEATHER_LAYERS[Math.min(k, WEATHER_LAYERS.length - 1)];
+    const span = deg(Math.max(20, Math.min(360, d.span ?? 180)));
+    // 正面（舞台の奥 −z）を中心に span ぶん。下端をドームの地平線に合わせる
+    const mesh = sheet({ r: d.r + WEATHER_BACK, phi0: Math.PI - span / 2, phiLen: span, h: WEATHER_H, yBottom: d.y ?? 0, L, fade: d.fade, segs: 96 });
+    mesh.name = `weather:${i}`;
+    mesh.renderOrder = -200 + k - 0.5;              // 同じ層のドーム（雲）より先に描く＝雲の後ろ
+    mesh.userData.far = k === 0;                    // 雷で光るのは一番奥の層だけ
+    g.add(mesh);
+  });
+}
+
+// 雷の時刻表：2 秒ごとの枠に、頻度に応じた確率で 1 回。枠の番号から乱数を引くので、同じ時刻なら必ず同じ雷になる
+const THUNDER_SLOT = 2;
+const rnd1 = (x) => { const v = Math.sin(x * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+function lightningAt(t, perMin) {
+  let flash = 0, bolt = null;
+  if (!(perMin > 0)) return { flash, bolt };
+  const k0 = Math.floor(t / THUNDER_SLOT);
+  for (const k of [k0, k0 - 1]) {   // 前の枠の雷の余韻も拾う
+    if (k < 0 || rnd1(k) >= (perMin * THUNDER_SLOT) / 60) continue;
+    const tau = t - (k + rnd1(k + 0.5) * 0.9) * THUNDER_SLOT;
+    if (tau < 0 || tau > 1.2) continue;
+    // 1 発目 → 0.16 秒後に 2 発目 → 半分の雷は 0.4 秒後に 3 発目（ちらつき）
+    let e = Math.exp(-tau * 8);
+    if (tau > 0.16) e += 0.8 * Math.exp(-(tau - 0.16) * 10);
+    if (tau > 0.4 && rnd1(k + 0.7) > 0.5) e += 0.5 * Math.exp(-(tau - 0.4) * 12);
+    flash = Math.max(flash, Math.min(1, e));
+    // 稲妻の線が見えるのは光り始めの一瞬だけ。4 割は線の無い雷（雲の中が光るだけ）
+    if (rnd1(k + 0.3) < 0.6 && (tau < 0.1 || (tau > 0.16 && tau < 0.24))) bolt = { x: 0.15 + 0.7 * rnd1(k + 0.1), seed: rnd1(k + 0.9), low: 0.04 + 0.22 * rnd1(k + 0.2) };
+  }
+  return { flash, bolt };
+}
+
+/** 天気を時刻から決める。毎フレーム呼ぶ（setShadows の後。屋内では出さない） */
+export function updateWeather(t) {
+  if (!stageCtx) return;
+  const { weather, flashLight } = stageCtx, w = weatherState;
+  const on = lightState.mode === 'sun';
+  weather.visible = on;
+  const { flash, bolt } = on ? lightningAt(t, w.thunder) : { flash: 0, bolt: null };
+  flashLight.intensity = flash * 1.4;
+  if (!on) return;
+  const type = w.type === 'rain' ? 1 : w.type === 'snow' ? 2 : 0;
+  const fps = Math.max(1, w.fps || 12), tq = Math.floor(t * fps) / fps;   // コマの刻みに切り捨てる
+  for (const m of weather.children) {
+    const u = m.material.uniforms;
+    u.uTime.value = tq; u.uSpeed.value = w.speed; u.uWidth.value = w.width;
+    u.uType.value = type; u.uAmount.value = w.amount; u.uWind.value = w.wind;
+    u.uFlash.value = m.userData.far ? flash : 0;
+    if (m.userData.far && bolt) u.uBolt.value.set(bolt.x, bolt.seed, bolt.low, 1); else u.uBolt.value.w = 0;
+  }
 }
 
 /**
@@ -1317,6 +1559,7 @@ function buildScreens() {
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);
   });
+  if (weatherState.target === 'screen') buildWeather();   // 天気をスクリーンに映している時は、土台の寸法と前後の順が変わるので組み直す
 }
 
 // 中心 1 → 半径 inner までは不透明、外周で 0 になる放射状のアルファ（円ジオメトリの UV は外接正方形に 0..1）
@@ -1411,9 +1654,12 @@ wallImgTex.wrapS = wallImgTex.wrapT = THREE.RepeatWrapping;
 // 上端だけ境目の絵にして、その下は土の行だけを繰り返した絵を、壁の高さ（ドット行数）ごとに組む（2026-09-17 ユーザー指定）。
 // 絵の構成は wall_dirt.png の前提：上 2 行が草との境目、最下 1 行が次の層の境目、その間が土
 const WALL_TOP_ROWS = 2, WALL_BOTTOM_ROWS = 1;
-const wallCanvasCache = new Map();   // 行数 → canvas
-function wallCanvasOf(img, rows) {
-  let c = wallCanvasCache.get(rows);
+const WALL_GRASS_RGB = [0x62, 0xac, 0x3e];   // 絵に描き込まれている草の粒の色（wall_dirt.png）
+const wallCanvasCache = new Map();   // 「行数|草の粒の色」 → canvas
+/** grass：草の粒を塗り替える色（'#rrggbb'）。null なら絵のまま */
+function wallCanvasOf(img, rows, grass = null) {
+  const key = `${rows}|${grass}`;
+  let c = wallCanvasCache.get(key);
   if (c) return c;
   c = document.createElement('canvas');
   c.width = img.width; c.height = rows;
@@ -1427,7 +1673,15 @@ function wallCanvasOf(img, rows) {
     const dx = i % 2 ? half : 0;
     for (const x of dx ? [dx - img.width, dx] : [0]) g.drawImage(img, 0, WALL_TOP_ROWS, img.width, body, x, y, img.width, body);   // はみ出した分は反対側から回り込ませる
   }
-  wallCanvasCache.set(rows, c);
+  if (grass) {   // 深緑の草原では、絵の草の粒も深緑に（2026-09-17 ユーザー指定）
+    const to = new THREE.Color(grass), id = g.getImageData(0, 0, c.width, c.height), d = id.data;
+    const [r0, g0, b0] = WALL_GRASS_RGB;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] === r0 && d[i + 1] === g0 && d[i + 2] === b0) { d[i] = Math.round(to.r * 255); d[i + 1] = Math.round(to.g * 255); d[i + 2] = Math.round(to.b * 255); }
+    }
+    g.putImageData(id, 0, 0);
+  }
+  wallCanvasCache.set(key, c);
   return c;
 }
 
@@ -1438,7 +1692,8 @@ function wallSkin(uLen, vLen, col) {
   if (!img || !isGrass) return { color: col };
   const dpu = WALL_DPU * (stageCtx.groundTex.tileScale || 1);   // 草原のタイルを細かくしたら壁のドットも同じ大きさに（2026-09-17 ユーザー指定）
   const rows = Math.max(1, Math.ceil(vLen * dpu - 1e-6));
-  const m = new THREE.CanvasTexture(wallCanvasOf(img, rows));
+  const grass = stageCtx.groundTex === stageCtx.grassDarkTex ? GRASS_PALETTES.dark.LIGHT : null;   // 縁の見切り線と同じ色
+  const m = new THREE.CanvasTexture(wallCanvasOf(img, rows, grass));
   m.magFilter = THREE.NearestFilter; m.minFilter = THREE.NearestFilter;
   m.wrapS = m.wrapT = THREE.RepeatWrapping;
   const tw = img.width / dpu, th = rows / dpu;

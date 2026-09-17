@@ -557,7 +557,7 @@ export class Puppet {
     }
 
     // アタックの明滅：発音した瞬間だけ楽器を明るくする（持続は足元の光が示すので不要。2026-09-12 ユーザー指定）
-    this._attackFlash(st);
+    this._attackFlash(st, settings);
     // 次フレームの _standOnFloor 用に、今フレームの上半身の回転・位置を控える
     (this._spineQPrev ??= new THREE.Quaternion()).copy(this.spine.quaternion);
     (this._spinePosPrev ??= new THREE.Vector3()).copy(this.spine.position);
@@ -627,18 +627,22 @@ export class Puppet {
 
   /**
    * アタックの明滅：発音した瞬間に楽器を明るくし、時定数 100ms で元へ戻す。
-   * 強さは energy（CC 追従・「強弱の反応」スライダー込み）を 1 で頭打ちにしたもの。
-   * 色は material.color を baseColor × 倍率で毎フレーム作り直す（直接代入すると累積して壊れる）。
+   * 強さは energy（CC 追従・「強弱の反応」スライダー込み）を 1 で頭打ちにしたもの × 「楽器のフラッシュ」スライダー。
+   * 光は自己発光（material.emissive）で出す：照明の無い真っ暗な中でも光る（足元の光と同じ。2026-09-17 ユーザー指定）。
+   * emissive は sprites.js でボクセルの色が掛かるので、絵の色のまま光る。板（2D）の時は従来どおり color × 倍率。
    * 楽器を持たない指揮者は対象外。楽器が手持ち（シンバル等）なら held を明滅させる
    */
-  _attackFlash(st) {
+  _attackFlash(st, settings) {
     if (this.family === 'conductor') return;
     const { onset, age } = st;
-    const k = onset ? 1 + 0.8 * Math.exp(-age * 10) * clamp(st.energy, 0, 1) : 1;
+    const amt = 0.8 * (settings?.instFlash ?? 1);   // 「楽器のフラッシュ」スライダー（1 で従来の +80%。2026-09-17 ユーザー指定）
+    const k = onset ? 1 + amt * Math.exp(-age * 10) * clamp(st.energy, 0, 1) : 1;
     if (k === this._flashK) return; // 1 のまま（休符中）は毎フレーム触らない
     this._flashK = k;
     const apply = (o) => o && o.traverse((m) => {
-      if (m.isMesh && m.userData.baseColor) m.material.color.copy(m.userData.baseColor).multiplyScalar(k);
+      if (!m.isMesh || !m.userData.baseColor) return;
+      if (m.material.emissive) m.material.emissive.setScalar(k - 1);
+      else m.material.color.copy(m.userData.baseColor).multiplyScalar(k);
     });
     if (this.inst) apply(this.inst);
     else { apply(this.held?.L); apply(this.held?.R); }

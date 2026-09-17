@@ -13,43 +13,35 @@
 <body>
   <div id="stageArea">
   <div id="camBar">
-      <div class="camSide">
-  <div class="box">
-  <h3 class="hd">タイトル</h3>
-  <label class="chk" title="舞台に置くタイトルのロゴを表示する"><input type="checkbox" id="showTitle" checked> 表示する</label>
-  <label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="titleX">0</b></span><input type="range" id="titleX" min="-30" max="30" step="0.5" value="0"></label>
-  <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="titleY">7</b></span><input type="range" id="titleY" min="0" max="30" step="0.5" value="7"></label>
-  <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="titleZ">-12</b></span><input type="range" id="titleZ" min="-40" max="20" step="0.5" value="-12"></label>
-  <label class="chk" title="ひな壇と同じ円弧に沿ってロゴを曲げる。Z を動かすと、その位置での曲がり方になる"><input type="checkbox" id="titleBend"> ひな壇の曲率で曲げる</label>
-  <label class="ctl" title="大きさの倍率"><span>大きさ <b data-value-for="titleScale">1</b></span><input type="range" id="titleScale" min="0.2" max="4" step="0.05" value="1"></label>
-  <label class="ctl" title="不透明度。1 で不透明、下げるほど後ろが透ける"><span>濃度 <b data-value-for="titleOpacity">1</b></span><input type="range" id="titleOpacity" min="0.05" max="1" step="0.05" value="1"></label>
-  </div>
-  <div class="box credits2">
-  <h3 class="hd">クレジット</h3>
-  <label class="chk" title="プレビューの左下にクレジットを重ねて表示する"><input type="checkbox" id="showCredits"> 表示する</label>
-  <div class="twocol">
-    <div>
-      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><input type="text" id="credit1" list="creditHist1" placeholder="（例）天地創造" autocomplete="off"></label>
-      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><input type="text" id="credit2" list="creditHist2" placeholder="（例）ソレイユ" autocomplete="off"></label>
-      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><input type="text" id="credit3" list="creditHist3" placeholder="（例）光田康典" autocomplete="off"></label>
-      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><input type="text" id="credit4" list="creditHist4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"></label>
-    </div>
-    <div>
-      <label class="ctl" title="全体の大きさの倍率"><span>大きさ <b data-value-for="creditScale">1</b></span><input type="range" id="creditScale" min="0.4" max="2.5" step="0.05" value="1"></label>
-      <label class="ctl row" title="文字の色"><span>色</span><input type="color" id="creditColor" value="#ffffff"></label>
-      <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="creditOpacity">0.8</b></span><input type="range" id="creditOpacity" min="0.1" max="1" step="0.05" value="0.8"></label>
-    </div>
-  </div>
-  <datalist id="creditHist1"></datalist><datalist id="creditHist2"></datalist>
-  <datalist id="creditHist3"></datalist><datalist id="creditHist4"></datalist>
-  </div>
-  <div class="box">
-  <h3 class="hd">テンポ・拍子</h3>
-  <label class="chk" title="プレビューの左上にテンポ（♩=）と拍子を重ねて表示する"><input type="checkbox" id="showTempo"> 表示する</label>
-  <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
-  <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
-  </div>
-      </div>
+      <!-- スカイドーム（3 層固定）。タイトル・クレジット・テンポを右メニューへ移し、空いた上段へ（2026-09-17 ユーザー指定） -->
+      <section id="domeSec">
+        <div class="hd">スカイドーム</div>
+        <div id="domeBody">
+        <div id="domeRows"></div>
+        <!-- 天気（雨・雪・雷）：スカイドーム 3 枚それぞれのすぐ後ろに降らせる（2026-09-17 ユーザー指定）。雲量は右メニューの「空・時刻」 -->
+        <div class="screen weather" id="weatherCard" title="スカイドーム 3 枚それぞれの雲のすぐ後ろに、雨や雪を降らせる（舞台の奥だけ。屋外のときだけ出る）。奥の層ほど細かく・遅く・薄い。空の暗さは右メニュー「空・時刻」の雲量で決める。粒は雲と同じく、再生中だけ動く">
+          <div class="wname">天気</div>
+          <div class="ctl radio" title="降らせるもの"><span>種類</span>
+            <label><input type="radio" name="weatherType" value="none" checked> なし</label>
+            <label><input type="radio" name="weatherType" value="rain"> 雨</label>
+            <label><input type="radio" name="weatherType" value="snow"> 雪</label>
+          </div>
+          <label class="ctl" title="降りの強さ。0 で降らない、1 で土砂降り／大雪"><span>強さ <b data-value-for="weatherAmount">0.5</b></span><input type="range" id="weatherAmount" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctl" title="風。0 でまっすぐ落ちる。プラスで右へ、マイナスで左へ流れる"><span>風 <b data-value-for="weatherWind">0.2</b></span><input type="range" id="weatherWind" min="-1" max="1" step="0.05" value="0.2"></label>
+          <label class="ctl" title="雨の筋の太さ（1 ドットの幅に対する割合）。0.3 でドットの幅の 3 割、小さいほど細い。雪には効かない"><span>雨の太さ <b data-value-for="weatherWidth">0.3</b></span><input type="range" id="weatherWidth" min="0.1" max="0.3" step="0.05" value="0.3"></label>
+          <label class="ctl" title="雨・雪が落ちる速さの倍率。1 が標準（雨は手前の層で 1 秒に 60 ドット、雪は約 6 ドット）。コマ数を変えても 1 秒に落ちる距離は変わらない"><span>落ちる速さ <b data-value-for="weatherSpeed">1</b></span><input type="range" id="weatherSpeed" min="0.1" max="3" step="0.05" value="1"></label>
+          <label class="ctl" title="粒の動きのコマ数 [コマ/秒]。小さいほどカクカクしたドット絵らしい動き、30 でなめらか。速さは変わらない"><span>コマ数 <b data-value-for="weatherFps">12</b></span><input type="range" id="weatherFps" min="2" max="30" step="1" value="12"></label>
+          <label class="ctl" title="雷の頻度 [回/分]。0 で鳴らない。一番奥の空が光って雲の輪郭が浮かび、舞台も一瞬照らされる。6 割は稲妻の線つき。種類が「なし」でも雷だけ出せる"><span>雷の頻度 <b data-value-for="weatherThunder">0</b></span><input type="range" id="weatherThunder" min="0" max="30" step="1" value="0"></label>
+          <!-- 映す先（2026-09-17 ユーザー指定）：スカイドーム方式は据え置き、スクリーン方式と切り替えて見比べる。下の 2 つはスクリーンの時だけ効く -->
+          <div class="ctl radio" title="雨・雪・雷を映す面。スカイドーム：3 枚の雲それぞれのすぐ後ろ（空いっぱい）。スクリーン：一番奥のひな壇の上に立つ面（下段のスクリーンと同じ仕組み。幅は舞台の左右まで）"><span>映す先</span>
+            <label><input type="radio" name="weatherTarget" value="dome" checked> スカイドーム</label>
+            <label><input type="radio" name="weatherTarget" value="screen"> スクリーン</label>
+          </div>
+          <label class="ctl onlyScreen" title="3 層のうち「中の層」の奥行き。ひな壇の上での前後位置（0 = 手前の辺 / 1 = 奥の辺。下段のスクリーンの「奥行き」と同じ意味）。奥の層は一番奥（1）、手前の層は一番手前（0）に固定。値の大小どおりにキャラクターの前後に入る"><span>奥行き <b data-value-for="weatherPos">0.5</b></span><input type="range" id="weatherPos" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="ctl onlyScreen" title="スクリーンの高さ [unit]。下端はひな壇の天面。上の 4 割は粒を間引いて消していく"><span>高さ <b data-value-for="weatherHeight">12</b></span><input type="range" id="weatherHeight" min="2" max="40" step="0.5" value="12"></label>
+        </div>
+        </div>
+      </section>
   </div>
     <!-- プレビュー：外枠（#viewWrap）＝端末の画面、内側（#view）＝実際に映る面。
          スマホ縦は内側が正方形なので、上下に黒帯が入る（2026-09-14 ユーザー指定）。
@@ -86,6 +78,7 @@
       <label class="ctl" title="音の強弱（velocity / CC）にどれだけ反応するか。前傾・頭の傾き・楽器の角度・体の膨らみ・指揮の振り幅の倍率。足元の光と拍の揺れには効かない"><span>強弱の反応 <b data-value-for="dynResponse">1</b></span><input type="range" id="dynResponse" min="0" max="3" step="0.1" value="1"></label>
       <label class="ctl" title="姿勢（前傾・膨らみ・頭の角度・体の傾き）が強弱に追いつく速さ。1 で拍の半分くらいの時間で追いつく。小さいほどゆっくり乗り、スローテンポで 1 音ごとにピクつかない。音の頭の小さな反応（うなずき・弓圧）には効かない"><span>反応の速さ <b data-value-for="dynSpeed">1</b></span><input type="range" id="dynSpeed" min="0.2" max="3" step="0.1" value="1"></label>
       <label class="ctl" title="拍に同期した体の左右の揺れの大きさ（2 拍で 1 往復・奏者ごとに位相が違う）。指揮者の振りの大きさにも少し効く"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
+      <label class="ctl" title="音を出した瞬間に楽器が明るく光る強さ。0 で光らない。1 が従来の強さ"><span>楽器のフラッシュ <b data-value-for="instFlash">1</b></span><input type="range" id="instFlash" min="0" max="3" step="0.1" value="1"></label>
     </div>
       <div class="box" id="boxLabel">
       <h3 class="hd">パート名</h3>
@@ -114,11 +107,7 @@
     </div>
     <!-- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定）。2026-09-13 ユーザー指定 -->
     <div id="screenBar">
-      <!-- 左：スカイドーム（3 層固定）／右：スクリーン。2026-09-16 ユーザー指定で別セクションに分けた -->
-      <section id="domeSec">
-        <div class="hd">スカイドーム</div>
-        <div id="domeRows"></div>
-      </section>
+      <!-- スクリーン。スカイドームは上段（#camBar）へ移した（2026-09-17 ユーザー指定） -->
       <section id="screenSec">
         <div class="hd">スクリーン<button id="screenReload" title="素材フォルダを調べ直す（ファイルを増やした時）">素材の一覧を更新</button></div>
         <div id="screenRows"></div>
@@ -205,7 +194,7 @@
     <div class="cols">
       <div class="col">
     <div class="box" id="lightBox">
-      <h3 class="hd">空・時刻・天気</h3>
+      <h3 class="hd">空・時刻</h3>
       <!-- 空（屋外）はチェック 1 つ。オフ＝ホール（空も時刻も無い）。光源は別の箱で使用／不使用を選び併用できる（2026-09-17 ユーザー指定）。
            旧「屋内／屋外」ラジオ（lightMode）の保存値は loadSettings で読み替える -->
       <label class="chk" title="オンで屋外（空・時刻・天気・星がある）。オフでホール（空は無く、光源は環境光とスポットライトなど）"><input type="checkbox" id="outdoor" checked> 屋外</label>
@@ -214,10 +203,16 @@
         <!-- 自動（時刻 × 天気 × 舞台の向き。2026-09-16 ユーザー指定：物理に基づく案 B）。手動チェックでこの 3 つは隠れ、下の詳細が出る -->
         <div id="sunAutoSet">
         <label class="ctl" title="時刻。表示は時:分（欄に 18:30 のように打てる）。0:00〜24:00。太陽の高度と方角、色温度、強さがここから決まる。日の出前・日没後は直射が消えて空の明るさだけ残る（薄明）"><span>時刻 <b data-value-for="sunHour">12:00</b></span><input type="range" id="sunHour" min="0" max="24" step="0.25" value="12"></label>
-        <label class="ctl" title="雲量。0 で快晴（直射が強く影がくっきり）、0.5 で薄雲の曇り（空が白く明るい、直射と影は薄い）、1 で厚い雨雲（空は暗い灰、直射と影は無い）"><span>天気（雲量） <b data-value-for="sunCloud">0</b></span><input type="range" id="sunCloud" min="0" max="1" step="0.05" value="0"></label>
+        <label class="ctl" title="雲量。0 で快晴（直射が強く影がくっきり）、0.5 で薄雲の曇り（空が白く明るい、直射と影は薄い）、1 で厚い雨雲（空は暗い灰、直射と影は無い）"><span>雲量 <b data-value-for="sunCloud">0</b></span><input type="range" id="sunCloud" min="0" max="1" step="0.05" value="0"></label>
         <label class="ctl" title="月齢 [日]。0 新月・7.4 上弦・15 満月・22 下弦。月の位置（満月は日没に昇り真夜中に南中、新月は太陽と同じ方向）と明るさ・欠け方が決まる"><span>月齢 <b data-value-for="moonAge">15</b></span><input type="range" id="moonAge" min="0" max="29.5" step="0.5" value="15"></label>
         <label class="ctl" title="舞台が向いている方位 [度]（客席がある方角）。0 北・90 東・180 南・270 西。南向き（既定）だと太陽は客席から見て右（東）から昇り、左（西）へ沈む"><span>舞台の向き <b data-value-for="stageFacing">180</b></span><input type="range" id="stageFacing" min="0" max="345" step="15" value="180"></label>
         </div>
+        <!-- 手動かどうかに関係なく、いつでも触れる項目。「詳細を手動で」のグループの末尾にあったのを上へ出した（2026-09-17 ユーザー指定。id は不変） -->
+        <label class="ctl" title="太陽の周りの空に乗る夕焼け色の広がり（太陽の方角と高度を中心にした角度の広さ）。1 で標準、0 で太陽のすぐ近くだけ、2 で空の大半。もや具合に当たるので自動でも触れる"><span>光の広がり <b data-value-for="skyGlowSpread">1</b></span><input type="range" id="skyGlowSpread" min="0" max="2" step="0.05" value="1"></label>
+        <label class="ctl" title="星の瞬きの強さ。0 で瞬かない、1 で ±25%、2 で ±50%"><span>星の瞬き <b data-value-for="starTwinkle">1</b></span><input type="range" id="starTwinkle" min="0" max="2" step="0.05" value="1"></label>
+        <label class="chk2" title="天空光（空全体からの光）に夕焼けの暖色（黄〜橙）を乗せる。青は乗せない。オフで常に無色（白）の光"><input type="checkbox" id="skyTint" checked> 空の色を光に乗せる</label>
+        <label class="ctl" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>空と地平線の中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
+        <label class="chk2" title="プレビューでの見え方だけを上下反転する（上の色・下の色・空と地平線の中間地点の値はそのまま）"><input type="checkbox" id="bgFlip"> 上下を反転</label>
         <label class="chk2" title="時刻・天気から決めるのをやめて、下の詳細を直接決める。外している間は詳細に計算値が入って追従する"><input type="checkbox" id="sunManual"> 詳細を手動で</label>
         <!-- 詳細は常に表示。自動のときは計算値が入って追従し、触れない（2026-09-16 ユーザー指定） -->
         <div id="sunManualSet">
@@ -231,11 +226,6 @@
         <label class="ctl" title="月の方角 [度]。0 で客席正面、90 で客席から見て右"><span>月の方角 <b data-value-for="moonAzimuth">180</b></span><input type="range" id="moonAzimuth" min="0" max="360" step="1" value="180"></label>
         <label class="ctl" title="月の高度 [度]。0 以下は地平線下"><span>月の高度 <b data-value-for="moonElev">30</b></span><input type="range" id="moonElev" min="-15" max="90" step="1" value="30"></label>
         <label class="ctl" title="月の照らされている割合。1 で満月、0.5 で半月、0 で新月（見えない）。明るさは割合の 3 乗"><span>月の明るさ <b data-value-for="moonBright">1</b></span><input type="range" id="moonBright" min="0" max="1" step="0.01" value="1"></label>
-        <label class="ctl always" title="太陽の周りの空に乗る夕焼け色の広がり（太陽の方角と高度を中心にした角度の広さ）。1 で標準、0 で太陽のすぐ近くだけ、2 で空の大半。もや具合に当たるので自動でも触れる"><span>光の広がり <b data-value-for="skyGlowSpread">1</b></span><input type="range" id="skyGlowSpread" min="0" max="2" step="0.05" value="1"></label>
-        <label class="ctl always" title="星の瞬きの強さ。0 で瞬かない、1 で ±25%、2 で ±50%"><span>星の瞬き <b data-value-for="starTwinkle">1</b></span><input type="range" id="starTwinkle" min="0" max="2" step="0.05" value="1"></label>
-        <label class="chk2 always" title="天空光（空全体からの光）に夕焼けの暖色（黄〜橙）を乗せる。青は乗せない。オフで常に無色（白）の光"><input type="checkbox" id="skyTint" checked> 空の色を光に乗せる</label>
-        <label class="ctl always" title="上の色と下の色がちょうど半分ずつ混ざる高さ [%]。0 で上端、100 で下端"><span>中間地点 <b data-value-for="bgMid">50</b></span><input type="range" id="bgMid" min="0" max="100" step="1" value="50"></label>
-        <label class="chk2 always" title="プレビューでの見え方だけを上下反転する（上の色・下の色・中間地点の値はそのまま）"><input type="checkbox" id="bgFlip"> 上下を反転</label>
         </div>
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
       </fieldset>
@@ -270,6 +260,42 @@
 
       </div>
       <div class="col">
+    <!-- タイトル・クレジット・テンポ：上段からスペクトラムの上へ（2026-09-17 ユーザー指定。id は不変） -->
+  <div class="box">
+  <h3 class="hd">タイトル</h3>
+  <label class="chk" title="舞台に置くタイトルのロゴを表示する"><input type="checkbox" id="showTitle" checked> 表示する</label>
+  <label class="ctl" title="左右。マイナスで客席から見て左"><span>X（左右） <b data-value-for="titleX">0</b></span><input type="range" id="titleX" min="-30" max="30" step="0.5" value="0"></label>
+  <label class="ctl" title="高さ"><span>Y（高さ） <b data-value-for="titleY">7</b></span><input type="range" id="titleY" min="0" max="30" step="0.5" value="7"></label>
+  <label class="ctl" title="前後。大きいほど客席側（手前）"><span>Z（前後） <b data-value-for="titleZ">-12</b></span><input type="range" id="titleZ" min="-40" max="20" step="0.5" value="-12"></label>
+  <label class="chk" title="ひな壇と同じ円弧に沿ってロゴを曲げる。Z を動かすと、その位置での曲がり方になる"><input type="checkbox" id="titleBend"> ひな壇の曲率で曲げる</label>
+  <label class="ctl" title="大きさの倍率"><span>大きさ <b data-value-for="titleScale">1</b></span><input type="range" id="titleScale" min="0.2" max="4" step="0.05" value="1"></label>
+  <label class="ctl" title="不透明度。1 で不透明、下げるほど後ろが透ける"><span>濃度 <b data-value-for="titleOpacity">1</b></span><input type="range" id="titleOpacity" min="0.05" max="1" step="0.05" value="1"></label>
+  </div>
+  <div class="box credits2">
+  <h3 class="hd">クレジット</h3>
+  <label class="chk" title="プレビューの左下にクレジットを重ねて表示する"><input type="checkbox" id="showCredits"> 表示する</label>
+  <div class="twocol">
+    <div>
+      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><input type="text" id="credit1" list="creditHist1" placeholder="（例）天地創造" autocomplete="off"></label>
+      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><input type="text" id="credit2" list="creditHist2" placeholder="（例）ソレイユ" autocomplete="off"></label>
+      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><input type="text" id="credit3" list="creditHist3" placeholder="（例）光田康典" autocomplete="off"></label>
+      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><input type="text" id="credit4" list="creditHist4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"></label>
+    </div>
+    <div>
+      <label class="ctl" title="全体の大きさの倍率"><span>大きさ <b data-value-for="creditScale">1</b></span><input type="range" id="creditScale" min="0.4" max="2.5" step="0.05" value="1"></label>
+      <label class="ctl row" title="文字の色"><span>色</span><input type="color" id="creditColor" value="#ffffff"></label>
+      <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="creditOpacity">0.8</b></span><input type="range" id="creditOpacity" min="0.1" max="1" step="0.05" value="0.8"></label>
+    </div>
+  </div>
+  <datalist id="creditHist1"></datalist><datalist id="creditHist2"></datalist>
+  <datalist id="creditHist3"></datalist><datalist id="creditHist4"></datalist>
+  </div>
+  <div class="box">
+  <h3 class="hd">テンポ・拍子</h3>
+  <label class="chk" title="プレビューの左上にテンポ（♩=）と拍子を重ねて表示する"><input type="checkbox" id="showTempo"> 表示する</label>
+  <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
+  <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
+  </div>
     <div class="box">
       <h3 class="hd">スペクトラム</h3>
       <label class="chk" title="読み込んだ音声の周波数を、タイトルの周りにバーで出す"><input type="checkbox" id="showSpectrum"> 表示する</label>

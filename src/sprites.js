@@ -55,6 +55,14 @@ export let PART_STYLE = 'voxel';
 export function setPartStyle(style) { PART_STYLE = style === 'sprite' ? 'sprite' : 'voxel'; }
 
 const partCache = new Map();
+// 自己発光（emissive）をボクセルの色で光らせる：Lambert の emissive は一様な色なので、そのままだと絵が白く霞む。
+// 頂点色を掛けて「その絵の色のまま光る」ようにする。emissive が黒（既定）なら見た目は変わらない。
+// 関数を 1 つだけ共有する（同じ関数なら three.js がシェーダーを使い回す）。2026-09-17
+function emissiveByVertexColor(shader) {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
+    '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n  totalEmissiveRadiance *= vColor.rgb;\n#endif');
+}
+
 /**
  * opts.res: 描画グリッドの解像度。1 = 基本グリッド（従来の絵。1 ドット = 2×2 ボクセル）、2 = 2 倍解像度（1 ドット = 1 ボクセル）。
  *   w/h/pivot/depth/z0 は res のグリッド単位で指定する（res:2 なら細かい px）。
@@ -97,8 +105,9 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  mat.onBeforeCompile = emissiveByVertexColor;
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.userData.baseColor = mat.color.clone(); // 明滅は baseColor × 倍率で行う（直接代入しない）
+  mesh.userData.baseColor = mat.color.clone(); // 明滅の対象の目印（フラッシュは emissive で行う。puppet.js の _attackFlash）
   mesh.userData.size = { w, h, depth };
   return mesh;
 }
