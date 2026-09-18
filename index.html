@@ -33,6 +33,8 @@
     <!-- 端末の画面にぴったり重ねる層。位置と大きさは JS（placeOverlay）が合わせる。
          中の箱は 70% で表示する（2026-09-14 ユーザー指定） -->
     <div id="viewOverlay">
+      <!-- スマホ縦だけ、上の黒帯に「ピアノロール・揺れ・自動カメラ」を左から横に並べる（2026-09-18 ユーザー指定）。JS が箱を移す -->
+      <div id="viewTop"></div>
       <div id="viewLeft">
       <div class="box" id="boxRoll">
       <h3 class="hd">ピアノロール</h3>
@@ -50,6 +52,15 @@
       <label class="ctl" title="拍に同期した体の左右の揺れの大きさ（2 拍で 1 往復・奏者ごとに位相が違う）。指揮者の振りの大きさにも少し効く"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
       <label class="ctl" title="音を出した瞬間に楽器が明るく光る強さ。0 で光らない。1 が従来の強さ"><span>楽器のフラッシュ <b data-value-for="instFlash">1</b></span><input type="range" id="instFlash" min="0" max="3" step="0.1" value="1"></label>
     </div>
+      <!-- 画面の揺れ（2026-09-18 ユーザー指定）：バスドラム（に割り当てたトラック）が鳴った瞬間に画面全体を揺らす。連動先は固定（選択なし） -->
+      <div class="box" id="boxShake">
+      <h3 class="hd">揺れ</h3>
+      <label class="chk" title="バスドラム（楽器に「バスドラム」を割り当てたトラック）が鳴った瞬間に画面全体を揺らす。強さは音の強さ（velocity）に比例"><input type="checkbox" id="shakeOn" checked> 揺らす</label>
+      <label class="ctl" title="揺らし方。縦：沈んで戻る／横：左右に震える／ランダム：鳴るたびに向きが変わる（手持ちカメラ風）／傾き：画面がわずかに回って戻る／押し込み：一瞬前へ出て戻る"><span>揺らし方</span><select id="shakeMode"><option value="v">縦</option><option value="h">横</option><option value="rand">ランダム</option><option value="tilt">傾き</option><option value="punch">押し込み</option></select></label>
+      <label class="ctl" title="揺れの大きさの倍率。音の強さ（velocity）に掛かる"><span>強さ <b data-value-for="shakeAmt">1</b></span><input type="range" id="shakeAmt" min="0" max="3" step="0.1" value="1"></label>
+      <label class="ctl" title="揺れが収まる速さ。1 で約 0.25 秒、大きいほど短く鋭く、小さいほど長く揺れる"><span>収まる速さ <b data-value-for="shakeDecay">1</b></span><input type="range" id="shakeDecay" min="0.3" max="3" step="0.1" value="1"></label>
+      <label class="chk2" title="ずらす量を画面の 120 行ぶんの段に丸め、動きも 1 秒 15 コマに刻んでカクッと動かす（スーパーファミコン風）。オフでなめらか"><input type="checkbox" id="shakeDots" checked> ドット単位で動かす</label>
+    </div>
       <div class="box" id="boxLabel">
       <h3 class="hd">パート名</h3>
       <label class="chk" title="各パートの頭上に名前を表示する"><input type="checkbox" id="showNames" checked> 表示する</label>
@@ -65,7 +76,10 @@
     </div>
       </div>
       <div id="viewBottom"></div>
-        <div class="box autoCamBox" title="演奏会のカメラワークのように、小節の頭で自動的に構図を切り替える">
+      <!-- 右の列（右上）。箱の配置は端末ごとに JS（placeAutoCamBox）が決める：
+           なし・PC＝自動カメラ・パート名・足元の光／スマホ横＝空（自動カメラは左の列の一番上）／スマホ縦＝空（上の帯へ）。2026-09-18 ユーザー指定 -->
+      <div id="viewRight">
+        <div class="box autoCamBox" id="autoCamBox" title="演奏会のカメラワークのように、小節の頭で自動的に構図を切り替える">
         <h3 class="hd">自動カメラ</h3>
         <label class="chk" title="オンの間はマウス操作を止める"><input type="checkbox" id="autoCam"> 自動で切り替える</label>
         <label class="ctl" title="切り替えの速さ。大きいほど短いショットになる"><span>切替の速さ <b data-value-for="camRate">1</b></span><input type="range" id="camRate" min="0.3" max="3" step="0.1" value="1"></label>
@@ -73,6 +87,7 @@
         <label class="ctl" title="ショットの間にカメラが動く量。0 で静止"><span>動きの量 <b data-value-for="camMove">0.6</b></span><input type="range" id="camMove" min="0" max="1" step="0.05" value="0.6"></label>
         <label class="ctl" title="動くショットの割合。0 で全部固定、1 で全部動く"><span>動きの頻度 <b data-value-for="camMoveFreq">0.6</b></span><input type="range" id="camMoveFreq" min="0" max="1" step="0.05" value="0.6"></label>
         </div>
+      </div>
     </div>
     </div>
     <!-- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定）。2026-09-13 ユーザー指定 -->

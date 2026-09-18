@@ -652,18 +652,28 @@ function placeAutoCamBox() {
   const phone = phoneV || $('viewWrap').classList.contains('phoneH');
   ov.style.setProperty('--ovzoom', phone ? '.7' : '1');
   ov.classList.toggle('phone', phone);   // スマホは数値入力と上下矢印を隠す（2026-09-14 ユーザー指定）
-  // スマホ縦だけ、奏者・パート名・足元の光を下の黒帯へ移す（2026-09-14 ユーザー指定）
+  // 箱の配置は端末ごとに決める（2026-09-14 / 2026-09-18 ユーザー指定）。
+  //   なし・PC ：左＝ピアノロール・奏者・揺れ／右上＝自動カメラ・パート名・足元の光
+  //   スマホ横 ：左＝自動カメラ・ピアノロール・奏者・揺れ・パート名・足元の光
+  //   スマホ縦 ：上の帯＝ピアノロール・揺れ・自動カメラ（左から横に）／下の帯＝奏者・パート名・足元の光
+  const wrapC = $('viewWrap').classList;
+  const mode = phoneV ? 'phoneV' : wrapC.contains('phoneH') ? 'phoneH' : wrapC.contains('pc') ? 'pc' : 'free';
+  const LAYOUT = {
+    free:   { viewLeft: ['boxRoll', 'boxPlayer', 'boxShake'], viewRight: ['autoCamBox', 'boxLabel', 'boxGlow'], viewTop: [], viewBottom: [] },
+    pc:     { viewLeft: ['boxRoll', 'boxPlayer', 'boxShake'], viewRight: ['autoCamBox', 'boxLabel', 'boxGlow'], viewTop: [], viewBottom: [] },
+    phoneH: { viewLeft: ['autoCamBox', 'boxRoll', 'boxPlayer', 'boxShake', 'boxLabel', 'boxGlow'], viewRight: [], viewTop: [], viewBottom: [] },
+    phoneV: { viewLeft: [], viewRight: [], viewTop: ['boxRoll', 'boxShake', 'autoCamBox'], viewBottom: ['boxPlayer', 'boxLabel', 'boxGlow'] },
+  }[mode];
   const left = $('viewLeft'), bottom = $('viewBottom');
-  const wantBottom = phoneV ? ['boxPlayer', 'boxLabel', 'boxGlow'] : [];
-  const nowBottom = [...bottom.children].map((e) => e.id).join();
-  if (nowBottom !== wantBottom.join()) {
-    for (const id of wantBottom) bottom.appendChild($(id));
-    if (!phoneV) for (const id of ['boxRoll', 'boxPlayer', 'boxLabel', 'boxGlow']) left.appendChild($(id));
+  for (const [holder, ids] of Object.entries(LAYOUT)) {
+    const el = $(holder);
+    if ([...el.children].map((e) => e.id).join() !== ids.join()) for (const id of ids) el.appendChild($(id));   // 違う時だけ並べ直す（毎フレーム呼ばれるため）
   }
   // 左の列が端末の画面からはみ出す時は、中でスクロールさせる（zoom の分だけ単位を戻す）
   const z = phone ? 0.7 : 1;
   const pad = phone ? 20 : 28;   // 上下の余白（style.css の top/bottom と合わせる）
   left.style.maxHeight = `${Math.max(80, (b - t) / z - pad)}px`;
+  $('viewRight').style.maxHeight = left.style.maxHeight;   // 右の列（PC ではパート名・足元の光も入る）も同じ
   // スマホ横：映る面の左に空く黒い隙間にカードを収める。機種で隙間が狭くなったら
   // 横スクロールではなくカードの幅を縮める（2026-09-14 ユーザー指定）
   if ($('viewWrap').classList.contains('phoneH')) {
@@ -913,7 +923,10 @@ function settings() {
     weatherAmount: num('weatherAmount', 0.5), weatherWind: num('weatherWind', 0.2), weatherThunder: num('weatherThunder', 0),
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
-    instFlash: num('instFlash', 1), // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
+    instFlash: num('instFlash', 1),
+    // 画面の揺れ（2026-09-18 ユーザー指定）
+    shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
+    shakeAmt: num('shakeAmt', 1), shakeDecay: num('shakeDecay', 1), shakeDots: $('shakeDots').checked, // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
     rollSpeed: num('rollSpeed', 3),
     rollHeight: num('rollHeight', 7),
     noteWidth: num('noteWidth', 0.22),
@@ -1450,6 +1463,65 @@ function updateAutoCam(s, t) {
 }
 
 // ---------- メインループ ----------
+// ---- 画面の揺れ（2026-09-18 ユーザー指定）：バスドラム（楽器に bassdrum を割り当てたトラック）が鳴った瞬間に画面全体を揺らす。連動先は固定 ----
+const SHAKE_VARIANT = 'bassdrum';
+// 「時刻 → 揺れ」の純関数。発音からの経過時間で減衰する振動（cos × exp）。大きさは音の強さ（velocity）×「強さ」×カメラから中心点までの距離
+// （寄っても引いても画面上で同じくらいの幅になる）。同じ再生位置なら同じ揺れになる（後で書き出しても再現できる）
+const SHAKE_FREQ = 7;          // 振動の速さ [Hz]（0.25 秒で 1〜2 往復）
+const SHAKE_GAIN = 0.022;      // 強さ 1・velocity 最大で、距離の 2.2%（画角 50° なら画面の高さの約 2.4%）
+const SHAKE_ROLL = 0.04;       // 傾き [rad]（約 2.3°）
+const SHAKE_DOT_ROWS = 120;    // 「ドット単位」の段：画面の高さをこの行数に見立てる
+const SHAKE_DOT_FPS = 15;      // 「ドット単位」の時間の刻み [コマ/秒]
+const _shk = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), right: new THREE.Vector3(), up: new THREE.Vector3(), fwd: new THREE.Vector3(), applied: false };
+let shakeNow = null;
+function shakeAt(tm, s) {
+  if (!s.shakeOn || !(s.shakeAmt > 0) || !engine) return null;
+  const k = 4 * s.shakeDecay;                       // 減衰 [1/s]。1 で e^-1 が 0.25 秒
+  // ドット単位：時間も 1 秒 15 コマに刻む（位置の段だけでは 60 コマで滑らかに見えてしまった。2026-09-18 ユーザー指摘）
+  const tq = s.shakeDots ? Math.floor(tm * SHAKE_DOT_FPS) / SHAKE_DOT_FPS : tm;
+  let disp = 0, seed = 0;
+  engine.tracks.forEach((tr) => {
+    if (tr.variant !== SHAKE_VARIANT) return;
+    const st = engine.trackState(tr, tq);
+    if (!st.onset || st.age < 0 || st.age * k > 6) return;   // 減衰しきった音は無視
+    const e = Math.min(1, engine.energyAt(tr, st.onset.time + 0.03));   // 鳴った瞬間の強さ（velocity。CC 固定でも効く）
+    disp += e * Math.exp(-st.age * k) * Math.cos(2 * Math.PI * SHAKE_FREQ * st.age);
+    seed = Math.max(seed, st.onset.time);
+  });
+  if (Math.abs(disp) < 1e-4) return null;
+  const dist = camera.position.distanceTo(controls.target);
+  let amp = Math.max(-2, Math.min(2, disp)) * s.shakeAmt * SHAKE_GAIN * dist;
+  if (s.shakeDots) {   // ドット単位：画面の高さを 120 行に見立て、その 1 行ぶんに丸める（240 行では段が細かすぎて分からなかった）
+    const q = (2 * dist * Math.tan((camera.fov * Math.PI / 180) / 2)) / SHAKE_DOT_ROWS;
+    amp = Math.round(amp / q) * q;
+    if (amp === 0) return null;
+  }
+  const out = { x: 0, y: 0, z: 0, roll: 0 };
+  switch (s.shakeMode) {
+    case 'h': out.x = amp; break;
+    case 'rand': { const a = (Math.sin(seed * 127.1) * 43758.5453) % 1 * 2 * Math.PI; out.x = Math.cos(a) * amp; out.y = Math.sin(a) * amp; break; }   // 発音ごとに向きが変わる
+    case 'tilt': out.roll = (amp / (SHAKE_GAIN * dist)) * SHAKE_ROLL; break;   // 位置の代わりに回す（量は同じ正規化）
+    case 'punch': out.z = amp; break;      // 前へ出て戻る
+    default: out.y = amp;                  // 縦：カメラが上へ跳ねる＝絵はまず下へ沈む（2026-09-18 確認時に符号を直した）
+  }
+  return out;
+}
+// 描画の直前に掛け、直後に控えた値をそのまま書き戻す（足して引くと誤差でカメラ操作の change が毎フレーム鳴り、スライダーの保存が走る）
+function applyShake(sh) {
+  if (!sh) return;
+  _shk.pos.copy(camera.position); _shk.quat.copy(camera.quaternion);
+  const q = camera.quaternion;
+  _shk.right.set(1, 0, 0).applyQuaternion(q); _shk.up.set(0, 1, 0).applyQuaternion(q); _shk.fwd.set(0, 0, -1).applyQuaternion(q);
+  camera.position.addScaledVector(_shk.right, sh.x).addScaledVector(_shk.up, sh.y).addScaledVector(_shk.fwd, sh.z);
+  if (sh.roll) camera.rotateZ(sh.roll);
+  _shk.applied = true;
+}
+function undoShake() {
+  if (!_shk.applied) return;
+  camera.position.copy(_shk.pos); camera.quaternion.copy(_shk.quat);
+  _shk.applied = false;
+}
+
 let lastPerf = performance.now();
 function animate() {
   requestAnimationFrame(animate);
@@ -1469,6 +1541,7 @@ function animate() {
     const beat = engine.beatAt(tm);
     const g = engine.globalEnergyAt(tm);
     const ctx = { t: tm, dt, beat, settings: s, globalEnergy: g, bpm: engine.bpmAt(tm) };   // bpm は姿勢の均し（拍の長さ）に使う
+    shakeNow = shakeAt(tm, s);               // 画面の揺れ（描画の直前に掛ける）
 
     const face = (p) => (s.facing === 'conductor' ? p.faceToward(0, CONDUCTOR_Z) : p.faceCamera(camera));
     for (const { puppet, track } of puppets) {
@@ -1528,8 +1601,10 @@ function animate() {
     if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
+  applyShake(shakeNow);   // 画面の揺れ：この描画の間だけカメラをずらす（空の球も一緒に動く）
   updateSky(camera);   // 空の球をカメラに追従
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
+  undoShake();
 }
 
 // URL パラメータ ?midi=path で自動読み込み（公開デモ・動作確認用）

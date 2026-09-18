@@ -50,14 +50,23 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 高さは端末の画面に収める（はみ出す時は中でスクロール）。max-height は JS が入れる */
 #viewOverlay #viewLeft { position: absolute; left: 14px; top: 14px; width: 200px; zoom: var(--ovzoom, 1);
   display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
+/* 右の列（右上）：左の列と同じ作り。中身は端末ごとに JS が決める（なし・PC＝自動カメラ・パート名・足元の光。2026-09-18 ユーザー指定） */
+#viewOverlay #viewRight { position: absolute; right: 14px; top: 14px; width: 200px; zoom: var(--ovzoom, 1);
+  display: flex; flex-direction: column; gap: 10px; pointer-events: auto; overflow-y: auto; }
+#viewOverlay #viewRight:empty { display: none; }
 /* スマホ縦のとき、奏者・パート名・足元の光を下の黒帯へ横並びで置く（2026-09-14 ユーザー指定）。
    下端から積み上げる。3 つ並べても端末の幅（390px）に収まるよう、この列だけ箱を細くする */
 /* 位置（映像のすぐ下＝黒帯の上端）は JS が入れる。3 つで幅いっぱいに広げ、上をそろえる */
 #viewOverlay #viewBottom { position: absolute; left: 14px; right: 14px; zoom: var(--ovzoom, 1);
   display: flex; align-items: flex-start; gap: 10px; pointer-events: auto; }
 #viewOverlay #viewBottom:empty { display: none; }
+/* スマホ縦の上の黒帯：ピアノロール・揺れ・自動カメラを左から横に（2026-09-18 ユーザー指定）。下の帯と同じ作りで、上端から下へ積む */
+#viewOverlay #viewTop { position: absolute; left: 14px; right: 14px; top: 14px; zoom: var(--ovzoom, 1);
+  display: flex; align-items: flex-start; gap: 10px; pointer-events: auto; }
+#viewOverlay #viewTop:empty { display: none; }
+#viewOverlay #viewTop > .box { flex: 1 1 0; width: auto; min-width: 0; margin: 0; }
 #viewOverlay #viewBottom > .box { flex: 1 1 0; width: auto; min-width: 0; }
-#viewOverlay .autoCamBox { position: absolute; right: 14px; top: 14px; width: 200px; margin: 0; zoom: var(--ovzoom, 1); pointer-events: auto; }
+/* 自動カメラの箱は、いつもどこかの列（右・左・上の帯）に入る。単独の絶対配置は廃止（2026-09-18） */
 #viewOverlay .box { margin: 0; background: rgba(0, 0, 0, .52); border: 1px solid var(--line-soft);
   border-radius: 8px; padding: 8px 10px 10px; }
 /* 見出しは箱の上端いっぱいに（左右・上の余白を打ち消す。2026-09-14 ユーザー指定）。
