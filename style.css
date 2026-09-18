@@ -35,7 +35,12 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* カメラ位置・中心点と、その下に 2 つ分の幅いっぱいの「視点リセット」（2026-09-13 ユーザー指定） */
 /* カメラの箱（位置・中心点・リセット）の右に、自動カメラの箱を並べる（2026-09-14 ユーザー指定） */
 #camArea .camGroup { display: flex; align-items: flex-start; gap: 10px; }
-#panel hr.sep { border: none; border-top: 1px solid var(--line); margin: 12px 0 14px; }   /* カメラ欄と他の区切り */
+/* カメラ位置・中心点・レンズは、右メニューをスクロールしても上に貼り付いたまま（2026-09-18 ユーザー指定）。
+   右メニュー（#panel）がスクロール容器。上の余白 14px ぶんだけ上へ出して、容器の上端にぴったり付ける */
+#panel #camArea { position: sticky; top: -14px; z-index: 5; margin: -14px -16px 0; padding: 14px 16px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 6px 12px -8px rgba(0,0,0,.6); }
+#panel hr.sep { display: none; }   /* 区切り線の役目は、貼り付け領域の下線に移した */
+#panel #camArea + hr.sep + .cols { margin-top: 14px; }   /* 貼り付け領域と下の箱の間（区切り線の下の余白ぶん） */
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
@@ -146,8 +151,9 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #screenBar .screen .name { width: 100%; background: none; border: 1px solid var(--line); color: inherit;
   border-radius: 4px; padding: 1px 4px; font: inherit; }
-#screenBar .screen .sld { display: grid; grid-template-columns: 4em minmax(0, 1fr) auto; align-items: center; gap: 0 6px; }   /* 右端は数値入力欄＋上下矢印（2026-09-18 ユーザー指定。以前は値の文字だけで 2.8em） */
-#screenBar .screen .sld > span:first-child { color: var(--muted); white-space: nowrap; }
+#screenBar .screen .sld { display: grid; grid-template-columns: 5.4em minmax(0, 1fr) auto; align-items: center; gap: 0 6px; }   /* 右端は数値入力欄＋上下矢印（2026-09-18 ユーザー指定。以前は値の文字だけで 2.8em）。左は「☐繰返間隔」（チェック＋4 文字）が収まる幅 */
+#screenBar .screen .sld > span:first-child { color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+#screenBar .screen .sld > span:first-child input[type=checkbox] { margin: 0; }
 #screenBar .screen .sld input[type=range] { width: 100%; min-width: 0; margin: 0; }
 /* 数値入力欄：見た目は右メニュー（.ctl input.num）と同じ。カードは行が多いので、行を高くしないよう少し小ぶりにする */
 #screenBar .screen .sld input.num { width: 40px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 14px; text-align: right;
@@ -159,14 +165,23 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
 #screenBar .numspin button:last-child { border-radius: 0 0 4px 0; }
 #screenBar .numspin button:hover { color: var(--accent); border-color: var(--accent); }
-#screenBar .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
-#screenBar .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
-#screenBar .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
-#screenBar .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
-#screenBar .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
+/* 上段：サムネイル（残りの幅）＋右の縦の列「表示・反転・削除」（2026-09-18 ユーザー指定。以前はカードの最下行に横並び） */
+#screenBar .screen .top { display: flex; align-items: stretch; gap: 6px; }
+#screenBar .screen .top .thumb { flex: 1 1 0; min-width: 0; }
+#screenBar .screen .side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 2px; white-space: nowrap; }
+#screenBar .screen .side label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
+#screenBar .screen .side > button { margin-top: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }   /* 削除は列の一番下 */
+#screenBar .screen .side > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+/* 抜く色の色玉：「抜く強さ」の行のラベルの場所に置く（2026-09-18 ユーザー指定。以前は最下行にあった） */
+#screenBar .screen .sld input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
 /* スカイドーム（遠景。3 層固定）はスクリーンと見分けが付くよう枠の色を変える */
 #screenBar .screen.dome { border-color: rgba(226, 179, 72, .45); }
 #screenBar .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
+/* スクリーンのカードの並べ替え（サムネイルをつまむ。2026-09-18 ユーザー指定）：引きずり中は薄く、入る位置にカードの間の縦線 */
+#screenRows .screen .thumb { cursor: grab; }
+#screenRows .screen.dragging { opacity: .4; }
+#screenRows .screen.dropBefore { box-shadow: -6px 0 0 -1px var(--accent); }   /* 左の隙間（8px）に線 */
+#screenRows .screen.dropAfter { box-shadow: 6px 0 0 -1px var(--accent); }
 #screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }
 #screenBar .addCard:hover { border-color: var(--accent); color: var(--accent); }
@@ -285,6 +300,17 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 #topbar .preset input { width: 160px; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
 #topbar .preset button { padding: 4px 8px; font-size: 12px; }
+/* 「設定」：プリセットの左のボタンで、クレジット・テンポ・拍子のポップアップを開閉（2026-09-18 ユーザー指定）。ボタンの真下・右揃えに出す */
+#topbar .settingsWrap { position: relative; margin-right: 10px; }
+#topbar #settingsBtn { padding: 4px 10px; font-size: 12px; }
+#topbar #settingsBtn.on { border-color: var(--accent); color: var(--accent); }
+#settingsPop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 14px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.5); }
+#settingsPop[hidden] { display: none; }   /* display: flex が hidden 属性に勝たないように */
+#settingsPop > .box { margin-top: 0; border-top: none; padding-top: 0; }
+#settingsPop > .box.credits2 { width: 402px; }   /* クレジットは 2 列（左＝文字、右＝大きさ・色・濃度。上段にあった時と同じ） */
+#settingsPop > .box:not(.credits2) { width: 196px; }
+#settingsPop .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* 保存＝水色、削除＝赤（2026-09-14 ユーザー指定） */
 #topbar #presetSave { background: #4fc3f7; border-color: #4fc3f7; color: #0b1020; font-weight: 600; }
 #topbar #presetSave:hover { background: #7ad2fa; border-color: #7ad2fa; color: #0b1020; }

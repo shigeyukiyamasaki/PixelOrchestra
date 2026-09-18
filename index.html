@@ -112,6 +112,37 @@
     <button id="stopBtn" title="停止して曲頭に戻る">■ 停止</button>
     <span id="timeLabel" class="time" title="現在位置 / 曲の長さ、♩= 現在のテンポ">0:00 / 0:00</span>
     <input type="range" id="seek" min="0" max="1000" value="0" class="seek" title="再生位置">
+    <!-- 設定：クレジット・テンポ・拍子は常時表示せず、このボタンで開くポップアップに（2026-09-18 ユーザー指定。id は不変） -->
+    <div class="settingsWrap">
+      <button id="settingsBtn" title="クレジット・テンポ・拍子の設定を開く／閉じる（Escape・外を押しても閉じる）" aria-expanded="false" aria-controls="settingsPop">設定</button>
+      <div id="settingsPop" hidden>
+  <div class="box credits2">
+  <h3 class="hd">クレジット</h3>
+  <label class="chk" title="プレビューの左下にクレジットを重ねて表示する"><input type="checkbox" id="showCredits"> 表示する</label>
+  <div class="twocol">
+    <div>
+      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><input type="text" id="credit1" list="creditHist1" placeholder="（例）天地創造" autocomplete="off"></label>
+      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><input type="text" id="credit2" list="creditHist2" placeholder="（例）ソレイユ" autocomplete="off"></label>
+      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><input type="text" id="credit3" list="creditHist3" placeholder="（例）光田康典" autocomplete="off"></label>
+      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><input type="text" id="credit4" list="creditHist4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"></label>
+    </div>
+    <div>
+      <label class="ctl" title="全体の大きさの倍率"><span>大きさ <b data-value-for="creditScale">1</b></span><input type="range" id="creditScale" min="0.4" max="2.5" step="0.05" value="1"></label>
+      <label class="ctl row" title="文字の色"><span>色</span><input type="color" id="creditColor" value="#ffffff"></label>
+      <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="creditOpacity">0.8</b></span><input type="range" id="creditOpacity" min="0.1" max="1" step="0.05" value="0.8"></label>
+    </div>
+  </div>
+  <datalist id="creditHist1"></datalist><datalist id="creditHist2"></datalist>
+  <datalist id="creditHist3"></datalist><datalist id="creditHist4"></datalist>
+  </div>
+  <div class="box">
+  <h3 class="hd">テンポ・拍子</h3>
+  <label class="chk" title="プレビューの左上にテンポ（♩=）と拍子を重ねて表示する"><input type="checkbox" id="showTempo"> 表示する</label>
+  <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
+  <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
+  </div>
+      </div>
+    </div>
     <!-- プリセット：いま保存している設定を丸ごと名前を付けて覚える（2026-09-14 ユーザー指定） -->
     <div class="preset" title="いまの設定（スライダー・スクリーン・スカイドーム・楽器の割当など保存対象の全部）に名前を付けて覚える">
       <select id="presetList" title="選ぶとその設定に切り替わる"><option value="">プリセット…</option></select>
@@ -205,6 +236,23 @@
         <!-- 空の色は背景の「上の色」（上下反転中は「下の色」）、地面の色は床の絵の平均色を自動で使う（2026-09-16 ユーザー指定） -->
       </fieldset>
     </div>
+      <div class="box">
+    <h3 class="hd">床</h3>
+    <!-- 上の色（bgTop）は太陽光の詳細「空の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
+    <!-- 下の色（bgBottom）も太陽光の詳細「地平線の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
+    <label class="ctl row" title="床とひな壇の天面の絵"><span>床</span>
+    <select id="floorStyle"><option value="plank">板目</option><option value="grass">草原</option><option value="grassDark">草原（深緑）</option></select>
+    </label>
+          <label class="chk2" title="床（草・板）からの照り返し（下から当たる光）。オフで床からの光が無くなり、下面は影になる"><input type="checkbox" id="groundBounceOn" checked> 床の照り返し</label>
+          <label class="chk2 sub" title="照り返しに床の色を乗せる。オフで同じ明るさの無彩色（緑や茶が下面に乗らない）"><input type="checkbox" id="groundBounce"> 照り返しに色を乗せる</label>
+    </div>
+    
+
+
+
+      </div>
+      <div class="col">
+    <!-- 天気・光源・影：左列からタイトルの上へ（2026-09-18 ユーザー指定。id は不変） -->
     <!-- 天気（雨・雪・雷）：一番奥のひな壇の上に立つ 3 枚の面に降らせる（下段のスクリーンと同じ仕組み）。
          スカイドームの欄のカードだったのを、右メニューの箱として独立（2026-09-17 ユーザー指定。id・name は不変） -->
     <div class="box" id="weatherBox" title="一番奥のひな壇の上に、雨や雪を降らせる（下段のスクリーンと同じ弧・同じ幅。屋外のときだけ出る）。面は奥・中・手前の 3 枚で、キャラクターの前にも後ろにも降る。奥の層ほど細かく・遅く・薄い。空の暗さは上の「空・時刻」の雲量で決める。粒は雲と同じく、再生中だけ動く">
@@ -238,23 +286,7 @@
         <label class="ctl" title="円錐の輪郭のぼけ。0 で境界がくっきり、1 で中心から外へなだらかに消える"><span>ぼけ <b data-value-for="spotBlur">0.5</b></span><input type="range" id="spotBlur" min="0" max="1" step="0.05" value="0.5"></label>
       </div>
     </div>
-      <div class="box">
-    <h3 class="hd">床</h3>
-    <!-- 上の色（bgTop）は太陽光の詳細「空の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
-    <!-- 下の色（bgBottom）も太陽光の詳細「地平線の色」へ移した（2026-09-16 ユーザー指定）。時刻に追従する -->
-    <label class="ctl row" title="床とひな壇の天面の絵"><span>床</span>
-    <select id="floorStyle"><option value="plank">板目</option><option value="grass">草原</option><option value="grassDark">草原（深緑）</option></select>
-    </label>
-          <label class="chk2" title="床（草・板）からの照り返し（下から当たる光）。オフで床からの光が無くなり、下面は影になる"><input type="checkbox" id="groundBounceOn" checked> 床の照り返し</label>
-          <label class="chk2 sub" title="照り返しに床の色を乗せる。オフで同じ明るさの無彩色（緑や茶が下面に乗らない）"><input type="checkbox" id="groundBounce"> 照り返しに色を乗せる</label>
-    </div>
-    
-
-
-
-      </div>
-      <div class="col">
-    <!-- タイトル・クレジット・テンポ：上段からスペクトラムの上へ（2026-09-17 ユーザー指定。id は不変） -->
+    <!-- タイトル：上段からスペクトラムの上へ（2026-09-17 ユーザー指定。id は不変）。クレジット・テンポ・拍子は上のバーの「設定」ポップアップへ（2026-09-18） -->
   <div class="box">
   <h3 class="hd">タイトル</h3>
   <label class="chk" title="舞台に置くタイトルのロゴを表示する"><input type="checkbox" id="showTitle" checked> 表示する</label>
@@ -264,31 +296,6 @@
   <label class="chk" title="ひな壇と同じ円弧に沿ってロゴを曲げる。Z を動かすと、その位置での曲がり方になる"><input type="checkbox" id="titleBend"> ひな壇の曲率で曲げる</label>
   <label class="ctl" title="大きさの倍率"><span>大きさ <b data-value-for="titleScale">1</b></span><input type="range" id="titleScale" min="0.2" max="4" step="0.05" value="1"></label>
   <label class="ctl" title="不透明度。1 で不透明、下げるほど後ろが透ける"><span>濃度 <b data-value-for="titleOpacity">1</b></span><input type="range" id="titleOpacity" min="0.05" max="1" step="0.05" value="1"></label>
-  </div>
-  <div class="box credits2">
-  <h3 class="hd">クレジット</h3>
-  <label class="chk" title="プレビューの左下にクレジットを重ねて表示する"><input type="checkbox" id="showCredits"> 表示する</label>
-  <div class="twocol">
-    <div>
-      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><input type="text" id="credit1" list="creditHist1" placeholder="（例）天地創造" autocomplete="off"></label>
-      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><input type="text" id="credit2" list="creditHist2" placeholder="（例）ソレイユ" autocomplete="off"></label>
-      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><input type="text" id="credit3" list="creditHist3" placeholder="（例）光田康典" autocomplete="off"></label>
-      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><input type="text" id="credit4" list="creditHist4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"></label>
-    </div>
-    <div>
-      <label class="ctl" title="全体の大きさの倍率"><span>大きさ <b data-value-for="creditScale">1</b></span><input type="range" id="creditScale" min="0.4" max="2.5" step="0.05" value="1"></label>
-      <label class="ctl row" title="文字の色"><span>色</span><input type="color" id="creditColor" value="#ffffff"></label>
-      <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="creditOpacity">0.8</b></span><input type="range" id="creditOpacity" min="0.1" max="1" step="0.05" value="0.8"></label>
-    </div>
-  </div>
-  <datalist id="creditHist1"></datalist><datalist id="creditHist2"></datalist>
-  <datalist id="creditHist3"></datalist><datalist id="creditHist4"></datalist>
-  </div>
-  <div class="box">
-  <h3 class="hd">テンポ・拍子</h3>
-  <label class="chk" title="プレビューの左上にテンポ（♩=）と拍子を重ねて表示する"><input type="checkbox" id="showTempo"> 表示する</label>
-  <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
-  <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
   </div>
     <div class="box">
       <h3 class="hd">スペクトラム</h3>

@@ -412,22 +412,46 @@ function toMediaUrl(src) {
 }
 
 // スクリーン 1 枚ぶんのカードを作る（縦並び。追加すると右へ増えていく。2026-09-13 ユーザー指定）。
+// カードの並べ替え（2026-09-18）：引きずり中のカードの番号。dragover の間は dataTransfer が読めない（ブラウザの保護）ので変数に持つ
+let screenDragFrom = null;
+const dragIndex = () => screenDragFrom;
+const clearDropMarks = () => { for (const el of document.querySelectorAll('#screenRows .dropBefore, #screenRows .dropAfter')) el.classList.remove('dropBefore', 'dropAfter'); };
+
+/**
+ * 「抜く強さ」の行のラベル文字の場所に、抜く色（クロマキー）の色玉を置く（2026-09-18 ユーザー指定。スクリーン・スカイドーム共通）。
+ * lab: slider() が作った行。obj: 設定（obj.key に色）。行の外枠は <label> から <div> に替える
+ * （<label> のままだと、行の空いた所を押した時に色玉が開いてしまう）
+ */
+function putKeyColor(lab, obj, changed, title) {
+  const key = document.createElement('input');
+  key.type = 'color'; key.title = title;
+  key.value = obj.key || '#00ff00';
+  key.oninput = () => { obj.key = key.value; changed(); };
+  const cell = lab.querySelector('span'); cell.textContent = ''; cell.appendChild(key);
+  const row = document.createElement('div'); row.className = lab.className; row.title = lab.title;
+  row.append(...lab.childNodes);
+  lab.replaceWith(row);
+}
+
 // 値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen' });
   const put = (parent, html) => { const d = document.createElement('div'); d.innerHTML = html; return parent.appendChild(d.firstElementChild); };
   const changed = () => { setScreens(screens); saveScreens(); };
 
-  // 上：サムネイル（押すと素材のカラム表示が開く）
-  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  // 上：サムネイル（押すと素材のカラム表示が開く）。右に「表示・反転・削除」を縦に並べる（2026-09-18 ユーザー指定）
+  const top = put(box, '<div class="top"></div>');
+  const thumb = top.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  const side = put(top, '<div class="side"></div>');
   const drawThumb = () => {
     thumb.textContent = '';
     thumb.appendChild(thumbFor(sc));
+    thumb.querySelector('img, video')?.setAttribute('draggable', 'false');   // 引きずりは画像単体でなくサムネイル（ボタン）で始める
     const cap = document.createElement('span');
     cap.className = 'cap';
     cap.textContent = sc.src ? (srcParts(sc)?.name || sc.srcRaw || '') : '素材を選ぶ';
     thumb.appendChild(cap);
-    thumb.title = sc.srcRaw || sc.src || '押すとフォルダを辿って素材を選べる（透過 PNG か、緑背景の mp4）';
+    thumb.title = (sc.srcRaw || sc.src || '押すとフォルダを辿って素材を選べる（透過 PNG か、緑背景の mp4）') + '\nつまんで左右に動かすとカードを並べ替えられる';
   };
   drawThumb();
   thumb.onclick = () => openPicker(thumb, sc, (dir, name) => {
@@ -435,6 +459,33 @@ function screenRow(sc, i) {
     drawThumb();
     changed();
     setTimeout(renderScreens, 600);   // 素材の大きさを説明文に出すため（読み込み後）
+  });
+  // カードの並べ替え：サムネイルをつまんで、ほかのカードの上で離す（2026-09-18 ユーザー指定）。
+  // 押すだけなら上の onclick（素材選び）。数ピクセル動かした時だけ引きずりになる。
+  // 並び順はメニューの中の順番だけで、舞台での前後（「奥行き」）は変えない
+  thumb.draggable = true;
+  thumb.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed = 'move';   // Firefox は setData が無いと引きずれない
+    screenDragFrom = i; box.classList.add('dragging');
+  });
+  thumb.addEventListener('dragend', () => { screenDragFrom = null; box.classList.remove('dragging'); clearDropMarks(); });
+  box.addEventListener('dragover', (e) => {   // 入る位置（前か後ろか）を線で示す
+    if (dragIndex() === null) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    const r = box.getBoundingClientRect(), before = e.clientX < r.left + r.width / 2;
+    clearDropMarks(); box.classList.add(before ? 'dropBefore' : 'dropAfter');
+  });
+  box.addEventListener('dragleave', (e) => { if (!box.contains(e.relatedTarget)) clearDropMarks(); });
+  box.addEventListener('drop', (e) => {
+    const from = dragIndex(); clearDropMarks();
+    if (from === null) return;
+    e.preventDefault(); screenDragFrom = null;
+    const r = box.getBoundingClientRect(), before = e.clientX < r.left + r.width / 2;
+    let to = i + (before ? 0 : 1);
+    if (from < to) to--;                      // 抜いたぶん、後ろの番号が 1 つ詰まる
+    if (to === from) return;
+    const [moved] = screens.splice(from, 1); screens.splice(to, 0, moved);
+    renderScreens(); changed();
   });
 
   const name = put(box, '<input type="text" class="name" title="名前（覚え書き。表示には影響しない）">');
@@ -452,6 +503,7 @@ function screenRow(sc, i) {
     // 値の表示は数値入力欄＋上下矢印（他の欄と同じ。2026-09-18 ユーザー指定）。桁数は項目ごと
     const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
     el.oninput = () => { sc[key] = +el.value; box2.show(); changed(); };
+    return lab;
   };
   const px = screenInfo(i);
   slider('奥行き', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
@@ -460,25 +512,28 @@ function screenRow(sc, i) {
   slider('横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
   slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
-  slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る');
   // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
   slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う');
-  slider('間隔', 'gap', 1, 6, 0.05, 2, '「繰返」した時の絵と絵の間隔。1 で隙間なし、2 で絵 1 枚ぶんの隙間が空く。絵の大きさは変わらない');
+  // 繰返間隔：行の頭に「繰返」のチェック（以前は最下行にあった。2026-09-18 ユーザー指定）。文字を押してもチェックが切り替わる
+  {
+    const row = slider('繰返間隔', 'gap', 1, 6, 0.05, 2, '繰返：素材を横に繰り返して弧いっぱいに敷く（雲など）。1 枚の幅は「大きさ」で決まるので絵は歪まない\n間隔：繰り返した時の絵と絵の間隔。1 で隙間なし、2 で絵 1 枚ぶんの隙間が空く。絵の大きさは変わらない');
+    const loop = document.createElement('input'); loop.type = 'checkbox';
+    loop.checked = !!sc.loop;
+    loop.onchange = () => { sc.loop = loop.checked; changed(); };
+    row.querySelector('span').prepend(loop);
+  }
+  // 抜く強さ：一番下。ラベル文字の代わりに、抜く色の色玉を置く（2026-09-18 ユーザー指定）
+  putKeyColor(slider('', 'thr', 0, 1, 0.01, 2, '抜く強さ：キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る'),
+    sc, changed, '抜く色（緑背景の色）。透過 PNG なら抜く強さ 0 のままでよい');
 
-  // 下：キー色・表示・削除
-  const foot = put(box, '<div class="foot"></div>');
-  const key = put(foot, '<label title="抜く色（緑背景の色）。透過 PNG なら「抜く強さ」0 のままでよい"><input type="color"></label>').querySelector('input');
-  key.value = sc.key || '#00ff00';
-  key.oninput = () => { sc.key = key.value; changed(); };
+  // サムネイルの右の列：表示・反転・削除
+  const foot = side;
   const show = put(foot, '<label title="このスクリーンを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = sc.show !== false;
   show.onchange = () => { sc.show = show.checked; changed(); };
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
   flip.checked = !!sc.flip;
   flip.onchange = () => { sc.flip = flip.checked; changed(); };
-  const loop = put(foot, '<label title="素材を横に繰り返して弧いっぱいに敷く（雲など）。1 枚の幅は「大きさ」で決まるので絵は歪まない"><input type="checkbox"><span>繰返</span></label>').querySelector('input');
-  loop.checked = !!sc.loop;
-  loop.onchange = () => { sc.loop = loop.checked; changed(); };
   const del = put(foot, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
   return box;
@@ -489,7 +544,10 @@ function domeRow(d, i) {
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
   const changed = () => { setDomes(domes); saveDomes(); };
 
-  const thumb = box.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  // サムネイルの右に「表示・反転」を縦に並べる（スクリーンと同じ。2026-09-18 ユーザー指定）
+  const top = put(box, '<div class="top"></div>');
+  const thumb = top.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  const side = put(top, '<div class="side"></div>');
   const drawThumb = () => {
     thumb.textContent = '';
     thumb.appendChild(thumbFor(d));
@@ -516,26 +574,28 @@ function domeRow(d, i) {
     el.value = d[key] ?? DOME_BASE[key] ?? +min;
     const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });   // 数値入力欄＋上下矢印（2026-09-18 ユーザー指定）
     el.oninput = () => { d[key] = +el.value; box2.show(); changed(); };
+    return lab;
   };
   slider('半径', 'r', 10, 50, 0.5, 1, '舞台の中心からの距離。大きいほど遠くに見える');
   slider('高さ', 'y', -60, 40, 0.5, 1, 'ドームの中心の高さ。下げると地平線が下がる');
   slider('範囲', 'span', 40, 360, 5, 0, '横に何度ぶん覆うか。180 で半円（客席から見える側だけ）');
   slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
-  slider('流れる速度', 'speed', -30, 30, 0.5, 1, '横に流れる速さ [度/秒]。プラスで右から左へ');
   slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '範囲の両端で絵をなだらかに消す幅（範囲に対する割合）。0 でくっきり切れる');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度');
-  slider('抜く強さ', 'thr', 0, 1, 0.01, 2, 'キー色にどれだけ近い画素まで抜くか。0 で抜かない');
+  slider('流れる速度', 'speed', -30, 30, 0.5, 1, '横に流れる速さ [度/秒]。プラスで右から左へ');   // 色玉の行のすぐ上に（2026-09-18 ユーザー指定）
+  // 抜く強さ：ラベル文字の代わりに、抜く色の色玉を置く（2026-09-18 ユーザー指定）
+  putKeyColor(slider('', 'thr', 0, 1, 0.01, 2, '抜く強さ：キー色にどれだけ近い画素まで抜くか。0 で抜かない'), d, changed, '抜く色（緑背景の色）');
 
-  const foot = put(box, '<div class="foot"></div>');
-  const key = put(foot, '<label title="抜く色（緑背景の色）"><input type="color"></label>').querySelector('input');
-  key.value = d.key || '#00ff00';
-  key.oninput = () => { d.key = key.value; changed(); };
+  const foot = side;   // サムネイルの右の列
   const show = put(foot, '<label title="このドームを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = d.show !== false;
   show.onchange = () => { d.show = show.checked; changed(); };
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
   flip.checked = !!d.flip;
   flip.onchange = () => { d.flip = flip.checked; changed(); };
+  // 削除：カードは残し、画像（素材）だけを外す（スクリーンの「削除」はカードごと消すが、ドームは 3 層固定なので。2026-09-18 ユーザー指定）
+  const del = put(foot, '<button title="画像を外す（カードと設定は残る。素材選びの「素材を外す」と同じ）">削除</button>');
+  del.onclick = () => { d.src = ''; d.srcRaw = ''; drawThumb(); changed(); };
   return box;
 }
 
@@ -770,7 +830,7 @@ for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementB
   refreshValueLabels();
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
-const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id]';
+const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
 // 値表示の書式（2026-09-16 ユーザー指定：時刻は時計表記）。toText: 数値 → 表示、fromText: 入力 → 数値（NaN なら不正）
 const VALUE_FMT = {
   sunHour: {
@@ -1281,6 +1341,18 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
   hd.addEventListener('keyup', (e) => { if (e.key === ' ') e.stopPropagation(); });
 }
 
+// 「設定」ポップアップ（クレジット・テンポ・拍子。2026-09-18 ユーザー指定）：上のバーのボタンで開閉。外を押す・Escape でも閉じる。
+// 中の入力は #topbar 配下なので、設定の自動収集・保存は今までどおり効く
+{
+  const btn = $('settingsBtn'), pop = $('settingsPop');
+  const setOpen = (open) => { pop.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open); };
+  btn.addEventListener('click', () => setOpen(pop.hidden));
+  addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !btn.contains(e.target)) setOpen(false); }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) setOpen(false); });
+  // 中で文字を打っている間、Space 等を再生ショートカットに取られない。伝播を止めるので Escape はここで先に扱う
+  pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); e.stopPropagation(); });
+}
+
 $('resetCam').addEventListener('click', () => {
   camera.position.set(0, 9, 10.5); controls.target.set(0, 3, -12); controls.update(); // 既定のカメラ（2026-09-13 ユーザー指定）
   syncCameraSliders();
@@ -1485,7 +1557,7 @@ async function loadFromUrl() {
 
 makeValueInputs();
 // 「表示する」のチェックは見出しの右端へ移す（id はそのままなので設定の保存・復元はこれまでどおり）
-for (const d of document.querySelectorAll('#panel .box, #camBar .box, #viewArea .box')) {
+for (const d of document.querySelectorAll('#panel .box, #camBar .box, #viewArea .box, #settingsPop .box')) {
   const hd = d.querySelector(':scope > .hd');
   // その箱の先頭にあるチェック（「表示する」「自動で切り替える」など）を見出しの右端へ
   const chk = d.querySelector(':scope > label.chk');
