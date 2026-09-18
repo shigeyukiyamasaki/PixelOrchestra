@@ -15,6 +15,17 @@ import { Spectrum } from './spectrum.js';
 import { PianoRoll } from './pianoRoll.js';
 import { AutoCamera } from './autoCam.js';
 
+// ---- 視聴モード（公開ページ。index.html?view=プロジェクト名。2026-09-18 ユーザー指定）----
+// 操作パネルを隠して映像だけを出し、projects/<名前>/ を読んで再生する。romashige.com へ公開した時の見せ方。
+// 設定はその場限りの保存領域に入れる：手元で ?view= を開いても、編集画面の localStorage と settings.json を書き換えないように
+const VIEW_NAME = new URLSearchParams(location.search).get('view') || '';
+const LS = VIEW_NAME ? memoryStorage() : window.localStorage;
+function memoryStorage() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } };
+}
+if (VIEW_NAME) { document.body.classList.add('viewer'); document.title = `${VIEW_NAME} — Pixel Orchestra`; }
+
 const SETTINGS_KEY = 'pixelOrchestra.settings.v1';
 const FAMILY_KEY = 'pixelOrchestra.families.v1';
 // MIDIOrchestra と同じキー・同じ形式 { trackName: {pitchMin, pitchMax} }。同一オリジン（romashige.com）に置けば両ツールで共用される
@@ -32,11 +43,12 @@ const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上�
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
 const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY];
-const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY];   // プリセットそのものも共有する（中身には入れない）
+const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY];   // プリセットそのものも共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
 async function pullSettings() {
+  if (VIEW_NAME) return false;                                   // 視聴モードは共有の設定を読まない（プロジェクトの設定で再生する）
   try {
     const res = await fetch(`${SYNC_URL}?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return false;                                   // まだ置いていない → localStorage のまま
@@ -44,7 +56,7 @@ async function pullSettings() {
     let n = 0;
     for (const k of SYNC_KEYS) {
       if (all[k] == null) continue;
-      localStorage.setItem(k, JSON.stringify(all[k]));           // 以降の読み込みは全部 localStorage 経由なので、ここで上書きするだけでよい
+      LS.setItem(k, JSON.stringify(all[k]));           // 以降の読み込みは全部 localStorage 経由なので、ここで上書きするだけでよい
       n++;
     }
     if (n) console.log(`[設定共有] settings.json から ${n} 件読み込みました`);
@@ -53,11 +65,12 @@ async function pullSettings() {
 }
 
 function pushSettings() {                                        // 変更のたびに呼ぶ（まとめ書き）
+  if (VIEW_NAME) return;                                         // 視聴モードは書き出さない（編集画面の設定を上書きしないため）
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     const all = {};
     for (const k of SYNC_KEYS) {                                   // 未設定のキーは書かない（ファイルを読みやすく保つ）
-      const raw = localStorage.getItem(k);
+      const raw = LS.getItem(k);
       if (raw == null) continue;
       try { all[k] = JSON.parse(raw); } catch { /* 壊れていたら送らない */ }
     }
@@ -171,12 +184,14 @@ function play() {
     syncAudio(clock.t);
   }
   $('playBtn').textContent = '❚❚ 一時停止';
+  if (VIEW_NAME) $('viewerCover').hidden = true;   // 視聴モード：再生中は覆いを外す
 }
 function pause() {
   clock.t = currentTime();
   clock.playing = false;
   if (audioLoaded) audio.pause();
   $('playBtn').textContent = '▶ 再生';
+  if (VIEW_NAME) $('viewerCover').hidden = false;  // 視聴モード：止めたら覆い（▶）を戻す
 }
 function seek(t) {
   const wasPlaying = clock.playing;
@@ -219,14 +234,14 @@ const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
 // tile（繰り返し幅）は廃止し、1 枚の幅は「大きさ」で決める形にした（2026-09-13）。古い保存データを移す
 const withDefaults = (o) => { const v = { ...SCREEN_BASE, ...o }; if (o && o.tile > 0) v.loop = true; delete v.tile; return v; };
 let screens = (() => {
-  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
+  try { const a = JSON.parse(LS.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a) && a.length) return a.map(withDefaults); } catch (e) { console.warn('スクリーン設定の読込失敗:', e); }
   return SCREEN_DEFAULT.map(withDefaults);
 })();
 // スカイドーム（遠景。3 層固定。追加も削除もしない）
 const DOME_BASE = { name: '', r: 40, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
                     src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 };
 let domes = (() => {
-  try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
+  try { const a = JSON.parse(LS.getItem(DOMES_KEY) || 'null');
     if (Array.isArray(a) && a.length === 3) {
       return a.map((o) => { const v = { ...DOME_BASE, ...o }; v.r = Math.min(50, Math.max(10, v.r)); return v; });
     } } catch (e) { console.warn('スカイドーム設定の読込失敗:', e); }
@@ -236,14 +251,14 @@ let domeSaveTimer = null;
 function saveDomes() {
   clearTimeout(domeSaveTimer);
   domeSaveTimer = setTimeout(() => {
-    try { localStorage.setItem(DOMES_KEY, JSON.stringify(domes)); pushSettings(); } catch (e) { console.warn('スカイドーム設定の保存失敗:', e); }
+    try { LS.setItem(DOMES_KEY, JSON.stringify(domes)); pushSettings(); } catch (e) { console.warn('スカイドーム設定の保存失敗:', e); }
   }, 400);
 }
 let screenSaveTimer = null;
 function saveScreens() {
   clearTimeout(screenSaveTimer);
   screenSaveTimer = setTimeout(() => {
-    try { localStorage.setItem(SCREENS_KEY, JSON.stringify(screens)); pushSettings(); } catch (e) { console.warn('スクリーン設定の保存失敗:', e); }
+    try { LS.setItem(SCREENS_KEY, JSON.stringify(screens)); pushSettings(); } catch (e) { console.warn('スクリーン設定の保存失敗:', e); }
   }, 400);
 }
 // 素材ルート（開発サーバーが /media/ で公開しているフォルダ）。絶対パスを URL に直すのに使う
@@ -260,15 +275,15 @@ function loadMediaList(refresh = false) {
 }
 loadMediaList();
 // 一覧（フォルダ: [ファイル]）を木にする。カラム表示で辿るため
-function mediaTree() {
+function mediaTree(list = mediaList) {   // list：画像・動画（既定）か、音声（audioList）
   const root = { dirs: new Map(), files: [] };
-  for (const dir of Object.keys(mediaList).sort()) {
+  for (const dir of Object.keys(list).sort()) {
     let node = root;
     if (dir) for (const seg of dir.split('/')) {
       if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [] });
       node = node.dirs.get(seg);
     }
-    node.files = mediaList[dir];
+    node.files = list[dir];
   }
   return root;
 }
@@ -283,8 +298,9 @@ addEventListener('pointerdown', (e) => { if (picker && !picker.el.contains(e.tar
 /**
  * 素材を選ぶカラム表示を開く。左のカラムでフォルダを選ぶと右に次のカラムが出る（Finder と同じ）。
  * ファイルを選んだ時点で onPick(dir, name) を呼んで閉じる。2026-09-13 ユーザー指定
+ * list：出す一覧（既定は画像・動画。上のバーの音声は audioList を渡す。2026-09-18）
  */
-function openPicker(anchor, sc, onPick) {
+function openPicker(anchor, sc, onPick, list = mediaList) {
   closePicker();
   const el = document.createElement('div');
   el.className = 'mediaPicker';
@@ -310,7 +326,7 @@ function openPicker(anchor, sc, onPick) {
   foot.appendChild(cls);
   el.appendChild(foot);
 
-  const root = mediaTree();
+  const root = mediaTree(list);
   const parts = srcParts(sc);
   let path = parts ? parts.dir.split('/').filter(Boolean) : [];
   const nodeAt = (segs) => segs.reduce((n, sg) => (n && n.dirs.get(sg)) || null, root);
@@ -761,11 +777,11 @@ function applyCredits(s) {
 // 辞書は手で作らず、入力するたびに自動で溜まる
 const CREDIT_HIST_MAX = 30;
 let credits = (() => {
-  try { const o = JSON.parse(localStorage.getItem(CREDITS_KEY) || 'null'); if (o && o.hist) return o; } catch (e) { console.warn('クレジット履歴の読込失敗:', e); }
+  try { const o = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (o && o.hist) return o; } catch (e) { console.warn('クレジット履歴の読込失敗:', e); }
   return { hist: { 1: [], 2: [], 3: [], 4: [] }, byGame: {} };
 })();
 function saveCredits() {
-  try { localStorage.setItem(CREDITS_KEY, JSON.stringify(credits)); pushSettings(); } catch (e) { console.warn('クレジット履歴の保存失敗:', e); }
+  try { LS.setItem(CREDITS_KEY, JSON.stringify(credits)); pushSettings(); } catch (e) { console.warn('クレジット履歴の保存失敗:', e); }
 }
 function fillCreditList(n) {
   const dl = document.getElementById(`creditHist${n}`);
@@ -805,7 +821,7 @@ function setupCredits() {
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
-  .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset'));   // プリセットの一覧・名前欄は設定ではない
+  .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));   // プリセット・プロジェクトの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
 // 対象は右メニュー（ラジオがあるのは右メニューだけ。別の場所に置く時はここに足す）
 const RADIO_AREA = '#panel';
@@ -816,11 +832,11 @@ function saveSettings() {
   const data = {};
   for (const el of SETTING_IDS()) data[el.id] = el.type === 'checkbox' ? el.checked : el.value;
   for (const name of RADIO_NAMES()) data[name] = radioValue(name);
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); pushSettings(); } catch (e) { console.warn('設定保存失敗:', e); }
+  try { LS.setItem(SETTINGS_KEY, JSON.stringify(data)); pushSettings(); } catch (e) { console.warn('設定保存失敗:', e); }
 }
 function loadSettings() {
   let data = {};
-  try { data = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) { console.warn('設定読込失敗（デフォルトで続行）:', e); }
+  try { data = JSON.parse(LS.getItem(SETTINGS_KEY) || '{}'); } catch (e) { console.warn('設定読込失敗（デフォルトで続行）:', e); }
   for (const el of SETTING_IDS()) {
     if (!(el.id in data)) continue;
     if (el.type === 'checkbox') el.checked = !!data[el.id]; else el.value = data[el.id];
@@ -982,46 +998,46 @@ function settings() {
 // トラック → 楽器の手動割当（MIDI ファイル名ごと。値は楽器名。旧形式のファミリー名も engine 側で受け付ける）
 function loadFamilyOverrides(name) {
   try {
-    const saved = JSON.parse(localStorage.getItem(FAMILY_KEY) || '{}')[name] || {};
+    const saved = JSON.parse(LS.getItem(FAMILY_KEY) || '{}')[name] || {};
     // 旧名 'violin'（1st/2nd に分ける前）の保存値は捨てて自動判定に戻す。残すと 2nd バイオリンまで 1st になる（2026-09-12）
     return Object.fromEntries(Object.entries(saved).filter(([, v]) => normalizeVariant(v) === v));
   } catch { return {}; }
 }
 function saveFamilyOverride(name, key, family) {
   let all = {};
-  try { all = JSON.parse(localStorage.getItem(FAMILY_KEY) || '{}'); } catch { all = {}; }
+  try { all = JSON.parse(LS.getItem(FAMILY_KEY) || '{}'); } catch { all = {}; }
   (all[name] ||= {})[key] = family;
-  try { localStorage.setItem(FAMILY_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('割当保存失敗:', e); }
+  try { LS.setItem(FAMILY_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('割当保存失敗:', e); }
 }
 
 // 音域フィルター（キースイッチ除外）：トラック名 → {pitchMin, pitchMax}
 function loadPitchFilters() {
-  try { return JSON.parse(localStorage.getItem(PITCH_FILTER_KEY) || '{}'); } catch { return {}; }
+  try { return JSON.parse(LS.getItem(PITCH_FILTER_KEY) || '{}'); } catch { return {}; }
 }
 function savePitchFilter(trackName, pitchMin, pitchMax) {
   const all = loadPitchFilters();
   if (pitchMin <= 0 && pitchMax >= 127) delete all[trackName]; else all[trackName] = { pitchMin, pitchMax };
-  try { localStorage.setItem(PITCH_FILTER_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('音域保存失敗:', e); }
+  try { LS.setItem(PITCH_FILTER_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('音域保存失敗:', e); }
 }
 
 // 強弱の情報源（velocity / CC1 / CC11）：トラック名 → source
 function loadDynSources() {
-  try { return JSON.parse(localStorage.getItem(DYN_SOURCE_KEY) || '{}'); } catch { return {}; }
+  try { return JSON.parse(LS.getItem(DYN_SOURCE_KEY) || '{}'); } catch { return {}; }
 }
 function saveDynSource(trackName, source) {
   const all = loadDynSources();
   if (source === 'auto') delete all[trackName]; else all[trackName] = source;
-  try { localStorage.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
+  try { LS.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
 }
 
 // トラック統合：トラック名 → 'auto' | 'none' | 統合先トラック名
 function loadMerges() {
-  try { return JSON.parse(localStorage.getItem(MERGE_KEY) || '{}'); } catch { return {}; }
+  try { return JSON.parse(LS.getItem(MERGE_KEY) || '{}'); } catch { return {}; }
 }
 function saveMerge(trackName, value) {
   const all = loadMerges();
   if (value === 'auto') delete all[trackName]; else all[trackName] = value;
-  try { localStorage.setItem(MERGE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('統合設定保存失敗:', e); }
+  try { LS.setItem(MERGE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('統合設定保存失敗:', e); }
 }
 
 // ---------- MIDI 読み込み ----------
@@ -1042,27 +1058,67 @@ async function pickFile(id, types) {
 const MIDI_TYPES = [{ description: 'MIDI ファイル', accept: { 'audio/midi': ['.mid', '.midi'] } }];
 const AUDIO_TYPES = [{ description: '音声ファイル', accept: { 'audio/*': ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'] } }];
 
+// ---- 読み込んでいる MIDI と音声の控え（プロジェクトに保存する。2026-09-18 ユーザー指定）----
+// MIDI は中身。音声は出どころに応じて：素材フォルダ（media/…）・URL・別のプロジェクトはサーバーがその場所からコピーし、
+// 「音声」ボタン（手元のファイル）で読んだものはブラウザが場所を教えないので、中身をサーバーへ送る
+let midiBytes = null;                // 今の MIDI の中身（Uint8Array）
+let audioSource = null;              // { kind: 'media' | 'url' | 'file' | 'project', src, raw, name }
+
+// MIDI の中身から読み込む（ファイル・URL・プリセットの 3 か所から使う）
+function loadMidiBytes(bytes, name, opts = {}) {
+  const midi = new Midi(bytes);
+  midiBytes = bytes; midiFileName = name;
+  setStatus(`${name}（${midi.tracks.filter((t) => t.notes.length).length} トラック / ${fmtTime(midi.duration)}）`);
+  buildScene(midi, opts);
+}
 async function loadMidiFile(file) {
   if (!file) return;
   try {
-    const buf = await file.arrayBuffer();
-    const midi = new Midi(buf);
-    midiFileName = file.name;
-    setStatus(`${file.name}（${midi.tracks.filter((t) => t.notes.length).length} トラック / ${fmtTime(midi.duration)}）`);
-    buildScene(midi);
+    loadMidiBytes(new Uint8Array(await file.arrayBuffer()), file.name);
   } catch (err) {
     console.error(err);
     setStatus(`✗ MIDI を読み込めませんでした（${err.message}）。標準 MIDI ファイル (.mid) を選んでください`);
   }
 }
+// 音声を読み込む。src：再生する URL（素材は media/…、手元のファイルは blob:…）
+function setAudioSrc(src, source) {
+  audioSource = source;
+  audio.src = src;
+  audio.addEventListener('loadedmetadata', () => { audioLoaded = true; $('audioName').textContent = source.name; }, { once: true });
+  audio.addEventListener('error', () => { audioLoaded = false; $('audioName').textContent = `✗ 読み込めませんでした（${source.name}。mp3/wav/m4a）`; }, { once: true });
+}
+function clearAudio(msg = '（なし）') {
+  audio.pause(); audio.removeAttribute('src'); audio.load();
+  audioLoaded = false; audioSource = null;
+  $('audioName').textContent = msg;
+}
 function loadAudioFile(file) {
   if (!file) return;
-  audio.src = URL.createObjectURL(file);
-  audio.addEventListener('loadedmetadata', () => { audioLoaded = true; $('audioName').textContent = file.name; }, { once: true });
-  audio.addEventListener('error', () => { audioLoaded = false; $('audioName').textContent = '✗ 再生できない形式（mp3/wav/m4a）'; }, { once: true });
+  setAudioSrc(URL.createObjectURL(file), { kind: 'file', name: file.name });
 }
 $('midiFile').addEventListener('change', (e) => loadMidiFile(e.target.files[0]));
 $('audioFile').addEventListener('change', (e) => loadAudioFile(e.target.files[0]));
+// 音声を素材フォルダから選ぶ（場所がプリセットに残る。2026-09-18）。一覧は開くたびに取り直す（サーバー側で 5 秒キャッシュ）
+let audioList = {};
+$('audioPick').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  try {
+    const r = await fetch('media-audio.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    audioList = (await r.json()) || {};
+  } catch (err) {
+    console.warn('音声の一覧を取得できませんでした:', err.message);
+    $('audioName').textContent = '✗ 音声の一覧を取れません（開発サーバー tools/serve.py を再起動してください）';
+    return;
+  }
+  const tmp = { src: audioSource?.kind === 'media' ? audioSource.src : '', srcRaw: audioSource?.raw || '' };
+  openPicker(btn, tmp, (dir, name) => {
+    if (dir !== undefined) { const src = mediaUrlOf(dir, name); setAudioSrc(src, { kind: 'media', src, raw: dir ? `${dir}/${name}` : name, name }); return; }   // 素材ルート直下なら先頭の / を付けない
+    if (!tmp.src) { clearAudio(); return; }                                  // 「素材を外す」
+    const kind = tmp.src.startsWith('media/') ? 'media' : 'url';            // パスを直接入力
+    setAudioSrc(tmp.src, { kind, src: tmp.src, raw: tmp.srcRaw, name: (tmp.srcRaw || tmp.src).split('/').pop() });
+  }, audioList);
+});
 // クリックを乗っ取って、フォルダを別々に覚えるピッカーを使う。
 // ボタンの見た目はラベルだが、クリックが当たるのは上に重ねた透明な input なので input 側に付ける
 for (const [id, types, load] of [['midiFile', MIDI_TYPES, loadMidiFile], ['audioFile', AUDIO_TYPES, loadAudioFile]]) {
@@ -1341,11 +1397,11 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
     mark.textContent = folded ? '▶' : '◀';
   };
   let folded = false;
-  try { folded = localStorage.getItem(FOLD_KEY) === '1'; } catch (e) { console.warn('折りたたみ状態の読込失敗（開いた状態で続行）:', e); }
+  try { folded = LS.getItem(FOLD_KEY) === '1'; } catch (e) { console.warn('折りたたみ状態の読込失敗（開いた状態で続行）:', e); }
   apply(folded);
   const toggle = () => {
     folded = !folded; apply(folded);
-    try { localStorage.setItem(FOLD_KEY, folded ? '1' : '0'); } catch (e) { console.warn('折りたたみ状態の保存失敗:', e); }
+    try { LS.setItem(FOLD_KEY, folded ? '1' : '0'); } catch (e) { console.warn('折りたたみ状態の保存失敗:', e); }
   };
   hd.addEventListener('click', toggle);
   hd.addEventListener('keydown', (e) => {   // Enter / Space で切り替え。Space を再生ショートカットに取られない
@@ -1571,7 +1627,7 @@ function animate() {
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
-    controls.enabled = !s.autoCam;           // 自動の間はマウス操作を止める
+    controls.enabled = !s.autoCam && !VIEW_NAME;   // 自動の間はマウス操作を止める。視聴モードも止める（保存したカメラで見せる）
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
     setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed, fps: s.weatherFps, width: s.weatherWidth,
                  pos: s.weatherPos, height: s.weatherHeight, glint: s.weatherGlint });
@@ -1615,15 +1671,9 @@ async function loadFromUrl() {
   try {
     const res = await fetch(midiUrl, { cache: 'no-store' }); // サンプル更新をキャッシュで見逃さない
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const midi = new Midi(await res.arrayBuffer());
-    midiFileName = midiUrl.split('/').pop();
-    setStatus(`${midiFileName}（${midi.tracks.filter((t) => t.notes.length).length} トラック / ${fmtTime(midi.duration)}）`);
-    buildScene(midi);
+    loadMidiBytes(new Uint8Array(await res.arrayBuffer()), midiUrl.split('/').pop());
     const audioUrl = q.get('audio');
-    if (audioUrl) {
-      audio.src = audioUrl;
-      audio.addEventListener('loadedmetadata', () => { audioLoaded = true; $('audioName').textContent = audioUrl.split('/').pop(); }, { once: true });
-    }
+    if (audioUrl) setAudioSrc(audioUrl, { kind: 'url', src: audioUrl, name: decodeURIComponent(audioUrl.split('/').pop()) });
   } catch (err) {
     console.error(err);
     setStatus(`✗ ${midiUrl} を読み込めませんでした（${err.message}）`);
@@ -1643,86 +1693,197 @@ for (const d of document.querySelectorAll('#panel .box, #camBar .box, #viewArea 
   hd.appendChild(el);
   chk.remove();
 }
-// ---------- プリセット（保存対象を丸ごと名前付きで控える。2026-09-14 ユーザー指定） ----------
-// 中身は PRESET_KEYS（設定・楽器の割当・音域・統合・スクリーン・スカイドーム・クレジット履歴）の
-// localStorage の値をそのまま写したもの。プリセット自身は入れ子にしない
+// ---------- プリセットとプロジェクト（2026-09-14 / 2026-09-18 ユーザー指定） ----------
+//   プリセット  ：見た目の設定だけ。PRESET_KEYS（設定・楽器の割当・音域・統合・スクリーン・スカイドーム・クレジット履歴）の
+//                 localStorage の値をそのまま写したもの。ブラウザに保存（settings.json で共有）。別の曲に当てはめて使い回す
+//   プロジェクト：上に加えて、MIDI・音声・スクリーンとスカイドームの素材をまるごと。開発サーバーが projects/<名前>/ の
+//                 フォルダに書き出す（素材はコピーを参照するので、原本を動かしても消しても壊れない。原本の修正は保存し直すと取り直す）
+// 保存欄 1 組（一覧・名前・保存・削除）ぶんの画面の処理を makeSlot にまとめ、保存先（backend）だけ差し替えて 2 組作る。
 // 知らせは名前欄のプレースホルダーに一瞬出す（#status は MIDI のファイル名を出す場所なので使わない）
-let presetFlashTimer = null;
-function flashPreset(msg) {
-  const el = $('presetName');
-  clearTimeout(presetFlashTimer);
-  el.placeholder = msg;
-  presetFlashTimer = setTimeout(() => { el.placeholder = '名前'; }, 2500);
-}
-function loadPresets() {
-  try { const o = JSON.parse(localStorage.getItem(PRESETS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; }
-  catch (e) { console.warn('プリセットの読込失敗:', e); return {}; }
-}
-function storePresets(all) {
-  try { localStorage.setItem(PRESETS_KEY, JSON.stringify(all)); pushSettings(); }
-  catch (e) { console.warn('プリセットの保存失敗:', e); }
-}
-function renderPresetList(sel = '') {
-  const list = $('presetList');
-  const all = loadPresets();
-  list.textContent = '';
-  list.appendChild(new Option('プリセット…', ''));
-  for (const name of Object.keys(all).sort()) list.appendChild(new Option(name, name));
-  list.value = all[sel] ? sel : '';
-}
-function savePreset(name) {
+
+// 今の設定の控え（PRESET_KEYS の localStorage の値そのまま）
+function snapshotSettings() {
   saveSettings();                    // 遅延保存を待たず、今の値を localStorage に確定させる
-  const all = loadPresets();
   const snap = {};
-  for (const k of PRESET_KEYS) { const raw = localStorage.getItem(k); if (raw != null) snap[k] = raw; }
-  all[name] = snap;
-  storePresets(all);
-  renderPresetList(name);
-  flashPreset(`「${name}」を保存しました`);
+  for (const k of PRESET_KEYS) { const raw = LS.getItem(k); if (raw != null) snap[k] = raw; }
+  return snap;
 }
-function applyPreset(name) {
-  const p = loadPresets()[name];
-  if (!p) return;
-  for (const k of PRESET_KEYS) { if (p[k] != null) localStorage.setItem(k, p[k]); else localStorage.removeItem(k); }
+// 控えのスクリーン・スカイドームの素材の URL を、fn で置き換える（fn が値を返さなければそのまま）。
+// 集めるだけなら fn の中で控えて undefined を返す
+function mapAssetSrcs(snap, fn) {
+  const out = { ...snap };
+  for (const k of [SCREENS_KEY, DOMES_KEY]) {
+    if (out[k] == null) continue;
+    try {
+      const a = JSON.parse(out[k]);
+      if (!Array.isArray(a)) continue;
+      for (const o of a) if (o && o.src) { const v = fn(o.src); if (v != null) o.src = v; }
+      out[k] = JSON.stringify(a);
+    } catch (e) { console.warn('素材の場所を読めませんでした:', e); }
+  }
+  return out;
+}
+// 控えを画面へ戻す（再読み込みせずに済ませる）。src があれば MIDI・音声も戻す（プロジェクト）
+//   src = { midi: { name, bytes } | null, audio: { kind, src, name } | null }
+function applySnapshot(p, src) {
+  for (const k of PRESET_KEYS) { if (p[k] != null) LS.setItem(k, p[k]); else LS.removeItem(k); }
   pushSettings();
-  // 画面へ反映する（再読み込みせずに済ませる）
   loadSettings(); refreshValueLabels(); applyCameraSliders();
-  try { const a = JSON.parse(localStorage.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a)) screens = a.map(withDefaults); } catch (e) { console.warn('スクリーンの復元失敗:', e); }
-  try { const a = JSON.parse(localStorage.getItem(DOMES_KEY) || 'null');
+  try { const a = JSON.parse(LS.getItem(SCREENS_KEY) || 'null'); if (Array.isArray(a)) screens = a.map(withDefaults); } catch (e) { console.warn('スクリーンの復元失敗:', e); }
+  try { const a = JSON.parse(LS.getItem(DOMES_KEY) || 'null');
         if (Array.isArray(a) && a.length === 3) domes = a.map((o) => { const v = { ...DOME_BASE, ...o }; v.r = Math.min(50, Math.max(10, v.r)); return v; }); }
   catch (e) { console.warn('スカイドームの復元失敗:', e); }
   renderScreens(); setScreens(screens); setDomes(domes);
-  try { const c = JSON.parse(localStorage.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
+  try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   for (const n of [1, 2, 3, 4]) fillCreditList(n);
-  // 楽器の割当・音域・統合が変わるので、MIDI を読んでいれば組み直す
-  if (currentMidi) buildScene(currentMidi, { keepTime: true });
-  flashPreset(`「${name}」を読み込みました`);
+  let midiDone = false;
+  if (src) {
+    if (src.midi?.bytes) {
+      try { loadMidiBytes(src.midi.bytes, src.midi.name); midiDone = true; }   // 割当・音域・統合は上で書き戻し済みなので、それで組まれる
+      catch (e) { console.error(e); setStatus(`✗ プロジェクトの MIDI を読み込めませんでした（${e.message}）`); }
+    }
+    if (src.audio) setAudioSrc(src.audio.src, { ...src.audio }); else clearAudio();
+  }
+  // 楽器の割当・音域・統合が変わるので、MIDI を読んでいれば組み直す（プロジェクトの MIDI を読んだ時は組み済み）
+  if (currentMidi && !midiDone) buildScene(currentMidi, { keepTime: true });
 }
-$('presetList').addEventListener('change', (e) => {
-  const name = e.target.value;
-  if (!name) return;
-  $('presetName').value = name;
-  applyPreset(name);
+
+// サーバーとのやりとり。失敗したらサーバーの言い分（error）を投げる。ローカルでも固まらないよう時間を切る（TOOL_CRAFT_RULES §5-1）
+async function api(url, opts = {}) {
+  const r = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(180000), ...opts });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const j = await r.json(); if (j.error) msg = j.error; } catch { /* JSON でなければ番号だけ */ }
+    if (!VIEW_NAME && (r.status === 404 || r.status === 501)) msg += '（開発サーバー tools/serve.py を再起動してください）';
+    throw new Error(msg);
+  }
+  return r;
+}
+const projectUrl = (name, file = '') => `projects/${encodeURIComponent(name)}${file ? `/${encodeURIComponent(file)}` : ''}`;
+
+// 保存先：プリセット（ブラウザ）
+const presetBackend = {
+  load() { try { const o = JSON.parse(LS.getItem(PRESETS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { console.warn('プリセットの読込失敗:', e); return {}; } },
+  store(all) { LS.setItem(PRESETS_KEY, JSON.stringify(all)); pushSettings(); },
+  async list() { return Object.keys(this.load()).sort(); },
+  async save(name) { const all = this.load(); all[name] = snapshotSettings(); this.store(all); },
+  async apply(name) { const p = this.load()[name]; if (!p) throw new Error('見つかりません'); applySnapshot(p, null); },
+  async remove(name) { const all = this.load(); delete all[name]; this.store(all); },
+};
+// 保存先：プロジェクト（開発サーバーのフォルダ）
+const projectBackend = {
+  async list() { return (await (await api('projects.json')).json()).filter((p) => !p.broken).map((p) => p.name); },
+  async save(name) {
+    const assets = [];
+    const settings = mapAssetSrcs(snapshotSettings(), (u) => { assets.push(u); });
+    const body = { settings, midi: null, audio: null, assets };
+    if (midiBytes) {
+      await api(projectUrl(name, 'song.mid'), { method: 'POST', body: midiBytes });
+      body.midi = { name: midiFileName, file: 'song.mid' };
+    }
+    if (audioSource?.kind === 'file' && audio.src) {   // 手元のファイル：場所が分からないので中身を送る
+      const ext = (audioSource.name.match(/\.(mp3|wav|m4a|aac|ogg|flac)$/i)?.[1] || 'mp3').toLowerCase();
+      await api(projectUrl(name, `audio.${ext}`), { method: 'POST', body: await (await fetch(audio.src)).blob() });
+      body.audio = { name: audioSource.name, file: `audio.${ext}` };
+    } else if (audioSource?.src) {                     // 素材フォルダ・URL・別のプロジェクト：サーバーがコピーする
+      body.audio = { name: audioSource.name, url: audioSource.src };
+    }
+    await api(projectUrl(name, 'project.json'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  },
+  async apply(name) {
+    const p = await (await api(projectUrl(name, 'project.json'))).json();
+    const copies = p.copies || {};
+    const settings = mapAssetSrcs(p.settings || {}, (u) => copies[u]);   // 素材は保存したコピーを使う
+    const src = { midi: null, audio: null };
+    if (p.midi?.file) src.midi = { name: p.midi.name, bytes: new Uint8Array(await (await api(projectUrl(name, p.midi.file))).arrayBuffer()) };
+    if (p.audio?.file) src.audio = { kind: 'project', src: projectUrl(name, p.audio.file), name: p.audio.name };
+    applySnapshot(settings, src);
+  },
+  async remove(name) { await api(projectUrl(name), { method: 'DELETE' }); },
+};
+
+/** 保存欄 1 組。ids：[一覧, 名前, 保存, 削除] の id、backend：保存先、confirmDelete：削除の前に確認するか */
+function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confirmDelete = false }) {
+  let timer = null;
+  const flash = (msg, ms = 2500) => { const el = $(nameId); clearTimeout(timer); el.placeholder = msg; timer = setTimeout(() => { el.placeholder = '名前'; }, ms); };
+  const fail = (what, e) => { console.error(e); flash(`✗ ${what}できませんでした：${e.message}`, 6000); };
+  let busy = false;
+  const run = async (fn) => {   // 保存中に二重に押されないように
+    if (busy) return;
+    busy = true;
+    for (const id of [listId, saveId, delId]) $(id).disabled = true;
+    try { await fn(); } finally { busy = false; for (const id of [listId, saveId, delId]) $(id).disabled = false; }
+  };
+  const render = async (sel = '') => {
+    const list = $(listId);
+    let names = [];
+    try { names = await backend.list(); } catch (e) { console.warn(`${label}の一覧を取れませんでした:`, e.message); list.title = `✗ ${e.message}`; }
+    list.textContent = '';
+    list.appendChild(new Option(`${label}…`, ''));
+    for (const n of names) list.appendChild(new Option(n, n));
+    list.value = names.includes(sel) ? sel : '';
+  };
+  $(listId).addEventListener('change', (e) => {
+    const name = e.target.value;
+    if (!name) return;
+    $(nameId).value = name;
+    run(async () => {
+      flash(`「${name}」を読み込んでいます…`);
+      try { await backend.apply(name); flash(`「${name}」を読み込みました`); } catch (err) { fail('読み込み', err); }
+    });
+  });
+  $(saveId).addEventListener('click', () => {
+    const name = $(nameId).value.trim();
+    if (!name) { $(nameId).focus(); flash('名前を入れてください'); return; }
+    run(async () => {
+      flash(`「${name}」を保存しています…`, 60000);
+      try { await backend.save(name); await render(name); flash(`「${name}」を保存しました`); } catch (err) { fail('保存', err); }
+    });
+  });
+  $(delId).addEventListener('click', () => {
+    const name = $(nameId).value.trim() || $(listId).value;
+    if (!name || ![...$(listId).options].some((o) => o.value === name)) { flash('削除するものを選んでください'); return; }
+    // プロジェクトはディスクのファイル（音声・素材のコピー）ごと消えるので確認する（TOOL_CRAFT_RULES §1-1）
+    if (confirmDelete && !confirm(`${label}「${name}」を削除しますか？\nフォルダ（MIDI・音声・素材のコピー）ごと消え、元に戻せません。`)) return;
+    run(async () => {
+      try { await backend.remove(name); await render(); $(nameId).value = ''; flash(`「${name}」を削除しました`); } catch (err) { fail('削除', err); }
+    });
+  });
+  $(nameId).addEventListener('keydown', (e) => e.stopPropagation());   // Space 等をショートカットに取られない
+  return { render };
+}
+const projectSlot = makeSlot({ ids: ['projectList', 'projectName', 'projectSave', 'projectDel'], label: 'プロジェクト', backend: projectBackend, confirmDelete: true });
+const presetSlot = makeSlot({ ids: ['presetList', 'presetName', 'presetSave', 'presetDel'], label: 'プリセット', backend: presetBackend });
+
+// 公開（2026-09-18 ユーザー指定）：保存してから、手元のサーバーが romashige.com へ送る（アプリ本体とプロジェクトのフォルダ）。
+// 外へ出す操作なので、送り先の URL を見せて確認してから（TOOL_CRAFT_RULES §1-1）
+const PUBLISH_URL = 'https://romashige.com/pixel-orchestra/';
+$('projectPublish').addEventListener('click', async () => {
+  const name = $('projectName').value.trim() || $('projectList').value;
+  const nameEl = $('projectName'), btns = ['projectList', 'projectSave', 'projectPublish', 'projectDel'];
+  const say = (msg) => { nameEl.placeholder = msg; };
+  if (!name) { nameEl.focus(); say('公開する名前を入れてください'); return; }
+  if (!confirm(`「${name}」を保存してから、公開します。\n\n${PUBLISH_URL}?view=${encodeURIComponent(name)}\n\n公開ページは誰でも見られます（音声も聞けます）。よろしいですか？`)) return;
+  for (const id of btns) $(id).disabled = true;
+  nameEl.value = ''; say(`「${name}」を公開しています…（音声が大きいと数分かかります）`);
+  try {
+    await projectBackend.save(name);
+    await projectSlot.render(name);
+    const r = await (await api(`publish/${encodeURIComponent(name)}`, { method: 'POST' })).json();
+    const link = $('publishLink');
+    link.href = r.url; link.hidden = false;
+    nameEl.value = name; say('名前');
+    console.log(`[公開] ${name}（${r.method}）→ ${r.url}\n${r.log}`);
+  } catch (e) {
+    console.error(e);
+    nameEl.value = name; say(`✗ 公開できませんでした：${e.message}`);
+  } finally {
+    for (const id of btns) $(id).disabled = false;
+  }
 });
-$('presetSave').addEventListener('click', () => {
-  const name = $('presetName').value.trim();
-  if (!name) { $('presetName').focus(); flashPreset('名前を入れてください'); return; }
-  savePreset(name);
-});
-$('presetDel').addEventListener('click', () => {
-  const name = $('presetName').value.trim() || $('presetList').value;
-  const all = loadPresets();
-  if (!name || !all[name]) { flashPreset('削除するものを選んでください'); return; }
-  delete all[name];
-  storePresets(all);
-  renderPresetList();
-  $('presetName').value = '';
-  flashPreset(`「${name}」を削除しました`);
-});
-for (const id of ['presetName']) $(id).addEventListener('keydown', (e) => e.stopPropagation());  // Space 等をショートカットに取られない
 
 loadSettings();
-renderPresetList();
+if (!VIEW_NAME) { projectSlot.render(); presetSlot.render(); }   // 視聴モードには保存欄が無い（公開先にプロジェクトの一覧は置かない）
 audioDelayPrev = audioDelaySec();   // 復元した値を基準にする（0 のままだと最初の 1 回だけ音がずれる）
 setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
 setDomes(domes);      // スカイドーム（遠景。3 層固定）
@@ -1731,4 +1892,23 @@ setScreens(screens);
 refreshValueLabels();
 applyCameraSliders(); // 保存されたカメラ座標を復元
 animate();
-loadFromUrl();
+if (VIEW_NAME) startViewer(); else loadFromUrl();
+
+// 視聴モードの起動：プロジェクトを読み、覆いの ▶ を押すと再生（音の自動再生はブラウザが止めるので、必ず 1 回押してもらう）
+async function startViewer() {
+  const cover = $('viewerCover'), msg = $('viewerMsg');
+  $('viewerTitle').textContent = VIEW_NAME;
+  msg.textContent = '読み込んでいます…';
+  try {
+    await projectBackend.apply(VIEW_NAME);
+  } catch (e) {
+    console.error(e);
+    msg.textContent = `✗ 読み込めませんでした（${e.message}）`;
+    return;
+  }
+  msg.textContent = '';
+  cover.classList.add('ready');
+  // 覆いは #view の中にあるので、クリックを外へ伝えない（伝わると直後に下の「再生中なら一時停止」が動いて止まる）
+  cover.addEventListener('click', (e) => { e.stopPropagation(); play(); });
+  $('view').addEventListener('click', () => { if (clock.playing) pause(); });   // 再生中に画面を押すと一時停止（覆いが戻る）
+}

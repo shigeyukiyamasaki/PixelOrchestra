@@ -19,6 +19,8 @@
     <div id="viewArea">
     <div id="viewWrap">
     <div id="view">
+      <!-- 視聴モード（?view=プロジェクト名）の覆い：曲名と ▶。押すと再生、再生中に画面を押すと一時停止して戻る。編集画面では出ない（2026-09-18） -->
+      <div id="viewerCover"><div class="vcTitle" id="viewerTitle"></div><div class="vcPlay">▶</div><div class="vcMsg" id="viewerMsg"></div></div>
       <!-- テンポと拍子（左上）。拍子は「今の拍／分母」で、分子が 1 2 3 4 … と進む -->
       <div id="tempoHud"><div class="bpm"></div><div class="sig"></div></div>
       <!-- クレジット（MIDIOrchestra と同じ作り：canvas の上に重ねた DOM。接頭辞付きの行は入力がある時だけ出す） -->
@@ -114,7 +116,8 @@
         <span id="status" class="status">（未読み込み）</span>
       </div>
       <div class="frow">
-        <label class="filebtn" title="音声ファイル（mp3/wav/m4a・任意）。MIDI と同期して再生します。無くても動きます">音声<input type="file" id="audioFile" accept="audio/*"></label>
+        <label class="filebtn" title="音声ファイル（mp3/wav/m4a・任意）。MIDI と同期して再生します。無くても動きます。プロジェクトに保存すると中身がコピーされる">音声<input type="file" id="audioFile" accept="audio/*"></label>
+        <button id="audioPick" class="pickbtn" title="素材フォルダ（スクリーンの素材と同じ場所）から音声を選ぶ。プロジェクトに保存すると中身がコピーされる（2026-09-18）">素材</button>
         <span id="audioName" class="status">（なし）</span>
       </div>
     </div>
@@ -159,11 +162,22 @@
       </div>
     </div>
     <!-- プリセット：いま保存している設定を丸ごと名前を付けて覚える（2026-09-14 ユーザー指定） -->
-    <div class="preset" title="いまの設定（スライダー・スクリーン・スカイドーム・楽器の割当など保存対象の全部）に名前を付けて覚える">
-      <select id="presetList" title="選ぶとその設定に切り替わる"><option value="">プリセット…</option></select>
+    <!-- 2 段：上＝プロジェクト（MIDI・音声もまるごと）／下＝プリセット（見た目の設定だけ）。2026-09-18 ユーザー指定で分けた -->
+    <div class="slots">
+    <div class="preset" title="プロジェクト：いまの設定に加えて、読み込んでいる MIDI・音声・スクリーンとスカイドームの素材をまるごと、名前を付けてフォルダ（projects/名前/）に保存する。素材はコピーを保存するので、原本を動かしても消しても戻る（原本を直したら、保存し直すと取り直す）">
+      <select id="projectList" title="選ぶとそのプロジェクト（曲・音声・設定）に切り替わる"><option value="">プロジェクト…</option></select>
+      <input id="projectName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
+      <button id="projectSave" class="slotSave" title="いまの曲・音声・設定をこの名前で保存（同じ名前なら上書き）">保存</button>
+      <button id="projectPublish" class="slotPub" title="このプロジェクトを保存してから、romashige.com/pixel-orchestra/ に公開する（アプリ本体とプロジェクトのフォルダを送る。変わったファイルだけ）。公開ページは誰でも見られる">公開</button>
+      <button id="projectDel" class="slotDel" title="選んでいるプロジェクトを削除（手元のフォルダ。公開済みのものは消えない）">削除</button>
+      <a id="publishLink" class="pubLink" target="_blank" rel="noopener" hidden title="公開したページを開く">公開ページ ↗</a>
+    </div>
+    <div class="preset" title="プリセット：いまの見た目の設定（スライダー・スクリーン・スカイドーム・楽器の割当など）だけに名前を付けて覚える。曲と音声は変えないので、別の曲に当てはめて使い回せる">
+      <select id="presetList" title="選ぶとその設定に切り替わる（曲・音声はそのまま）"><option value="">プリセット…</option></select>
       <input id="presetName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
-      <button id="presetSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
-      <button id="presetDel" title="選んでいるプリセットを削除">削除</button>
+      <button id="presetSave" class="slotSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
+      <button id="presetDel" class="slotDel" title="選んでいるプリセットを削除">削除</button>
+    </div>
     </div>
   </header>
 
