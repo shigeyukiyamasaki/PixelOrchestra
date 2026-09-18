@@ -276,7 +276,9 @@ function mediaTree() {
 let picker = null;
 function closePicker() { picker?.el.remove(); picker = null; }
 addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
-addEventListener('mousedown', (e) => { if (picker && !picker.el.contains(e.target) && e.target !== picker.anchor) closePicker(); }, true);
+// 外を押したら閉じる。mousedown ではなく pointerdown で聞く：プレビューの 3D 画面はカメラ操作（OrbitControls）が
+// pointerdown で既定の動作を止めるため、その後の mousedown が発生せず、いちばん広いプレビューの上を押しても閉じなかった（2026-09-18 ユーザー指摘）
+addEventListener('pointerdown', (e) => { if (picker && !picker.el.contains(e.target) && e.target !== picker.anchor) closePicker(); }, true);
 
 /**
  * 素材を選ぶカラム表示を開く。左のカラムでフォルダを選ぶと右に次のカラムが出る（Finder と同じ）。
@@ -302,6 +304,10 @@ function openPicker(anchor, sc, onPick) {
   clr.textContent = '素材を外す';
   clr.onclick = () => { sc.src = ''; sc.srcRaw = ''; closePicker(); onPick(); };
   foot.appendChild(clr);
+  const cls = document.createElement('button');   // 何も選ばずに閉じる（外を押す・Escape でも閉じる。2026-09-18 ユーザー指定）
+  cls.textContent = '✕'; cls.className = 'close'; cls.title = '何も変えずに閉じる（Escape、ウィンドウの外を押しても閉じる）';   // ✕・赤背景・白文字（2026-09-18 ユーザー指定）
+  cls.onclick = () => closePicker();
+  foot.appendChild(cls);
   el.appendChild(foot);
 
   const root = mediaTree();
@@ -364,10 +370,8 @@ function openPicker(anchor, sc, onPick) {
   }
   draw();
   document.body.appendChild(el);
-  // メニューはプレビューの下端にあるので、上へ開く
-  const r = anchor.getBoundingClientRect();
-  el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8))}px`;
-  el.style.top = `${Math.max(8, r.top - el.offsetHeight - 4)}px`;
+  // 位置はブラウザの中央（CSS の .mediaPicker が決める。フォルダを辿って幅が変わっても中央のまま。2026-09-18 ユーザー指定）。
+  // 以前は押したカードの上に開いていたが、下段のカードからだと画面の下寄りで見づらかった
   picker = { el, anchor };
 }
 
@@ -440,13 +444,14 @@ function screenRow(sc, i) {
 
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
-    const el = lab.querySelector('input'), out = lab.querySelector('b');
-    const set = (v) => { el.value = v; out.textContent = (+el.value).toFixed(digits); };
+    const el = lab.querySelector('input');
     // 既定値は必ず SCREEN_BASE から取る。表に無いと range 要素が「範囲の中央」を返してしまい、
     // 触っていないのに変な値が表示される（2026-09-13 に 2 回やった）
     if (!(key in SCREEN_BASE)) console.warn(`SCREEN_BASE に ${key} の既定値がありません`);
-    set(sc[key] ?? SCREEN_BASE[key] ?? +min);
-    el.oninput = () => { sc[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+    el.value = sc[key] ?? SCREEN_BASE[key] ?? +min;
+    // 値の表示は数値入力欄＋上下矢印（他の欄と同じ。2026-09-18 ユーザー指定）。桁数は項目ごと
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { sc[key] = +el.value; box2.show(); changed(); };
   };
   const px = screenInfo(i);
   slider('奥行き', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
@@ -507,10 +512,10 @@ function domeRow(d, i) {
 
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
-    const el = lab.querySelector('input'), out = lab.querySelector('b');
+    const el = lab.querySelector('input');
     el.value = d[key] ?? DOME_BASE[key] ?? +min;
-    out.textContent = (+el.value).toFixed(digits);
-    el.oninput = () => { d[key] = +el.value; out.textContent = (+el.value).toFixed(digits); changed(); };
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });   // 数値入力欄＋上下矢印（2026-09-18 ユーザー指定）
+    el.oninput = () => { d[key] = +el.value; box2.show(); changed(); };
   };
   slider('半径', 'r', 10, 50, 0.5, 1, '舞台の中心からの距離。大きいほど遠くに見える');
   slider('高さ', 'y', -60, 40, 0.5, 1, 'ドームの中心の高さ。下げると地平線が下がる');
@@ -732,8 +737,8 @@ function setupCredits() {
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset'));   // プリセットの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
-// 対象は右メニューと上段（天気の種類。2026-09-17）
-const RADIO_AREA = ':is(#panel, #camBar)';
+// 対象は右メニュー（ラジオがあるのは右メニューだけ。別の場所に置く時はここに足す）
+const RADIO_AREA = '#panel';
 const RADIO_NAMES = () => [...new Set([...document.querySelectorAll(`${RADIO_AREA} input[type=radio][name]`)].map((el) => el.name))];
 const radioValue = (name) => document.querySelector(`${RADIO_AREA} input[type=radio][name="${name}"]:checked`)?.value;
 
@@ -788,41 +793,54 @@ function makeValueInputs() {
     const lab = document.querySelector(`b[data-value-for="${el.id}"]`);
     if (!lab) continue;
     const fmt = VALUE_FMT[el.id];
-    const num = document.createElement('input');
-    num.type = fmt ? 'text' : 'number'; num.className = 'num'; num.dataset.valueFor = el.id;
-    if (!fmt) { num.min = el.min; num.max = el.max; num.step = el.step || 'any'; }
-    num.value = valueText(el.id, el.value);
-    num.title = fmt ? '時刻を直接入力（例 18:30。Enter で確定）' : '数値を直接入力（Enter で確定）';
-    const commit = () => {
-      if (num.value === '') { num.value = valueText(el.id, el.value); return; }
-      const raw = fmt ? fmt.fromText(num.value) : parseFloat(num.value);
-      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), raw));
-      if (Number.isNaN(v)) { num.value = valueText(el.id, el.value); return; }
-      el.value = v; num.value = valueText(el.id, el.value);
-      el.dispatchEvent(new Event('input', { bubbles: true })); // スライダーを動かしたのと同じ経路（保存・反映）
-    };
-    num.addEventListener('change', commit);
-    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commit(); num.blur(); } e.stopPropagation(); }); // Space 等をショートカットに取られない
-    num.addEventListener('keyup', (e) => e.stopPropagation());
-    // 右側の上下矢印（1 ステップずつ増減。押しっぱなしで連続）
-    const wrap = document.createElement('span'); wrap.className = 'numwrap';
-    const spin = document.createElement('span'); spin.className = 'numspin';
-    const step = parseFloat(el.step) || 1;
-    const bump = (dir) => {
-      const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), (parseFloat(el.value) || 0) + dir * step));
-      el.value = v; num.value = valueText(el.id, el.value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    for (const [dir, glyph, title] of [[1, '▲', '増やす'], [-1, '▼', '減らす']]) {
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = glyph; b.title = title; b.tabIndex = -1;
-      let timer = null, repeat = null;
-      const stop = () => { clearTimeout(timer); clearInterval(repeat); timer = repeat = null; };
-      b.addEventListener('pointerdown', (e) => { e.preventDefault(); bump(dir); timer = setTimeout(() => { repeat = setInterval(() => bump(dir), 60); }, 400); });
-      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
-      spin.appendChild(b);
-    }
-    lab.replaceWith(wrap); wrap.append(num, spin);
+    numBoxFor(el, lab, { toText: (v) => valueText(el.id, v), fromText: fmt ? fmt.fromText : null,
+      title: fmt ? '時刻を直接入力（例 18:30。Enter で確定）' : '数値を直接入力（Enter で確定）' });
   }
+}
+/**
+ * スライダー el の値表示 lab（<b>）を、数値入力欄＋上下矢印に置き換える。右メニューのスライダーと、
+ * 下段のカード（スクリーン・スカイドーム。作り直されるたびに呼ぶ）の両方で使う（2026-09-18 ユーザー指定で下段にも付けた）。
+ * toText: 値 → 表示の文字、fromText: 入力の文字 → 値（省略時は数値として読む。指定時は文字入力欄になる）。
+ * 確定・矢印はスライダーに input イベントを流すので、スライダーを動かしたのと同じ経路で反映・保存される。
+ * 戻り値の show() は、スライダー側の値を欄に写す（編集中は上書きしない）
+ */
+function numBoxFor(el, lab, { toText = (v) => String(v), fromText = null, title = '数値を直接入力（Enter で確定）' } = {}) {
+  const num = document.createElement('input');
+  num.type = fromText ? 'text' : 'number'; num.className = 'num';
+  if (el.id) num.dataset.valueFor = el.id;
+  if (!fromText) { num.min = el.min; num.max = el.max; num.step = el.step || 'any'; }
+  num.value = toText(el.value);
+  num.title = title;
+  const commit = () => {
+    if (num.value === '') { num.value = toText(el.value); return; }
+    const raw = fromText ? fromText(num.value) : parseFloat(num.value);
+    const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), raw));
+    if (Number.isNaN(v)) { num.value = toText(el.value); return; }
+    el.value = v; num.value = toText(el.value);
+    el.dispatchEvent(new Event('input', { bubbles: true })); // スライダーを動かしたのと同じ経路（保存・反映）
+  };
+  num.addEventListener('change', commit);
+  num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { commit(); num.blur(); } e.stopPropagation(); }); // Space 等をショートカットに取られない
+  num.addEventListener('keyup', (e) => e.stopPropagation());
+  // 右側の上下矢印（1 ステップずつ増減。押しっぱなしで連続）
+  const wrap = document.createElement('span'); wrap.className = 'numwrap';
+  const spin = document.createElement('span'); spin.className = 'numspin';
+  const step = parseFloat(el.step) || 1;
+  const bump = (dir) => {
+    const v = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), (parseFloat(el.value) || 0) + dir * step));
+    el.value = v; num.value = toText(el.value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  for (const [dir, glyph, tip] of [[1, '▲', '増やす'], [-1, '▼', '減らす']]) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = glyph; b.title = tip; b.tabIndex = -1;
+    let timer = null, repeat = null;
+    const stop = () => { clearTimeout(timer); clearInterval(repeat); timer = repeat = null; };
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); bump(dir); timer = setTimeout(() => { repeat = setInterval(() => bump(dir), 60); }, 400); });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+    spin.appendChild(b);
+  }
+  lab.replaceWith(wrap); wrap.append(num, spin);
+  return { num, show: () => { if (document.activeElement !== num) num.value = toText(el.value); } };
 }
 function settings() {
   const num = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
@@ -1235,6 +1253,32 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
   const ro = new ResizeObserver(setBarHeight);
   for (const id of ['stageArea', 'camBar', 'screenBar', 'viewArea']) { const el = document.getElementById(id); if (el) ro.observe(el); }
   setBarHeight();
+}
+
+// トラックの欄の折りたたみ（2026-09-18 ユーザー指定）：見出しを押すと列が細い帯になる（幅は CSS の body.tracks-folded が決める）。
+// 列の幅が変わるとプレビューの枠が変わり、上のサイズ監視が拾って取り直すので、ここでは何もしなくてよい。
+// 状態はこのブラウザにだけ覚える：プリセットにもブラウザ間の共有（settings.json）にも入れない
+// （プリセットを読み込んだら欄が勝手に閉じる、という動きにしないため）
+{
+  const FOLD_KEY = 'pixelOrchestra.ui.tracksFolded';
+  const hd = $('tracksHd'), mark = hd.querySelector('.foldMark');
+  const apply = (folded) => {
+    document.body.classList.toggle('tracks-folded', folded);
+    hd.setAttribute('aria-expanded', String(!folded));
+    mark.textContent = folded ? '▶' : '◀';
+  };
+  let folded = false;
+  try { folded = localStorage.getItem(FOLD_KEY) === '1'; } catch (e) { console.warn('折りたたみ状態の読込失敗（開いた状態で続行）:', e); }
+  apply(folded);
+  const toggle = () => {
+    folded = !folded; apply(folded);
+    try { localStorage.setItem(FOLD_KEY, folded ? '1' : '0'); } catch (e) { console.warn('折りたたみ状態の保存失敗:', e); }
+  };
+  hd.addEventListener('click', toggle);
+  hd.addEventListener('keydown', (e) => {   // Enter / Space で切り替え。Space を再生ショートカットに取られない
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); }
+  });
+  hd.addEventListener('keyup', (e) => { if (e.key === ' ') e.stopPropagation(); });
 }
 
 $('resetCam').addEventListener('click', () => {

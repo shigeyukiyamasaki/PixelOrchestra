@@ -104,6 +104,7 @@ body:not(:has(#outdoor:checked)) #sunOnRow { opacity: .45; pointer-events: none;
 body:has(#spotOn:not(:checked)) #spotParams > * { opacity: .45; pointer-events: none; }
 #spotParams { margin-left: 18px; }
 #lightBox:not(:has(#outdoor:checked)) #sunSet > * { opacity: .45; pointer-events: none; }   /* 屋外オフ（ホール）でも畳まず、効かない状態として薄く（2026-09-17 ユーザー指定） */
+body:not(:has(#outdoor:checked)) #weatherBox > *:not(.hd) { opacity: .45; pointer-events: none; }   /* 天気も屋外のときだけ出るので、同じく薄く（見出しは通常表示。グレーアウト法則） */
 /* 太陽光：自動（時刻・天気・向き）と手動（詳細）は両方見せ、効かない方を薄くして触れなくする（グレーアウト法則。チェック本体は通常表示） */
 #sunSet:has(#sunManual:checked) #sunAutoSet > *, #sunSet:not(:has(#sunManual:checked)) #sunManualSet > * { opacity: .45; pointer-events: none; }
 label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */
@@ -114,77 +115,72 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
-#domeSec { flex: 0 1 968px; min-width: 0; display: flex; flex-direction: column; font-size: 12px; }   /* 上段（#camBar）へ移した。カードの見た目は #screenBar と共通（2026-09-17 ユーザー指定） */
+#domeSec { flex: 0 1 796px; min-width: 0; display: flex; flex-direction: column; }   /* カード 260 × 3 ＋ 間隔 8 × 2 */
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
-/* スカイドームのカード 3 枚の右に「天気」のカードを固定で置く（#domeRows は描き直されるので、その外。2026-09-17 ユーザー指定） */
-#domeBody { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-#domeBody > #domeRows { flex: 0 1 auto; min-width: 0; }
-#weatherCard { align-self: flex-start; }
-#weatherCard .wname { font-weight: 600; }
-#weatherCard .ctl { margin: 0; }
-/* 項目が多いので、スライダーは「ラベル＋数値欄 ｜ スライダー」の横 1 行に詰める（2 行組みだとカードが上段でいちばん高くなり、プレビューを縮めた。2026-09-17 実測 395×220 → 284×160） */
-#weatherCard label.ctl { display: grid; grid-template-columns: 10em minmax(0, 1fr); align-items: center; gap: 0 6px; }   /* 左の列は一番長いラベル「落ちる速さ」＋数値欄の幅。数値欄を縦に揃える */
-#weatherCard label.ctl input.num { width: 40px; }
-#weatherCard label.ctl > span { display: flex; align-items: center; justify-content: space-between; gap: 4px; white-space: nowrap; }
-#weatherCard label.ctl input[type=range] { width: 100%; min-width: 0; margin: 0; }
-#weatherCard .ctl.radio { gap: 2px 7px; flex-wrap: nowrap; white-space: nowrap; }
-#weatherCard .ctl.radio > span { flex: 0 0 auto; min-width: 3.2em; }
-#weatherCard .ctl.radio label { gap: 2px; }
-/* 数値欄の ▲▼：上段のボタン用スタイル（余白 2px 8px・12px）が効いて縦に膨らむので、本来の形に戻す */
-#weatherCard .numspin button { padding: 0; font-size: 8px; line-height: 1; border-radius: 0; border: 1px solid var(--line); color: var(--muted); }
-#weatherCard .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
-#weatherCard .numspin button:last-child { border-radius: 0 0 4px 0; }
-#weatherCard .numspin button:hover { color: var(--accent); border-color: var(--accent); }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
-:is(#screenBar, #camBar) .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
-:is(#screenBar, #camBar) .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
-:is(#screenBar, #camBar) button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
-:is(#screenBar, #camBar) button:hover { border-color: var(--accent); color: var(--accent); }
+#screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
+#screenBar .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
+#screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
+#screenBar button:hover { border-color: var(--accent); color: var(--accent); }
 #screenRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 
 /* 幅は 1.5 倍、スライダーの間隔は右パネル（.ctl の margin 8px）と同じくらい。2026-09-13 ユーザー指定 */
-:is(#screenBar, #camBar) .screen { flex: 0 0 236px; display: flex; flex-direction: column; gap: 7px;
+/* 幅 260：スクリーンのカードは最下行（色・表示・反転・繰返・削除）が折り返さず 259px 要り、236 の指定を超えて広がっていた。
+   スカイドームのカードと幅が食い違っていたので、広い方に揃えた（2026-09-18 ユーザー指定）。#domeSec の幅もこの値から決めている */
+#screenBar .screen { flex: 0 0 260px; display: flex; flex-direction: column; gap: 7px;
                      border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-:is(#screenBar, #camBar) .screen .thumb { display: flex; flex-direction: column; align-items: center; gap: 2px;
+#screenBar .screen .thumb { display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 2px; background: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; color: inherit; font: inherit; }
-:is(#screenBar, #camBar) .screen .thumb:hover { border-color: var(--accent); }
-:is(#screenBar, #camBar) .screen .thumb img, :is(#screenBar, #camBar) .screen .thumb video {
+#screenBar .screen .thumb:hover { border-color: var(--accent); }
+#screenBar .screen .thumb img, #screenBar .screen .thumb video {
   width: 100%; height: 96px; object-fit: contain; display: block; image-rendering: pixelated;
   /* 透過の素材が見えるように市松模様を敷く */
   background-color: #2a3050;
   background-image: linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%),
                     linear-gradient(45deg, #222840 25%, transparent 25%, transparent 75%, #222840 75%);
   background-size: 10px 10px; background-position: 0 0, 5px 5px; }
-:is(#screenBar, #camBar) .screen .thumb .ph { width: 100%; height: 96px; display: flex; align-items: center; justify-content: center;
+#screenBar .screen .thumb .ph { width: 100%; height: 96px; display: flex; align-items: center; justify-content: center;
   color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; }
-:is(#screenBar, #camBar) .screen .thumb .cap { align-self: stretch; font-size: 10px; color: var(--muted); text-align: center;
+#screenBar .screen .thumb .cap { align-self: stretch; font-size: 10px; color: var(--muted); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:is(#screenBar, #camBar) .screen .name { width: 100%; background: none; border: 1px solid var(--line); color: inherit;
+#screenBar .screen .name { width: 100%; background: none; border: 1px solid var(--line); color: inherit;
   border-radius: 4px; padding: 1px 4px; font: inherit; }
-:is(#screenBar, #camBar) .screen .sld { display: grid; grid-template-columns: 4em minmax(0, 1fr) 2.8em; align-items: center; gap: 0 6px; }
-:is(#screenBar, #camBar) .screen .sld > span { color: var(--muted); white-space: nowrap; }
-:is(#screenBar, #camBar) .screen .sld input[type=range] { width: 100%; min-width: 0; margin: 0; }
-:is(#screenBar, #camBar) .screen .sld b { font-weight: 400; text-align: right; }
-:is(#screenBar, #camBar) .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
-:is(#screenBar, #camBar) .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
-:is(#screenBar, #camBar) .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
-:is(#screenBar, #camBar) .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
-:is(#screenBar, #camBar) .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
+#screenBar .screen .sld { display: grid; grid-template-columns: 4em minmax(0, 1fr) auto; align-items: center; gap: 0 6px; }   /* 右端は数値入力欄＋上下矢印（2026-09-18 ユーザー指定。以前は値の文字だけで 2.8em） */
+#screenBar .screen .sld > span:first-child { color: var(--muted); white-space: nowrap; }
+#screenBar .screen .sld input[type=range] { width: 100%; min-width: 0; margin: 0; }
+/* 数値入力欄：見た目は右メニュー（.ctl input.num）と同じ。カードは行が多いので、行を高くしないよう少し小ぶりにする */
+#screenBar .screen .sld input.num { width: 40px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 14px; text-align: right;
+  background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
+#screenBar .screen .sld input.num:focus { outline: none; border-color: var(--accent); }
+#screenBar .screen .sld input.num::-webkit-inner-spin-button, #screenBar .screen .sld input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* 上下矢印：下段のボタン用スタイル（#screenBar button の余白 2px 8px・12px）が効いて縦に膨らむので、本来の形に戻す */
+#screenBar .numspin button { padding: 0; font-size: 7px; line-height: 1; border-radius: 0; border: 1px solid var(--line); color: var(--muted); }
+#screenBar .numspin button:first-child { border-radius: 0 4px 0 0; border-bottom: none; }
+#screenBar .numspin button:last-child { border-radius: 0 0 4px 0; }
+#screenBar .numspin button:hover { color: var(--accent); border-color: var(--accent); }
+#screenBar .screen .foot { display: flex; align-items: center; gap: 8px; margin-top: 3px; white-space: nowrap; }
+#screenBar .screen .foot label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
+#screenBar .screen .foot > button { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+#screenBar .screen .foot > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+#screenBar .screen .foot input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; }
 /* スカイドーム（遠景。3 層固定）はスクリーンと見分けが付くよう枠の色を変える */
-:is(#screenBar, #camBar) .screen.dome { border-color: rgba(226, 179, 72, .45); }
-:is(#screenBar, #camBar) .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
-:is(#screenBar, #camBar) .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
+#screenBar .screen.dome { border-color: rgba(226, 179, 72, .45); }
+#screenBar .screen.dome .name { border-color: rgba(226, 179, 72, .45); }
+#screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }
-:is(#screenBar, #camBar) .addCard:hover { border-color: var(--accent); color: var(--accent); }
+#screenBar .addCard:hover { border-color: var(--accent); color: var(--accent); }
 
 /* 素材のカラム表示（Finder のカラム表示と同じ操作。2026-09-13 ユーザー指定）。
    position: fixed を外すと本文の流れに入り込んで左パネルの下に出るので注意 */
 .mediaPicker { position: fixed; z-index: 20; background: var(--panel); border: 1px solid var(--line);
+  left: 50%; top: 50%; transform: translate(-50%, -50%);   /* ブラウザの中央。幅が変わっても中央のまま（2026-09-18 ユーザー指定） */
   border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.5); font-size: 12px;
   font-family: "Hiragino Sans", "Yu Gothic", sans-serif; }
-.mediaPicker .cols { display: flex; max-width: min(78vw, 900px); overflow-x: auto; }
-.mediaPicker .col { flex: 0 0 200px; max-height: 260px; overflow-y: auto; border-right: 1px solid var(--line); padding: 4px; }
+/* 大きさは固定：幅は列 4 本ぶん、高さは列の上限（2026-09-18 ユーザー指定。列の数や行数で伸び縮みしない）。
+   列が少なければ右が空き、行が少なければ下が空く。5 本目からは今までどおり横スクロール */
+.mediaPicker .cols { display: flex; width: min(78vw, 800px); height: 260px; overflow-x: auto; }
+.mediaPicker .col { flex: 0 0 200px; height: 100%; overflow-y: auto; border-right: 1px solid var(--line); padding: 4px; }
 .mediaPicker .col:last-child { border-right: none; }
 .mediaPicker .col button { display: block; width: 100%; text-align: left; border: none; background: none;
   color: inherit; font: inherit; padding: 3px 6px; border-radius: 4px; cursor: pointer;
@@ -201,6 +197,9 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 .mediaPicker .foot button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line);
   background: none; color: inherit; cursor: pointer; font: inherit; white-space: nowrap; }
 .mediaPicker .foot button:hover { border-color: var(--accent); color: var(--accent); }
+/* 閉じる（✕）：赤背景・白文字。カードの「削除」と同じ赤（2026-09-18 ユーザー指定） */
+.mediaPicker .foot button.close { background: #8e2f2f; border-color: #b04a4a; color: #fff; font-weight: 700; padding: 2px 9px; }
+.mediaPicker .foot button.close:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 /* スクロールバー：細く・角丸・普段は控えめ。サイト全体に適用（2026-09-13 ユーザー指定）。
    Chrome は標準の scrollbar-width / scrollbar-color を解すると ::-webkit-scrollbar 側を無視するので、
    どちらでも同じ見た目になるよう両方書いておく */
@@ -306,6 +305,17 @@ input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; backgroun
 /* 左＝トラック一覧、右＝表示設定（2026-09-12 に左右を入れ替え）。どちらも閉じると列ごと消える */
 #panelRight { grid-column: 1; border-right: 1px solid var(--line); }
 #panel { grid-column: 3; border-left: 1px solid var(--line); }
+/* トラックの欄の折りたたみ（2026-09-18 ユーザー指定）：見出しを押すと列が細い帯になり、縦書きの見出しだけが残る。
+   プレビューの上には何も重ねない（9/12 に廃止した、浮かぶ丸ボタンの方式には戻さない） */
+#tracksHd { cursor: pointer; user-select: none; }
+#tracksHd .foldMark { margin-left: auto; font-size: 11px; }
+#tracksHd:hover { background: #d2d2d8; border-color: #d2d2d8; }
+#tracksHd:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+body.tracks-folded { --leftw: 30px; }
+body.tracks-folded #panelRight { padding: 8px 0; overflow: hidden; }
+body.tracks-folded #panelRight > *:not(#tracksHd) { display: none; }
+body.tracks-folded #tracksHd { writing-mode: vertical-rl; margin: 0 auto; padding: 9px 4px; width: 24px; justify-content: flex-start; }
+body.tracks-folded #tracksHd .foldMark { margin: 6px 0 0; }
 
 
 h1 { font-size: 18px; margin: 0 0 6px; color: var(--accent); letter-spacing: 0.04em; }
@@ -377,6 +387,9 @@ tr.pitch-row select.dyn-select { background: var(--panel2); color: var(--text); 
   #panelRight { grid-row: 2; grid-column: 1; max-height: 30dvh; border-right: none; border-bottom: 1px solid var(--line); }
   #panel { grid-row: 4; grid-column: 1; max-height: 40dvh; border-left: none; border-top: 1px solid var(--line); }
   body:not(.panel-right-hidden) #panel { display: none; } /* 狭い画面では片方ずつ */
+  body.tracks-folded #panelRight { padding: 8px 10px; }   /* 縦積みの時は帯にせず、横書きの見出しだけ残す */
+  body.tracks-folded #tracksHd { writing-mode: horizontal-tb; width: auto; margin: 0; }
+  body.tracks-folded #tracksHd .foldMark { margin: 0 0 0 auto; }
 }
 
 

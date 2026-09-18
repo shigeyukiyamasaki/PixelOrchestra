@@ -136,7 +136,9 @@ const SCREEN_SHADER = {
       #include <clipping_planes_fragment>
       // 左右反転（2026-09-13 ユーザー指定）と、横方向の繰り返し・流し（雲。2026-09-13）。
       // 繰り返す時は 1 周期のうち uFill ぶんだけ絵を置き、残りは隙間として捨てる（間隔の調節）
-      float u = (flip > 0.5 ? 1.0 - vUv.x : vUv.x) * uRepeat + uScroll;
+      // 面は円筒を内側（客席側）から見るので、uv.x は客席から見て右 → 左へ増える。そのまま使うと絵が左右逆に映る
+      // （2026-09-18 ユーザー指摘：キャラクターが反転していた）。反転オフで 1 − uv.x、反転オンで uv.x
+      float u = (flip > 0.5 ? vUv.x : 1.0 - vUv.x) * uRepeat + uScroll;
       vec2 uv;
       if (uLoop > 0.5) {
         float f = fract(u);
@@ -209,7 +211,7 @@ function litScreenMaterial(sc, tex) {
         uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade;
         varying vec2 vScreenUv;`)
       .replace('#include <map_fragment>', `
-        float u = (flip > 0.5 ? 1.0 - vScreenUv.x : vScreenUv.x) * uRepeat + uScroll;
+        float u = (flip > 0.5 ? vScreenUv.x : 1.0 - vScreenUv.x) * uRepeat + uScroll;   // 内側から見るので反転オフで 1 − uv.x（上の SCREEN_SHADER と同じ。2026-09-18）
         vec2 suv;
         if (uLoop > 0.5) { float f = fract(u); if (f > uFill) discard; suv = vec2(f / uFill, vScreenUv.y); }
         else suv = vec2(u, vScreenUv.y);
