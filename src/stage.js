@@ -1360,6 +1360,7 @@ const WEATHER_SHADER = {
       float ang = (vUv.x - uSun.x) * uSun.z;
       float prob = uGlint * (0.02 * uSun.w + 0.10 * uSun.y * exp(-ang * ang)) + uStorm * 0.35 * min(1.0, uGlint);
       float glint = 0.0;   // 1 = きらめきの芯、0.7 = 腕（雨は下の 1 ドット、雪は上下左右）
+      float addLight = 0.0;   // 1 = 背景に光を足して描く（雪の粒。明るい空の上で灰色の点に見えないように。2026-09-19 ユーザー指定）
       if (uType > 0.5 && uType < 1.5) {
         vec3 s = rainAt(d, slot, prob);
         float fx = fract(vUv.x * uCells.x) - 0.5;   // ドットの中での横位置（中央が 0）。筋はドットの中央に細く描く
@@ -1383,8 +1384,9 @@ const WEATHER_SHADER = {
           vec2 fp = 1.0 + floor(vec2(h21(cell + 3.7), h21(cell + 9.1)) * (G - 3.0));
           fp.x = clamp(fp.x + floor(sin(uTime * 1.3 + r * 40.0) * 1.5 + 0.5), 0.0, G - 1.0);
           vec2 df = abs(loc - fp);
-          bool g = h21(cell * 1.3 + vec2(slot, slot * 0.37)) < prob * 1.5;   // 雪は粒が小さく遅いので、少し当たりやすく
-          if (df.x < 0.5 && df.y < 0.5) { o = vec4(vec3(1.0), 0.95 * uAlpha); if (g) glint = 1.0; }
+          // 雨の半分の当たりやすさ：雪のきらめきは 5 ドットの十字で雨の縦棒より大きく、同じ確率でも雨より光って見えた（2026-09-18〜19 ユーザー指定）
+          bool g = h21(cell * 1.3 + vec2(slot, slot * 0.37)) < prob * 0.5;
+          if (df.x < 0.5 && df.y < 0.5) { o = vec4(vec3(1.0), 0.95 * uAlpha); addLight = 1.0; if (g) glint = 1.0; }
           else if (g && df.x + df.y < 1.5 && (df.x < 0.5 || df.y < 0.5)) glint = 0.7;   // 十字の腕（上下左右の隣）
         }
       }
@@ -1414,6 +1416,10 @@ const WEATHER_SHADER = {
       if (o.a < 0.01) discard;
       gl_FragColor = o;
       #include <tonemapping_fragment>
+      // 色に不透明度を掛けて出す（材質は premultipliedAlpha：画面 = 出した色 + 背景 ×(1 - a)）。
+      // きらめきだけ a = 0 にして「背景に光を足す」：上塗りだと明るい空の上で背景より暗いグレーの点に見えた（2026-09-18 ユーザー指定）
+      gl_FragColor.rgb *= gl_FragColor.a;
+      if (glint > 0.0 || addLight > 0.5) gl_FragColor.a = 0.0;
     }`,
 };
 // 全体ブルームの対象にする（2026-09-17 ユーザー指定）：本編の「明るい部分」とは別に、天気の層だけを
@@ -1457,7 +1463,7 @@ function buildWeather() {
         uBloomPass: WEATHER_BLOOM.pass, uDepth: WEATHER_BLOOM.depth, uRes: WEATHER_BLOOM.res,   // 全層で共有（renderFrame が切り替える）
       },
       vertexShader: WEATHER_SHADER.vertexShader, fragmentShader: WEATHER_SHADER.fragmentShader,
-      transparent: true, side: THREE.DoubleSide, depthWrite: false, clipping: true, toneMapped: true,
+      transparent: true, premultipliedAlpha: true, side: THREE.DoubleSide, depthWrite: false, clipping: true, toneMapped: true,
     });
     if (clip) m.clippingPlanes = clip;
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segs, 1, true, phi0, phiLen), m);
