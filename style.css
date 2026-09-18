@@ -339,14 +339,18 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 #settingsPop > .box:not(.credits2) { width: 196px; }
 #settingsPop .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* 保存＝水色、削除＝赤（2026-09-14 ユーザー指定） */
-#topbar .slotSave { background: #4fc3f7; border-color: #4fc3f7; color: #0b1020; font-weight: 600; }   /* プロジェクト・プリセット共通 */
-#topbar .slotSave:hover { background: #7ad2fa; border-color: #7ad2fa; color: #0b1020; }
+/* 保存＝青・白文字（2026-09-18 ユーザー指定）。削除の赤（#8e2f2f 等）と彩度・明度をそろえ、色相だけ 215° に回した色。プロジェクト・プリセット共通 */
+#topbar .slotSave { background: #2f568e; border-color: #4a75b0; color: #fff; font-weight: 600; }
+#topbar .slotSave:hover { background: #3a6bb0; border-color: #6a9be0; color: #fff; }
 #topbar .slotDel { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
 #topbar .slotDel:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 /* 公開（プロジェクトの行だけ）：外へ出す操作なので、保存とは別の色（橙）。公開したらその右にページへのリンク（2026-09-18） */
+#topbar .pubCol { display: flex; align-items: center; gap: 8px; align-self: center; }   /* 2 段の右、上下の真ん中（2026-09-18 ユーザー指定） */
+#topbar .pubCol .slotPub { padding: 4px 10px; font-size: 12px; }
 #topbar .slotPub { background: #e2913a; border-color: #e2913a; color: #0b1020; font-weight: 600; }
 #topbar .slotPub:hover { background: #f0a85a; border-color: #f0a85a; color: #0b1020; }
 #topbar .pubLink { font-size: 12px; color: var(--accent); white-space: nowrap; }
+#topbar .pubLink:not([href]) { color: var(--muted); opacity: .5; pointer-events: none; cursor: default; }   /* まだ公開していない：文字だけ薄く（押せない） */
 #topbar .dly input.num { width: 48px; padding: 1px 5px; font: inherit; font-size: 12px; text-align: right;
   background: none; color: var(--accent); border: 1px solid var(--line); border-right: none; border-radius: 4px 0 0 4px; -moz-appearance: textfield; }
 #topbar .dly input.num:focus { outline: none; border-color: var(--accent); }
@@ -388,6 +392,42 @@ button { background: var(--panel2); color: var(--text); border: 1px solid var(--
   padding: 7px 12px; cursor: pointer; font-size: 13px; }
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 600; min-width: 110px; }
+/* 再生まわりの 4 つ（◀◀ ▶ ■ ▶▶）は記号だけで、同じ幅に揃える（2026-09-18 ユーザー指定。◀◀・▶▶ の幅 52px に合わせた） */
+/* 上のバーと映像の上のバー（#viewTransport）で共通（.tp） */
+button.tp { width: 52px; height: 36px; min-width: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+/* 記号は SVG（24×24 の升目の中央に描いてある）を 18px で置く。文字だと字形ごとに上下がずれた（2026-09-18 ユーザー指摘） */
+button.tp svg { width: 18px; height: 18px; display: block; fill: currentColor; }
+/* 再生＝緑、停止＝赤、記号は白（2026-09-18 ユーザー指定）。削除ボタンの赤と同じ彩度・明度（緑は色相を 130° に回しただけ） */
+button.tp.tpPlay { background: #2f8e3f; border-color: #4ab05b; color: #fff; }
+button.tp.tpPlay:hover { background: #3ab04e; border-color: #6ae07e; color: #fff; }
+button.tp.tpStop { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+button.tp.tpStop:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+/* 映像の上の再生操作（上部中央。公開ページで見る人が触る用。2026-09-18 ユーザー指定）。
+   半透明の黒い帯。再生中にマウスを動かさないでいると .idle が付いて薄く消える（JS） */
+#viewTransport { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px;
+  background: rgba(0, 0, 0, .55); transition: opacity .35s; }
+#viewTransport.idle { opacity: 0; pointer-events: none; }
+#viewTransport button.tp { width: 40px; height: 30px; }
+#viewTransport button.tp svg { width: 15px; height: 15px; }
+#viewTransport #vSeek { width: clamp(70px, 30cqw, 360px); margin-left: 4px; }   /* cqw＝映像の面（#view）の幅の 1% */
+/* 棒は映像上の箱のスライダー（.onImage）と同じく黒＋細いグレーの縁取り（2026-09-18 ユーザー指定） */
+#viewTransport #vSeek { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
+#viewTransport #vSeek::-moz-range-track { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
+/* 大きさは映像の面の幅で決める（端末の種類ではなく）。スマホ横・スマホ縦のプレビューでも、公開ページを本物のスマホで見ても同じく縮む
+   （2026-09-18 ユーザー指摘：スマホ縦は面の幅 390px に対して帯が 570px あり、はみ出していた） */
+#view { container-type: inline-size; }
+@container (max-width: 720px) {   /* スマホ横（面の幅 約 693px）など */
+  #viewTransport { top: 8px; gap: 4px; padding: 4px 6px; border-radius: 8px; }
+  #viewTransport button.tp { width: 32px; height: 26px; }
+  #viewTransport button.tp svg { width: 13px; height: 13px; }
+}
+@container (max-width: 420px) {   /* スマホ縦（面の幅 390px）など */
+  #viewTransport { top: 6px; gap: 3px; padding: 3px 5px; border-radius: 6px; }
+  #viewTransport button.tp { width: 28px; height: 22px; border-radius: 5px; }
+  #viewTransport button.tp svg { width: 11px; height: 11px; }
+  #viewTransport #vSeek { margin-left: 2px; }
+}
 .time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .seek { width: 100%; margin: 0 0 8px; }
 

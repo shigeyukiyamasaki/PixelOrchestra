@@ -19,6 +19,15 @@
     <div id="viewArea">
     <div id="viewWrap">
     <div id="view">
+      <!-- 映像の上の再生操作（上部中央）：公開ページで見る人が触る用。編集画面のプレビューにも出る。上のバーと同じ処理（2026-09-18 ユーザー指定）。
+           再生中はマウスを 2.5 秒動かさないと薄く消える -->
+      <div id="viewTransport">
+        <button id="vRewBtn" class="tp" title="10 秒戻る" aria-label="10 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
+        <button id="vPlayBtn" class="tp tpPlay" title="再生／一時停止" aria-label="再生"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+        <button id="vStopBtn" class="tp tpStop" title="停止して曲頭に戻る" aria-label="停止"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
+        <button id="vFfBtn" class="tp" title="10 秒進む" aria-label="10 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
+        <input type="range" id="vSeek" min="0" max="1000" value="0" title="再生位置">
+      </div>
       <!-- 視聴モード（?view=プロジェクト名）の覆い：曲名と ▶。押すと再生、再生中に画面を押すと一時停止して戻る。編集画面では出ない（2026-09-18） -->
       <div id="viewerCover"><div class="vcTitle" id="viewerTitle"></div><div class="vcPlay">▶</div><div class="vcMsg" id="viewerMsg"></div></div>
       <!-- テンポと拍子（左上）。拍子は「今の拍／分母」で、分子が 1 2 3 4 … と進む -->
@@ -126,8 +135,12 @@
       <label class="dly" title="音声を何秒遅らせるか。マイナスで早める。映像と音がずれる時に調整"><span>音声遅延</span><input type="range" id="audioDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="audioDelay">0</b><small>秒</small></label>
     </div>
     <span class="spacer"></span>
-    <button id="playBtn" class="primary" title="再生／一時停止（Space キーでも可）">▶ 再生</button>
-    <button id="stopBtn" title="停止して曲頭に戻る">■ 停止</button>
+    <!-- 巻き戻し・早送り：MIDIOrchestra と同じく 10 秒ずつ（2026-09-18 ユーザー指定）。再生中なら再生を続けたまま移る -->
+    <!-- 記号は文字でなく図形（SVG）：文字だと字形ごとに上下の位置がずれて中央に揃わない（2026-09-18 ユーザー指摘）。24×24 の升目の中央に描く -->
+    <button id="rewBtn" class="tp" title="10 秒戻る" aria-label="10 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
+    <button id="playBtn" class="primary tp tpPlay" title="再生／一時停止（Space キーでも可）" aria-label="再生"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+    <button id="stopBtn" class="tp tpStop" title="停止して曲頭に戻る" aria-label="停止"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
+    <button id="ffBtn" class="tp" title="10 秒進む" aria-label="10 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
     <span id="timeLabel" class="time" title="現在位置 / 曲の長さ、♩= 現在のテンポ">0:00 / 0:00</span>
     <input type="range" id="seek" min="0" max="1000" value="0" class="seek" title="再生位置">
     <!-- 設定：クレジット・テンポ・拍子は常時表示せず、このボタンで開くポップアップに（2026-09-18 ユーザー指定。id は不変） -->
@@ -168,9 +181,7 @@
       <select id="projectList" title="選ぶとそのプロジェクト（曲・音声・設定）に切り替わる"><option value="">プロジェクト…</option></select>
       <input id="projectName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
       <button id="projectSave" class="slotSave" title="いまの曲・音声・設定をこの名前で保存（同じ名前なら上書き）">保存</button>
-      <button id="projectPublish" class="slotPub" title="このプロジェクトを保存してから、romashige.com/pixel-orchestra/ に公開する（アプリ本体とプロジェクトのフォルダを送る。変わったファイルだけ）。公開ページは誰でも見られる">公開</button>
       <button id="projectDel" class="slotDel" title="選んでいるプロジェクトを削除（手元のフォルダ。公開済みのものは消えない）">削除</button>
-      <a id="publishLink" class="pubLink" target="_blank" rel="noopener" hidden title="公開したページを開く">公開ページ ↗</a>
     </div>
     <div class="preset" title="プリセット：いまの見た目の設定（スライダー・スクリーン・スカイドーム・楽器の割当など）だけに名前を付けて覚える。曲と音声は変えないので、別の曲に当てはめて使い回せる">
       <select id="presetList" title="選ぶとその設定に切り替わる（曲・音声はそのまま）"><option value="">プリセット…</option></select>
@@ -178,6 +189,12 @@
       <button id="presetSave" class="slotSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
       <button id="presetDel" class="slotDel" title="選んでいるプリセットを削除">削除</button>
     </div>
+    </div>
+    <!-- 公開（プロジェクトを公開する）：2 段の右に、上下の真ん中に置く（2026-09-18 ユーザー指定） -->
+    <div class="pubCol">
+      <button id="projectPublish" class="slotPub" title="いま選んでいる（名前欄の）プロジェクトを保存してから、romashige.com/pixel-orchestra/ に公開する（アプリ本体とプロジェクトのフォルダを送る。変わったファイルだけ）。公開ページは誰でも見られる">公開</button>
+      <!-- 文字は常に出す。公開してリンク先（href）ができたら押せる色になる（2026-09-18 ユーザー指定） -->
+      <a id="publishLink" class="pubLink" target="_blank" rel="noopener" title="公開したページを開く（公開すると押せるようになる）">公開ページ ↗</a>
     </div>
   </header>
 

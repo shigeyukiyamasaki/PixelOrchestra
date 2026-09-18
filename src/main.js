@@ -173,6 +173,24 @@ function syncAudio(t) {
     clock.tStart = t; clock.perfStart = performance.now();
   }
 }
+// 再生ボタンの図形：再生中は ❚❚、止まっている時は ▶（文字でなく SVG。中央に揃えるため。2026-09-18 ユーザー指定）
+const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+function setPlayIcon(playing) {
+  for (const id of ['playBtn', 'vPlayBtn']) {   // 上のバーと映像の上のバー
+    const b = $(id);
+    b.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+    b.setAttribute('aria-label', playing ? '一時停止' : '再生');
+  }
+  wakeTransport();   // 再生を始めた時も止めた時も、いったん出す（再生中なら 2.5 秒後に消える）
+}
+let transportTimer = null;
+function wakeTransport() {
+  const bar = $('viewTransport');
+  bar.classList.remove('idle');
+  clearTimeout(transportTimer);
+  transportTimer = setTimeout(() => { if (clock.playing) bar.classList.add('idle'); }, 2500);
+}
 function play() {
   if (!engine) return;
   if (clock.t >= engine.duration + midiDelaySec()) clock.t = 0;
@@ -183,14 +201,14 @@ function play() {
     spectrum.connect(audio); // 再生の操作の中で音声をつなぐ（自動再生の制限のため）
     syncAudio(clock.t);
   }
-  $('playBtn').textContent = '❚❚ 一時停止';
+  setPlayIcon(true);
   if (VIEW_NAME) $('viewerCover').hidden = true;   // 視聴モード：再生中は覆いを外す
 }
 function pause() {
   clock.t = currentTime();
   clock.playing = false;
   if (audioLoaded) audio.pause();
-  $('playBtn').textContent = '▶ 再生';
+  setPlayIcon(false);
   if (VIEW_NAME) $('viewerCover').hidden = false;  // 視聴モード：止めたら覆い（▶）を戻す
 }
 function seek(t) {
@@ -203,7 +221,7 @@ function seek(t) {
 
 // MIDI 遅延を動かした時：曲の終わりが後ろにずれるので、シークの範囲も合わせる
 $('midiDelay').addEventListener('input', () => {
-  if (engine) $('seek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
+  if (engine) $('seek').max = $('vSeek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
 });
 
 // 音声遅延を動かした時：舞台の時計は音声から引いているので、音声の位置を同じ差だけずらして時刻を保つ
@@ -821,7 +839,7 @@ function setupCredits() {
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
 const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
-  .filter((el) => el.type !== 'file' && el.id !== 'seek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));   // プリセット・プロジェクトの一覧・名前欄は設定ではない
+  .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));   // プリセット・プロジェクトの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
 // 対象は右メニュー（ラジオがあるのは右メニューだけ。別の場所に置く時はここに足す）
 const RADIO_AREA = '#panel';
@@ -1145,7 +1163,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   roll = new PianoRoll(scene, engine, camera);
   placePuppets();
   renderTrackTable();
-  $('seek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
+  $('seek').max = $('vSeek').max = Math.floor((engine.duration + midiDelaySec()) * 100);
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
@@ -1363,9 +1381,20 @@ function renderTrackTable() {
 }
 
 // ---------- UI ----------
-$('playBtn').addEventListener('click', () => (clock.playing ? pause() : play()));
-$('stopBtn').addEventListener('click', () => { pause(); seek(0); });
-$('seek').addEventListener('input', (e) => seek(parseInt(e.target.value, 10) / 100));
+// 上のバー（playBtn…）と映像の上のバー（vPlayBtn…。2026-09-18）で同じ処理
+for (const p of ['', 'v']) {
+  const id = (n) => p ? `v${n[0].toUpperCase()}${n.slice(1)}` : n;
+  $(id('playBtn')).addEventListener('click', () => (clock.playing ? pause() : play()));
+  $(id('stopBtn')).addEventListener('click', () => { pause(); seek(0); });
+}
+// 巻き戻し・早送り（MIDIOrchestra と同じく 10 秒ずつ。2026-09-18 ユーザー指定）。範囲外は seek が曲の頭・終わりに収める
+const SKIP_SEC = 10;
+for (const id of ['rewBtn', 'vRewBtn']) $(id).addEventListener('click', () => { if (engine) seek(currentTime() - SKIP_SEC); });
+for (const id of ['ffBtn', 'vFfBtn']) $(id).addEventListener('click', () => { if (engine) seek(currentTime() + SKIP_SEC); });
+for (const id of ['seek', 'vSeek']) $(id).addEventListener('input', (e) => seek(parseInt(e.target.value, 10) / 100));
+// 映像の上のバー：再生中にマウスを 2.5 秒動かさないと薄く消え、動かすと出る（止まっている間は出たまま。2026-09-18）
+for (const ev of ['pointermove', 'pointerdown']) $('viewArea').addEventListener(ev, wakeTransport, { passive: true });
+$('viewTransport').addEventListener('click', (e) => e.stopPropagation());   // 公開ページの「画面を押すと一時停止」に伝えない
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space') return;
   // 文字/数値入力とプルダウンの中だけはスペースを通す。ファイル選択・ボタン・スライダーにフォーカスがあっても再生/停止にする
@@ -1654,7 +1683,7 @@ function animate() {
     roll.setGlow(s.rollGlow);
     if (s.showRoll) roll.update(tm, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 
-    if (!$('seek').matches(':active')) $('seek').value = Math.floor(t * 100);
+    for (const el of [$('seek'), $('vSeek')]) if (!el.matches(':active')) el.value = Math.floor(t * 100);
     $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
   }
   applyShake(shakeNow);   // 画面の揺れ：この描画の間だけカメラをずらす（空の球も一緒に動く）
@@ -1871,7 +1900,7 @@ $('projectPublish').addEventListener('click', async () => {
     await projectSlot.render(name);
     const r = await (await api(`publish/${encodeURIComponent(name)}`, { method: 'POST' })).json();
     const link = $('publishLink');
-    link.href = r.url; link.hidden = false;
+    link.href = r.url;   // リンク先ができると押せる色になる（CSS の :not([href])）
     nameEl.value = name; say('名前');
     console.log(`[公開] ${name}（${r.method}）→ ${r.url}\n${r.log}`);
   } catch (e) {
