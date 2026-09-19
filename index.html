@@ -22,11 +22,12 @@
       <!-- 映像の上の再生操作（上部中央）：公開ページで見る人が触る用。編集画面のプレビューにも出る。上のバーと同じ処理（2026-09-18 ユーザー指定）。
            再生中はマウスを 2.5 秒動かさないと薄く消える -->
       <div id="viewTransport">
-        <button id="vRewBtn" class="tp" title="10 秒戻る" aria-label="10 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
+        <button id="vRewBtn" class="tp" title="5 秒戻る" aria-label="5 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
         <button id="vPlayBtn" class="tp tpPlay" title="再生／一時停止" aria-label="再生"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
         <button id="vStopBtn" class="tp tpStop" title="停止して曲頭に戻る" aria-label="停止"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
-        <button id="vFfBtn" class="tp" title="10 秒進む" aria-label="10 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
+        <button id="vFfBtn" class="tp" title="5 秒進む" aria-label="5 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
         <input type="range" id="vSeek" min="0" max="1000" value="0" title="再生位置">
+        <span id="vTime" class="vTime" title="現在位置 / 曲の長さ">0:00 / 0:00</span><!-- 2026-09-19 ユーザー指定 -->
       </div>
       <!-- 視聴モード（?view=プロジェクト名）の覆い：曲名と ▶。押すと再生、再生中に画面を押すと一時停止して戻る。編集画面では出ない（2026-09-18） -->
       <div id="viewerCover"><div class="vcTitle" id="viewerTitle"></div><div class="vcPlay">▶</div><div class="vcMsg" id="viewerMsg"></div></div>
@@ -135,14 +136,15 @@
       <label class="dly" title="音声を何秒遅らせるか。マイナスで早める。映像と音がずれる時に調整"><span>音声遅延</span><input type="range" id="audioDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="audioDelay">0</b><small>秒</small></label>
     </div>
     <span class="spacer"></span>
-    <!-- 巻き戻し・早送り：MIDIOrchestra と同じく 10 秒ずつ（2026-09-18 ユーザー指定）。再生中なら再生を続けたまま移る -->
+    <!-- 巻き戻し・早送り：5 秒ずつ（2026-09-18 に MIDIOrchestra と同じ 10 秒で入れ、2026-09-19 ユーザー指定で 5 秒に）。再生中なら再生を続けたまま移る -->
     <!-- 記号は文字でなく図形（SVG）：文字だと字形ごとに上下の位置がずれて中央に揃わない（2026-09-18 ユーザー指摘）。24×24 の升目の中央に描く -->
-    <button id="rewBtn" class="tp" title="10 秒戻る" aria-label="10 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
+    <button id="rewBtn" class="tp" title="5 秒戻る" aria-label="5 秒戻る"><svg viewBox="0 0 24 24"><path d="M12 5 3 12l9 7zM21 5l-9 7 9 7z"/></svg></button>
     <button id="playBtn" class="primary tp tpPlay" title="再生／一時停止（Space キーでも可）" aria-label="再生"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
     <button id="stopBtn" class="tp tpStop" title="停止して曲頭に戻る" aria-label="停止"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
-    <button id="ffBtn" class="tp" title="10 秒進む" aria-label="10 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
-    <span id="timeLabel" class="time" title="現在位置 / 曲の長さ、♩= 現在のテンポ">0:00 / 0:00</span>
+    <button id="ffBtn" class="tp" title="5 秒進む" aria-label="5 秒進む"><svg viewBox="0 0 24 24"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
     <input type="range" id="seek" min="0" max="1000" value="0" class="seek" title="再生位置">
+    <!-- 時間はシークバーの右、テンポは出さない（映像の上のバーに揃える。2026-09-19 ユーザー指定） -->
+    <span id="timeLabel" class="time" title="現在位置 / 曲の長さ">0:00 / 0:00</span>
     <!-- 設定：クレジット・テンポ・拍子は常時表示せず、このボタンで開くポップアップに（2026-09-18 ユーザー指定。id は不変） -->
     <div class="settingsWrap">
       <button id="settingsBtn" title="クレジット・テンポ・拍子の設定を開く／閉じる（Escape・外を押しても閉じる）" aria-expanded="false" aria-controls="settingsPop">設定</button>

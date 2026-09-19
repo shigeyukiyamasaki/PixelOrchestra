@@ -1390,8 +1390,8 @@ for (const p of ['', 'v']) {
   $(id('playBtn')).addEventListener('click', () => (clock.playing ? pause() : play()));
   $(id('stopBtn')).addEventListener('click', () => { pause(); seek(0); });
 }
-// 巻き戻し・早送り（MIDIOrchestra と同じく 10 秒ずつ。2026-09-18 ユーザー指定）。範囲外は seek が曲の頭・終わりに収める
-const SKIP_SEC = 10;
+// 巻き戻し・早送り（5 秒ずつ。2026-09-18 に 10 秒で入れ、2026-09-19 ユーザー指定で 5 秒に）。範囲外は seek が曲の頭・終わりに収める
+const SKIP_SEC = 5;
 for (const id of ['rewBtn', 'vRewBtn']) $(id).addEventListener('click', () => { if (engine) seek(currentTime() - SKIP_SEC); });
 for (const id of ['ffBtn', 'vFfBtn']) $(id).addEventListener('click', () => { if (engine) seek(currentTime() + SKIP_SEC); });
 for (const id of ['seek', 'vSeek']) $(id).addEventListener('input', (e) => seek(parseInt(e.target.value, 10) / 100));
@@ -1687,7 +1687,8 @@ function animate() {
     if (s.showRoll) roll.update(tm, s.rollSpeed, { overheadHeight: s.rollHeight, semitoneW: s.noteWidth });
 
     for (const el of [$('seek'), $('vSeek')]) if (!el.matches(':active')) el.value = Math.floor(t * 100);
-    $('timeLabel').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}  ♩=${Math.round(engine.bpmAt(tm))}`;
+    // 上のバーと映像の上のバーは同じ表示：時間だけ（テンポは出さない。2026-09-19 ユーザー指定）
+    $('timeLabel').textContent = $('vTime').textContent = `${fmtTime(t)} / ${fmtTime(engine.duration + md)}`;
   }
   applyShake(shakeNow);   // 画面の揺れ：この描画の間だけカメラをずらす（空の球も一緒に動く）
   updateSky(camera);   // 空の球をカメラに追従

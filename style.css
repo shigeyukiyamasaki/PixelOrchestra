@@ -414,6 +414,7 @@ button.tp.tpStop:hover { background: #b03a3a; border-color: #e06a6a; color: #fff
 /* 棒は映像上の箱のスライダー（.onImage）と同じく黒＋細いグレーの縁取り（2026-09-18 ユーザー指定） */
 #viewTransport #vSeek { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
 #viewTransport #vSeek::-moz-range-track { background: #000; box-shadow: 0 0 0 1px #8a8a92; }
+#viewTransport .vTime { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: 4px; }   /* 時間（2026-09-19 ユーザー指定） */
 /* 大きさは映像の面の幅で決める（端末の種類ではなく）。スマホ横・スマホ縦のプレビューでも、公開ページを本物のスマホで見ても同じく縮む
    （2026-09-18 ユーザー指摘：スマホ縦は面の幅 390px に対して帯が 570px あり、はみ出していた） */
 #view { container-type: inline-size; }
@@ -421,12 +422,14 @@ button.tp.tpStop:hover { background: #b03a3a; border-color: #e06a6a; color: #fff
   #viewTransport { top: 8px; gap: 4px; padding: 4px 6px; border-radius: 8px; }
   #viewTransport button.tp { width: 32px; height: 26px; }
   #viewTransport button.tp svg { width: 13px; height: 13px; }
+  #viewTransport .vTime { font-size: 11px; }
 }
 @container (max-width: 420px) {   /* スマホ縦（面の幅 390px）など */
   #viewTransport { top: 6px; gap: 3px; padding: 3px 5px; border-radius: 6px; }
   #viewTransport button.tp { width: 28px; height: 22px; border-radius: 5px; }
   #viewTransport button.tp svg { width: 11px; height: 11px; }
   #viewTransport #vSeek { margin-left: 2px; }
+  #viewTransport .vTime { font-size: 10px; margin-left: 2px; }
 }
 .time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .seek { width: 100%; margin: 0 0 8px; }
