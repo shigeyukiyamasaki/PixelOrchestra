@@ -42,7 +42,8 @@ function sizeOf(track) {
 }
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
-const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
+// 打楽器：ティンパニは常に向かって一番左（2026-09-19 ユーザー指定）。一覧にない楽器は従来どおり平均音程の高い順でその右に並ぶ
+const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {

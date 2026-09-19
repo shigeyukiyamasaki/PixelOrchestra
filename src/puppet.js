@@ -144,6 +144,9 @@ const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BA
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
 // グランカッサ：打面を左右向きにしてから（y -90°：絵の正面＝手前の打面が奏者側 +x を向き、胴は pos.x から -x へ 8px）、
 // 上部を奏者から遠い側（-x）へ 0.15 rad 傾ける（z 軸まわり、ワールド順）
+// スネアの打ち方（手の座標）。ハイハットも同じ腕の形で叩くので共有する（2026-09-19 ユーザー指定）
+const VARIANT_SNARE_STRIKE = { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } };
+const VARIANT_SNARE_STRIKE3 = { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } };
 const BASSDRUM_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
 
 const VARIANT = {
@@ -220,12 +223,30 @@ const VARIANT = {
                 // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
                 p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10], restAim: [0, 0.15, 1], wind: 1.4 } }, fixedHand: { L: [-9, 20, 10] } } }, // 構え：マレットは真前（打面を向かない）。振りかぶりで手も右へ大きく（wind 1.4）、打つ瞬間に打面へ // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
   snare:      { inst: { pos: [0, 17, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
-                strike: { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } },
+                strike: VARIANT_SNARE_STRIKE,
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
-                p3: { strike: { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } } } }, // 構えは打点より 4.5 上（振り上げ） // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
+                p3: { strike: VARIANT_SNARE_STRIKE3 } }, // 構えは打点より 4.5 上（振り上げ） // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
   cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, bothArms: true, flourish: true, // 円盤の面（ローカル -y）を内側（±x）へ向ける。両手同時に中央で合わせ、強い音では腕を大きく回す（2026-09-11）
                 strike: { L: { hit: [-2, 30], rest: [-12, 26] }, R: { hit: [2, 30], rest: [12, 26] } },
                 p3: { strike: { L: { hit: [-2, 25, 15], rest: [-9, 19, 13] }, R: { hit: [2, 25, 15], rest: [9, 19, 13] } } } }, // 合わせるのは肩の高さ（顔を挟まない）、構え・振りかぶりはその下（2026-09-12 ユーザー指定：実際は低い位置から高い位置で合わせる）
+  // ハイハット（2026-09-19 ユーザー指定：スネアのように両手にスティックを持って叩く）。置き場所・大きさはスネアと同じで、上のシンバルの表が y 17。
+  // 腕の形（握り・構え・スティックの向き）はスネアとまったく同じ（2026-09-19 ユーザー指定）。上のシンバルの表（y 17）はスネアの皮と同じ高さで、
+  // 握り（x ±7.5, z 9）は上から見てシンバルの円（半径 8）の外なので貫通しない。先端はスネアと同じく中心（カップ）に当たる
+  hihat:      { inst: { pos: [0, 18, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
+                strike: VARIANT_SNARE_STRIKE,
+                p3: { strike: VARIANT_SNARE_STRIKE3 } },
+  // 銅鑼（2026-09-19 ユーザー指定）：面を客席（+z）へ向け、奏者の右前に吊る。右手の大きなマレットを後ろに引き、前へ振って奏者側の面を打つ。
+  // 面を左右に向けると、正面のカメラから円盤が縦の線にしか見えなかった。左前に置くと右腕が胴の前を横切ってめり込むので右前に。
+  // 円盤の中心は (19, 24, 10)・半径 13.5 で、左の柱（x 3）が体の外に来る位置。打つ点は中心より 7 左（x 12）、マレットの頭（半径 2.5）の中心が面の 2.5 手前（z 7）。左手は体の横に下ろす
+  gong:       { inst: { pos: [19, 0, 10], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', gazeYaw: MIRROR * 0.5,
+                strike: { R: { hit: [9, 21], rest: [12, 21], head: [12, 23] } }, fixedHand: { L: [-8, 12] },
+                p3: { strike: { R: { hit: [9, 21, -0.6], rest: [12, 21, -6], head: [12, 23, 7], restAim: [0.3, 0.2, 1], wind: 1.2 } }, fixedHand: { L: [-8, 12, 3] } } }, // 握りから頭の中心まで 8.5px（マレットの長さ）にして、頭が面にめり込まないように
+  // チューブラーベル（2026-09-19 ユーザー指定）：奏者の前（管の面は z 14、奏者側の表面 z 13.5）に立て、右手のハンマー 1 本で管の頭（キャップ、y 30）を叩く。
+  // 音程で右手が管の前を左右に動く（管は x -11〜+11 に 12 本。低音が左）。ハンマーの頭（半径 1.5）の中心が表面の 1.5 手前（z 12）・キャップのすぐ下（y 29.5）に当たり、
+  // 握りはそこから 8px（マレットの長さ）手前下の胸の前（z 4.8）。構えでは手を少し引く。左手は体の横に下ろす
+  tubularbells: { inst: { pos: [0, 0, 14], rot: 0 }, held: { R: 'mallet' }, singleArm: 'R', pitchSpread: 11,
+                strike: { R: { hit: [0, 26], rest: [0, 24], head: [0, 30] } }, fixedHand: { L: [-8, 12] },
+                p3: { strike: { R: { hit: [0, 25.5, 4.8], rest: [0, 25, 1.5], head: [0, 29.5, 12] } }, fixedHand: { L: [-8, 12, 3] } } },
   xylophone:  { inst: { pos: [0, 8, 8], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 22], rest: [-7, 29], head: [-3, 15] }, R: { hit: [3, 22], rest: [7, 29], head: [3, 15] } },
                 p3: { strike: { L: { hit: [-5, 22, 8], rest: [-6, 24, 8], head: [-3, 18.5, 15.5] }, R: { hit: [5, 22, 8], rest: [6, 24, 8], head: [3, 18.5, 15.5] } } } }, // 握り z 8（手首 ≒ 5）

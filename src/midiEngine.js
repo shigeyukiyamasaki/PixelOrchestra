@@ -34,6 +34,9 @@ export const VARIANTS = {
   xylophone:  { family: 'percussion', label: 'シロフォン' },
   marimba:    { family: 'percussion', label: 'マリンバ' },
   cymbal:     { family: 'percussion', label: 'シンバル' },
+  hihat:      { family: 'percussion', label: 'ハイハット' },   // 2026-09-19
+  gong:       { family: 'percussion', label: '銅鑼' },         // 2026-09-19（タムタム）
+  tubularbells: { family: 'percussion', label: 'チューブラーベル' },   // 2026-09-19
   piano:      { family: 'keyboard',   label: 'ピアノ' },
   celesta:    { family: 'keyboard',   label: 'チェレスタ' },
   harp:       { family: 'keyboard',   label: 'ハープ' },
@@ -78,15 +81,17 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'marimba',      keywords: ['marimba'] },
   { id: 'vibraphone',   keywords: ['vibraphone', 'vibes', 'vibrafon'] },
   { id: 'xylophone',    keywords: ['xylophone', 'xylo'] },
-  { id: 'glocken',      keywords: ['glockenspiel', 'glock', 'bells'] },
+  // チューブラーベルはグロッケンより先に見る：'tubular bells' が 'bells' に先に一致してグロッケン（→シロフォン）になる（2026-09-19）
   { id: 'tubularbells', keywords: ['tubular bells', 'tubular', 'chimes', 'orchestral chimes'] },
+  { id: 'glocken',      keywords: ['glockenspiel', 'glock', 'bells'] },
   { id: 'triangle',     keywords: ['triangle', 'tri'] },
   { id: 'windchimes',   keywords: ['wind chimes', 'windchimes', 'wind chime', 'mark tree'] },
   { id: 'tambourine',   keywords: ['tambourine', 'tamb'] },
   { id: 'tamtam',       keywords: ['tam-tam', 'tamtam', 'tam tam', 'gong', '銅鑼', 'dora'] },
+  // ハイハットはシンバルより先に見る：'hi-hat cymbal' が 'cymbal' に先に一致してシンバルになる（2026-09-19）
+  { id: 'hihat',        keywords: ['hi-hat', 'hihat', 'hi hat', 'hh'] },
   { id: 'suspendedcymbal', keywords: ['suspended cymbal', 'sus cymbal', 'sus cym', 'susp cymbal', 'ride'] },
   { id: 'cymbals',      keywords: ['cymbal', 'cymbals', 'crash'] },
-  { id: 'hihat',        keywords: ['hi-hat', 'hihat', 'hi hat', 'hh'] },
   { id: 'drums',        keywords: ['drums', 'drum', 'drum kit'] },
   { id: 'percussion',   keywords: ['percussion', 'perc'] },
   // 鍵盤
@@ -111,6 +116,9 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'harp',         keywords: ['ハープ'] },
   { id: 'timpani',      keywords: ['ティンパニ'] },
   { id: 'snare',        keywords: ['スネア'] },
+  { id: 'hihat',        keywords: ['ハイハット'] },          // 「ハイハットシンバル」をシンバルにしないよう先に（2026-09-19）
+  { id: 'tamtam',       keywords: ['ゴング', 'タムタム'] },   // 銅鑼（漢字）は英語の tamtam の行にある
+  { id: 'tubularbells', keywords: ['チューブラーベル', 'チューブラベル', 'チャイム'] },   // 2026-09-19
   { id: 'cymbals',      keywords: ['シンバル'] },
   { id: 'drums',        keywords: ['ドラム'] },
   { id: 'percussion',   keywords: ['打楽器', 'パーカッション'] },
@@ -131,8 +139,8 @@ const ORCH_ID_TO_VARIANT = {
   horn: 'horn', trumpet: 'trumpet', trombone: 'trombone', tuba: 'tuba', flugelhorn: 'trumpet',
   violin1: 'violin1', violin2: 'violin2', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
-  marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'xylophone', tubularbells: 'snare',
-  triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'cymbal', suspendedcymbal: 'cymbal', cymbals: 'cymbal', hihat: 'cymbal',
+  marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'xylophone', tubularbells: 'tubularbells',
+  triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'gong', suspendedcymbal: 'cymbal', cymbals: 'cymbal', hihat: 'hihat',
   drums: 'snare', percussion: 'snare',
   piano: 'piano', celesta: 'celesta', organ: 'piano',
 };
