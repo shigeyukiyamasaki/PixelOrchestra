@@ -37,6 +37,7 @@ export const VARIANTS = {
   hihat:      { family: 'percussion', label: 'ハイハット' },   // 2026-09-19
   gong:       { family: 'percussion', label: '銅鑼' },         // 2026-09-19（タムタム）
   tubularbells: { family: 'percussion', label: 'チューブラーベル' },   // 2026-09-19
+  suscymbal:  { family: 'percussion', label: 'サスペンデッドシンバル' }, // 2026-09-19
   piano:      { family: 'keyboard',   label: 'ピアノ' },
   celesta:    { family: 'keyboard',   label: 'チェレスタ' },
   harp:       { family: 'keyboard',   label: 'ハープ' },
@@ -119,6 +120,7 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'hihat',        keywords: ['ハイハット'] },          // 「ハイハットシンバル」をシンバルにしないよう先に（2026-09-19）
   { id: 'tamtam',       keywords: ['ゴング', 'タムタム'] },   // 銅鑼（漢字）は英語の tamtam の行にある
   { id: 'tubularbells', keywords: ['チューブラーベル', 'チューブラベル', 'チャイム'] },   // 2026-09-19
+  { id: 'suspendedcymbal', keywords: ['サスペンデッドシンバル', 'サスペンダーシンバル', 'サスペンドシンバル', 'サスシン'] },   // 「シンバル」より先に（2026-09-19）
   { id: 'cymbals',      keywords: ['シンバル'] },
   { id: 'drums',        keywords: ['ドラム'] },
   { id: 'percussion',   keywords: ['打楽器', 'パーカッション'] },
@@ -140,7 +142,7 @@ const ORCH_ID_TO_VARIANT = {
   violin1: 'violin1', violin2: 'violin2', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
   marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'xylophone', tubularbells: 'tubularbells',
-  triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'gong', suspendedcymbal: 'cymbal', cymbals: 'cymbal', hihat: 'hihat',
+  triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'gong', suspendedcymbal: 'suscymbal', cymbals: 'cymbal', hihat: 'hihat',
   drums: 'snare', percussion: 'snare',
   piano: 'piano', celesta: 'celesta', organ: 'piano',
 };

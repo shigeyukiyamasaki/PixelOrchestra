@@ -239,6 +239,12 @@ const VARIANT = {
   hihat:      { inst: { pos: [0, 18, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: VARIANT_SNARE_STRIKE,
                 p3: { strike: VARIANT_SNARE_STRIKE3 } },
+  // サスペンデッドシンバル（2026-09-19 ユーザー指定）：置き場所・高さはスネアと同じ（表 y 17）、腕の形（握り・構え）もスネアと同じ。持つのはロール用のマレット。
+  // 先端はスネアのように中央へ集めず、左右の縁寄り（中心 (0, 17) から横に約 6px）へ向ける。握り（x ±7.5, z 9）はシンバルの円（中心 z 17・半径 9）の外。
+  // roll：0.5 秒以上の音はロール（左右交互）。振り上げの高さは音の始めほど小さく、終わりに向けて構えの高さまで大きくする（クレッシェンド込みの音源に合わせる）
+  suscymbal:  { inst: { pos: [0, 18, 8], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { minDur: 0.5, rate: 6, from: 0.12 },
+                strike: VARIANT_SNARE_STRIKE,
+                p3: { strike: { L: { ...VARIANT_SNARE_STRIKE3.L, head: [-6.5, 17.8, 15] }, R: { ...VARIANT_SNARE_STRIKE3.R, head: [6.5, 17.8, 15] } } } },
   // 銅鑼（2026-09-19 ユーザー指定。ユーザー提供の写真どおり）：奏者は体ごと左へ 90° 回って銅鑼に向き、顔だけ首をひねって指揮者へ向け続ける（bodyYaw / headYaw）。
   // 銅鑼は奏者の前・少し左に吊り、面は奏者の右（＝体を回す前の正面＝客席側）へ向ける。奏者はその手前（客席側）に立ち、客席側の面を打つ。
   // （面を左右に向けると正面のカメラから円盤が縦の線にしか見えないので、面は客席向き）
@@ -955,15 +961,28 @@ export class Puppet {
     const tr = st.track;
     const normOf = (n) => (n.midi - (tr?.minPitch ?? 60)) / Math.max(1, (tr?.maxPitch ?? 72) - (tr?.minPitch ?? 60));
     const spread = cfg.pitchSpread || 0; // 鍵盤打楽器：音程で叩く位置が横に動く（次の音へ向かって移動）
+    // ロール（サスペンデッドシンバル。2026-09-19 ユーザー指定）：長い音の間、左右交互に叩き続ける。
+    // 音源がクレッシェンド込みの収録なので、振り上げは音の始めほど小さく（roll.from）、終わりに向けて構えの高さまで大きくする
+    let roll = null;
+    if (cfg.roll && onset) {
+      const tNow = onset.time + age;
+      const n = st.active.filter((a) => a.end - a.time >= cfg.roll.minDur).sort((a, b) => b.time - a.time)[0];
+      if (n) roll = { p: clamp((tNow - n.time) / (n.end - n.time), 0, 1), ph: tNow * cfg.roll.rate };
+    }
     for (const side of ['L', 'R']) {
       const sp = strike?.[side];
       if (!sp) { if (fixedHand?.[side]) this.setHand(side, fixedHand[side], dt, 10); continue; }
       let s = 0, ant = 0, vel = 0.5, pn = pitchNorm;
       if (onset && (both || armOf(onset) === side)) { vel = vScale(onset.velocity); s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
       if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * vScale(next.velocity); vel = Math.max(vel, vScale(next.velocity)); if (spread) pn = normOf(next); }
+      if (roll) { // 左右は半周期ずらす。打つ瞬間だけ鋭く s → 1（cos の 4 乗）
+        s = Math.pow(Math.max(0, Math.cos(2 * Math.PI * (roll.ph + (side === 'L' ? 0 : 0.5)))), 4);
+        ant = 0; vel = onset ? vScale(onset.velocity) : vel;
+      }
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
+      if (roll) { const a = lerp(cfg.roll.from, 1, roll.p); for (let i = 0; i < 3; i++) rest[i] = hit[i] + (rest[i] - hit[i]) * a; } // 振り上げの高さ＝構えと打点の間を a の割合
       let target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
       // arc：肩から腕全体で振る（銅鑼。2026-09-19 ユーザー指定：直線で寄せると肘から先だけで叩いて見えた）。
       // 手は肩を中心に「構え → 打点」の角度を回り、肩からの距離は構えと打点の間で変えるだけ（肘の角度がほぼ一定）。
