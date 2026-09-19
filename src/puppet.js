@@ -13,6 +13,7 @@ import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skir
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
+const deg2rad = (d) => (d * Math.PI) / 180;
 // 2 関節腕の長さ [px]。上腕 10・前腕 7.5・手 4（2026-09-10 ユーザー指示で 8/6/4 から約 20% 延長：頭が大きく楽器が 1.25 倍なので口元・指板・ピストンが届く範囲の端に来ていた）
 const ARM_UPPER = 10, FORE_NOHAND = 7.5, HAND_LEN = 4;
 const ARM_FORE = FORE_NOHAND + HAND_LEN; // 手首なし版（2D 板・非使用）の前腕＋手
@@ -144,6 +145,9 @@ const BASS_UP = (() => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(BA
 const FWD = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)); // スプライトの +x を前方（+z）へ
 // グランカッサ：打面を左右向きにしてから（y -90°：絵の正面＝手前の打面が奏者側 +x を向き、胴は pos.x から -x へ 8px）、
 // 上部を奏者から遠い側（-x）へ 0.15 rad 傾ける（z 軸まわり、ワールド順）
+// 銅鑼：絵の正面（面、+z）を奏者の右（rig +x ＝ 体を回す前の正面＝客席側）へ向ける y 軸 90° 回転。首は右へ 90° ひねって指揮者を見る（2026-09-19）
+const GONG_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+const GONG_HEAD_YAW = Math.PI / 2;   // 符号は実測で確認（-π/2 だと指揮者と逆を向いた）
 // スネアの打ち方（手の座標）。ハイハットも同じ腕の形で叩くので共有する（2026-09-19 ユーザー指定）
 const VARIANT_SNARE_STRIKE = { L: { hit: [-3, 25], rest: [-9, 32], head: [-3, 18] }, R: { hit: [3, 25], rest: [9, 32], head: [3, 18] } };
 const VARIANT_SNARE_STRIKE3 = { L: { hit: [-7.5, 15.5, 9], rest: [-8.5, 20, 8], head: [-1, 18, 16] }, R: { hit: [7.5, 15.5, 9], rest: [8.5, 20, 8], head: [1, 18, 16] } };
@@ -235,12 +239,19 @@ const VARIANT = {
   hihat:      { inst: { pos: [0, 18, 8], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: VARIANT_SNARE_STRIKE,
                 p3: { strike: VARIANT_SNARE_STRIKE3 } },
-  // 銅鑼（2026-09-19 ユーザー指定）：面を客席（+z）へ向け、奏者の右前に吊る。右手の大きなマレットを後ろに引き、前へ振って奏者側の面を打つ。
-  // 面を左右に向けると、正面のカメラから円盤が縦の線にしか見えなかった。左前に置くと右腕が胴の前を横切ってめり込むので右前に。
-  // 円盤の中心は (19, 24, 10)・半径 13.5 で、左の柱（x 3）が体の外に来る位置。打つ点は中心より 7 左（x 12）、マレットの頭（半径 2.5）の中心が面の 2.5 手前（z 7）。左手は体の横に下ろす
-  gong:       { inst: { pos: [19, 0, 10], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', gazeYaw: MIRROR * 0.5,
-                strike: { R: { hit: [9, 21], rest: [12, 21], head: [12, 23] } }, fixedHand: { L: [-8, 12] },
-                p3: { strike: { R: { hit: [9, 21, -0.6], rest: [12, 21, -6], head: [12, 23, 7], restAim: [0.3, 0.2, 1], wind: 1.2 } }, fixedHand: { L: [-8, 12, 3] } } }, // 握りから頭の中心まで 8.5px（マレットの長さ）にして、頭が面にめり込まないように
+  // 銅鑼（2026-09-19 ユーザー指定。ユーザー提供の写真どおり）：奏者は体ごと左へ 90° 回って銅鑼に向き、顔だけ首をひねって指揮者へ向け続ける（bodyYaw / headYaw）。
+  // 銅鑼は奏者の前・少し左に吊り、面は奏者の右（＝体を回す前の正面＝客席側）へ向ける。奏者はその手前（客席側）に立ち、客席側の面を打つ。
+  // （面を左右に向けると正面のカメラから円盤が縦の線にしか見えないので、面は客席向き）
+  // 以下は体を回した後の rig 座標（+z = 銅鑼の方、+x = 客席側）。円盤の中心は (-7, 24, 28)・半径 13.5、客席側の面は x -6.5。
+  // 腕を自然に伸ばして肘を軽く曲げた形になるよう、銅鑼を体から離してある（2026-09-19 ユーザー指定。近いと肘が深く折れた）：
+  // 肘の角度は「肩から手首までの距離」で決まる（上腕 10・前腕 7.5。手首は握りの 4px 手前）。打つ時の握りは肩（5.5, 25.5, 0）から約 21px、構えは約 20px。
+  // 打つ点は面の中心：マレットの頭（半径 2.5）の中心が面の 2.5 手前（x -4）。握りから頭の中心まで 8.5px（マレットの長さ）。
+  // 手前の柱（z 12）と床の足は奏者の足より前。構えのマレットは面と平行・水平（前へ向ける）。
+  // 左手は銅鑼の手前・上寄りの縁に添える（肘は写真くらいの曲げ具合）
+  gong:       { inst: { pos: [-7, 0, 28], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', bodyYaw: Math.PI / 2, headYaw: GONG_HEAD_YAW,
+                strike: { R: { hit: [-1.5, 23], rest: [3, 22], head: [-4, 24] } }, fixedHand: { L: [-6, 31.8] },
+                p3: { quat: GONG_Q, strike: { R: { hit: [-1.5, 23, 19.7], rest: [11, 25, 19.5], head: [-4, 24, 28], restAim: [0, 0.1, 1], wind: 1.6, arc: true } }, fixedHand: { L: [-6, 31.8, 17] } } },
+                // 構えは打点から肩を中心に客席側へ約 35°・少し上へ回した所（肩からの距離は打点とほぼ同じ 20〜21px）。振りかぶりはさらに外・上へ回り、肩から腕全体で振り下ろす
   // チューブラーベル（2026-09-19 ユーザー指定）：奏者の前（管の面は z 14、奏者側の表面 z 13.5）に立て、右手のハンマー 1 本で管の頭（キャップ、y 30）を叩く。
   // 音程で右手が管の前を左右に動く（管は x -11〜+11 に 12 本。低音が左）。ハンマーの頭（半径 1.5）の中心が表面の 1.5 手前（z 12）・キャップのすぐ下（y 29.5）に当たり、
   // 握りはそこから 8px（マレットの長さ）手前下の胸の前（z 4.8）。構えでは手を少し引く。左手は体の横に下ろす
@@ -411,6 +422,7 @@ export class Puppet {
    */
   measureFootprint() {
     this.rig.scale.set(MIRROR, 1, 1);
+    this.group.rotation.set(0, this._bodyYaw(), 0);   // 体ごと横を向く楽器（銅鑼）は、その向きで楽器の幅を測る
     this.root.updateMatrixWorld(true);
     let minX = -0.55, maxX = 0.55; // 体の幅（±7px）
     if (this.inst) {
@@ -423,13 +435,15 @@ export class Puppet {
   faceCamera(cam) {
     if (this.flat) { this.group.quaternion.copy(cam.quaternion); return; }
     const yaw = Math.atan2(cam.position.x - this.root.position.x, cam.position.z - this.root.position.z);
-    this.group.rotation.set(0, yaw, 0);
+    this.group.rotation.set(0, yaw + this._bodyYaw(), 0);
   }
   /** 向きを固定：指定の点（指揮者）の方を向く。指揮者自身は楽団（-z）の方を向く */
   faceToward(px, pz) {
     const yaw = this.family === 'conductor' ? Math.PI : Math.atan2(px - this.root.position.x, pz - this.root.position.z);
-    this.group.rotation.set(0, yaw, 0);
+    this.group.rotation.set(0, yaw + this._bodyYaw(), 0);
   }
+  /** 体の向きの上乗せ [rad]（+ で奏者の左へ回る）。楽器の設定 bodyYaw。ボクセルのみ（2D の板は正対のまま）。2026-09-19 ユーザー指定：銅鑼の奏者は真横を向く */
+  _bodyYaw() { return this.flat ? 0 : (this.cfg.bodyYaw ?? 0); }
 
   // ---- 手の配置：目標へ滑らかに寄せてから 3D IK（rate が大きいほど即応。Infinity で即時）----
   // handDir（rig 空間）を渡すと手首あり：手首＝目標 − handDir×手の長さ、前腕は手首へ、手は handDir を向く
@@ -524,7 +538,7 @@ export class Puppet {
     const { active, age, next, toNext } = st;
     const wantConductor = (!active.length && (age > 0.5 || (next && toNext < 1.0)));
     this._gaze = approach(this._gaze ?? 0, wantConductor ? 0 : 1, 4, dt);
-    this.headPivot.rotation.y += gazeYaw * this._gaze;
+    this.headPivot.rotation.y += gazeYaw * this._gaze + (this.cfg.headYaw ?? 0);   // headYaw：体を横に向けた楽器（銅鑼）で、首をひねって顔を指揮者へ向け続ける（2026-09-19 ユーザー指定）
     // 前傾しても顔は起こす（腰の前傾を首で打ち消す）。gazeDown は「楽器を見る」分だけ足す
     this.headPivot.rotation.x += -this._lean * 0.9 + gazeDown * this._gaze;
   }
@@ -579,6 +593,7 @@ export class Puppet {
 
     // アタックの明滅：発音した瞬間だけ楽器を明るくする（持続は足元の光が示すので不要。2026-09-12 ユーザー指定）
     this._attackFlash(st, settings);
+    this._instSwing(st, ctx.dt);
     // 次フレームの _standOnFloor 用に、今フレームの上半身の回転・位置を控える
     (this._spineQPrev ??= new THREE.Quaternion()).copy(this.spine.quaternion);
     (this._spinePosPrev ??= new THREE.Vector3()).copy(this.spine.position);
@@ -667,6 +682,30 @@ export class Puppet {
     });
     if (this.inst) apply(this.inst);
     else { apply(this.held?.L); apply(this.held?.R); }
+  }
+
+  /**
+   * 吊られた部分の揺れ（銅鑼の円盤と紐。2026-09-19 ユーザー指定）：楽器の userData.swing を x 軸まわりの減衰振り子で揺らす。
+   * 打った瞬間に勢い（角速度）を足す：強さ 1 で振れ幅 約 10°。+ 回転で円盤の下が面（絵の +z）の裏側へ振れる＝マレットに押される向き。
+   * 1 往復 約 1.4 秒、2〜3 秒で止まる。続けて打つと足し合わさる。シーク等で dt が飛んでも暴れないよう細かく刻んで積分する
+   */
+  _instSwing(st, dt) {
+    const sw = this.inst?.userData.swing;
+    if (!sw || !(dt > 0)) return;
+    const W = 2 * Math.PI / 1.4, DAMP = 1.2;               // 固有角振動数 [rad/s]・減衰 [1/s]（振れ幅は約 2.5 秒で 1/20）
+    const { onset, age } = st;
+    if (onset && onset !== this._swingOnset && age < 0.1) { // 新しい音の打った瞬間
+      this._swingOnset = onset;
+      // 減衰で最初の山は勢いの 7 割ほどになるので、14° 相当の勢いを足して最初の振れを約 10° にする（強さ 1 のとき。2026-09-19 ユーザー指定で 5° から倍に）
+      this._swingW = (this._swingW ?? 0) + deg2rad(14) * W * clamp(onset.velocity ?? 0.5, 0, 1);
+    }
+    let th = this._swingTh ?? 0, w = this._swingW ?? 0;
+    const n = Math.min(60, Math.ceil(Math.min(dt, 1) / (1 / 120)));
+    const h = Math.min(dt, 1) / n;
+    for (let i = 0; i < n; i++) { w += (-W * W * th - 2 * DAMP * w) * h; th += w * h; }
+    if (Math.abs(th) < 1e-5 && Math.abs(w) < 1e-5) { th = 0; w = 0; }
+    this._swingTh = th; this._swingW = w;
+    sw.rotation.x = th;
   }
 
   /** 下ろし中の手の位置：構えの位置 p と下ろしの位置 to を補間（rig px） */
@@ -926,6 +965,20 @@ export class Puppet {
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
       let target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
+      // arc：肩から腕全体で振る（銅鑼。2026-09-19 ユーザー指定：直線で寄せると肘から先だけで叩いて見えた）。
+      // 手は肩を中心に「構え → 打点」の角度を回り、肩からの距離は構えと打点の間で変えるだけ（肘の角度がほぼ一定）。
+      // u = 1 で打点、0 で構え、負で振りかぶり（構えの先へ同じ弧を回る）
+      if (sp.arc) {
+        const S = SHOULDER[side], u = s - ant * (sp.wind ?? 0.6);
+        const a = v3([rest[0] - S[0], rest[1] - S[1], rest[2] - S[2]]), b = v3([hit[0] - S[0], hit[1] - S[1], hit[2] - S[2]]);
+        const la = a.length(), lb = b.length(); a.normalize(); b.normalize();
+        const axis = new THREE.Vector3().crossVectors(a, b);
+        if (axis.lengthSq() > 1e-8) {
+          const th = Math.acos(clamp(a.dot(b), -1, 1));
+          const d = a.applyAxisAngle(axis.normalize(), th * u).multiplyScalar(lerp(la, lb, clamp(u, 0, 1)));
+          target = [S[0] + d.x, S[1] + d.y, S[2] + d.z];
+        }
+      }
       // シンバルの大きな一打：合わせた後に両手を上に上げて大きく腕を回す（強さに応じた振り幅、約 0.9 秒で構えへ戻る。2026-09-11 ユーザー指定）
       if (both && onset && cfg.flourish) {
         // ここだけスライダーを掛けない：掛けると弱い音でも回してしまい「強い音の時だけ大きく回す」という作りが崩れる（2026-09-12）

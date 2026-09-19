@@ -838,14 +838,28 @@ export const INSTRUMENT = {
        colorOf: (x, y, z) => (y >= 34 && Math.abs(x - 15.5) <= 3.5 && z - 15.5 < -2 ? C.black : null) }),
   // 銅鑼（タムタム）64×90（2026-09-19 ユーザー指定）：木の枠（柱 2 本・横木・足）から紐で吊った円盤。pivot = 底中央。
   // 円盤は直径 27px・中心の高さ 24px、厚み 1px で、正面（+z）が面。枠の柱・横木・円盤は奥行きの中央（z 11-12 セル）の 1px、足だけ前後いっぱいに伸ばす
-  gong: () => makePart(64, 90, 32, 90, (d) => {
-    d.r(0, 4, 2, 86, C.wood2); d.r(62, 4, 2, 86, C.wood2); d.r(0, 4, 64, 3, C.wood2);        // 柱・横木
-    d.r(0, 2, 2, 2, C.gold2); d.r(62, 2, 2, 2, C.gold2);                                     // 柱の頭の飾り
-    d.r(26, 7, 1, 9, C.black); d.r(37, 7, 1, 9, C.black);                                    // 吊り紐
-    d.disc(32, 42, 27, C.gold2); d.ring(32, 42, 27, C.copper2); d.ring(32, 42, 26, C.copper2); // 円盤・縁（濃い）
-    d.ring(32, 42, 18, C.gold); d.disc(32, 42, 7, '#c99a36');                                // 打ち出しの輪・中央
-  }, { res: 2, depth: 24, z0: -12,
-       side: (d) => { d.r(11, 2, 2, 84, F); d.r(0, 86, 24, 4, F); } }),
+  // 枠と「吊られた部分（紐＋円盤）」は別の部品（2026-09-19 ユーザー指定：打つと円盤と紐が揺れる）。
+  // 吊られた部分は横木の下の紐の付け根（列 32・行 7 ＝ 床から 41.5px）を支点に、userData.swing の回転（x 軸＝面に垂直な前後の振り子）で揺らす（puppet.js）
+  gong: () => {
+    const opts = { res: 2, depth: 24, z0: -12, side: (d) => { d.r(11, 2, 2, 84, F); d.r(0, 86, 24, 4, F); } };
+    const root = new THREE.Group();
+    const frame = makePart(64, 90, 32, 90, (d) => {
+      d.r(0, 4, 2, 86, C.wood2); d.r(62, 4, 2, 86, C.wood2); d.r(0, 4, 64, 3, C.wood2);      // 柱・横木
+      d.r(0, 2, 2, 2, C.gold2); d.r(62, 2, 2, 2, C.gold2);                                   // 柱の頭の飾り
+    }, opts);
+    const hanging = makePart(64, 90, 32, 7, (d) => {
+      d.r(26, 7, 1, 9, C.black); d.r(37, 7, 1, 9, C.black);                                  // 吊り紐
+      d.disc(32, 42, 27, C.gold2); d.ring(32, 42, 27, C.copper2); d.ring(32, 42, 26, C.copper2); // 円盤・縁（濃い）
+      d.ring(32, 42, 18, C.gold); d.disc(32, 42, 7, '#c99a36');                              // 打ち出しの輪・中央
+    }, opts);
+    const swing = new THREE.Group();
+    swing.position.set(0, (90 - 7) / 2 * PX, 0);   // 支点：絵の行 7（res 2 なので 1 行 = 0.5px）
+    swing.add(hanging);
+    root.add(frame, swing);
+    root.userData.swing = swing;
+    root.userData.size = frame.userData.size;
+    return root;
+  },
   // チューブラーベル 60×66（2026-09-19 ユーザー指定）：金属の枠（柱 2 本・上の横木・床の台）から真鍮の管 12 本を吊る。pivot = 底中央。
   // 管は左が長い（低音）→ 右が短い（高音）で 26px → 16px、上端（キャップ）の高さは揃えて 30px。管 i の中心は列 8+4i（rig x = -11 + 2i）。
   // 厚みは 1px（奥行き z 3-4 セル）、床の台だけ前後に広げる
