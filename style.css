@@ -41,6 +41,12 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
   background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 6px 12px -8px rgba(0,0,0,.6); }
 #panel hr.sep { display: none; }   /* 区切り線の役目は、貼り付け領域の下線に移した */
 #panel #camArea + hr.sep + .cols { margin-top: 14px; }   /* 貼り付け領域と下の箱の間（区切り線の下の余白ぶん） */
+/* まとまりの区切り線：レンズの下の線（#camArea の下枠）と同じ太さ・色で、右メニューの左右いっぱい（2026-09-20 ユーザー指定：空・時刻／天気／光源・影で 1 まとまり） */
+#panel hr.groupSep { display: block; height: 0; border: none; border-top: 1px solid var(--line); margin: 14px -16px; }
+/* まとまりの見出し（「環境」）：見た目は箱の見出し（.hd）と同じ（2026-09-20 ユーザー指定）。左右いっぱい、上下の余白だけ調整 */
+#panel .groupHd { margin: 14px 0 10px; }
+/* 天気の見出しのチェックがオフ（雨・雪を降らせない）なら、雷以外の項目は効かないので薄く（グレーアウト法則。2026-09-20） */
+#weatherBox:not(:has(#weatherOn:checked)) > *:not(.hd):not(.wxThunder) { opacity: .45; pointer-events: none; }
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
@@ -135,6 +141,7 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
 #screenBar .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
+#screenBar .hd > button ~ .secPre { margin-left: 6px; }   /* 箱ごとのプリセットの ▾ は「素材の一覧を更新」のすぐ右（2026-09-19） */
 #screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
 #screenBar button:hover { border-color: var(--accent); color: var(--accent); }
 #screenRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
@@ -321,12 +328,12 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 /* プリセット（2026-09-14 ユーザー指定）。一覧・名前・保存・削除を 1 行に。
    上にプロジェクトの行を足して 2 段（2026-09-18 ユーザー指定。ファイル・遅延の 2 段と同じ間隔） */
 #topbar .slots { display: flex; flex-direction: column; gap: 5px; }
-#topbar .preset { display: flex; align-items: center; gap: 6px; }
-#topbar .preset select { width: 150px; background: var(--panel2); color: var(--text);   /* 幅は固定：プロジェクトとプリセットの 2 段で名前欄・ボタンの位置を揃える */
+#topbar .preset, #secPresetPop .preset { display: flex; align-items: center; gap: 6px; }
+#topbar .preset select, #secPresetPop .preset select { width: 150px; background: var(--panel2); color: var(--text);   /* 幅は固定：プロジェクトとプリセットの 2 段で名前欄・ボタンの位置を揃える */
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
-#topbar .preset input { width: 160px; background: none; color: var(--text);
+#topbar .preset input, #secPresetPop .preset input { width: 160px; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
-#topbar .preset button { padding: 4px 8px; font-size: 12px; }
+#topbar .preset button, #secPresetPop .preset button { padding: 4px 8px; font-size: 12px; }
 /* 「設定」：プリセットの左のボタンで、クレジット・テンポ・拍子のポップアップを開閉（2026-09-18 ユーザー指定）。ボタンの真下・右揃えに出す */
 #topbar .settingsWrap { position: relative; margin-right: 10px; }
 #topbar #settingsBtn { padding: 4px 10px; font-size: 12px; }
@@ -340,10 +347,10 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 #settingsPop .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
 /* 保存＝水色、削除＝赤（2026-09-14 ユーザー指定） */
 /* 保存＝青・白文字（2026-09-18 ユーザー指定）。削除の赤（#8e2f2f 等）と彩度・明度をそろえ、色相だけ 215° に回した色。プロジェクト・プリセット共通 */
-#topbar .slotSave { background: #2f568e; border-color: #4a75b0; color: #fff; font-weight: 600; }
-#topbar .slotSave:hover { background: #3a6bb0; border-color: #6a9be0; color: #fff; }
-#topbar .slotDel { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
-#topbar .slotDel:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+#topbar .slotSave, #secPresetPop .slotSave { background: #2f568e; border-color: #4a75b0; color: #fff; font-weight: 600; }
+#topbar .slotSave:hover, #secPresetPop .slotSave:hover { background: #3a6bb0; border-color: #6a9be0; color: #fff; }
+#topbar .slotDel, #secPresetPop .slotDel { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+#topbar .slotDel:hover, #secPresetPop .slotDel:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 /* 公開（プロジェクトの行だけ）：外へ出す操作なので、保存とは別の色（橙）。公開したらその右にページへのリンク（2026-09-18） */
 #topbar .pubCol { display: flex; align-items: center; gap: 8px; align-self: center; }   /* 2 段の右、上下の真ん中（2026-09-18 ユーザー指定） */
 #topbar .pubCol .slotPub { padding: 4px 10px; font-size: 12px; }
@@ -448,6 +455,15 @@ button.tp.tpStop:hover { background: #b03a3a; border-color: #e06a6a; color: #fff
   font-size: 14px; font-weight: 700; color: #0b1020; background: #c2c2c8;
   border: 1px solid #c2c2c8; border-radius: 0; padding: 6px 9px; margin: 0 0 8px; }   /* 角は丸めない（2026-09-14 ユーザー指定）。プレビュー内だけ箱に合わせて上 2 隅を丸める */
 .hd input[type=checkbox] { margin-left: auto; margin-right: 0; }
+/* 箱ごとのプリセットの ▾（見出しの右端。チェックや「素材の一覧を更新」がある時はその右。2026-09-19 ユーザー指定） */
+.hd .secPre { margin-left: auto; flex: none; padding: 0 6px; min-width: 0; height: 18px; line-height: 16px; font-size: 11px;
+  background: none; border: 1px solid #0b1020; border-radius: 3px; color: #0b1020; cursor: pointer; }
+.hd .secPre:hover { background: rgba(0,0,0,.1); }
+.hd input[type=checkbox] ~ .secPre, .hd > button:not(.secPre) ~ .secPre { margin-left: 6px; }
+/* 箱ごとのプリセットの小窓：中身は上のバーの「プロジェクト」「プリセット」と同じ欄（見た目も同じ指定を共有。2026-09-20 ユーザー指定） */
+#secPresetPop { position: fixed; z-index: 50; padding: 8px 10px 10px;
+  background: #111122; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,.6); font-size: 12px; }
+#secPresetPop .spHd { font-weight: 700; margin: 0 0 6px; }
 .box > *:not(.hd) { margin-left: 2px; }
 .hint.small { font-size: 11px; margin: 4px 0 0; }
 .ctl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }

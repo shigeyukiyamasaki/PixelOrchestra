@@ -36,14 +36,17 @@ const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重�
 const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
+const SECTION_PRESETS_KEY = 'pixelOrchestra.sectionPresets.v1'; // 箱ごとのプリセット { 箱: { 名前: 中身 } }（天気・光源など細かい単位。2026-09-19 ユーザー指定）
+// 箱ごとに最後に選んだ（保存した）プリセット名 { 箱: 名前 }。プロジェクト・プリセットの控えに入れ、選び直すと保存時の名前に戻る（2026-09-20 ユーザー指定）
+const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 
 // ---- ブラウザ間の設定共有（2026-09-12 ユーザー指定）----
 // localStorage はブラウザごとに隔離されていて外から同期できないので、開発サーバー上の
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY];
-const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY];   // プリセットそのものも共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
+const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
 
@@ -866,6 +869,8 @@ function loadSettings() {
   }
   // 互換：旧「屋内／屋外」ラジオ（lightMode）で保存されていたら「屋外」チェックへ読み替える（2026-09-17）
   if (!('outdoor' in data) && 'lightMode' in data) $('outdoor').checked = data.lightMode === 'sun';
+  // 互換：天気の種類「なし」を廃止して見出しのチェック（weatherOn）にした（2026-09-20）。チェックの保存が無ければ以前の種類から決める
+  if (!('weatherOn' in data) && 'weatherType' in data) $('weatherOn').checked = data.weatherType === 'rain' || data.weatherType === 'snow';
 }
 // 「落ちる速さ」スライダー（0.1〜10）は雨と雪で共通。雨だけこの倍率を掛ける：10 で以前の 3 倍と同じ速さ。
 // 雪は値そのまま（上限 10 は吹雪用）（2026-09-19 ユーザー指定）
@@ -956,7 +961,8 @@ function settings() {
     dynResponse: num('dynResponse', 1),
     dynSpeed: num('dynSpeed', 1),   // 姿勢が強弱に追いつく速さ（2026-09-15）
     // 天気（スカイドームの欄。2026-09-17 ユーザー指定）
-    weatherType: ['rain', 'snow'].includes(radioValue('weatherType')) ? radioValue('weatherType') : 'none',
+    // 見出しのチェックがオフなら降らせない（種類の「なし」は廃止。2026-09-20 ユーザー指定）
+    weatherType: $('weatherOn').checked && ['rain', 'snow'].includes(radioValue('weatherType')) ? radioValue('weatherType') : 'none',
     weatherAmount: num('weatherAmount', 0.5), weatherWind: num('weatherWind', 0.2), weatherThunder: num('weatherThunder', 0),
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
@@ -1887,6 +1893,133 @@ function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confir
 }
 const projectSlot = makeSlot({ ids: ['projectList', 'projectName', 'projectSave', 'projectDel'], label: 'プロジェクト', backend: projectBackend, confirmDelete: true });
 const presetSlot = makeSlot({ ids: ['presetList', 'presetName', 'presetSave', 'presetDel'], label: 'プリセット', backend: presetBackend });
+
+// ---------- 箱ごとのプリセット（2026-09-19 ユーザー指定：天気・光源など細かい単位でも保存・呼び出し） ----------
+// 各箱の見出しの ▾ から、その箱の設定だけを名前を付けて保存・適用・削除する。全体のプリセットとは別の保存領域（SECTION_PRESETS_KEY）。
+// 中身は箱の中の id 付き入力とラジオを自動で集める（TOOL_CRAFT_RULES §3-1：箱にスライダーを足せば自動で対象になる）。
+// スカイドーム・スクリーンは入力欄でなくカードの一覧なので、一覧を丸ごと控える（素材の場所も含む）
+const boxByTitle = (t) => [...document.querySelectorAll('.box .hd')].find((h) => h.childNodes[0]?.textContent.trim() === t)?.closest('.box');
+const SECTIONS = [
+  { key: 'camera', label: 'カメラ', boxes: () => [boxByTitle('カメラ位置'), boxByTitle('カメラ中心点')] },   // 位置と中心点は 1 組
+  { key: 'autocam', label: '自動カメラ', boxes: () => [$('autoCamBox')] },
+  { key: 'lens', label: 'レンズ', boxes: () => [$('lensBox')] },
+  { key: 'sky', label: '空・時刻', boxes: () => [$('lightBox')] },
+  { key: 'floor', label: '床', boxes: () => [boxByTitle('床')] },
+  { key: 'weather', label: '天気', boxes: () => [$('weatherBox')] },
+  { key: 'light', label: '光源・影', boxes: () => [$('srcBox')] },
+  { key: 'title', label: 'タイトル', boxes: () => [boxByTitle('タイトル')] },
+  { key: 'spectrum', label: 'スペクトラム', boxes: () => [boxByTitle('スペクトラム')] },
+  { key: 'roll', label: 'ピアノロール', boxes: () => [$('boxRoll')] },
+  { key: 'player', label: '奏者', boxes: () => [$('boxPlayer')] },
+  { key: 'shake', label: '揺れ', boxes: () => [$('boxShake')] },
+  { key: 'label', label: 'パート名', boxes: () => [$('boxLabel')] },
+  { key: 'glow', label: '足元の光', boxes: () => [$('boxGlow')] },
+  { key: 'credits', label: 'クレジット', boxes: () => [boxByTitle('クレジット')] },
+  { key: 'tempo', label: 'テンポ・拍子', boxes: () => [boxByTitle('テンポ・拍子')] },
+  { key: 'dome', label: 'スカイドーム', sec: 'domeSec' },
+  { key: 'screen', label: 'スクリーン', sec: 'screenSec' },
+  // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
+  { key: 'env', label: '環境', group: ['sky', 'weather', 'light'], hdId: 'envHd' },
+];
+const SECTION_BY_KEY = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
+const secPresets = {
+  load() { try { const o = JSON.parse(LS.getItem(SECTION_PRESETS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { console.warn('箱のプリセットの読込失敗:', e); return {}; } },
+  store(all) { LS.setItem(SECTION_PRESETS_KEY, JSON.stringify(all)); pushSettings(); },
+};
+// 箱の中の設定の入力（設定の自動収集と同じ除外：ファイル・シーク・プリセット／プロジェクトの欄）
+const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.querySelectorAll('input[id], select[id]')])
+  .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
+function sectionSnap(sec) {
+  if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : screens)) };
+  const v = {}, r = {};
+  for (const el of sectionInputs(sec)) {
+    if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  for (const b of sec.boxes().filter(Boolean)) for (const el of b.querySelectorAll('input[type=radio][name]:checked')) r[el.name] = el.value;
+  return { v, r };
+}
+// 適用は全体のプリセットと同じ手順（値を戻す → 保存 → 数値表示 → カメラ）。カメラのスライダーに input を流すと
+// 「位置を動かすと中心点も平行移動」が働いて中心点がずれるので、イベントは流さない
+function applySection(sec, d) {
+  if (sec.group) { for (const [k, part] of Object.entries(d.parts || {})) if (SECTION_BY_KEY[k]) applySection(SECTION_BY_KEY[k], part); return; }
+  if (sec.sec) {
+    if (!Array.isArray(d.list)) return;
+    if (sec.key === 'dome') { if (d.list.length !== 3) return; domes = d.list.map((o) => { const x = { ...DOME_BASE, ...o }; x.r = Math.min(50, Math.max(10, x.r)); return x; }); saveDomes(); }
+    else { screens = d.list.map(withDefaults); saveScreens(); }
+    renderScreens(); setScreens(screens); setDomes(domes);
+    return;
+  }
+  for (const [id, val] of Object.entries(d.v || {})) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
+  }
+  for (const [name, val] of Object.entries(d.r || {})) {
+    const el = document.querySelector(`input[type=radio][name="${name}"][value="${val}"]`);
+    if (el) el.checked = true;
+  }
+  saveSettings(); refreshValueLabels();
+  if (sec.key === 'camera') applyCameraSliders();
+}
+// ▾ を押すと開く小窓（1 つを使い回す）。中身は上のバーの「プロジェクト」「プリセット」と同じ欄（一覧・名前・保存・削除）で、
+// 同じ部品（makeSlot）を使う（2026-09-20 ユーザー指定：操作をプロジェクト・プリセットと同じに）。保存先は開いている箱の欄
+const secPop = document.createElement('div');
+secPop.id = 'secPresetPop'; secPop.hidden = true;
+secPop.innerHTML = `<div class="spHd"></div>
+  <div class="preset">
+    <select id="secPresetList" title="選ぶとその設定に切り替わる"></select>
+    <input id="secPresetName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
+    <button id="secPresetSave" class="slotSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
+    <button id="secPresetDel" class="slotDel" title="選んでいるプリセットを削除">削除</button>
+  </div>`;
+document.body.appendChild(secPop);
+let secPopFor = null;
+// 箱ごとに最後に選んだ（保存した）プリセット名。小窓を開き直しても一覧と名前欄に残す（2026-09-20 ユーザー指定）。
+// 置き場所は SECTION_SEL_KEY（プロジェクト・プリセットの控えに入るので、選び直すとその保存時の名前に戻る）。小窓を開く度にここから読む
+const secSelLoad = () => { try { const o = JSON.parse(LS.getItem(SECTION_SEL_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
+const secSelSet = (k, name) => {
+  const o = secSelLoad();
+  if (name) o[k] = name; else delete o[k];
+  LS.setItem(SECTION_SEL_KEY, JSON.stringify(o)); pushSettings();
+};
+const secBackend = {   // 小窓を開いている箱（secPopFor）の欄を読み書きする
+  async list() { return Object.keys(secPresets.load()[secPopFor.key] || {}).sort(); },
+  async save(name) { const all = secPresets.load(); (all[secPopFor.key] ||= {})[name] = sectionSnap(secPopFor); secPresets.store(all); secSelSet(secPopFor.key, name); },
+  async apply(name) { const d = secPresets.load()[secPopFor.key]?.[name]; if (!d) throw new Error('見つかりません'); applySection(secPopFor, d); secSelSet(secPopFor.key, name); },
+  async remove(name) {
+    const all = secPresets.load(), k = secPopFor.key;
+    if (all[k]) { delete all[k][name]; if (!Object.keys(all[k]).length) delete all[k]; secPresets.store(all); }   // 空になった箱の欄は残さない
+    if (secSelLoad()[k] === name) secSelSet(k, null);
+  },
+};
+const secSlot = makeSlot({ ids: ['secPresetList', 'secPresetName', 'secPresetSave', 'secPresetDel'], label: 'プリセット', backend: secBackend });
+async function openSecPop(sec, btn) {
+  secPopFor = sec;
+  secPop.querySelector('.spHd').textContent = `${sec.label}のプリセット`;
+  const last = secSelLoad()[sec.key] || '';
+  await secSlot.render(last);
+  $('secPresetName').value = $('secPresetList').value === last ? last : '';   // 消されていれば空に
+  secPop.hidden = false;
+  const r = btn.getBoundingClientRect(), w = secPop.offsetWidth, h = secPop.offsetHeight;
+  secPop.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w))}px`;
+  secPop.style.top = `${r.bottom + 4 + h > window.innerHeight - 8 ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+}
+function closeSecPop() { secPop.hidden = true; secPopFor = null; }
+if (!VIEW_NAME) {
+  for (const sec of SECTIONS) {
+    const hd = sec.hdId ? $(sec.hdId) : sec.sec ? $(sec.sec)?.querySelector('.hd') : sec.boxes()[0]?.querySelector('.hd');
+    if (!hd) { console.warn(`箱のプリセット：「${sec.label}」の見出しが見つかりません`); continue; }
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'secPre'; b.textContent = '▾';
+    b.title = sec.group ? `${sec.label}のプリセット（${sec.group.map((k) => SECTION_BY_KEY[k].label).join('・')}の設定をまとめて保存・呼び出す）`
+      : `${sec.label}のプリセット（この箱の設定だけを名前を付けて保存・呼び出す）`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); if (secPopFor === sec) closeSecPop(); else openSecPop(sec, b); });
+    hd.appendChild(b);
+  }
+  document.addEventListener('pointerdown', (e) => { if (!secPop.hidden && !secPop.contains(e.target) && !e.target.closest('.secPre')) closeSecPop(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !secPop.hidden) closeSecPop(); });
+}
 
 // 公開（2026-09-18 ユーザー指定）：保存してから、手元のサーバーが romashige.com へ送る（アプリ本体とプロジェクトのフォルダ）。
 // 外へ出す操作なので、送り先の URL を見せて確認してから（TOOL_CRAFT_RULES §1-1）
