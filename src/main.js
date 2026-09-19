@@ -867,6 +867,9 @@ function loadSettings() {
   // 互換：旧「屋内／屋外」ラジオ（lightMode）で保存されていたら「屋外」チェックへ読み替える（2026-09-17）
   if (!('outdoor' in data) && 'lightMode' in data) $('outdoor').checked = data.lightMode === 'sun';
 }
+// 「落ちる速さ」スライダー（0.1〜10）は雨と雪で共通。雨だけこの倍率を掛ける：10 で以前の 3 倍と同じ速さ。
+// 雪は値そのまま（上限 10 は吹雪用）（2026-09-19 ユーザー指定）
+const RAIN_SPEED_SCALE = 0.3;
 let saveTimer = null;
 for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
@@ -1658,7 +1661,7 @@ function animate() {
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam && !VIEW_NAME;   // 自動の間はマウス操作を止める。視聴モードも止める（保存したカメラで見せる）
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
-    setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed, fps: s.weatherFps, width: s.weatherWidth,
+    setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed * (s.weatherType === 'rain' ? RAIN_SPEED_SCALE : 1), fps: s.weatherFps, width: s.weatherWidth,
                  pos: s.weatherPos, height: s.weatherHeight, glint: s.weatherGlint });
     updateWeather(t);      // 雨・雪・雷も時刻から決める（setShadows の後：屋外かどうかを見る）
     applyTempo(s, engine.bpmAt(tm), beat);
