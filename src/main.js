@@ -8,10 +8,9 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
-import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart, PX } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
-import { Spectrum } from './spectrum.js';
 import { PianoRoll } from './pianoRoll.js';
 import { AutoCamera } from './autoCam.js';
 
@@ -136,8 +135,6 @@ logo.traverse((m) => {
   };
   m.material.needsUpdate = true;
 });
-const spectrum = new Spectrum(scene); // タイトルの周りのスペクトラム（2026-09-12）
-spectrum.setShape(TENCHI, PX / 1.4); // ロゴの輪郭（dotPart と同じ res 1.4 のセル幅）
 
 let midiFileName = '';
 let currentMidi = null;
@@ -201,7 +198,6 @@ function play() {
   clock.tStart = clock.t;
   clock.perfStart = performance.now();
   if (audioLoaded) {
-    spectrum.connect(audio); // 再生の操作の中で音声をつなぐ（自動再生の制限のため）
     syncAudio(clock.t);
   }
   setPlayIcon(true);
@@ -1003,9 +999,6 @@ function settings() {
     exposure: num('exposure', 1), bloomAll: num('bloomAll', 0), bloomThr: num('bloomThr', 0.7),   // 画面全体のブルームと閾値（2026-09-17）
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
     showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
-    showSpectrum: $('showSpectrum').checked, // スペクトラム（同日）
-    specBars: num('specBars', 64), specRadius: num('specRadius', 4), specHeight: num('specHeight', 2.5),
-    specWidth: num('specWidth', 1), specOpacity: num('specOpacity', 0.9), specColor: $('specColor').value,
     titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
     // 自動カメラ（演奏会のカメラワーク。2026-09-13）
     autoCam: $('autoCam').checked, camRate: num('camRate', 1), camClose: num('camClose', 0.6),
@@ -1015,7 +1008,6 @@ function settings() {
     showCredits: $('showCredits').checked,
     credit1: $('credit1').value, credit2: $('credit2').value, credit3: $('credit3').value, credit4: $('credit4').value,
     creditScale: num('creditScale', 1), creditColor: $('creditColor').value, creditOpacity: num('creditOpacity', 0.8),
-    specMode: radioValue('specMode') === 'logo' ? 'logo' : 'circle',
     titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
     partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
@@ -1176,7 +1168,7 @@ function buildScene(midi, { keepTime = false } = {}) {
   if (keepTime && wasPlaying) play();
 }
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
-window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, spectrum, audio, clock, currentTime };
+window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, audio, clock, currentTime };
 
 // 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
 // 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
@@ -1677,10 +1669,6 @@ function animate() {
     logo.scale.setScalar(s.titleScale);
     bendU.uBend.value = s.titleBend ? 1 : 0;   // 曲げは毎フレーム位置・倍率を渡す（Z を動かせば曲率も変わる）
     bendU.uX0.value = s.titleX; bendU.uZ0.value = s.titleZ; bendU.uS.value = s.titleScale;
-    spectrum.setVisible(s.showSpectrum);
-    spectrum.setOptions({ bars: s.specBars, radius: s.specRadius, height: s.specHeight, width: s.specWidth, opacity: s.specOpacity, color: s.specColor, mode: s.specMode });
-    spectrum.setTransform(logo.position, s.titleScale);
-    spectrum.update();
     if (s.titleOpacity !== logoOpacity) { // 透過（1 未満なら透明扱いにして奥のものが透ける）
       logoOpacity = s.titleOpacity;
       logo.traverse((m) => { if (m.isMesh) { m.material.opacity = logoOpacity; m.material.transparent = logoOpacity < 1; m.material.depthWrite = logoOpacity >= 1; m.material.needsUpdate = true; } });
@@ -1908,7 +1896,6 @@ const SECTIONS = [
   { key: 'weather', label: '天気', boxes: () => [$('weatherBox')] },
   { key: 'light', label: '光源・影', boxes: () => [$('srcBox')] },
   { key: 'title', label: 'タイトル', boxes: () => [boxByTitle('タイトル')] },
-  { key: 'spectrum', label: 'スペクトラム', boxes: () => [boxByTitle('スペクトラム')] },
   { key: 'roll', label: 'ピアノロール', boxes: () => [$('boxRoll')] },
   { key: 'player', label: '奏者', boxes: () => [$('boxPlayer')] },
   { key: 'shake', label: '揺れ', boxes: () => [$('boxShake')] },
