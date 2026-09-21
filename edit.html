@@ -73,17 +73,45 @@
       </div>
       <div class="row">Alt+クリックで色を吸う</div>
 
+      <div class="row" style="margin-bottom:2px">筆の大きさ（[ ] で増減）</div>
+      <div>
+        <button class="tool on" data-brush="1">1</button
+        ><button class="tool" data-brush="2">2</button
+        ><button class="tool" data-brush="4">4</button>
+      </div>
+      <div class="row">2 以上は「その倍数」に吸着。解像度を倍にしたあと、元の粒で描ける</div>
+
       <h2>色</h2>
       <div class="swatches" id="swatches"></div>
-      <div class="row"><input type="color" id="newColor" value="#ffffff"><span>色を足す</span></div>
+      <div class="row">
+        <input type="color" id="newColor" value="#ffffff">
+        <button class="tool" id="addSwatchBtn" style="width:auto;padding:7px 12px">この色を追加</button>
+      </div>
+      <div class="row" id="palNote"></div>
+      <button class="big" id="dropUnusedBtn">未使用の色を消す</button>
 
       <h2>表示</h2>
-      <label class="chk"><input type="checkbox" id="showPair" checked> 相方の部位を薄く出す</label>
+      <div class="row" style="margin-bottom:2px">相方の部位（顔↔髪）　p で切替</div>
+      <div>
+        <button class="tool" data-pair="off">出さない</button
+        ><button class="tool on" data-pair="ghost">薄く</button
+        ><button class="tool" data-pair="solid">くっきり</button>
+      </div>
+      <div class="row" id="pairNote"></div>
       <label class="chk"><input type="checkbox" id="showGrid" checked> 床のマス目</label>
+
+      <h2>解像度</h2>
+      <button class="big" id="upscaleBtn">解像度を倍にする</button>
+      <div class="row" id="resNote"></div>
+
+      <h2>背面</h2>
+      <button class="big" id="bakeBackBtn">背面の色置換を焼き込んで解除</button>
+      <div class="row" id="backNote"></div>
 
       <h2>保存</h2>
       <button class="big save" id="saveBtn">保存する</button>
       <button class="big" id="undoBtn">元に戻す（Cmd+Z）</button>
+      <button class="big" id="redoBtn">やり直す（Cmd+Shift+Z）</button>
       <button class="big reset" id="resetBtn">編集を捨てて元の形へ</button>
       <div class="row" id="stat"></div>
     </aside>
@@ -91,6 +119,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script type="module" src="src/voxelEdit.js?v=20260921a"></script>
+  <script type="module" src="src/voxelEdit.js?v=20260922d"></script>
 </body>
 </html>

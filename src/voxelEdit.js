@@ -7,6 +7,13 @@
  *
  *   読み込み：GET /voxels.json に編集済みがあればそれ、無ければ手続き的な形を bakePart で焼き出す
  *   操作　　：クリック＝道具（削る／足す／塗る）、Alt+クリック＝色を吸う、ドラッグ＝回す、ホイール＝寄る
+ *   目印　　：マウスの下のセルを枠で示す（道具ごとに色。「足す」は新しく入る位置）。HUD に座標を出す
+ *   解像度　：res 1（1px 粒）の部位は「解像度を倍にする」で 2×2×2 に割れる。見た目は変わらない
+ *   筆　　　：1 / 2 / 4。2 以上は「その倍数」に吸着するので、倍にしたあとも元の粒で描ける
+ *   相方　　：顔↔髪をどう出すか（出さない／薄く／くっきり）。くっきりにすると完成形が見える（p で切替）
+ *   背面　　：data.back（最奥面の色置換）が効いていると後頭部が塗れない。焼き込んで解除できる
+ *   取り消し：Cmd+Z で戻す、Cmd+Shift+Z でやり直す。寸法・back も含めて控えるので、解像度や背面の操作も戻せる
+ *   色　　　：「この色を追加」でパレットへ登録（塗る前に足せる）。未使用の色は Alt+クリックか一括で消せる
  *   保存　　：POST /voxels/<キー>.json（サーバーが assets/voxel/ に書き、旧版は backup/ へ退避）
  *
  * 座標の約束は sprites.js と同じ。グリッド (x, y, z) は
@@ -21,9 +28,10 @@ import { bakePart, voxelPart, lastPartArgs, PX } from './sprites.js';
 const PAIR = {
   cecilHead: 'cecilHelmet', cecilHelmet: 'cecilHead',
   tellaHead: 'tellaHair', tellaHair: 'tellaHead',
-  randiHead: 'randiHair', randiHair: 'randiHead',
+  randiHead: 'randi6Shell',                 // 衣装 randi6-flat の組み合わせ（randiHair は 2026-09-22 に削除）
   primmHead: 'primmHair', primmHair: 'primmHead',
   popoiHead: 'popoiHair', popoiHair: 'popoiHead',
+  randi6Shell: 'randiHead',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -36,8 +44,12 @@ let key = null;            // 編集中の部位
 let data = null;           // 編集中のデータ（layers を書き換える）
 let dirty = false;
 let undoStack = [];
+let redoStack = [];
 let tool = 'erase';
 let color = '#ffffff';
+let hoverCell = null;       // マウスが今指しているセル（HUD と枠の表示用）
+let brush = 1;              // 筆の大きさ（1 / 2 / 4）。2 以上は「その倍数」に吸着させる
+let pairMode = 'ghost';     // 相方の部位の出し方：off / ghost（薄く）/ solid（くっきり）
 
 // ---------- 3D ----------
 const scene = new THREE.Scene();
@@ -110,11 +122,13 @@ function rebuild() {
   mesh = voxelPart(data, 'edit', { cache: false });
   scene.add(mesh);
   const pk = PAIR[key];
-  if (pk && $('showPair').checked) {
+  if (pk && pairMode !== 'off') {
     pairMesh = voxelPart(saved[pk] || bakeOf(pk), 'editPair', { cache: false });
-    pairMesh.material.transparent = true;
-    pairMesh.material.opacity = 0.25;
-    pairMesh.material.depthWrite = false;
+    if (pairMode === 'ghost') {                  // 編集中はこちら。下の形が透けて見える
+      pairMesh.material.transparent = true;
+      pairMesh.material.opacity = 0.25;
+      pairMesh.material.depthWrite = false;
+    }                                            // solid は素のまま＝完成形の見え方
     scene.add(pairMesh);
   }
   updateHud();
@@ -140,12 +154,34 @@ function countCells() {
 function updateHud() {
   $('hud').innerHTML = !data ? '' :
     `${PARTS[key].label}　${data.w}×${data.h}×${data.depth}（${data.res === 2 ? '2 倍解像度' : '1px 粒'}）<br>` +
-    `ボクセル ${countCells()}　色 ${Object.keys(data.palette).length}<br>` +
-    `クリック=${{ erase: '削る', add: '足す', paint: '塗る' }[tool]}　Alt+クリック=色を吸う　ドラッグ=回す`;
+    `ボクセル ${countCells()}　色 ${Object.keys(data.palette).length}　面 ${triCount()}<br>` +
+    `クリック=${{ erase: '削る', add: '足す', paint: '塗る' }[tool]}　筆 ${brush}${brush > 1 ? '（' + brush + 'の倍数に吸着）' : ''}　Alt+クリック=色を吸う　ドラッグ=回す` +
+    (hoverCell
+      ? `<br><span style="color:${hoverCell.tint}">■</span> セル (${hoverCell.x}, ${hoverCell.y}, ${hoverCell.z})　${hoverCell.note}`
+      : '<br><span style="opacity:.5">セル ―</span>');
   $('stat').textContent = dirty ? '未保存の変更があります' : (saved[key] ? '保存済み（編集あり）' : '元の形のまま');
   $('saveBtn').disabled = !dirty;
   $('undoBtn').disabled = !undoStack.length;
+  $('redoBtn').disabled = !redoStack.length;
   $('resetBtn').disabled = !saved[key] && !dirty;
+  const pk = PAIR[key];
+  $('pairNote').textContent = pk
+    ? `相方＝${PARTS[pk].label}${pairMode === 'solid' ? '（くっきり。クリックは編集中の部位にだけ効く）' : ''}`
+    : 'この部位に相方はありません';
+  for (const o of document.querySelectorAll('[data-pair]')) {
+    o.classList.toggle('on', o.dataset.pair === pairMode);
+    o.disabled = !pk;
+  }
+  const res = data.res ?? 1;
+  $('upscaleBtn').disabled = res >= 2;
+  const nb = data.back ? Object.keys(data.back).length : 0;
+  $('bakeBackBtn').disabled = !nb;
+  $('backNote').textContent = nb
+    ? `${nb} 色を一番奥の面だけ置き換えています。このままだと後頭部に塗った色が上書きされます`
+    : '置換なし。後頭部もそのまま塗れます';
+  $('resNote').textContent = res >= 2
+    ? `1 セル = ${(PX / res).toFixed(4)}（もう倍にはできません）`
+    : '1px 粒。倍にすると彫れる粒が半分、データは 8 倍、面は約 4 倍';
 }
 
 // ---------- セルの読み書き ----------
@@ -169,17 +205,117 @@ function symOf(hex) {
   return k;
 }
 
+// 寸法も一緒に控える。「解像度を倍にする」は w/h/depth/res/pivot/z0 を変えるので、
+// layers だけ戻すと寸法と噛み合わなくなる（2026-09-21）
+const DIMS = ['res', 'w', 'h', 'depth', 'z0', 'pivotX', 'pivotY', 'back'];
+
+/** 今の状態をひとつ控える／書き戻す。取り消しとやり直しで共用する */
+const snapshot = () => {
+  const u = { layers: clone(data.layers), palette: clone(data.palette) };
+  for (const k of DIMS) u[k] = data[k];
+  return u;
+};
+const restore = (u) => {
+  data.layers = u.layers; data.palette = u.palette;
+  for (const k of DIMS) if (u[k] !== undefined) data[k] = u[k];
+  dirty = true;
+  renderSwatches(); rebuild();       // 形は同じ位置に戻るのでカメラは動かさない
+};
+
 function pushUndo() {
-  undoStack.push({ layers: clone(data.layers), palette: clone(data.palette) });
+  undoStack.push(snapshot());
   if (undoStack.length > 80) undoStack.shift();
+  redoStack = [];                    // 新しく手を加えたら、やり直せる先は無くなる
 }
 
-function undo() {
-  const u = undoStack.pop();
-  if (!u) return;
-  data.layers = u.layers; data.palette = u.palette;
+function undo() { const u = undoStack.pop(); if (!u) return; redoStack.push(snapshot()); restore(u); }
+function redo() { const u = redoStack.pop(); if (!u) return; undoStack.push(snapshot()); restore(u); }
+
+/** 今の形の三角形の数（露出面だけ張るので、表面積に比例する） */
+function triCount() {
+  if (!mesh) return 0;
+  const g = mesh.geometry;
+  return (g.index ? g.index.count : g.attributes.position.count) / 3;
+}
+
+/**
+ * 背面の色置換（data.back）を、一番奥のセルの色として焼き込んで解除する。
+ *
+ * back は「**一番奥の面だけ** この色をこの色に置き換える」という指定で、手続き的に作ったパーツで
+ * 顔の目・眼鏡・口が後頭部に回り込んで見えるのを潰すために置いてある（persona.js の backMap）。
+ * これが効いている間は **後頭部に塗った色が置換色で上書きされて見えない**（2026-09-21 ユーザー指摘）。
+ * 側面・上下の面には掛からないので「側面は塗れるのに後頭部だけ塗れない」という症状になる。
+ *
+ * 焼き込むと塗れるようになるが、最奥セルに背面以外の面も出ている場合は **その面の色も変わる**
+ * （今までそこは正面図の色のまま＝目の黒などが輪郭に漏れていた箇所）。数を出して確認してから実行する。
+ */
+function bakeBack() {
+  if (!data || !data.back || !Object.keys(data.back).length) return;
+  const bm = Object.fromEntries(Object.entries(data.back).map(([a, b]) => [a.toLowerCase(), b]));
+  const colAt = (x, y, z) => { const ch = data.layers[z][y][x]; return ch === '.' ? null : data.palette[ch].toLowerCase(); };
+  const targets = [];
+  let risky = 0;
+  for (let y = 0; y < data.h; y++) for (let x = 0; x < data.w; x++) {
+    let z = 0;
+    while (z < data.depth && !colAt(x, y, z)) z++;            // その柱の一番奥の中身
+    if (z >= data.depth) continue;
+    const c = colAt(x, y, z);
+    if (!bm[c]) continue;
+    targets.push([x, y, z, bm[c]]);
+    if (!at(x, y, z + 1) || !at(x - 1, y, z) || !at(x + 1, y, z) || !at(x, y - 1, z) || !at(x, y + 1, z)) risky++;
+  }
+  if (!targets.length) { data.back = null; updateHud(); return; }
+  if (!confirm(
+    `背面の色置換を、一番奥のセルの色として焼き込んで解除します。\n\n` +
+    `・後頭部にも色が塗れるようになります\n` +
+    `・書き換えるセル ${targets.length} 個\n` +
+    `・うち ${risky} 個は背面以外にも面が出ているので、その面の色も変わります\n` +
+    `　（今までそこは正面図の色のまま＝目の黒などが輪郭に漏れていた箇所です）\n\n` +
+    `取り消し（Cmd+Z）で戻せます。進めますか？`)) return;
+  pushUndo();
+  for (const [x, y, z, hex] of targets) { const sym = symOf(hex); if (sym) setCell(x, y, z, sym); }
+  data.back = null;
   dirty = true;
   renderSwatches(); rebuild();
+  toast(`背面の色置換を解除しました（${targets.length} セルを書き換え、うち ${risky} 個は他の面の色も変化）`);
+}
+
+/**
+ * 1 セルを 2×2×2 に割って、半分の粒で彫れるようにする（2026-09-21 ユーザー指定）。
+ * 座標は px = (x - pivotX) * PX / res なので、x・pivot・z0 を 2 倍して res も 2 倍にすると
+ * **見た目は 1 ピクセルも変わらない**（同じ位置・同じ大きさのまま、格子だけ細かくなる）。
+ * 髪・兜・上着の立体は res 1（1px 粒）で作ってあるが、細部を彫りたい時にこれで倍にする。
+ * 粗い方へは戻せない（「編集を捨てて元の形へ」で手続き的な形を作り直すことはできる）。
+ */
+function upscale() {
+  if (!data || (data.res ?? 1) >= 2) return;
+  const cells = countCells(), tris = triCount();
+  if (!confirm(
+    `セルを 2×2×2 に割って、半分の粒で彫れるようにします。\n\n` +
+    `・見た目は変わりません（同じ位置・同じ大きさ）\n` +
+    `・ボクセル ${cells} → ${cells * 8}（8 倍）\n` +
+    `・面の数 ${tris} → おおよそ ${tris * 4}（表面のセルが 4 倍になるため）\n` +
+    `・保存する JSON も 8 倍くらいになります\n\n` +
+    `粗い方へは戻せません。進めますか？`)) return;
+  pushUndo();
+  const w = data.w * 2, h = data.h * 2, depth = data.depth * 2, layers = [];
+  for (let z = 0; z < depth; z++) {
+    const src = data.layers[z >> 1], rows = [];
+    for (let y = 0; y < h; y++) {
+      const line = src[y >> 1];
+      let r = '';
+      for (let x = 0; x < w; x++) r += line[x >> 1];
+      rows.push(r);
+    }
+    layers.push(rows);
+  }
+  data.res = (data.res ?? 1) * 2;
+  data.w = w; data.h = h; data.depth = depth;
+  data.z0 *= 2; data.pivotX *= 2; data.pivotY *= 2;
+  data.layers = layers;
+  dirty = true;
+  rebuild();
+  toast(`解像度を倍にしました（ボクセル ${cells} → ${countCells()}、面 ${tris} → ${triCount()}）`);
 }
 
 // ---------- 当たり判定 ----------
@@ -207,44 +343,135 @@ function pick(ev) {
   };
 }
 
-function apply(ev) {
+// ---------- マウスが指しているセルを枠で示す ----------
+// どのボクセルに効くのかがクリック前に分からないと、削り過ぎ・付け間違いが起きる（2026-09-21 ユーザー指定）。
+// 道具ごとに色を変え、「足す」は**当たったセルではなく新しく入る位置**を示す。
+// 深度テストを切って手前に出す（奥のセルを指した時も枠が隠れない）。
+const HOVER = {
+  erase: { edge: '#ff6b81', fill: '#ff6b81', a: 0.22, note: 'クリックで削る' },
+  add:   { edge: '#5ee38a', fill: '#5ee38a', a: 0.22, note: 'ここに足す' },
+  paint: { edge: '#ffffff', fill: null,      a: 0.45, note: 'クリックで塗る' },   // fill=null は今の色
+  pick:  { edge: '#ffd24a', fill: '#ffd24a', a: 0.22, note: '離すと色を取る' },
+  out:   { edge: '#7a8296', fill: '#7a8296', a: 0.10, note: 'ここには効かない' },
+};
+const unitBox = new THREE.BoxGeometry(1, 1, 1);
+const hoverFill = new THREE.Mesh(unitBox,
+  new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false }));
+const hoverEdge = new THREE.LineSegments(new THREE.EdgesGeometry(unitBox),
+  new THREE.LineBasicMaterial({ transparent: true, depthTest: false }));
+hoverFill.renderOrder = 20; hoverEdge.renderOrder = 21;
+hoverFill.visible = hoverEdge.visible = false;
+scene.add(hoverFill, hoverEdge);
+
+let lastMove = null;        // 道具を変えた時・Alt を押した時に同じ場所で描き直すため
+
+function hideHover() {
+  hoverFill.visible = hoverEdge.visible = false;
+  renderer.domElement.style.cursor = '';
+  if (hoverCell) { hoverCell = null; updateHud(); }
+}
+
+/**
+ * 今どこに効くか＝{ 起点 x,y,z, 一辺 n, mode }。**枠の表示と apply が同じ答えを使う**ので、
+ * 見えている枠と実際に削れる範囲がずれない。
+ * 筆が 2 以上の時は「n の倍数」に吸着させる（2026-09-21 ユーザー指定）。
+ * 解像度を倍にすると元の 1 セルは 2X, 2X+1 の 2 つになるので、
+ * **筆 2 ＋偶数吸着でちょうど元の粒**に戻る。吸着させないと半セルずれた位置に描けてしまう。
+ */
+function targetBlock(ev) {
   const h = pick(ev);
-  if (!h) return;
-  const cur = at(h.x, h.y, h.z);
-  if (!cur) return;                                 // 面があるのに空＝ズレている時は何もしない
-  if (ev.altKey) {                                  // 色を吸う
+  if (!h) return null;
+  if (ev.altKey) return { x: h.x, y: h.y, z: h.z, n: 1, mode: 'pick' };
+  const n = brush, snap = (v) => Math.floor(v / n) * n;
+  if (tool === 'add') {                                     // 当たった面の外側へ 1 ブロック
+    const t = { x: snap(h.x) + h.nx * n, y: snap(h.y) - h.ny * n, z: snap(h.z) + h.nz * n, n, mode: 'add' };
+    return blockCells(t).length ? t : { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: 'out' };
+  }
+  // 面があるのに中身が空＝ズレている時は apply が何もしないので、枠も「効かない」色にする
+  if (!at(h.x, h.y, h.z)) return { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: 'out' };
+  return { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: tool };
+}
+
+/** ブロックの中で、部位の枠に収まっているセルだけ返す */
+function blockCells(t) {
+  const out = [];
+  for (let z = t.z; z < t.z + t.n; z++)
+    for (let y = t.y; y < t.y + t.n; y++)
+      for (let x = t.x; x < t.x + t.n; x++)
+        if (x >= 0 && y >= 0 && z >= 0 && x < data.w && y < data.h && z < data.depth) out.push([x, y, z]);
+  return out;
+}
+
+function showHover(ev) {
+  lastMove = ev;
+  if (!data || !mesh || down) { hideHover(); return; }      // ドラッグ（回転）中は出さない
+  const t = targetBlock(ev);
+  if (!t) { hideHover(); return; }
+  const st = HOVER[t.mode];
+  const cell = cellOf(data), half = t.n / 2;
+  const q = new THREE.Vector3((t.x + half - data.pivotX) * cell,
+                              (data.pivotY - t.y - half) * cell,
+                              (t.z + half + data.z0) * cell);
+  mesh.localToWorld(q);
+  hoverFill.position.copy(q); hoverEdge.position.copy(q);
+  hoverFill.scale.setScalar(cell * t.n * 1.02); hoverEdge.scale.setScalar(cell * t.n * 1.02);
+  hoverFill.material.color.set(st.fill ?? color);
+  hoverFill.material.opacity = st.a;
+  hoverEdge.material.color.set(st.edge);
+  hoverFill.visible = hoverEdge.visible = true;
+  renderer.domElement.style.cursor = t.mode === 'out' ? 'not-allowed' : 'crosshair';
+  const same = hoverCell && hoverCell.x === t.x && hoverCell.y === t.y && hoverCell.z === t.z
+               && hoverCell.mode === t.mode && hoverCell.n === t.n;
+  if (!same) { hoverCell = { ...t, tint: st.edge, note: st.note }; updateHud(); }
+}
+
+/** 道具を変えた・Alt を押した／離した時に、同じ位置で描き直す */
+function refreshHover() { if (lastMove) showHover(lastMove); }
+
+renderer.domElement.addEventListener('pointermove', showHover);
+renderer.domElement.addEventListener('pointerleave', () => { lastMove = null; hideHover(); });
+addEventListener('keydown', (e) => { if (e.key === 'Alt') refreshHover(); });
+addEventListener('keyup',   (e) => { if (e.key === 'Alt') refreshHover(); });
+
+function apply(ev) {
+  const t = targetBlock(ev);
+  if (!t) return;
+  if (t.mode === 'pick') {                          // 色を吸う（筆の大きさは無関係）
+    const cur = at(t.x, t.y, t.z);
+    if (!cur) return;
     setColor(data.palette[cur]);
     toast('色を取りました ' + data.palette[cur]);
     return;
   }
-  if (tool === 'erase') {
-    pushUndo(); setCell(h.x, h.y, h.z, '.');
-  } else if (tool === 'paint') {
-    const s = symOf(color); if (!s) return;
-    if (s === cur) return;
-    pushUndo(); setCell(h.x, h.y, h.z, s);
-  } else {                                          // 足す：当たった面の外側へ
-    const x = h.x + h.nx, y = h.y - h.ny, z = h.z + h.nz;   // y は上下が逆（行番号）
-    if (x < 0 || y < 0 || z < 0 || x >= data.w || y >= data.h || z >= data.depth) {
-      toast('その向きにはもう場所がありません（部位の枠の外）');
-      return;
-    }
-    if (at(x, y, z)) return;
-    const s = symOf(color); if (!s) return;
-    pushUndo(); setCell(x, y, z, s);
+  if (t.mode === 'out') {
+    if (tool === 'add') toast('その向きにはもう場所がありません（部位の枠の外）');
+    return;
   }
+  const sym = tool === 'erase' ? '.' : symOf(color);
+  if (!sym) return;
+  const changes = [];                               // 先に洗い出して、**取り消しは 1 回分**にまとめる
+  for (const [x, y, z] of blockCells(t)) {
+    const cur = at(x, y, z);
+    if (tool === 'erase') { if (cur) changes.push([x, y, z, '.']); }
+    else if (tool === 'add') { if (!cur) changes.push([x, y, z, sym]); }
+    else if (cur && cur !== sym) changes.push([x, y, z, sym]);
+  }
+  if (!changes.length) return;
+  pushUndo();
+  for (const [x, y, z, ch] of changes) setCell(x, y, z, ch);
   dirty = true;
   rebuild();
 }
 
 // クリックとドラッグ（回転）を区別する：押してから離すまでの移動が小さければクリック
 let down = null;
-renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; hideHover(); });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   down = null;
   if (moved < 4 && e.button === 0) apply(e);
+  showHover(e);                                   // 削った直後に、次にどこへ効くかを出し直す
 });
 
 // ---------- UI ----------
@@ -263,17 +490,63 @@ function renderPartList() {
 function renderSwatches() {
   const box = $('swatches');
   box.innerHTML = '';
-  const used = new Set();
-  for (const rows of data.layers) for (const row of rows) for (const ch of row) if (ch !== '.') used.add(ch);
+  const used = usedSyms();
   for (const [k, hex] of Object.entries(data.palette)) {
     const b = document.createElement('button');
     b.className = 'sw' + (hex.toLowerCase() === color.toLowerCase() ? ' on' : '');
     b.style.background = hex;
-    b.title = hex + (used.has(k) ? '' : '（未使用）');
+    b.title = hex + (used.has(k) ? '（使用中）' : '（未使用・Alt+クリックで消す）');
     b.style.opacity = used.has(k) ? 1 : 0.4;
-    b.onclick = () => setColor(hex);
+    b.onclick = (e) => { if (e.altKey) dropColor(k); else setColor(hex); };   // dropColor 側で使用中は弾いて理由を出す
     box.appendChild(b);
   }
+  $('palNote').textContent = `${Object.keys(data.palette).length} 色（空き ${KEYS.length - Object.keys(data.palette).length}）`
+    + (used.size < Object.keys(data.palette).length ? `　未使用 ${Object.keys(data.palette).length - used.size}` : '');
+}
+
+/** 使っているパレットの記号（layers に出てくるもの） */
+function usedSyms() {
+  const u = new Set();
+  for (const rows of data.layers) for (const row of rows) for (const ch of row) if (ch !== '.') u.add(ch);
+  return u;
+}
+
+/**
+ * 今の色をパレットへ足す（2026-09-22 ユーザー指定）。
+ * これまでは symOf が「塗った時に初めて」足していたので、**実際に塗るまでスウォッチに並ばなかった**。
+ * 明示的に足せると、先に色を揃えてから塗れる。
+ */
+function addSwatch() {
+  const hex = color.toLowerCase();
+  const exist = Object.entries(data.palette).find(([, v]) => v.toLowerCase() === hex);
+  if (exist) { setColor(data.palette[exist[0]]); toast('その色はもうあります ' + hex); return; }
+  pushUndo();
+  if (!symOf(hex)) { undoStack.pop(); return; }      // 上限で足せなかったら控えも戻す
+  dirty = true;
+  renderSwatches(); updateHud();
+  toast('色を足しました ' + hex);
+}
+
+/** 使っていない色をパレットから消す。使用中の色は消さない（消すとセルが行方不明になる） */
+function dropUnused() {
+  const used = usedSyms();
+  const gone = Object.keys(data.palette).filter((k) => !used.has(k));
+  if (!gone.length) { toast('未使用の色はありません'); return; }
+  pushUndo();
+  for (const k of gone) delete data.palette[k];
+  dirty = true;
+  renderSwatches(); updateHud();
+  toast(`未使用の色を ${gone.length} 個消しました`);
+}
+
+/** スウォッチ 1 個を消す（未使用のものだけ）。Alt+クリックから呼ぶ */
+function dropColor(k) {
+  if (usedSyms().has(k)) { toast('この色は使われているので消せません'); return; }
+  pushUndo();
+  delete data.palette[k];
+  dirty = true;
+  renderSwatches(); updateHud();
+  toast('色を消しました');
 }
 
 function setColor(hex) {
@@ -286,9 +559,10 @@ function selectPart(k) {
   if (dirty && !confirm('保存していない変更があります。捨てて切り替えますか？')) return;
   key = k;
   data = clone(saved[k] || bakeOf(k));
-  dirty = false; undoStack = [];
+  dirty = false; undoStack = []; redoStack = [];
   const first = Object.values(data.palette)[0];
   if (first) color = first;
+  setBrush(1);
   renderPartList(); renderSwatches(); rebuild(); frameCamera(); updateHud();
 }
 
@@ -328,36 +602,53 @@ async function resetPart() {
   }
   delete saved[key];
   data = clone(bakeOf(key));
-  dirty = false; undoStack = [];
+  dirty = false; undoStack = []; redoStack = [];
   renderPartList(); renderSwatches(); rebuild(); updateHud();
   toast('元の形に戻しました');
 }
 
-for (const b of document.querySelectorAll('.tool')) {
+for (const b of document.querySelectorAll('[data-tool]')) {
   b.onclick = () => {
     tool = b.dataset.tool;
-    for (const o of document.querySelectorAll('.tool')) o.classList.toggle('on', o === b);
-    updateHud();
+    for (const o of document.querySelectorAll('[data-tool]')) o.classList.toggle('on', o === b);
+    updateHud(); refreshHover();
   };
 }
+
+/** 筆の大きさ。部位を切り替えたら 1 に戻す（大きいまま気づかず削るのを防ぐ） */
+function setBrush(n) {
+  brush = n;
+  for (const o of document.querySelectorAll('[data-brush]')) o.classList.toggle('on', +o.dataset.brush === n);
+  updateHud(); refreshHover();
+}
+for (const b of document.querySelectorAll('[data-brush]')) b.onclick = () => setBrush(+b.dataset.brush);
 $('newColor').oninput = (e) => setColor(e.target.value);
-$('showPair').onchange = rebuild;
+$('addSwatchBtn').onclick = addSwatch;
+$('dropUnusedBtn').onclick = dropUnused;
+function setPairMode(m) { pairMode = m; rebuild(); }
+for (const b of document.querySelectorAll('[data-pair]')) b.onclick = () => setPairMode(b.dataset.pair);
 $('showGrid').onchange = (e) => { grid.visible = e.target.checked; };
+$('bakeBackBtn').onclick = bakeBack;
+$('upscaleBtn').onclick = upscale;
 $('saveBtn').onclick = save;
 $('undoBtn').onclick = undo;
+$('redoBtn').onclick = redo;
 $('resetBtn').onclick = resetPart;
 addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (dirty) save(); }
   if (e.key === '1') document.querySelector('[data-tool=erase]').click();
   if (e.key === '2') document.querySelector('[data-tool=add]').click();
   if (e.key === '3') document.querySelector('[data-tool=paint]').click();
+  if (e.key === '[') setBrush(brush === 4 ? 2 : 1);
+  if (e.key === ']') setBrush(brush === 1 ? 2 : 4);
+  if (e.key.toLowerCase() === 'p') setPairMode({ off: 'ghost', ghost: 'solid', solid: 'off' }[pairMode]);
 });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // デバッグ用の窓口（本体の window.__po と同じ考え方）
 window.__edit = { scene, camera, controls, get data() { return data; }, get key() { return key; },
-                  get mesh() { return mesh; }, rebuild, frameCamera };
+                  get mesh() { return mesh; }, get hoverCell() { return hoverCell; }, rebuild, frameCamera };
 
 // ---------- 起動 ----------
 await loadSaved();
