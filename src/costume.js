@@ -337,34 +337,6 @@ function randiHead() {
   return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'randi|head3', side });
 }
 
-/** 髪 20×21×16（1px 粒）：大きく盛った橙の髪。頭頂から後ろへ膨らみ、左右と後ろに跳ねた房 */
-function randiHair() {
-  const keep = (x, y, z) => {
-    const ax = Math.abs(x), az = Math.abs(z);
-    const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
-    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;     // 顔の箱の内側は空
-    if (b(0, 6.5, 9.5, 10.5, -5.5, 5.5)) return true;             // 天頂（大きい）
-    if (b(0, 5.5, 11.5, 11.5, -5.5, 4.5) || b(0, 4.5, 12.5, 12.5, -4.5, 3.5)) return true;
-    if (b(5.5, 6.5, 5.5, 9.5, -5.5, 5.5)) return true;            // 側頭（耳の上まで）
-    if (b(0, 6.5, 5.5, 9.5, -5.5, -4.5)) return true;             // 後頭
-    if (b(0, 5.5, 6.5, 9.5, -6.5, -5.5)) return true;             // 後ろの量感
-    // 跳ねた房：右上・左上・後ろ上
-    if (b(6.5, 7.5, 11.5, 12.5, 0.5, 3.5) || b(7.5, 8.5, 12.5, 13.5, 1.5, 3.5)) return true;
-    if (b(5.5, 6.5, 12.5, 13.5, -4.5, -1.5) || b(0, 2.5, 13.5, 14.5, -3.5, -0.5)) return true;
-    return false;
-  };
-  const toPx = (cx, cy, cz) => [cx - 10 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
-  const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
-  carve.toString = () => 'randiHair';
-  const colorOf = (cx, cy, cz) => {
-    const [x, y] = toPx(cx, cy, cz);
-    if (y >= 12) return RANDI.HAIR3;                              // 先の房は明るい
-    return ((cx * 3 + cy * 5 + cz) % 4 === 0) ? RANDI.HAIR2 : null;  // 塊感
-  };
-  colorOf.toString = () => 'randiHairColor';
-  return makePart(20, 21, 10, 16, (d) => { d.r(0, 0, 20, 21, RANDI.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'randi|hair', carve, colorOf });
-}
-
 // ---- プリム：金橙の大きな髪に緑の飾り、青い目、マゼンタのドレス ----
 const PRIMM = {
   HAIR: '#d87800', HAIR2: '#a05838', HAIR3: '#f0a820',
@@ -378,17 +350,20 @@ function primmHead() {
   const front = (d) => {
     d.r(2, 6, 20, 18, SKIN);
     d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
-    d.r(6, 11, 5, 1, OUT); d.r(13, 11, 5, 1, OUT);          // まつ毛の線
-    d.r(7, 12, 3, 3, EYE); d.r(14, 12, 3, 3, EYE);          // 青い目
-    d.r(7, 12, 1, 1, WHITE); d.r(16, 12, 1, 1, WHITE);      // ハイライト
+    // 目・眉は奏者と同じ形（persona.headFor と同寸）。女性なので眉は 3×1、目は 2×2 の黒・ハイライト無し。
+    // 2026-09-22 ユーザー指定：まつ毛の線＋3×3 の青い目＋ハイライトをやめ、他の奏者に揃える。
+    // ただし目の色だけはプリムの青（PRIMM.EYE）を残す（同日ユーザー指定）
+    d.r(7, 12, 3, 1, PRIMM.HAIR2); d.r(14, 12, 3, 1, PRIMM.HAIR2);   // 眉（髪色の暗い方）
+    d.r(8, 14, 2, 2, EYE); d.r(14, 14, 2, 2, EYE);          // 目：形は奏者と同じ 2×2、色だけ青のまま（2026-09-22 ユーザー指定）
     d.p(12, 17, SKIN2);                                     // 鼻
     d.r(10, 19, 4, 1, '#c85868');                           // 口
     d.r(4, 16, 2, 1, '#f0b0a0'); d.r(18, 16, 2, 1, '#f0b0a0'); // 頬
     headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
   };
   const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); };
-  const back = { [OUT]: SKIN, [EYE]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, '#c85868': SKIN, '#f0b0a0': SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head2', side });
+  const back = { [OUT]: SKIN, [EYE]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, '#c85868': SKIN, '#f0b0a0': SKIN,
+                 [PRIMM.HAIR2]: SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head4', side });
 }
 
 /**
@@ -442,15 +417,18 @@ function popoiHead() {
   const front = (d) => {
     d.r(2, 6, 20, 18, SKIN);
     d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
-    d.r(6, 11, 4, 5, WHITE); d.r(14, 11, 4, 5, WHITE);      // 大きな目（白目）
-    d.r(7, 12, 3, 3, OUT); d.r(15, 12, 3, 3, OUT);          // 瞳
-    d.p(12, 18, SKIN2);                                     // 鼻
-    d.r(10, 20, 4, 1, SKIN2);                               // 口
+    // 目・眉は奏者と同じ形（persona.headFor と同寸：眉 4×1、目 2×2 の黒）。
+    // 2026-09-22 ユーザー指定：白目＋3×3 の瞳の大きな目をやめ、他の奏者に揃える。
+    // 大きな目に合わせて 1 行下げてあった鼻・口も、奏者と同じ row 17 / 19 に戻す
+    d.r(7, 12, 4, 1, POPOI.HAIR2); d.r(13, 12, 4, 1, POPOI.HAIR2);   // 眉（髪色の暗い方）
+    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye);      // 目
+    d.p(12, 17, SKIN2);                                     // 鼻
+    d.r(10, 19, 4, 1, SKIN2);                               // 口
     headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 16, 1, 3, F); headNeckStubSide(d); };
-  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head2', side });
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); };   // 鼻の張り出しも奏者と同じ row へ
+  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, [C.eye]: SKIN, [POPOI.HAIR2]: SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head3', side });
 }
 
 /**
@@ -593,7 +571,6 @@ export const PARTS = {
   tellaHead:   { label: 'テラ：顔',       make: () => tellaHead() },
   tellaHair:   { label: 'テラ：髪',       make: () => tellaHair() },
   randiHead:   { label: 'ランディ：顔',   make: () => randiHead() },
-  randiHair:   { label: 'ランディ：髪',   make: () => randiHair() },
   primmHead:   { label: 'プリム：顔',     make: () => primmHead() },
   primmHair:   { label: 'プリム：髪',     make: () => primmHair() },
   popoiHead:   { label: 'ポポイ：顔',     make: () => popoiHead() },
@@ -601,10 +578,9 @@ export const PARTS = {
   // 三面図から起こした 1 体（部位ではなく全身）。手続き的な形が無いので bake() を持つ
   randi3:      { label: 'ランディ（六面図・全身）', bake: () => randi3Data(),
                  make: () => voxelPart(randi3Data(), 'randi3') },
-  randi6Head:  { label: 'ランディ六面図：頭（奏者用）', bake: () => randi6HeadData(),
+  // 六面図の顔もそのまま使う版。衣装 randi6 は 2026-09-22 に削除したので、今はどの衣装も使っていない（参考用）
+  randi6Head:  { label: 'ランディ六面図：頭（参考・未使用）', bake: () => randi6HeadData(),
                  make: () => voxelPart(randi6HeadData(), 'randi6Head') },
-  randi6Hair:  { label: 'ランディ六面図：髪（空）', bake: () => emptyPartData(),
-                 make: () => voxelPart(emptyPartData(), 'randi6Hair') },
   randi6Shell: { label: 'ランディ六面図：髪の殻', bake: () => randi6HeadData(true),
                  make: () => voxelPart(randi6HeadData(true), 'randi6Shell') },
 };
@@ -741,10 +717,6 @@ function randi6HeadData(hairOnly = false) {
            palette, back: null, layers };
 }
 
-/** 何も無い部位（頭に全部入れたので髪は空にする） */
-function emptyPartData() {
-  return { res: 1, w: 1, h: 1, depth: 1, z0: 0, pivotX: 0.5, pivotY: 1, palette: {}, back: null, layers: [['.']] };
-}
 
 /** 衣装ごとの部位の生成関数。persona(p) は手（肌色）や体型のために persona を差し替える。skirt があれば座奏で裾（ロングスカートと同じ仕組み）を付ける */
 export const COSTUMES = {
@@ -768,16 +740,6 @@ export const COSTUMES = {
     skirt: () => tellaSkirt(),
   },
   // 聖剣伝説2（2026-09-21 ユーザー指定）。いずれも顔と髪だけ作り、服は色だけ
-  // 六面図のランディを奏者のスタイルへ（顔だけ・服はスーツ）。2026-09-21 ユーザー指定
-  randi6: {
-    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: '#f6cdb5', skin2: '#dfa177', hair: '#c85820',
-                       style: 'short', glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi6' }),
-    head: () => part('randi6Head'),
-    hair: () => part('randi6Hair'),   // 頭に髪まで入っているので空
-    suit: '#2f6096',                  // 青いつなぎの色
-    tie: '#e05a9a',                   // 濃ピンクの襷
-    shoe: '#f0902a',                  // 橙の靴
-  },
   // 顔は奏者の様式（平らな四角い顔＋バンダナ）、髪は六面図の立体（2026-09-21 ユーザー指定）
   'randi6-flat': {
     persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR,
@@ -787,15 +749,6 @@ export const COSTUMES = {
     suit: '#2f6096',
     tie: RANDI.BAND,
     shoe: RANDI.SHOE,
-  },
-  randi: {
-    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR, style: 'short',
-                       glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi' }),
-    head: () => part('randiHead'),
-    hair: () => part('randiHair'),
-    suit: RANDI.COAT,         // 青い上下
-    tie: RANDI.BAND,          // 濃ピンクの襷
-    shoe: RANDI.SHOE,         // 橙の靴
   },
   primm: {
     persona: (p) => ({ ...p, gender: 'f', age: 'young', skin: PRIMM.SKIN, skin2: PRIMM.SKIN2, hair: PRIMM.HAIR, style: 'long',
