@@ -61,6 +61,25 @@ PROJECTS_DIR = 'projects'          # 起動時に chdir したアプリのフォ
 _NAME_RE = re.compile(r'[^/\\\x00-\x1f<>:"|?*]{1,60}')
 MAX_UPLOAD = 500 * 1024 * 1024     # 1 ファイルの上限（wav の長い曲でも収まる大きさ）
 
+# ---- 編集したボクセル（2026-09-21 ユーザー指定）----
+# 衣装の部位（髪・兜・顔）を編集画面 /edit.html で直接いじって、ここに JSON で保存する。
+# アプリ側は起動時に GET /voxels.json で全部読み、手続き的に作る形の代わりに使う。
+VOXEL_DIR = 'assets/voxel'
+_VOXEL_KEY = re.compile(r'[A-Za-z0-9_-]{1,40}')
+
+def voxel_all():
+    out = {}
+    if os.path.isdir(VOXEL_DIR):
+        for n in sorted(os.listdir(VOXEL_DIR)):
+            if not n.endswith('.json'):
+                continue
+            try:
+                with open(os.path.join(VOXEL_DIR, n), encoding='utf-8') as f:
+                    out[n[:-5]] = json.load(f)
+            except Exception as e:
+                print(f'[voxel] {n} を読めません: {e}')
+    return out
+
 def project_dir(name):
     """プロジェクト名 → フォルダの絶対パス。使えない名前・フォルダの外を指すものは None"""
     if not _NAME_RE.fullmatch(name or '') or name.startswith('.') or name.strip() != name:
@@ -176,6 +195,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if path.startswith('/media/') or path.startswith('/projects/'):   # 素材・プロジェクトの中身は Range 対応で返す（動画・音声のシークと再生に必要）
             self._serve_media(self.translate_path(self.path))
             return
+        if path == '/voxels.json':        # 編集済みボクセル（部位キー → データ）
+            self._json(200, voxel_all())
+            return
         if path == '/projects.json':      # プロジェクトの一覧
             self._json(200, list_projects())
             return
@@ -218,6 +240,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path.startswith('/projects/'):
             self._post_project(path)
+            return
+        if path.startswith('/voxels/'):    # 編集したボクセルの保存
+            self._post_voxel(path)
             return
         if path.startswith('/publish/'):   # 公開（?dry=1 で送らずに一覧だけ）
             name = urllib.parse.unquote(path[len('/publish/'):], errors='surrogatepass')
@@ -341,6 +366,16 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         path = self.path.split('?')[0]
+        if path.startswith('/voxels/'):    # 編集を捨てて、手続き的に作る元の形へ戻す
+            key = path[len('/voxels/'):].removesuffix('.json')
+            if not _VOXEL_KEY.fullmatch(key):
+                self._json(400, {'error': '部位のキーが不正です'})
+                return
+            f = os.path.join(VOXEL_DIR, key + '.json')
+            if os.path.isfile(f):
+                os.remove(f)
+            self._empty(204)
+            return
         parts = self._project_parts(path) if path.startswith('/projects/') else []
         d = project_dir(parts[0]) if len(parts) == 1 else None
         if not d:
@@ -349,6 +384,34 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if os.path.isdir(d):
             shutil.rmtree(d)
         self._empty(204)
+
+    def _post_voxel(self, path):
+        key = path[len('/voxels/'):].removesuffix('.json')
+        if not _VOXEL_KEY.fullmatch(key):
+            self._json(400, {'error': '部位のキーが不正です（英数と _ - のみ、40 文字まで）'})
+            return
+        body = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        try:
+            data = json.loads(body.decode('utf-8'))
+            for k in ('w', 'h', 'depth', 'z0', 'pivotX', 'pivotY', 'palette', 'layers'):
+                if k not in data:
+                    raise ValueError(f'{k} がありません')
+            if len(data['layers']) != data['depth']:
+                raise ValueError('layers の枚数が depth と合いません')
+        except Exception as e:
+            self._json(400, {'error': f'保存できない形です（{e}）'})
+            return
+        try:
+            os.makedirs(VOXEL_DIR, exist_ok=True)
+            dest = os.path.join(VOXEL_DIR, key + '.json')
+            if os.path.isfile(dest):   # 上書きの前に旧版を退避（TOOL_CRAFT_RULES §6-1）。backup/ の中は一覧に出さない
+                bdir = os.path.join(VOXEL_DIR, 'backup')
+                os.makedirs(bdir, exist_ok=True)
+                shutil.copy2(dest, os.path.join(bdir, f'{key}_{time.strftime("%Y%m%d_%H%M%S")}.json'))
+            _write_atomic(dest, json.dumps(data, ensure_ascii=False, indent=1).encode('utf-8'))
+            self._json(200, {'ok': True, 'path': f'{VOXEL_DIR}/{key}.json'})
+        except Exception as e:
+            self._json(500, {'error': f'保存に失敗しました（{e}）'})
 
     def _json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')

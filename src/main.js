@@ -8,6 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
+import { setVoxelOverrides } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
@@ -84,6 +85,18 @@ function pushSettings() {                                        // 変更のた
 
 // 起動時に読み込む。ここで待つので、以降の loadSettings() 等はサーバーの値を見る
 await pullSettings();
+
+// 衣装の部位で、編集画面（/edit.html）で保存したボクセルがあれば読む（2026-09-21 ユーザー指定）。
+// 部位を作るのは後（placePuppets）なので、ここで待っておけば間に合う
+try {
+  const r = await fetch('/voxels.json?t=' + Date.now(), { cache: 'no-store' });
+  if (r.ok) {
+    const all = await r.json();
+    setVoxelOverrides(all);
+    const n = Object.keys(all).length;
+    if (n) console.log(`[衣装] 編集したボクセルを ${n} 部位ぶん読み込みました`);
+  }
+} catch (e) { console.warn('[衣装] /voxels.json を読めません（元の形で続行）:', e.message); }
 
 const $ = (id) => {
   const el = document.getElementById(id);
