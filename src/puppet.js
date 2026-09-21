@@ -296,8 +296,11 @@ export class Puppet {
     this.persona = makePersona(this.seed);             // 老若男女（seed から決定的。2026-09-10）
     const K = (o.costume && COSTUMES[o.costume]) || null; // 衣装（特定キャラの見た目。試作 ?costume=cecil。2026-09-20 ユーザー指定）
     if (K) this.persona = K.persona(this.persona);    // 手の色・体型は衣装側で決める
-    const suit = K?.suit ? suitColors(K.suit) : null;  // 服は燕尾服のまま色だけキーカラー（2026-09-21 ユーザー指定）
+    const suit = K?.suit ? suitColors(K.suit, K.shirt, K.shoe) : null;
+    // 首だけ鎧の色に。胴は rig ごと塗るので効くが、手は塗っていないので素肌のまま残る（2026-09-21）
+    if (suit && K?.neck) suit[this.persona.skin] = K.neck;  // 服は燕尾服のまま色だけキーカラー（2026-09-21 ユーザー指定）
     const tint = (m) => (suit ? recolorParts(m, suit) : m);
+    const accentCol = K?.tie || o.color || '#c03030';   // 蝶ネクタイ・帯の色。衣装が tie を持てばトラック色より優先（2026-09-21）
     this.phase = (this.seed * 1.618) % 6.283;          // 個体差（揺れの位相）
     this.scaleVar = 0.9 + ((this.seed * 7) % 5) * 0.05; // 個体差（振り幅）
     this.delay = 0;
@@ -323,10 +326,10 @@ export class Puppet {
     this.seated = !o.isConductor && this.family !== 'percussion' && this.variant !== 'contrabass'; // コントラバスは立奏（2026-09-10）
     const P = this.persona;
     if (this.seated) {
-      this.body = this.flat ? torsoSeated(o.color || '#c03030') : (K?.torso || torsoFor)(P, o.color || '#c03030');
+      this.body = this.flat ? torsoSeated(o.color || '#c03030') : (K?.torso || torsoFor)(P, accentCol);
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
-      if (!this.flat) { const coat = (K?.coat || coatFor)(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
+      if (!this.flat) { const coat = (K?.coat || coatFor)(P, accentCol, false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
       const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
@@ -348,14 +351,18 @@ export class Puppet {
       this.upper.add(this.body);
     } else {
       // 立奏（打楽器・コントラバス・指揮者）：腰から上を spine の下に、脚は rig に直付け。揺れ・呼吸は上半身だけ（2026-09-10 ユーザー指定）
-      this.body = (K?.torso || torsoFor)(P, o.color || '#c03030');
+      this.body = (K?.torso || torsoFor)(P, accentCol);
       this.body.position.y = 13 * PX;
       this.upper.add(this.body);
-      const coat = (K?.coat || coatFor)(P, o.color || '#c03030', true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
+      const coat = (K?.coat || coatFor)(P, accentCol, true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
       this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
       this.rig.add((K?.legs || legsStandingFor)(P));
     }
     if (!this.flat) this.group.scale.setScalar(P.height * (PLAYER_TALL[this.variant] ?? 1)); // 身長の個体差（楽器・腕ごと相似）＋楽器別の身長倍率
+
+    // 服の塗り替えは**頭を付ける前**に。頭・髪は衣装が自前の色で描くので塗ってはいけない
+    // （顔に出した素肌まで neck の色で塗り替えてしまう。2026-09-21）
+    if (suit) recolorParts(this.rig, suit);   // 胴・上着・脚・座った脚。腕は下で作るたびに塗る
 
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
@@ -363,7 +370,6 @@ export class Puppet {
     this.headPivot.add(this.head);
     if (!this.flat) { this.hair = (K?.hair || hairFor)(P); this.headPivot.add(this.hair); } // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）
     this.upper.add(this.headPivot);
-    if (suit) recolorParts(this.rig, suit);   // 胴・上着・脚・座った脚（頭・髪・椅子・靴は色が違うので変わらない）。腕は下で作るたびに塗る
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）。手首ありなら 肘 → 前腕 → 手首 → 手 の 3 関節
     this.arm = {}; this.fore = {}; this.held = {}; this.hand = {}; this.foreQ = {}; this.handGrp = {}; this.handQ = {};

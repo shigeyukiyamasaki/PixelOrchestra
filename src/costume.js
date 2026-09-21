@@ -10,86 +10,102 @@
  *   - 正面図は 2 倍解像度（res:2）のセル、pivot は頭＝首の付け根中央 / 胴＝腰の中央 / 脚＝足元中央
  *   - 立体パーツ（兜・肩当て）は res:1 の 1px 粒。carve は「体積関数 keep」で形を決め、colorOf で部位の色を塗る
  */
-import { makePart, C, roundColumn } from './sprites.js';
+import { makePart, C, roundColumn, voxelPart } from './sprites.js';
 
 /**
  * 「服は燕尾服のまま、色だけキーカラー」の置き換え表（2026-09-21 ユーザー指定）。奏者共通パーツ（袖・脚・座った脚）に直書きされた 3 色を、
  * キーカラーとその明暗に置き換える：上着 C.coat → key、ズボン・肩の陰 C.coat2 → 明るめ、布の塊感 CLOTH_DARK（persona.js）→ 暗め
  */
-export function suitColors(key) {
+export function suitColors(key, shirt = null, shoe = null) {
   const c = new THREE.Color(key), hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
   const shade = (k) => '#' + new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(1, hsl.l * k)).getHexString();
-  return { [C.coat]: key, [C.coat2]: shade(1.3), '#16161f': shade(0.82) };
+  const map = { [C.coat]: key, [C.coat2]: shade(1.3), '#16161f': shade(0.82) };
+  if (shirt) map[C.shirt] = shirt;   // 胸の白いシャツ（鎧では板金にしたい。2026-09-21）
+  if (shoe) map[C.shoe] = shoe;      // 靴（戦闘用セシルは金のブーツ）
+  return map;
 }
 
 const F = '#000';
 
 // ---- 暗黒騎士セシル（FF4）：紺紫の鎧、角の付いた兜、素顔 ----
 const CECIL = {
-  BASE: '#2a2458',   // 鎧の地
-  HI: '#4a4290',     // 上を向く面（天頂・肩当ての上・胸の稜線）
-  LO: '#181440',     // 陰・下部・籠手・具足
-  HORN: '#6c62b8',   // 角
-  BELT: '#8a84c8',   // 帯
-  CAPE: '#1a1540',   // マント
-  FACE: '#efe3da', FACE2: '#c9b3a8', BROW: '#2a2040',
-  GAUNT: '#1c1848', GAUNT2: '#100d2c',
+  // **戦闘用スプライトから採取**（セシル_戦闘立ち.png を等倍 16×24 に戻して抽出。2026-09-21 ユーザー指定）。
+  // セシルはフィールド用・戦闘用・メニュー用で配色が大きく違う。基準は戦闘用：彩度の高い青紫・角は黄色・手は素肌・ブーツは金。
+  // （メニュー用のポートレートは灰がかった藤色 #a098c8 / #707090 / #383848 に白い角。採らない）
+  // 角は戦闘用では頭の右上に 1〜2px の突起として兜と同じ明青紫で描かれている。黄色でも白でもない
+  LIGHT: '#9090f8', BASE: '#6060d8', MID: '#5050a8', DARK: '#202068', SHADE: '#404088', OUT: '#000000',
+  EYE: '#e8e800', GOLD: '#e0a800', RED: '#f80000',   // 戦闘用の純黄 #e8e800 は角ではなく目（顔の中央・目の高さに 4px）
+  SKIN: '#f88850', SKIN2: '#c87800',                                  // 手（戦闘用では素肌）
+  HI: '#9090f8', LO: '#202068', BELT: '#e0a800', CAPE: '#202068',     // 鎧一式（cecil）が使う名前
+  FACE: '#6060d8', FACE2: '#202068', GAUNT: '#5050a8', GAUNT2: '#202068',
 };
 
-/** 顔 24×30（2 倍解像度）：persona.headFor と同じ箱。額と側頭は兜で隠れる。太い眉・無表情 */
+
+
+/**
+ * 面頬 24×30（2 倍解像度）。persona.headFor と同じ箱だが、**肌は一切見えない**（実物どおり顔全体が兜。2026-09-21）。
+ * 上を向く面（額・顎の中央）が明るく、目の高さは窪んで暗い帯、中央に鼻筋の稜線。
+ */
 function cecilHead() {
-  const { FACE, FACE2, BROW } = CECIL;
+  const { BASE, LIGHT, OUT, EYE, SKIN, SKIN2 } = CECIL;
   const front = (d) => {
-    d.r(2, 6, 20, 18, FACE);
-    d.r(2, 12, 2, 4, FACE2); d.r(20, 12, 2, 4, FACE2);      // 耳（兜で隠れる）
-    d.r(6, 12, 5, 1, BROW); d.r(13, 12, 5, 1, BROW);        // 太い眉
-    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye);
-    d.p(12, 17, FACE2);                                     // 鼻
-    d.r(10, 19, 4, 1, FACE2);                               // 口（結んだまま）
+    d.r(2, 6, 20, 12, BASE);                                // 兜の面（額から頬の下・row 17 まで）
+    d.r(2, 6, 20, 3, LIGHT);                                // 額（上を向く面）
+    d.r(2, 9, 20, 1, OUT);                                  // 眉の段
+    d.r(11, 10, 2, 8, LIGHT);                               // 鼻筋の稜線
+    // 光る目（戦闘用の純黄 #e8e800）。吊り目：外側（耳側）が高く、中央へ 2px ずつ下がる。周りに窪み・黒縁は置かない
+    // 一番内側の低いブロックだけ 1px 外へ広い（2026-09-21 ユーザー指定）
+    d.r(4, 12, 2, 2, EYE); d.r(6, 13, 2, 2, EYE); d.r(7, 14, 3, 2, EYE);
+    d.r(18, 12, 2, 2, EYE); d.r(16, 13, 2, 2, EYE); d.r(14, 14, 3, 2, EYE);
+    // 兜の下は素肌（2026-09-21 ユーザー指定：口周りを出す）
+    d.r(2, 18, 20, 6, SKIN);
+    d.r(3, 18, 18, 1, SKIN2);                               // 兜の縁の落ち影
+    d.r(9, 20, 6, 1, SKIN2);                                // 口
+    d.r(2, 22, 20, 2, SKIN2);                               // 顎（下を向く面）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); };
-  const back = { [C.eye]: FACE, [FACE2]: FACE, [BROW]: FACE };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'cecil|head', side });
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 12, 1, 5, F); };   // 箱＋鼻筋の張り出し
+  const back = { [LIGHT]: BASE, [OUT]: BASE, [EYE]: BASE, [SKIN]: BASE, [SKIN2]: BASE };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'cecil|head8', side });
 }
 
 /**
- * 兜 20×22×16 px（1px 粒）。persona.hairFor の代わり。pivot = 首の付け根中央。
- * 顔の箱（x ±5, y 0-9, z ±4）の外側に殻を作る：天頂 3 段・ひさし・側頭（耳から顎まで）・後頭・首の後ろの垂れ・額の帯・頬当て。
- * 顔は x ±3・y 0.5-7 の窓から見える。角は側頭の上から外へ反りながら伸びる（左右対称）
+ * 兜 20×22×16 px（1px 粒）。persona.hairFor の代わり。pivot = 首の付け根中央。顔の箱（x ±5, y 0-9, z ±4）の外側の殻。
+ * 実物どおり（2026-09-21）：丸い天頂、顎までの側頭、**兜と同じ青紫の角が左右に 1 本ずつ、頬の高さから頭頂より上まで
+ * ほぼ垂直に伸び、中ほどで外へ張り出す**。顔は覆われているので窓は無い。
  */
 function cecilHelmet() {
+  // 角：[y, ax の最小, ax の最大, 奥行き]。**生え際は目のすぐ上（y 6.5）、先端 y 14.5**（2026-09-21 ユーザー指定）
+  // 幅 1px。上がるにつれ外へ張り出し、先で内へ戻る。段がずれる y では 2 列にして面で繋ぐ（斜めだけだと浮く）
+  const HORN = [[6.5, 6.5, 6.5, 1.5], [7.5, 6.5, 7.5, 1.5], [8.5, 7.5, 7.5, 1.0], [9.5, 7.5, 8.5, 0.5],
+                [10.5, 8.5, 8.5, 0.5], [11.5, 7.5, 8.5, 0.5], [12.5, 7.5, 7.5, 0.5], [13.5, 6.5, 7.5, 0.5],
+                [14.5, 6.5, 6.5, 0.5]];
+  const isHorn = (ax, y, z) => HORN.some(([yy, a0, a1, zz]) => y === yy && ax >= a0 && ax <= a1 && Math.abs(z) <= zz);
   const keep = (x, y, z) => {                            // px（セル中心）。z は符号付き（+ が前）
     const ax = Math.abs(x), az = Math.abs(z);
     const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
-    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;                 // 顔の箱の内側は空
+    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;                 // 顔の箱の内側は空（面頬は head 側）
+    if (isHorn(ax, y, z)) return true;                                        // 角
     if (b(0, 5.5, 9.5, 9.5, -4.5, 4.5) || b(0, 4.5, 10.5, 10.5, -3.5, 3.5) || b(0, 3.5, 11.5, 11.5, -2.5, 2.5)) return true; // 天頂
     if (b(0, 4.5, 9.5, 9.5, 5.5, 5.5)) return true;                            // ひさし（前へ 1px）
-    if (b(5.5, 5.5, 1.5, 9.5, -4.5, 4.5)) return true;                         // 側頭
-    if (b(0, 5.5, 1.5, 9.5, -4.5, -4.5)) return true;                          // 後頭
-    if (b(0, 4.5, -0.5, 4.5, -5.5, -5.5)) return true;                         // 首の後ろの垂れ
-    if (b(0, 5.5, 7.5, 8.5, 4.5, 4.5)) return true;                            // 額の帯
-    if (b(3.5, 5.5, 0.5, 6.5, 4.5, 4.5)) return true;                          // 頬当て（顔の窓は x ±3）
-    // 角：側頭の上から、上へ 1 段ごとに外へ半歩ずつ
-    if (b(5.5, 6.5, 9.5, 9.5, -1.5, 1.5) || b(6.5, 6.5, 10.5, 10.5, -1.5, 1.5)) return true;
-    if (b(6.5, 7.5, 11.5, 11.5, -0.5, 0.5) || b(7.5, 7.5, 12.5, 12.5, -0.5, 0.5)) return true;
-    if (b(7.5, 8.5, 13.5, 13.5, -0.5, 0.5) || b(8.5, 8.5, 14.5, 14.5, -0.5, 0.5)) return true;
-    if (b(8.5, 9.5, 15.5, 15.5, -0.5, 0.5)) return true;
+    if (b(5.5, 5.5, 3.5, 9.5, -4.5, 4.5)) return true;                         // 側頭（頬の段で終わる。下は素肌）
+    if (b(0, 5.5, 2.5, 9.5, -4.5, -4.5)) return true;                          // 後頭
+    if (b(0, 4.5, -1.5, 4.5, -5.5, -5.5)) return true;                         // 首の後ろの垂れ
     return false;
   };
   const toPx = (cx, cy, cz) => [cx - 10 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
   const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
-  carve.toString = () => 'cecilHelmet';
+  carve.toString = () => 'cecilHelmet8';
   const colorOf = (cx, cy, cz) => {
-    const [x, y] = toPx(cx, cy, cz);
+    const [x, y, z] = toPx(cx, cy, cz);
     const ax = Math.abs(x);
-    if (ax >= 6) return CECIL.HORN;                       // 角
-    if (y >= 10) return CECIL.HI;                         // 天頂の上 2 段
-    if (y <= 3) return CECIL.LO;                          // 頬当ての下・首の後ろ
+    if (isHorn(ax, y, z)) return y >= 10 ? CECIL.LIGHT : CECIL.BASE;  // 角：戦闘用は兜と同じ青紫（先が明るい）
+    if (z > 5 || y >= 10) return CECIL.LIGHT;             // ひさし・天頂の上 2 段
+    if (y <= 1) return CECIL.DARK;                        // 顎の高さ
     return null;                                          // 地の色
   };
-  colorOf.toString = () => 'cecilHelmetColor';
-  return makePart(20, 22, 10, 16, (d) => { d.r(0, 0, 20, 22, CECIL.BASE); }, { res: 1, depth: 16, z0: -8, accent: 'cecil|helmet', carve, colorOf });
+  colorOf.toString = () => 'cecilHelmetColor8';
+  return makePart(20, 22, 10, 16, (d) => { d.r(0, 0, 20, 22, CECIL.BASE); }, { res: 1, depth: 16, z0: -8, accent: 'cecil|helmet8', carve, colorOf });
 }
 
 /** 胴 32×42（2 倍解像度）：persona.torsoFor と同じ箱。喉当て・胸当ての稜線（V 字）・腹の段・帯。トラック色は使わない */
@@ -284,13 +300,218 @@ function tellaSkirt() {
   return { hip, front };
 }
 
+
+// ================= 聖剣伝説2（2026-09-21 ユーザー指定）=================
+// 配色はいずれも「正面 Stance」から等倍で採取（/Volumes/SunDisk 4TB/動画編集/2.5D/聖剣伝説2/キャラ/…/*.png）。
+// シートはラベル付きで Stance が正面・背面・横の 3 方向あり、その 1 枚目（正面）を基準にした。
+
+// ---- ランディ：橙の逆立った髪、濃ピンクのヘッドバンド、青い上下、橙の靴 ----
+const RANDI = {
+  HAIR: '#c85820', HAIR2: '#804018', HAIR3: '#f89820',
+  SKIN: '#f8b0a0', SKIN2: '#d07850', BAND: '#e828a8', BAND2: '#a01870',
+  OUT: '#302820', WHITE: '#f8f8f8', COAT: '#204870', SHOE: '#f8a828',
+};
+
+/** 顔 24×30。ヘッドバンドが額を横切る。目は大きめで白のハイライト */
+function randiHead() {
+  const { SKIN, SKIN2, BAND, BAND2, OUT, WHITE } = RANDI;
+  const front = (d) => {
+    d.r(2, 6, 20, 18, SKIN);
+    d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
+    d.r(2, 6, 20, 3, BAND); d.r(2, 9, 20, 1, BAND2);        // ヘッドバンド（額）
+    d.r(7, 12, 3, 3, OUT); d.r(14, 12, 3, 3, OUT);          // 目
+    d.r(7, 12, 1, 1, WHITE); d.r(16, 12, 1, 1, WHITE);      // ハイライト
+    d.p(12, 17, SKIN2);                                     // 鼻
+    d.r(10, 19, 4, 1, SKIN2);                               // 口
+    d.r(4, 16, 2, 1, '#f09088'); d.r(18, 16, 2, 1, '#f09088'); // 頬
+  };
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); };
+  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, [BAND]: SKIN, [BAND2]: SKIN, '#f09088': SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'randi|head', side });
+}
+
+/** 髪 20×21×16（1px 粒）：大きく盛った橙の髪。頭頂から後ろへ膨らみ、左右と後ろに跳ねた房 */
+function randiHair() {
+  const keep = (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z);
+    const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
+    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;     // 顔の箱の内側は空
+    if (b(0, 6.5, 9.5, 10.5, -5.5, 5.5)) return true;             // 天頂（大きい）
+    if (b(0, 5.5, 11.5, 11.5, -5.5, 4.5) || b(0, 4.5, 12.5, 12.5, -4.5, 3.5)) return true;
+    if (b(5.5, 6.5, 5.5, 9.5, -5.5, 5.5)) return true;            // 側頭（耳の上まで）
+    if (b(0, 6.5, 5.5, 9.5, -5.5, -4.5)) return true;             // 後頭
+    if (b(0, 5.5, 6.5, 9.5, -6.5, -5.5)) return true;             // 後ろの量感
+    // 跳ねた房：右上・左上・後ろ上
+    if (b(6.5, 7.5, 11.5, 12.5, 0.5, 3.5) || b(7.5, 8.5, 12.5, 13.5, 1.5, 3.5)) return true;
+    if (b(5.5, 6.5, 12.5, 13.5, -4.5, -1.5) || b(0, 2.5, 13.5, 14.5, -3.5, -0.5)) return true;
+    return false;
+  };
+  const toPx = (cx, cy, cz) => [cx - 10 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
+  const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
+  carve.toString = () => 'randiHair';
+  const colorOf = (cx, cy, cz) => {
+    const [x, y] = toPx(cx, cy, cz);
+    if (y >= 12) return RANDI.HAIR3;                              // 先の房は明るい
+    return ((cx * 3 + cy * 5 + cz) % 4 === 0) ? RANDI.HAIR2 : null;  // 塊感
+  };
+  colorOf.toString = () => 'randiHairColor';
+  return makePart(20, 21, 10, 16, (d) => { d.r(0, 0, 20, 21, RANDI.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'randi|hair', carve, colorOf });
+}
+
+// ---- プリム：金橙の大きな髪に緑の飾り、青い目、マゼンタのドレス ----
+const PRIMM = {
+  HAIR: '#d87800', HAIR2: '#a05838', HAIR3: '#f0a820',
+  SKIN: '#f8d8a8', SKIN2: '#d88058', EYE: '#005870', OUT: '#483830', WHITE: '#f0f0f0',
+  DRESS: '#a02870', DRESS2: '#e850b8', GEM: '#50a868', GEM2: '#98e8a8',
+};
+
+/** 顔 24×30。青い目、前髪が額を覆う */
+function primmHead() {
+  const { SKIN, SKIN2, EYE, OUT, WHITE } = PRIMM;
+  const front = (d) => {
+    d.r(2, 6, 20, 18, SKIN);
+    d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
+    d.r(6, 11, 5, 1, OUT); d.r(13, 11, 5, 1, OUT);          // まつ毛の線
+    d.r(7, 12, 3, 3, EYE); d.r(14, 12, 3, 3, EYE);          // 青い目
+    d.r(7, 12, 1, 1, WHITE); d.r(16, 12, 1, 1, WHITE);      // ハイライト
+    d.p(12, 17, SKIN2);                                     // 鼻
+    d.r(10, 19, 4, 1, '#c85868');                           // 口
+    d.r(4, 16, 2, 1, '#f0b0a0'); d.r(18, 16, 2, 1, '#f0b0a0'); // 頬
+  };
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); };
+  const back = { [OUT]: SKIN, [EYE]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, '#c85868': SKIN, '#f0b0a0': SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head', side });
+}
+
+/**
+ * 髪 18×30×16（1px 粒）。**背面 Stance で確認したとおり、長いポニーテールを背中へ垂らす**（2026-09-21 ユーザー指摘）。
+ * 正面 Stance だけ見ていた第 1 版では見落としていた。前髪は額を覆い、頭頂の中央と結び目に緑の飾り。
+ * 尻尾は z -5.5〜-4.5（胴は z ±3 なので当たらない）に置き、腰の高さ（頭のローカル座標で y -12.5）まで垂らす
+ */
+function primmHair() {
+  const tailW = (y) => (y >= -2 ? 3.5 : y >= -8 ? 2.5 : 1.5);   // 上は広く、先へ細る
+  const isTail = (ax, y, z) => z >= -5.5 && z <= -4.5 && y <= 9.5 && y >= -12.5 && ax <= tailW(y);
+  const keep = (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z);
+    const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
+    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;
+    if (isTail(ax, y, z)) return true;                            // ポニーテール
+    if (b(0, 6.5, 9.5, 10.5, -5.5, 5.5)) return true;             // 天頂
+    if (b(0, 5.5, 11.5, 11.5, -4.5, 4.5) || b(0, 3.5, 12.5, 12.5, -3.5, 3.5)) return true;
+    if (b(0, 1.5, 13.5, 14.5, -1.5, 1.5)) return true;            // 頭頂の飾り（緑）
+    if (b(5.5, 6.5, 2.5, 9.5, -5.5, 5.5)) return true;            // 側頭（頬まで下ろす）
+    if (b(0, 6.5, 2.5, 9.5, -5.5, -4.5)) return true;             // 後頭
+    if (b(0, 6.5, 3.5, 9.5, -6.5, -5.5)) return true;             // 後ろの量感
+    if (b(0, 5.5, 7.5, 9.5, 4.5, 5.5)) return true;               // 前髪（額を覆う）
+    return false;
+  };
+  const toPx = (cx, cy, cz) => [cx - 9 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
+  const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
+  carve.toString = () => 'primmHair2';
+  const colorOf = (cx, cy, cz) => {
+    const [x, y, z] = toPx(cx, cy, cz);
+    const ax = Math.abs(x);
+    if (y >= 13) return ((cx + cz) % 2 ? PRIMM.GEM : PRIMM.GEM2);          // 頭頂の飾り
+    if (isTail(ax, y, z) && y >= 6.5 && y <= 8.5) return PRIMM.GEM;        // 結び目（緑）
+    if (isTail(ax, y, z) && ax <= 0.5) return PRIMM.HAIR3;                 // 尻尾の中央に明るい筋
+    return ((cx * 3 + cy * 5 + cz) % 4 === 0) ? PRIMM.HAIR2 : (y >= 11 ? PRIMM.HAIR3 : null);
+  };
+  colorOf.toString = () => 'primmHairColor2';
+  return makePart(18, 30, 9, 16, (d) => { d.r(0, 0, 18, 30, PRIMM.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'primm|hair2', carve, colorOf });
+}
+
+// ---- ポポイ：赤桃の巨大な髪、左右に淡い丸い房、緑の服。小柄 ----
+const POPOI = {
+  HAIR: '#a83040', HAIR2: '#901818', HAIR3: '#d05868',
+  TUFT: '#f8b0f0', TUFT2: '#f8f8f8',
+  SKIN: '#e89078', SKIN2: '#d08870', OUT: '#383028', WHITE: '#f8f8f8',
+  TOP: '#207858', TOP2: '#50b068',
+};
+
+/** 顔 24×30。小さな顔に大きな目 */
+function popoiHead() {
+  const { SKIN, SKIN2, OUT, WHITE } = POPOI;
+  const front = (d) => {
+    d.r(2, 6, 20, 18, SKIN);
+    d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
+    d.r(6, 11, 4, 5, WHITE); d.r(14, 11, 4, 5, WHITE);      // 大きな目（白目）
+    d.r(7, 12, 3, 3, OUT); d.r(15, 12, 3, 3, OUT);          // 瞳
+    d.p(12, 18, SKIN2);                                     // 鼻
+    d.r(10, 20, 4, 1, SKIN2);                               // 口
+  };
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 16, 1, 3, F); };
+  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head', side });
+}
+
+/** 髪 22×21×16：顔の周りを丸く包む巨大な髪＋左右に淡い丸い房 */
+function popoiHair() {
+  const tuft = (ax, y, z) => ax >= 6.5 && ax <= 8.5 && y >= 7.5 && y <= 10.5 && Math.abs(z) <= 2.5
+                             && (ax - 7.5) ** 2 + (y - 9) ** 2 + (z / 1.6) ** 2 <= 4;   // 丸い房
+  const keep = (x, y, z) => {
+    const ax = Math.abs(x), az = Math.abs(z);
+    const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
+    if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;
+    if (tuft(ax, y, z)) return true;                              // 左右の丸い房
+    if (b(0, 6.5, 9.5, 11.5, -5.5, 5.5)) return true;             // 天頂（厚い）
+    if (b(0, 5.5, 12.5, 12.5, -4.5, 4.5)) return true;
+    if (b(5.5, 6.5, -1.5, 9.5, -5.5, 5.5)) return true;           // 側頭（顎より下まで垂れる）
+    if (b(0, 6.5, -1.5, 9.5, -5.5, -4.5)) return true;            // 後頭
+    if (b(0, 6.5, -0.5, 9.5, -6.5, -5.5)) return true;            // 後ろの量感
+    if (b(0, 5.5, 8.5, 9.5, 4.5, 5.5)) return true;               // 前髪
+    return false;
+  };
+  const toPx = (cx, cy, cz) => [cx - 11 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
+  const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
+  carve.toString = () => 'popoiHair';
+  const colorOf = (cx, cy, cz) => {
+    const [x, y, z] = toPx(cx, cy, cz);
+    const ax = Math.abs(x);
+    if (tuft(ax, y, z)) return ax >= 7.5 ? POPOI.TUFT2 : POPOI.TUFT;   // 房は淡く、外側が白い
+    if (y >= 11) return POPOI.HAIR3;
+    return ((cx * 3 + cy * 5 + cz) % 4 === 0) ? POPOI.HAIR2 : null;
+  };
+  colorOf.toString = () => 'popoiHairColor';
+  return makePart(22, 21, 11, 16, (d) => { d.r(0, 0, 22, 21, POPOI.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'popoi|hair', carve, colorOf });
+}
+
+// ---- 画面で編集したボクセル（assets/voxel/<キー>.json）による差し替え（2026-09-21 ユーザー指定）----
+// 髪型などの細部は言葉で伝えるのが難しいので、編集画面（/edit.html）で直接いじって保存し、ここで読み替える。
+// キーは「部位」ごと。同じ部位を使う衣装（cecil と cecil-suit 等）はまとめて変わる
+const VOXELS = {};
+export function setVoxelOverrides(map) {
+  for (const k of Object.keys(VOXELS)) delete VOXELS[k];
+  Object.assign(VOXELS, map || {});
+}
+export function hasVoxelOverride(key) { return !!VOXELS[key]; }
+
+/** 編集できる部位の一覧（編集画面のプルダウン）。make は手続き的に作る元の形 */
+export const PARTS = {
+  cecilHead:   { label: 'セシル：面頬',   make: () => cecilHead() },
+  cecilHelmet: { label: 'セシル：兜',     make: () => cecilHelmet() },
+  tellaHead:   { label: 'テラ：顔',       make: () => tellaHead() },
+  tellaHair:   { label: 'テラ：髪',       make: () => tellaHair() },
+  randiHead:   { label: 'ランディ：顔',   make: () => randiHead() },
+  randiHair:   { label: 'ランディ：髪',   make: () => randiHair() },
+  primmHead:   { label: 'プリム：顔',     make: () => primmHead() },
+  primmHair:   { label: 'プリム：髪',     make: () => primmHair() },
+  popoiHead:   { label: 'ポポイ：顔',     make: () => popoiHead() },
+  popoiHair:   { label: 'ポポイ：髪',     make: () => popoiHair() },
+};
+
+/** 部位を作る。編集済みのボクセルがあればそちらを使う */
+export function part(key) {
+  const v = VOXELS[key];
+  return v ? voxelPart(v, key + '|' + (v.rev || 0)) : PARTS[key].make();
+}
+
 /** 衣装ごとの部位の生成関数。persona(p) は手（肌色）や体型のために persona を差し替える。skirt があれば座奏で裾（ロングスカートと同じ仕組み）を付ける */
 export const COSTUMES = {
   cecil: {
     persona: (p) => ({ ...p, gender: 'm', age: 'adult', skin: CECIL.GAUNT, skin2: CECIL.GAUNT2, hair: CECIL.LO, style: 'short',
                        glasses: false, beard: false, build: 1.0, height: 1.02, key: 'cecil' }),   // 手は籠手。体型は固定
-    head: () => cecilHead(),
-    hair: () => cecilHelmet(),
+    head: () => part('cecilHead'),
+    hair: () => part('cecilHelmet'),
     torso: () => cecilTorso(),
     coat: (p, accent, standing) => cecilArmor(standing),
     legs: () => cecilLegs(),
@@ -298,19 +519,58 @@ export const COSTUMES = {
   tella: {
     persona: (p) => ({ ...p, gender: 'm', age: 'senior', skin: TELLA.SKIN, skin2: TELLA.SKIN2, hair: TELLA.HAIR, style: 'bald',
                        glasses: true, beard: true, build: 0.95, height: 0.94, key: 'tella' }),   // 小柄な老人
-    head: () => tellaHead(),
-    hair: () => tellaHair(),
+    head: () => part('tellaHead'),
+    hair: () => part('tellaHair'),
     torso: () => tellaTorso(),
     coat: () => tellaHood(),
     legs: () => tellaLegs(),
     skirt: () => tellaSkirt(),
   },
+  // 聖剣伝説2（2026-09-21 ユーザー指定）。いずれも顔と髪だけ作り、服は色だけ
+  randi: {
+    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR, style: 'short',
+                       glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi' }),
+    head: () => part('randiHead'),
+    hair: () => part('randiHair'),
+    suit: RANDI.COAT,         // 青い上下
+    tie: RANDI.BAND,          // 濃ピンクの襷
+    shoe: RANDI.SHOE,         // 橙の靴
+  },
+  primm: {
+    persona: (p) => ({ ...p, gender: 'f', age: 'young', skin: PRIMM.SKIN, skin2: PRIMM.SKIN2, hair: PRIMM.HAIR, style: 'long',
+                       glasses: false, beard: false, build: 0.95, height: 0.96, key: 'primm' }),   // 女性＝ドレスとロングスカート
+    head: () => part('primmHead'),
+    hair: () => part('primmHair'),
+    suit: PRIMM.DRESS,        // マゼンタのドレス
+    tie: PRIMM.GEM,           // 緑の飾り（腰の帯・ブローチ）
+  },
+  popoi: {
+    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: POPOI.SKIN, skin2: POPOI.SKIN2, hair: POPOI.HAIR, style: 'short',
+                       glasses: false, beard: false, build: 0.95, height: 0.82, key: 'popoi' }),   // 小柄
+    head: () => part('popoiHead'),
+    hair: () => part('popoiHair'),
+    suit: POPOI.TOP,          // 緑の服
+    tie: POPOI.TUFT,          // 淡いピンクの差し色
+    shoe: POPOI.TUFT,
+  },
+  // 兜だけセシル、服は燕尾服のまま色だけ紺紫（採用方式。2026-09-21 ユーザー指定）
+  'cecil-suit': {
+    persona: (p) => ({ ...p, gender: 'm', age: 'adult', skin: CECIL.SKIN, skin2: CECIL.SKIN2, hair: CECIL.LO, style: 'short',
+                       glasses: false, beard: false, build: 1.05, height: 1.02, key: 'cecil' }),   // 戦闘用は手が素肌
+    head: () => part('cecilHead'),
+    hair: () => part('cecilHelmet'),
+    suit: CECIL.MID,          // 上着＝青紫。ズボン・肩の陰は自動で一段明るく
+    shirt: CECIL.DARK,        // 胸は白いシャツでなく板金
+    tie: CECIL.GOLD,          // 喉元の金
+    shoe: CECIL.GOLD,         // 戦闘用は金のブーツ
+    neck: CECIL.DARK,         // 首は喉当て（手は素肌のまま）
+  },
   // 顔と髪だけテラ、服は燕尾服のまま色だけ紫（もう一案。2026-09-21 ユーザー指定）
   'tella-suit': {
     persona: (p) => ({ ...p, gender: 'm', age: 'senior', skin: TELLA.SKIN, skin2: TELLA.SKIN2, hair: TELLA.HAIR, style: 'bald',
                        glasses: true, beard: true, build: 0.95, height: 0.94, key: 'tella' }),
-    head: () => tellaHead(),
-    hair: () => tellaHair(),
+    head: () => part('tellaHead'),
+    hair: () => part('tellaHair'),
     suit: '#6b3fa6',
   },
 };
