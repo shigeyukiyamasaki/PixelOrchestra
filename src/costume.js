@@ -10,7 +10,7 @@
  *   - 正面図は 2 倍解像度（res:2）のセル、pivot は頭＝首の付け根中央 / 胴＝腰の中央 / 脚＝足元中央
  *   - 立体パーツ（兜・肩当て）は res:1 の 1px 粒。carve は「体積関数 keep」で形を決め、colorOf で部位の色を塗る
  */
-import { makePart, C, roundColumn, voxelPart } from './sprites.js';
+import { makePart, C, roundColumn, voxelPart, headNeckStub, headNeckStubSide } from './sprites.js';
 import { RANDI3 } from './randi3Data.js';
 
 /**
@@ -52,6 +52,7 @@ function cecilHead() {
   const { BASE, LIGHT, OUT, EYE, SKIN, SKIN2 } = CECIL;
   const front = (d) => {
     d.r(2, 6, 20, 12, BASE);                                // 兜の面（額から頬の下・row 17 まで）
+    headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
     d.r(2, 6, 20, 3, LIGHT);                                // 額（上を向く面）
     d.r(2, 9, 20, 1, OUT);                                  // 眉の段
     d.r(11, 10, 2, 8, LIGHT);                               // 鼻筋の稜線
@@ -65,9 +66,9 @@ function cecilHead() {
     d.r(9, 20, 6, 1, SKIN2);                                // 口
     d.r(2, 22, 20, 2, SKIN2);                               // 顎（下を向く面）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 12, 1, 5, F); };   // 箱＋鼻筋の張り出し
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 12, 1, 5, F); headNeckStubSide(d); };   // 箱＋鼻筋の張り出し＋首の付け根
   const back = { [LIGHT]: BASE, [OUT]: BASE, [EYE]: BASE, [SKIN]: BASE, [SKIN2]: BASE };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'cecil|head8', side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'cecil|head9', side });
 }
 
 /**
@@ -187,6 +188,7 @@ function tellaHead() {
     d.r(2, 6, 20, 18, SKIN);
     d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
     d.r(8, 8, 8, 1, SKIN2);                                 // 額のしわ（禿げなので見える）
+    headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
     d.r(6, 11, 5, 2, HAIR); d.r(13, 11, 5, 2, HAIR);        // 白い太眉
     d.p(12, 17, SKIN2);                                     // 鼻
     d.p(7, 17, SKIN2); d.p(16, 17, SKIN2);                  // 目尻のしわ
@@ -204,9 +206,9 @@ function tellaHead() {
     d.r(9, 25, 1, 3, HAIR2); d.r(13, 25, 1, 3, HAIR2);
     d.r(10, 21, 4, 1, SKIN2);                               // 口（ひげの中）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); d.r(13, 24, 3, 6, F); };   // 顎の下のひげは前面だけ
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); d.r(13, 24, 3, 6, F); headNeckStubSide(d); };   // 顎の下のひげは前面だけ＋首の付け根
   const back = { [LENS]: SKIN, [SKIN2]: SKIN, [FRAME]: SKIN, [HAIR]: SKIN, [HAIR2]: SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'tella|head2', side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'tella|head3', side });
 }
 
 /**
@@ -320,15 +322,19 @@ function randiHead() {
     d.r(2, 6, 20, 18, SKIN);
     d.r(2, 12, 2, 4, SKIN2); d.r(20, 12, 2, 4, SKIN2);      // 耳
     d.r(2, 6, 20, 3, BAND); d.r(2, 9, 20, 1, BAND2);        // ヘッドバンド（額）
-    d.r(7, 12, 3, 3, OUT); d.r(14, 12, 3, 3, OUT);          // 目
-    d.r(7, 12, 1, 1, WHITE); d.r(16, 12, 1, 1, WHITE);      // ハイライト
+    // 目・眉は奏者と同じ形（persona.headFor と同寸：眉は 4×1、目は 2×2 の黒・ハイライト無し）。
+    // 2026-09-21 ユーザー指定：3×3＋ハイライトの独自形をやめ、他の奏者に揃える
+    d.r(7, 12, 4, 1, RANDI.HAIR2); d.r(13, 12, 4, 1, RANDI.HAIR2);   // 眉（髪色の暗い方）
+    d.r(8, 14, 2, 2, C.eye); d.r(14, 14, 2, 2, C.eye);      // 目
     d.p(12, 17, SKIN2);                                     // 鼻
     d.r(10, 19, 4, 1, SKIN2);                               // 口
     d.r(4, 16, 2, 1, '#f09088'); d.r(18, 16, 2, 1, '#f09088'); // 頬
+    headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); };
-  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, [BAND]: SKIN, [BAND2]: SKIN, '#f09088': SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'randi|head', side });
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); };
+  const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, [BAND]: SKIN, [BAND2]: SKIN,
+                 [C.eye]: SKIN, [RANDI.HAIR2]: SKIN, '#f09088': SKIN };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'randi|head3', side });
 }
 
 /** 髪 20×21×16（1px 粒）：大きく盛った橙の髪。頭頂から後ろへ膨らみ、左右と後ろに跳ねた房 */
@@ -378,10 +384,11 @@ function primmHead() {
     d.p(12, 17, SKIN2);                                     // 鼻
     d.r(10, 19, 4, 1, '#c85868');                           // 口
     d.r(4, 16, 2, 1, '#f0b0a0'); d.r(18, 16, 2, 1, '#f0b0a0'); // 頬
+    headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); };
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); };
   const back = { [OUT]: SKIN, [EYE]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, '#c85868': SKIN, '#f0b0a0': SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head', side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head2', side });
 }
 
 /**
@@ -439,10 +446,11 @@ function popoiHead() {
     d.r(7, 12, 3, 3, OUT); d.r(15, 12, 3, 3, OUT);          // 瞳
     d.p(12, 18, SKIN2);                                     // 鼻
     d.r(10, 20, 4, 1, SKIN2);                               // 口
+    headNeckStub(d, SKIN);                                  // 首の付け根（顎と胴の首の 0.5px の隙間を埋める。2026-09-21 ユーザー指定）
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 16, 1, 3, F); };
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 16, 1, 3, F); headNeckStubSide(d); };
   const back = { [OUT]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head', side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head2', side });
 }
 
 /**
@@ -591,14 +599,151 @@ export const PARTS = {
   popoiHead:   { label: 'ポポイ：顔',     make: () => popoiHead() },
   popoiHair:   { label: 'ポポイ：髪',     make: () => popoiHair() },
   // 三面図から起こした 1 体（部位ではなく全身）。手続き的な形が無いので bake() を持つ
-  randi3:      { label: 'ランディ（三面図・全身）', bake: () => randi3Data(),
+  randi3:      { label: 'ランディ（六面図・全身）', bake: () => randi3Data(),
                  make: () => voxelPart(randi3Data(), 'randi3') },
+  randi6Head:  { label: 'ランディ六面図：頭（奏者用）', bake: () => randi6HeadData(),
+                 make: () => voxelPart(randi6HeadData(), 'randi6Head') },
+  randi6Hair:  { label: 'ランディ六面図：髪（空）', bake: () => emptyPartData(),
+                 make: () => voxelPart(emptyPartData(), 'randi6Hair') },
+  randi6Shell: { label: 'ランディ六面図：髪の殻', bake: () => randi6HeadData(true),
+                 make: () => voxelPart(randi6HeadData(true), 'randi6Shell') },
 };
 
 /** 部位を作る。編集済みのボクセルがあればそちらを使う */
 export function part(key) {
   const v = VOXELS[key];
   return v ? voxelPart(v, key + '|' + (v.rev || 0)) : PARTS[key].make();
+}
+
+/**
+ * 六面図のランディを**奏者のスタイル**に落とし込む（2026-09-21 ユーザー指定：顔だけ・服はスーツ）。
+ * 全身データのうち**頭（行 0〜18）だけ**を切り出し、奏者の頭の pivot に合わせて置き直す。
+ *
+ * 比率の注意：六面図は約 8 頭身で「小さい顔＋大きい髪」、奏者は頭が大きい寸胴。
+ * 顔幅を合わせると髪が塔のようになり、頭全体を合わせると顔が小さくなる。
+ * ここでは **1 セル = 1px の等倍**（scale 1.0）で置いている。R6_SCALE を変えれば寸法を変えられる
+ */
+const R6_HEAD_ROWS = [0, 18];   // 六面図のうち頭とみなす行（19 行目以降は肩）
+const R6_NECK_ROW = 18;         // 首の付け根にする行（ここが奏者の pivot になる）
+const R6_HAIR_DROP = 3;         // 髪の殻を何 px 下げるか（顔との間の浮きを埋める。2026-09-21 ユーザー指定）
+const R6_HAIR_BACK = 1;         // 髪の殻を何 px 後ろへ下げるか（同上）
+const R6_FACE_HALF_W = 4.6;     // 刳り抜く顔の箱の半幅。顔（5.5）より狭くして髪をこめかみに寄せる（同上）
+const R6_CHIN_Y = -0.5;         // これより下の髪は落とす。顎の下に残ると髭に見える（同上）
+const R6_THROAT_HALF_W = 2.0;   // 落とすのは**喉の前だけ**（首の半幅）。ここより外の髪まで落とすと、
+                                // 髪の裾と上着の襟の間に 1 段の素通しができる（2026-09-21 ユーザー指摘「顔と首の間に隙間」）
+const R6_SCALE = 1.0;           // 1 セル = 何 px か。髪の量が多いぶん頭は大きく出るが、元の絵に忠実（2026-09-21 ユーザー判断）
+
+/** 六面図の色が「肌」かどうか（髪の殻を作る時、肌だけ抜く） */
+function r6IsSkin(hex) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return r > 200 && g > 140 && g < 225 && b > 110 && b < 205 && r > b + 25;
+}
+
+/**
+ * 六面図の頭。hairOnly=true だと**奏者の顔の箱を前方へ貫通させて刳り抜いた髪の殻**を返す。
+ * そこへ persona と同じ平らな四角い顔（randiHead）を入れると、顔は奏者の様式・髪は六面図の立体になる。
+ *
+ * 他の衣装の髪（tellaHair 等）と同じく「顔の箱の内側は空」で作る。ただし**前方まで貫通**させるのが要点で、
+ * 奥行きぶんだけ抜くと六面図の顔が板として手前に残る。仕上げに肌色のボクセルも落としておく（取りこぼし対策）。
+ * 額にかかる前髪とバンダナは箱の内側なので殻には残らず、顔のパーツ（randiHead）が描いたものが出る
+ */
+function randi6HeadData(hairOnly = false) {
+  const { w, depth, palette, front, back, left, right, top } = RANDI3;
+  const [r0, r1] = R6_HEAD_ROWS, hh = r1 - r0 + 1;
+  const has = (g, i, j) => g[i][j] !== '.';
+  const idx = (x, y, z) => (z * hh + y) * w + x;
+  const solid = new Uint8Array(w * hh * depth);
+  for (let ry = r0; ry <= r1; ry++) {
+    const y = ry - r0;
+    for (let z = 0; z < depth; z++) {
+      if (!has(left, ry, z) && !has(right, ry, z)) continue;
+      for (let x = 0; x < w; x++) {
+        if (!has(front, ry, x) || top[z][x] !== '#') continue;
+        if (hairOnly) {
+          // 奏者の顔の箱を**前方へ貫通させて**刳り抜く。奥行きだけ抜くと、その手前に六面図の顔
+          // （目・眉・口）が板のように残り、平らな顔の上に被さってしまう（2026-09-21 ユーザー指摘）
+          const px = x - w / 2 + 0.5, py = (R6_NECK_ROW - ry) + 0.5 - R6_HAIR_DROP,
+                pz = z - depth / 2 + 0.5 + R6_HAIR_BACK;
+          if (Math.abs(px) <= R6_FACE_HALF_W && py >= 0 && py <= 9 && pz >= -4.5) continue;
+          // 顎より下に垂れた髪は、喉の前（x ±R6_THROAT_HALF_W）だけ落とす（髭に見えるため）。
+          // 首の左右に落ちる髪は残す（落とすと襟との間に素通しの隙間ができる）。後頭部側（z が奥）も残す
+          if (py < R6_CHIN_Y && pz > -3.5 && Math.abs(px) <= R6_THROAT_HALF_W) continue;
+        }
+        solid[idx(x, y, z)] = 1;
+      }
+    }
+  }
+  // 髪の中の穴を塞ぐ（2026-09-21 ユーザー指摘）。六面図の頭頂は細い房に分かれていて、間が抜けて
+  // 「頭の上の隙間」に見える。**顔と髪の間ではなく髪そのものの穴**なので、下にずらしても埋まらない。
+  // 顔の箱より上（py > 9）に限り、同じ層で左右に髪があり下にも髪がある空きセルを埋める（外形は広げない）
+  if (hairOnly) {
+    for (let z = 0; z < depth; z++) for (let ry = r0; ry <= r1; ry++) {
+      const y = ry - r0;
+      if ((R6_NECK_ROW - ry) + 0.5 - R6_HAIR_DROP <= 9) continue;
+      for (let x = 0; x < w; x++) {
+        if (solid[idx(x, y, z)]) continue;
+        let l = false, rr = false, b = false;
+        for (let i = 0; i < x; i++) if (solid[idx(i, y, z)]) { l = true; break; }
+        for (let i = x + 1; i < w; i++) if (solid[idx(i, y, z)]) { rr = true; break; }
+        for (let j = y + 1; j < hh; j++) if (solid[idx(x, j, z)]) { b = true; break; }
+        if (l && rr && b) solid[idx(x, y, z)] = 1;
+      }
+    }
+  }
+
+  // 色：面の向きで選び、前後の端は正面・背面の色で包む（側面図の横顔が壁に貼られるのを防ぐ）
+  const at = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= w || y >= hh || z >= depth) ? 0 : solid[idx(x, y, z)];
+  const zHi = new Int16Array(w * hh).fill(-1), zLo = new Int16Array(w * hh).fill(-1);
+  for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    for (let z = depth - 1; z >= 0; z--) if (solid[idx(x, y, z)]) { zHi[y * w + x] = z; break; }
+    for (let z = 0; z < depth; z++) if (solid[idx(x, y, z)]) { zLo[y * w + x] = z; break; }
+  }
+  const layers = [];
+  for (let z = 0; z < depth; z++) {
+    const rows = [];
+    for (let y = 0; y < hh; y++) {
+      const ry = y + r0;
+      let row = '';
+      for (let x = 0; x < w; x++) {
+        if (!solid[idx(x, y, z)]) { row += '.'; continue; }
+        let ch = '.';
+        if (!at(x, y, z + 1)) ch = front[ry][x];
+        if (ch === '.' && !at(x, y, z - 1)) ch = back[ry][x];
+        if (ch === '.' && (!at(x + 1, y, z) || !at(x - 1, y, z))) {
+          const hi = zHi[y * w + x], lo = zLo[y * w + x];
+          if (hi - z < R3_WRAP) ch = front[ry][x];
+          else if (z - lo < R3_WRAP) ch = back[ry][x];
+          else ch = !at(x + 1, y, z) ? left[ry][z] : right[ry][z];
+        }
+        if (ch === '.') ch = front[ry][x] !== '.' ? front[ry][x] : back[ry][x];
+        if (ch === '.') ch = left[ry][z] !== '.' ? left[ry][z] : right[ry][z];
+        if (ch === '.') {                       // 穴埋めしたセル：隣の髪の色を借りる
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= hh) continue;
+            const c = front[ny + r0][nx] !== '.' ? front[ny + r0][nx] : back[ny + r0][nx];
+            if (c !== '.' && !r6IsSkin(palette[c])) { ch = c; break; }
+          }
+        }
+        if (hairOnly && ch !== '.' && r6IsSkin(palette[ch])) ch = '.';   // 肌だけ抜いて髪の殻にする
+        row += ch === '.' ? '.' : ch;
+      }
+      rows.push(row);
+    }
+    layers.push(rows);
+  }
+  // pivot：首の付け根（R6_NECK_ROW）が y=0、左右と奥行きの中央が 0 に来るように
+  // 髪の殻は下へ R6_HAIR_DROP・後ろへ R6_HAIR_BACK ずらして置く。
+  // 刳り抜きの py / pz も同じだけずらしてあるので、顔の箱との対応は保たれる
+  const drop = hairOnly ? R6_HAIR_DROP : 0, backOff = hairOnly ? R6_HAIR_BACK : 0;
+  return { res: 1 / R6_SCALE, w, h: hh, depth, z0: -depth / 2 - backOff,
+           pivotX: w / 2, pivotY: (R6_NECK_ROW - r0) + 1 - drop,
+           palette, back: null, layers };
+}
+
+/** 何も無い部位（頭に全部入れたので髪は空にする） */
+function emptyPartData() {
+  return { res: 1, w: 1, h: 1, depth: 1, z0: 0, pivotX: 0.5, pivotY: 1, palette: {}, back: null, layers: [['.']] };
 }
 
 /** 衣装ごとの部位の生成関数。persona(p) は手（肌色）や体型のために persona を差し替える。skirt があれば座奏で裾（ロングスカートと同じ仕組み）を付ける */
@@ -623,6 +768,26 @@ export const COSTUMES = {
     skirt: () => tellaSkirt(),
   },
   // 聖剣伝説2（2026-09-21 ユーザー指定）。いずれも顔と髪だけ作り、服は色だけ
+  // 六面図のランディを奏者のスタイルへ（顔だけ・服はスーツ）。2026-09-21 ユーザー指定
+  randi6: {
+    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: '#f6cdb5', skin2: '#dfa177', hair: '#c85820',
+                       style: 'short', glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi6' }),
+    head: () => part('randi6Head'),
+    hair: () => part('randi6Hair'),   // 頭に髪まで入っているので空
+    suit: '#2f6096',                  // 青いつなぎの色
+    tie: '#e05a9a',                   // 濃ピンクの襷
+    shoe: '#f0902a',                  // 橙の靴
+  },
+  // 顔は奏者の様式（平らな四角い顔＋バンダナ）、髪は六面図の立体（2026-09-21 ユーザー指定）
+  'randi6-flat': {
+    persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR,
+                       style: 'short', glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi6f' }),
+    head: () => part('randiHead'),      // 奏者と同じ平らな顔。バンダナもこちらが描く
+    hair: () => part('randi6Shell'),    // 六面図の髪（顔の箱は刳り抜き済み）
+    suit: '#2f6096',
+    tie: RANDI.BAND,
+    shoe: RANDI.SHOE,
+  },
   randi: {
     persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR, style: 'short',
                        glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi' }),

@@ -592,6 +592,23 @@ export function arm() {
 }
 
 const F = '#000'; // 側面図・上面図の塗り色（形だけ。色は正面図が使われる）
+
+/**
+ * 頭パーツ（24×30・res 2・pivot (12,24)）の pivot より下、rows 24-25 に「少し太い首」を足す。
+ *
+ * 胴の首は幅 4px・奥行き 3px で、その上端は顎より 0.5px 下、肩は 2.4px 下。顎は幅 10px あるので、
+ * 首の左右に空が素通しになって頭が浮いて見えた（2026-09-21 ユーザー指摘、実測）。
+ * **真っ直ぐな首のまま**、胴の首より一回り太い柱を顎の下に足して隙間だけ埋める。
+ * 顎幅から首幅へ斜めに絞る案は「じょうごみたいで顔が間延びする」として却下された（2026-09-21 ユーザー）。
+ * 胴・上着・肩関節（SHOULDER y=25.5）・楽器の口元座標には触らない。
+ *
+ * **元の首（胴の幅 4px）はそのまま見せる**。埋めるのは顎と首の上端の 0.5px だけなので高さ 1px に留める
+ * （3px にすると元の首を覆ってしまう。2026-09-21 ユーザー指摘）。幅 6px（胴の首 +2）・奥行き 4px（同 +1）。
+ * **正面図と側面図の両方を呼ぶこと**。
+ */
+const NECK_STUB = { y: 24, h: 2, x: 6, w: 12, z: 5, d: 8 }; // セル（res 2 なので 2 セル = 1px）
+export function headNeckStub(d, skin) { d.r(NECK_STUB.x, NECK_STUB.y, NECK_STUB.w, NECK_STUB.h, skin); }
+export function headNeckStubSide(d)   { d.r(NECK_STUB.z, NECK_STUB.y, NECK_STUB.d, NECK_STUB.h, F); }
 // 弦楽器の背面：f 字孔・指板・駒・弦・テールピースは裏板の色にする（裏から見ると板とネックだけ）
 const STRING_BACK = (plate) => ({ [C.black]: plate, [C.ivory]: plate, '#2a2a30': plate, '#3a3a44': plate });
 // 木管のベルの穴（8×40 の絵、row ≥ 34 を中空に）

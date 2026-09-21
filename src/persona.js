@@ -6,7 +6,7 @@
  * 顔・髪（2 倍解像度）、上半身（燕尾服 / ドレス）、脚（ズボン / ロングスカート）、手（肌色）を描く。
  * 同じ MIDI なら座席の seed が同じなので、毎回同じ顔ぶれになる。
  */
-import { makePart, C, roundColumn, PX } from './sprites.js';
+import { makePart, C, roundColumn, PX, headNeckStub, headNeckStubSide } from './sprites.js';
 
 const F = '#000';
 
@@ -70,6 +70,7 @@ export function headFor(p) {
     if (p.age === 'young' || p.gender === 'f') { d.r(5, 17, 2, 1, '#e8a99a'); d.r(17, 17, 2, 1, '#e8a99a'); } // 頬
     if (p.age === 'senior') { d.p(7, 17, skin2); d.p(16, 17, skin2); d.r(9, 21, 1, 1, skin2); d.r(14, 21, 1, 1, skin2); if (bald || style === 'slick') d.r(8, 8, 8, 1, skin2); } // しわ
     if (p.beard) { d.r(6, 20, 12, 4, hair); d.r(7, 18, 3, 1, hair); d.r(14, 18, 3, 1, hair); d.r(10, 19, 4, 1, lips); }
+    headNeckStub(d, skin);                                   // 首の付け根（頭が浮いて見えるのを塞ぐ。2026-09-21 ユーザー指定）
     if (p.glasses) { // 眼鏡：上の縁と左右の枠だけ（下の縁は省いて目を隠さない）＋ブリッジ
       const g = '#2a2a30';
       d.r(6, 13, 6, 1, g); d.r(12, 13, 6, 1, g);
@@ -77,9 +78,9 @@ export function headFor(p) {
       d.r(2, 13, 4, 1, g); d.r(18, 13, 4, 1, g);             // つる
     }
   };
-  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); }; // 箱＋鼻
+  const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); }; // 箱＋鼻＋首の付け根
   const backMap = { [C.eye]: skin, '#ffffff': skin, [lips]: skin, [skin2]: skin, '#e8a99a': skin, '#2a2a30': skin, '#8a8a8a': skin, [hair]: skin };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head|${p.key}`, side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head2|${p.key}`, side });
 }
 
 /**
