@@ -72,36 +72,21 @@ function emissiveByVertexColor(shader) {
  * opts.carve: (x, y, z) => true で削る（ベルの穴・太鼓の中など、面図では表せない中空用）。x=列, y=行(上が0), z=0..depth-1
  * opts.colorOf: (x, y, z) => '#rrggbb' | null。ボクセルごとの色の上書き（頭の後ろ半分を髪色にする等）
  */
+/** 直前に makePart が受け取った引数（bakePart が同じ形を焼き出すために使う。2026-09-21） */
+let _lastPartArgs = null;
+export function lastPartArgs() { return _lastPartArgs; }
+
 export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
+  _lastPartArgs = { w, h, pivotX, pivotY, draw, opts };   // 焼き出し（bakePart）が同じ引数を使えるように控える
   const res = opts.res ?? 1;
   if (PART_STYLE === 'sprite') return makePartSprite(w, h, pivotX, pivotY, draw, res);
   const depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
   const key = opts.key || `${draw.toString()}|${(opts.side || '').toString()}|${(opts.top || '').toString()}|${(opts.carve || '').toString()}|${(opts.colorOf || '').toString()}|${w},${h},${pivotX},${pivotY},${depth},${z0},${res}|${opts.accent || ''}`;
   let geo = partCache.get(key);
   if (!geo) {
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    draw(new Pen(g));
-    let sideImg = null, topImg = null;
-    if (opts.side) {
-      const sc = document.createElement('canvas');
-      sc.width = depth; sc.height = h;
-      const sg = sc.getContext('2d');
-      opts.side(new Pen(sg));
-      sideImg = sg.getImageData(0, 0, depth, h);
-    }
-    if (opts.top) {
-      const tc = document.createElement('canvas');
-      tc.width = w; tc.height = depth;
-      const tg = tc.getContext('2d');
-      opts.top(new Pen(tg));
-      topImg = tg.getImageData(0, 0, w, depth);
-    }
-    // グリッド単位 → 世界サイズ（res:1 は 1 ドット = 2×2 ボクセル、res:2 = 1 ボクセル、res:4 = 半ボクセル）
-    const cell = PX / res;
-    geo = voxelize(g.getImageData(0, 0, w, h), w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null, opts.colorOf || null);
+    const { img, sideImg, topImg } = partImages(w, h, depth, draw, opts);
+    const cell = PX / res;   // グリッド単位 → 世界サイズ（res:1 は 1 ドット = 2×2 ボクセル、res:2 = 1 ボクセル）
+    geo = voxelize(img, w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null, opts.colorOf || null);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -110,6 +95,31 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   mesh.userData.baseColor = mat.color.clone(); // 明滅の対象の目印（フラッシュは emissive で行う。puppet.js の _attackFlash）
   mesh.userData.size = { w, h, depth };
   return mesh;
+}
+
+/** 正面図・側面図・上面図の ImageData を作る（makePart と bakePart で共有） */
+function partImages(w, h, depth, draw, opts) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  draw(new Pen(g));
+  let sideImg = null, topImg = null;
+  if (opts.side) {
+    const sc = document.createElement('canvas');
+    sc.width = depth; sc.height = h;
+    const sg = sc.getContext('2d');
+    opts.side(new Pen(sg));
+    sideImg = sg.getImageData(0, 0, depth, h);
+  }
+  if (opts.top) {
+    const tc = document.createElement('canvas');
+    tc.width = w; tc.height = depth;
+    const tg = tc.getContext('2d');
+    opts.top(new Pen(tg));
+    topImg = tg.getImageData(0, 0, w, depth);
+  }
+  return { img: g.getImageData(0, 0, w, h), sideImg, topImg };
 }
 
 // 2D 版：ドット絵をテクスチャにした板（最近傍補間）。pivot がローカル原点
@@ -135,58 +145,140 @@ function makePartSprite(w, h, pivotX, pivotY, draw, res = 1) {
 
 // ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
 // cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null, colorOf = null) {
-  const d = img.data;
-  const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
-  const sd = sideImg ? sideImg.data : null;
-  const filledSide = (z, y) => !sd || (z >= 0 && z < depth && y >= 0 && y < h && sd[(y * depth + z) * 4 + 3] > 127);
-  const td = topImg ? topImg.data : null;
-  const filledTop = (x, z) => !td || (x >= 0 && x < w && z >= 0 && z < depth && td[(z * w + x) * 4 + 3] > 127);
-  // 3 次元の占有：正面図 AND 側面図 AND 上面図。z は 0..depth-1（0 = 背面側）
-  const filled = (x, y, z) => filledFront(x, y) && filledSide(z, y) && filledTop(x, z) && !(carve && carve(x, y, z));
+/**
+ * 露出面だけの BufferGeometry を組む共通部分（2026-09-21 に切り出し：手続き的な部位と、
+ * 画面で編集したボクセルデータの両方から同じメッシュを作るため。面の出し方・背面色の扱いは従来どおり）。
+ *   filled(x,y,z) -> boolean ／ colorAt3(x,y,z) -> [r,g,b]（0〜1）／ backAt(x,y,z) -> 一番奥の面の色
+ */
+function meshCells({ w, h, depth, pivotX, pivotY, z0, cell, filled, colorAt3, backAt }) {
   const filledBehind = (x, y, z) => { for (let k = 0; k < z; k++) if (filled(x, y, k)) return true; return false; };
-  const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
-  // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
-  const backEntries = back ? Object.entries(back).map(([k, v]) => { const a = parseInt(k.slice(1), 16), b = parseInt(v.slice(1), 16); return [[(a >> 16) & 255, (a >> 8) & 255, a & 255], [((b >> 16) & 255) / 255, ((b >> 8) & 255) / 255, (b & 255) / 255]]; }) : [];
-  const backColor = (x, y) => {
-    const i = (y * w + x) * 4;
-    for (const [k, v] of backEntries) {
-      if (Math.abs(d[i] - k[0]) <= 6 && Math.abs(d[i + 1] - k[1]) <= 6 && Math.abs(d[i + 2] - k[2]) <= 6) return v;
-    }
-    return colorAt(x, y);
-  };
   const pos = [], nor = [], col = [];
   const quad = (a, b, c, e, n, rgb) => { // 4 頂点（反時計回り）→ 2 三角形
     for (const v of [a, b, c, a, c, e]) { pos.push(v[0] * cell, v[1] * cell, v[2] * cell); nor.push(...n); col.push(...rgb); }
   };
-  // 正面から見えない奥のボクセルの色：同じ行で一番手前の塗りの色（側面図で削った時の断面色）
-  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
-    if (!filledFront(px, py)) continue;
-    const rgbCol = colorAt(px, py), rgbBack = backColor(px, py);
-    for (let z = 0; z < depth; z++) {
-      if (!filled(px, py, z)) continue;
-      // ボクセルごとの色の上書き（例：頭の後ろ半分は髪色）。'#rrggbb' を返すとその色、null なら正面図の色
-      let rgb = rgbCol;
-      if (colorOf) { const c = colorOf(px, py, z); if (c) { const v = parseInt(c.slice(1), 16); rgb = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]; } }
-      const x0 = px - pivotX, x1 = x0 + 1;
-      const y1 = pivotY - py, y0 = y1 - 1;
-      const zb = z0 + z, zf = zb + 1;
-      const front = z === depth - 1 || !filled(px, py, z + 1);
-      const backF = z === 0 || !filled(px, py, z - 1);
-      const rearmost = backF && !filledBehind(px, py, z);
-      if (front) quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);                 // 正面（+z）
-      if (backF) quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], rearmost ? rgbBack : rgb); // 背面（-z）：一番奥の面は背面色
-      if (!filled(px - 1, py, z)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
-      if (!filled(px + 1, py, z)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
-      if (!filled(px, py - 1, z)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
-      if (!filled(px, py + 1, z)) quad([x0, y0, zb], [x1, y0, zb], [x1, y0, zf], [x0, y0, zf], [0, -1, 0], rgb); // 下
-    }
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) for (let z = 0; z < depth; z++) {
+    if (!filled(px, py, z)) continue;
+    const rgb = colorAt3(px, py, z);
+    const x0 = px - pivotX, x1 = x0 + 1;
+    const y1 = pivotY - py, y0 = y1 - 1;
+    const zb = z0 + z, zf = zb + 1;
+    const front = z === depth - 1 || !filled(px, py, z + 1);
+    const backF = z === 0 || !filled(px, py, z - 1);
+    const rearmost = backF && !filledBehind(px, py, z);
+    if (front) quad([x0, y0, zf], [x1, y0, zf], [x1, y1, zf], [x0, y1, zf], [0, 0, 1], rgb);                 // 正面（+z）
+    if (backF) quad([x1, y0, zb], [x0, y0, zb], [x0, y1, zb], [x1, y1, zb], [0, 0, -1], rearmost ? backAt(px, py, z) : rgb); // 背面（-z）
+    if (!filled(px - 1, py, z)) quad([x0, y0, zb], [x0, y0, zf], [x0, y1, zf], [x0, y1, zb], [-1, 0, 0], rgb); // 左
+    if (!filled(px + 1, py, z)) quad([x1, y0, zf], [x1, y0, zb], [x1, y1, zb], [x1, y1, zf], [1, 0, 0], rgb);  // 右
+    if (!filled(px, py - 1, z)) quad([x0, y1, zf], [x1, y1, zf], [x1, y1, zb], [x0, y1, zb], [0, 1, 0], rgb);  // 上
+    if (!filled(px, py + 1, z)) quad([x0, y0, zb], [x1, y0, zb], [x1, y0, zf], [x0, y0, zf], [0, -1, 0], rgb); // 下
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   return geo;
+}
+
+const hex2rgb = (s) => { const v = parseInt(s.slice(1), 16); return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]; };
+const rgb2hex = (r, g, b) => '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+
+// ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
+// cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null, colorOf = null) {
+  const o = occupancy(img, w, h, depth, sideImg, topImg, carve);
+  const d = img.data;
+  const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
+  // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
+  const backEntries = back ? Object.entries(back).map(([k, v]) => { const a = parseInt(k.slice(1), 16); return [[(a >> 16) & 255, (a >> 8) & 255, a & 255], hex2rgb(v)]; }) : [];
+  const backAt = (x, y) => {
+    const i = (y * w + x) * 4;
+    for (const [k, v] of backEntries) {
+      if (Math.abs(d[i] - k[0]) <= 6 && Math.abs(d[i + 1] - k[1]) <= 6 && Math.abs(d[i + 2] - k[2]) <= 6) return v;
+    }
+    return colorAt(x, y);
+  };
+  const colorAt3 = (x, y, z) => {
+    if (colorOf) { const c = colorOf(x, y, z); if (c) return hex2rgb(c); }
+    return colorAt(x, y);
+  };
+  return meshCells({ w, h, depth, pivotX, pivotY, z0, cell, filled: o, colorAt3, backAt });
+}
+
+/** 正面図 AND 側面図 AND 上面図 AND not carve の占有判定を返す */
+function occupancy(img, w, h, depth, sideImg, topImg, carve) {
+  const d = img.data;
+  const filledFront = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 127;
+  const sd = sideImg ? sideImg.data : null;
+  const filledSide = (z, y) => !sd || (z >= 0 && z < depth && y >= 0 && y < h && sd[(y * depth + z) * 4 + 3] > 127);
+  const td = topImg ? topImg.data : null;
+  const filledTop = (x, z) => !td || (x >= 0 && x < w && z >= 0 && z < depth && td[(z * w + x) * 4 + 3] > 127);
+  return (x, y, z) => filledFront(x, y) && filledSide(z, y) && filledTop(x, z) && !(carve && carve(x, y, z));
+}
+
+/**
+ * 部位 → 編集用のボクセルデータ（2026-09-21 ユーザー指定：髪型などを画面で直接いじるため）。
+ * makePart と同じ引数を渡すと、占有と色をそのまま焼き出す。
+ * 形式：{ res, w, h, depth, z0, pivotX, pivotY, palette, back, layers }
+ *   layers[z] = 高さ h の文字列の配列（1 文字 = 1 セル。'.' は空、それ以外は palette の記号）
+ */
+export function bakePart(w, h, pivotX, pivotY, draw, opts = {}) {
+  const res = opts.res ?? 1, depth = opts.depth ?? 2, z0 = opts.z0 ?? 0;
+  const { img, sideImg, topImg } = partImages(w, h, depth, draw, opts);
+  const filled = occupancy(img, w, h, depth, sideImg, topImg, opts.carve || null);
+  const d = img.data;
+  const KEYS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-*/=<>[]{}()!?@#$%&~^_|;:,';
+  const palette = {}, byHex = {};
+  const sym = (hex) => {
+    if (byHex[hex]) return byHex[hex];
+    const k = KEYS[Object.keys(palette).length];
+    if (!k) return byHex[hex] = Object.keys(palette)[0] || 'a';   // 色数が尽きたら先頭に寄せる（実際には起きない想定）
+    palette[k] = hex; byHex[hex] = k;
+    return k;
+  };
+  const layers = [];
+  for (let z = 0; z < depth; z++) {
+    const rows = [];
+    for (let y = 0; y < h; y++) {
+      let row = '';
+      for (let x = 0; x < w; x++) {
+        if (!filled(x, y, z)) { row += '.'; continue; }
+        let hex = null;
+        if (opts.colorOf) hex = opts.colorOf(x, y, z);
+        if (!hex) { const i = (y * w + x) * 4; hex = rgb2hex(d[i], d[i + 1], d[i + 2]); }
+        row += sym(hex.toLowerCase());
+      }
+      rows.push(row);
+    }
+    layers.push(rows);
+  }
+  return { res, w, h, depth, z0, pivotX, pivotY, palette, back: opts.back || null, layers };
+}
+
+/** 編集済みボクセルデータ → メッシュ（makePart の代わり。accent はキャッシュのキー）。
+ *  編集画面のように毎回作り直す場合は cache:false（キャッシュが際限なく増えるため） */
+export function voxelPart(data, accent = 'voxel', { cache = true } = {}) {
+  const { w, h, depth, z0, pivotX, pivotY, palette, back, layers } = data;
+  const cell = PX / (data.res ?? 1);
+  const key = `voxel|${accent}|${w},${h},${depth},${z0},${pivotX},${pivotY}`;
+  let geo = cache ? partCache.get(key) : null;
+  if (!geo) {
+    const at = (x, y, z) => {
+      if (x < 0 || y < 0 || z < 0 || x >= w || y >= h || z >= depth) return null;
+      const ch = layers[z][y][x];
+      return ch === '.' ? null : (palette[ch] || null);
+    };
+    const backMap = back ? Object.fromEntries(Object.entries(back).map(([k, v]) => [k.toLowerCase(), v])) : null;
+    const colorAt3 = (x, y, z) => hex2rgb(at(x, y, z));
+    const backAt = (x, y, z) => { const c = at(x, y, z); return hex2rgb((backMap && backMap[c]) || c); };
+    geo = meshCells({ w, h, depth, pivotX, pivotY, z0, cell, filled: (x, y, z) => !!at(x, y, z), colorAt3, backAt });
+    if (cache) partCache.set(key, geo);
+  }
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  mat.onBeforeCompile = emissiveByVertexColor;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.baseColor = mat.color.clone();
+  mesh.userData.size = { w, h, depth };
+  return mesh;
 }
 
 /**
