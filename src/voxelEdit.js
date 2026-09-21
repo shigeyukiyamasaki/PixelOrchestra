@@ -55,6 +55,8 @@ const key2 = new THREE.DirectionalLight('#aab4cc', 0.35); key2.position.set(-4, 
 
 const grid = new THREE.GridHelper(4, 40, 0x38405a, 0x252b3c);
 grid.material.transparent = true; grid.material.opacity = 0.5;
+grid.material.depthWrite = false;   // 半透明が深度を書くと、手前のボクセルに線が乗る（2026-09-21）
+grid.renderOrder = -1;
 scene.add(grid);
 
 let mesh = null, pairMesh = null;
@@ -76,6 +78,10 @@ function animate() {
 /** 手続き的な部位を焼き出す（makePart の引数を控えてあるので同じ形になる） */
 function bakeOf(k) {
   if (baked[k]) return baked[k];
+  if (PARTS[k].bake) {                   // 三面図から起こした部位など、データを直に持つもの
+    baked[k] = PARTS[k].bake();
+    return baked[k];
+  }
   PARTS[k].make();                       // 実際に作らせて、makePart が受け取った引数を控える
   const a = lastPartArgs();
   baked[k] = bakePart(a.w, a.h, a.pivotX, a.pivotY, a.draw, a.opts);
@@ -348,6 +354,10 @@ addEventListener('keydown', (e) => {
   if (e.key === '3') document.querySelector('[data-tool=paint]').click();
 });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// デバッグ用の窓口（本体の window.__po と同じ考え方）
+window.__edit = { scene, camera, controls, get data() { return data; }, get key() { return key; },
+                  get mesh() { return mesh; }, rebuild, frameCamera };
 
 // ---------- 起動 ----------
 await loadSaved();

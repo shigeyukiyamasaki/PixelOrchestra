@@ -11,6 +11,7 @@
  *   - 立体パーツ（兜・肩当て）は res:1 の 1px 粒。carve は「体積関数 keep」で形を決め、colorOf で部位の色を塗る
  */
 import { makePart, C, roundColumn, voxelPart } from './sprites.js';
+import { RANDI3 } from './randi3Data.js';
 
 /**
  * 「服は燕尾服のまま、色だけキーカラー」の置き換え表（2026-09-21 ユーザー指定）。奏者共通パーツ（袖・脚・座った脚）に直書きされた 3 色を、
@@ -444,35 +445,127 @@ function popoiHead() {
   return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'popoi|head', side });
 }
 
-/** 髪 22×21×16：顔の周りを丸く包む巨大な髪＋左右に淡い丸い房 */
+/**
+ * 髪 22×30×16：顔の周りを丸く包む巨大な髪＋左右に淡い丸い房。
+ * **背面 Stance で確認したとおり、後ろ髪は腰のあたりまで背中を覆う大きな塊**（2026-09-21）。
+ * 第 1 版は顎の下までしか無かった（プリムのポニーテールと同じ、正面だけ見た見落とし）
+ */
 function popoiHair() {
-  const tuft = (ax, y, z) => ax >= 6.5 && ax <= 8.5 && y >= 7.5 && y <= 10.5 && Math.abs(z) <= 2.5
-                             && (ax - 7.5) ** 2 + (y - 9) ** 2 + (z / 1.6) ** 2 <= 4;   // 丸い房
+  // 左右の丸い房。実物では**頭の上の外側の角**に、白い芯＋淡い桃の縁で描かれている
+  // （正面 Stance の x1-4 / x15-18・行 1-5）。2026-09-21 ユーザー指摘：低く外すぎて髪に埋もれていたので上げて大きくした
+  const tuftD = (ax, y, z) => Math.hypot(ax - 7.0, y - 10.5, z / 1.3);
+  const tuft = (ax, y, z) => tuftD(ax, y, z) <= 2.6;
   const keep = (x, y, z) => {
     const ax = Math.abs(x), az = Math.abs(z);
     const b = (x0, x1, y0, y1, z0, z1) => ax >= x0 && ax <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
     if (ax <= 5 && az <= 4 && y >= 0 && y <= 9) return false;
-    if (tuft(ax, y, z)) return true;                              // 左右の丸い房
+    if (tuft(ax, y, z)) return true;                              // 左右の丸い房（頭の上の外側の角）
     if (b(0, 6.5, 9.5, 11.5, -5.5, 5.5)) return true;             // 天頂（厚い）
     if (b(0, 5.5, 12.5, 12.5, -4.5, 4.5)) return true;
-    if (b(5.5, 6.5, -1.5, 9.5, -5.5, 5.5)) return true;           // 側頭（顎より下まで垂れる）
-    if (b(0, 6.5, -1.5, 9.5, -5.5, -4.5)) return true;            // 後頭
-    if (b(0, 6.5, -0.5, 9.5, -6.5, -5.5)) return true;            // 後ろの量感
+    if (b(5.5, 6.5, -5.5, 9.5, -5.5, 5.5)) return true;           // 側頭（肩より下まで垂れる）
+    if (b(0, 6.5, 0.5, 9.5, -6.5, -4.5)) return true;             // 後頭（頭の高さは厚く）
+    // 後ろ髪：腰のあたりまで背中を覆う。下へ行くほど少し細る（胴は z ±3、椅子の背は z -6 付近なので -5.5〜-4.5 に置く）
+    if (z >= -5.5 && z <= -4.5 && y <= 0.5 && y >= -11.5 && ax <= (y >= -5 ? 6.5 : y >= -9 ? 5.5 : 4.5)) return true;
     if (b(0, 5.5, 8.5, 9.5, 4.5, 5.5)) return true;               // 前髪
     return false;
   };
   const toPx = (cx, cy, cz) => [cx - 11 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5];
   const carve = (cx, cy, cz) => !keep(...toPx(cx, cy, cz));
-  carve.toString = () => 'popoiHair';
+  carve.toString = () => 'popoiHair4';
   const colorOf = (cx, cy, cz) => {
     const [x, y, z] = toPx(cx, cy, cz);
     const ax = Math.abs(x);
-    if (tuft(ax, y, z)) return ax >= 7.5 ? POPOI.TUFT2 : POPOI.TUFT;   // 房は淡く、外側が白い
+    if (tuft(ax, y, z)) return tuftD(ax, y, z) > 2.35 ? POPOI.TUFT : POPOI.TUFT2;  // 実物は白が主で淡桃は縁だけ
     if (y >= 11) return POPOI.HAIR3;
     return ((cx * 3 + cy * 5 + cz) % 4 === 0) ? POPOI.HAIR2 : null;
   };
-  colorOf.toString = () => 'popoiHairColor';
-  return makePart(22, 21, 11, 16, (d) => { d.r(0, 0, 22, 21, POPOI.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'popoi|hair', carve, colorOf });
+  colorOf.toString = () => 'popoiHairColor4';
+  return makePart(22, 30, 11, 16, (d) => { d.r(0, 0, 22, 30, POPOI.HAIR); }, { res: 1, depth: 16, z0: -8, accent: 'popoi|hair4', carve, colorOf });
+}
+
+/**
+ * 六面図から起こした独立の 1 体（2026-09-21 ユーザー指定：奏者のスタイルは一旦無視して試す）。
+ *
+ * 形＝前面図 × 側面図 × **上面図**の交差（visual hull）。上面図を足したことで頭の断面が丸くなる
+ * （前面×側面だけだと断面が必ず長方形になり、髪が板になっていた）。
+ *
+ * ただし**腕の奥行きはどの図にも写っていない**（側面図では腕が胴に隠れ、上面図では髪に隠れる）。
+ * 2026-09-21：距離変換で推定しようとしたが断面が菱形になり顔まで歪んだので撤回し、
+ * 代わりに**腕・脚だけ奥行きを手で決める**。下の 4 つの定数がその指定で、ここを変えれば太さが変わる。
+ */
+const R3_TORSO_X = [5, 13];   // 胴の左右の範囲（これより外は腕）
+const R3_ARM_Y = 19;          // ここから下が体（これより上は頭・髪で、上面図に任せる）
+const R3_LEG_Y = 34;          // ここから下が脚
+const R3_ARM_DEPTH = 5;       // 腕の奥行き（セル）。前面図での腕の幅とほぼ同じにすると丸い棒になる
+const R3_LEG_DEPTH = 6;       // 脚の奥行き（セル）
+// 側面の色を塗る時、前後の端から何セルぶんは前面図・背面図の色を回り込ませるか（2026-09-21 ユーザー指摘）。
+// 参考シートの側面図には顔の横顔（目）が描かれていて、箱型の頭の側面にそれが丸ごと貼られると
+// 「正面にも側面にも目がある」状態になる。実物の目は頭の前寄りなので、端は正面の色で包む
+const R3_WRAP = 4;
+
+export function randi3Data() {
+  const { w, h, depth, palette, front, back, left, right, top } = RANDI3;
+  const has = (g, i, j) => g[i][j] !== '.';
+  const idx = (x, y, z) => (z * h + y) * w + x;
+  const solid = new Uint8Array(w * h * depth);
+
+  for (let y = 0; y < h; y++) {
+    const zs = [];
+    for (let z = 0; z < depth; z++) if (has(left, y, z) || has(right, y, z)) zs.push(z);
+    if (!zs.length) continue;
+    const z0 = zs[0], z1 = zs[zs.length - 1], cz = (z0 + z1) / 2;
+    for (let x = 0; x < w; x++) {
+      if (!has(front, y, x)) continue;
+      // 腕・脚だけ、側面図より薄い奥行きに絞る（どの図にも写っていないので手で決める）
+      let lo = z0, hi = z1;
+      const limb = y >= R3_LEG_Y ? R3_LEG_DEPTH
+                 : (y >= R3_ARM_Y && (x < R3_TORSO_X[0] || x > R3_TORSO_X[1])) ? R3_ARM_DEPTH : 0;
+      if (limb) {
+        lo = Math.max(z0, Math.round(cz - (limb - 1) / 2));
+        hi = Math.min(z1, lo + limb - 1);
+      }
+      for (let z = lo; z <= hi; z++) {
+        if (top[z][x] !== '#') continue;        // 上面図で外に出る所は落とす（頭が丸くなる）
+        solid[idx(x, y, z)] = 1;
+      }
+    }
+  }
+
+  // 色：その面が**どちらを向いて露出しているか**で決める（距離で決めると正面に側面図の色が乗る）
+  const at = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= w || y >= h || z >= depth) ? 0 : solid[idx(x, y, z)];
+  // 柱ごとの前端・後端（側面の色を塗る時、端は正面・背面の色で包む）
+  const zHi = new Int16Array(w * h).fill(-1), zLo = new Int16Array(w * h).fill(-1);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    for (let z = depth - 1; z >= 0; z--) if (solid[idx(x, y, z)]) { zHi[y * w + x] = z; break; }
+    for (let z = 0; z < depth; z++) if (solid[idx(x, y, z)]) { zLo[y * w + x] = z; break; }
+  }
+  const layers = [];
+  for (let z = 0; z < depth; z++) {
+    const rows = [];
+    for (let y = 0; y < h; y++) {
+      let row = '';
+      for (let x = 0; x < w; x++) {
+        if (!solid[idx(x, y, z)]) { row += '.'; continue; }
+        let ch = '.';
+        if (!at(x, y, z + 1)) ch = front[y][x];                      // 前を向いた面
+        if (ch === '.' && !at(x, y, z - 1)) ch = back[y][x];         // 後ろを向いた面
+        if (ch === '.' && (!at(x + 1, y, z) || !at(x - 1, y, z))) {  // 左右を向いた面
+          const hi = zHi[y * w + x], lo = zLo[y * w + x];
+          if (hi - z < R3_WRAP) ch = front[y][x];                    // 前寄りは正面の色で包む
+          else if (z - lo < R3_WRAP) ch = back[y][x];                // 後ろ寄りは背面の色で包む
+          else ch = !at(x + 1, y, z) ? left[y][z] : right[y][z];     // 中ほどだけ側面図
+          if (ch === '.') ch = !at(x + 1, y, z) ? left[y][z] : right[y][z];
+        }
+        if (ch === '.') ch = front[y][x];
+        if (ch === '.') ch = back[y][x];
+        if (ch === '.') ch = left[y][z] !== '.' ? left[y][z] : right[y][z];
+        row += ch === '.' ? '.' : ch;
+      }
+      rows.push(row);
+    }
+    layers.push(rows);
+  }
+  return { res: 1, w, h, depth, z0: -depth / 2, pivotX: w / 2, pivotY: h, palette, back: null, layers };
 }
 
 // ---- 画面で編集したボクセル（assets/voxel/<キー>.json）による差し替え（2026-09-21 ユーザー指定）----
@@ -497,6 +590,9 @@ export const PARTS = {
   primmHair:   { label: 'プリム：髪',     make: () => primmHair() },
   popoiHead:   { label: 'ポポイ：顔',     make: () => popoiHead() },
   popoiHair:   { label: 'ポポイ：髪',     make: () => popoiHair() },
+  // 三面図から起こした 1 体（部位ではなく全身）。手続き的な形が無いので bake() を持つ
+  randi3:      { label: 'ランディ（三面図・全身）', bake: () => randi3Data(),
+                 make: () => voxelPart(randi3Data(), 'randi3') },
 };
 
 /** 部位を作る。編集済みのボクセルがあればそちらを使う */
