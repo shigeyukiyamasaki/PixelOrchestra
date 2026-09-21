@@ -7,8 +7,9 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts } from './sprites.js';
 import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
+import { COSTUMES, suitColors } from './costume.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -293,6 +294,10 @@ export class Puppet {
     this.cfg = VARIANT[this.variant] || VARIANT.violin;
     this.seed = o.seed || 0;
     this.persona = makePersona(this.seed);             // 老若男女（seed から決定的。2026-09-10）
+    const K = (o.costume && COSTUMES[o.costume]) || null; // 衣装（特定キャラの見た目。試作 ?costume=cecil。2026-09-20 ユーザー指定）
+    if (K) this.persona = K.persona(this.persona);    // 手の色・体型は衣装側で決める
+    const suit = K?.suit ? suitColors(K.suit) : null;  // 服は燕尾服のまま色だけキーカラー（2026-09-21 ユーザー指定）
+    const tint = (m) => (suit ? recolorParts(m, suit) : m);
     this.phase = (this.seed * 1.618) % 6.283;          // 個体差（揺れの位相）
     this.scaleVar = 0.9 + ((this.seed * 7) % 5) * 0.05; // 個体差（振り幅）
     this.delay = 0;
@@ -318,10 +323,10 @@ export class Puppet {
     this.seated = !o.isConductor && this.family !== 'percussion' && this.variant !== 'contrabass'; // コントラバスは立奏（2026-09-10）
     const P = this.persona;
     if (this.seated) {
-      this.body = this.flat ? torsoSeated(o.color || '#c03030') : torsoFor(P, o.color || '#c03030');
+      this.body = this.flat ? torsoSeated(o.color || '#c03030') : (K?.torso || torsoFor)(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
-      if (!this.flat) { const coat = coatFor(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
+      if (!this.flat) { const coat = (K?.coat || coatFor)(P, o.color || '#c03030', false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
       const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
@@ -332,8 +337,8 @@ export class Puppet {
           const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); this.rig.add(sh);          // すね：太ももの先から床へ
           const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); this.rig.add(so);          // 靴：前へ
         }
-        if (P.gender === 'f') { // ロングスカート：腰の上を覆い、膝から床へ垂れる
-          const sk = skirtSeated();
+        if (P.gender === 'f' || K?.skirt) { // ロングスカート：腰の上を覆い、膝から床へ垂れる（衣装のローブも同じ仕組み）
+          const sk = (K?.skirt || skirtSeated)();
           sk.hip.position.set(0, 12 * PX, 0); this.rig.add(sk.hip);
           sk.front.position.set(0, 0, 10 * PX); this.rig.add(sk.front);
         }
@@ -343,21 +348,22 @@ export class Puppet {
       this.upper.add(this.body);
     } else {
       // 立奏（打楽器・コントラバス・指揮者）：腰から上を spine の下に、脚は rig に直付け。揺れ・呼吸は上半身だけ（2026-09-10 ユーザー指定）
-      this.body = torsoFor(P, o.color || '#c03030');
+      this.body = (K?.torso || torsoFor)(P, o.color || '#c03030');
       this.body.position.y = 13 * PX;
       this.upper.add(this.body);
-      const coat = coatFor(P, o.color || '#c03030', true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
+      const coat = (K?.coat || coatFor)(P, o.color || '#c03030', true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
       this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
-      this.rig.add(legsStandingFor(P));
+      this.rig.add((K?.legs || legsStandingFor)(P));
     }
     if (!this.flat) this.group.scale.setScalar(P.height * (PLAYER_TALL[this.variant] ?? 1)); // 身長の個体差（楽器・腕ごと相似）＋楽器別の身長倍率
 
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
-    this.head = this.flat ? head(this.seed, false) : headFor(P);
+    this.head = this.flat ? head(this.seed, false) : (K?.head || headFor)(P);
     this.headPivot.add(this.head);
-    if (!this.flat) { this.hair = hairFor(P); this.headPivot.add(this.hair); } // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）
+    if (!this.flat) { this.hair = (K?.hair || hairFor)(P); this.headPivot.add(this.hair); } // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）
     this.upper.add(this.headPivot);
+    if (suit) recolorParts(this.rig, suit);   // 胴・上着・脚・座った脚（頭・髪・椅子・靴は色が違うので変わらない）。腕は下で作るたびに塗る
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）。手首ありなら 肘 → 前腕 → 手首 → 手 の 3 関節
     this.arm = {}; this.fore = {}; this.held = {}; this.hand = {}; this.foreQ = {}; this.handGrp = {}; this.handQ = {};
@@ -366,22 +372,22 @@ export class Puppet {
     for (const side of ['L', 'R']) {
       const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, (this.flat ? 3 : 0) * PX);
       const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0);
-      a.add(upperArm(), f);
-      if (!this.flat) a.add(shoulderPad()); // 肩関節の球：肩が前に出ても胴と腕の間が空かない
+      a.add(tint(upperArm()), f);
+      if (!this.flat) a.add(tint(shoulderPad())); // 肩関節の球：肩が前に出ても胴と腕の間が空かない
       this.upper.add(a);
       this.arm[side] = a; this.fore[side] = f;
       this.hand[side] = [SHOULDER[side][0], SHOULDER[side][1] - ARM_UPPER - ARM_FORE, this.flat ? 3 : 0];
       this.foreQ[side] = new THREE.Quaternion(); this.handQ[side] = new THREE.Quaternion();
       let holder = f, holdY = -ARM_FORE;
       if (this.hasWrist) {
-        f.add(foreArmNoHand());
+        f.add(tint(foreArmNoHand()));
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
         const hm = this.flat ? hand() : handFor(P, side, { fingers: withFingers });
         h.add(hm); f.add(h);
         this.fingers[side] = hm.userData?.fingers || null;
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
-        f.add(foreArm());
+        f.add(tint(foreArm()));
       }
       const item = this.cfg.held?.[side];
       if (item) {

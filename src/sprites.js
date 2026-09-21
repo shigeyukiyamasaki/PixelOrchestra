@@ -195,6 +195,31 @@ function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg
  *   2) 2px 単位の区画ハッシュで 25% を少し暗くして木目の塊感を出す
  * 6 頂点＝1 面なので面の中心で判定し、面内で色が割れないようにする。木の判定は「赤 > 緑 > 青 で赤と青の差が大きい」茶系
  */
+/**
+ * パーツの色を置き換える（衣装のキーカラー用。2026-09-21 ユーザー指定）。map = { '#元の色': '#新しい色' }、tol は 0〜255 の許容差。
+ * ジオメトリは共有・キャッシュされているので、置き換えが 1 か所でもあれば複製してから頂点色を書き換える（applyWoodVariation と同じ作り）
+ */
+export function recolorParts(root, map, tol = 3) {
+  const entries = Object.entries(map).map(([k, v]) => [new THREE.Color(k), new THREE.Color(v)]);
+  const near = (a, b) => Math.abs(a - b) * 255 <= tol;
+  root.traverse((m) => {
+    if (!m.isMesh || !m.geometry?.attributes?.color) return;
+    const src = m.geometry.attributes.color;
+    let geo = null;
+    for (let i = 0; i < src.count; i++) {
+      const r = src.getX(i), g = src.getY(i), b = src.getZ(i);
+      for (const [from, to] of entries) {
+        if (!(near(r, from.r) && near(g, from.g) && near(b, from.b))) continue;
+        if (!geo) geo = m.geometry.clone();
+        geo.attributes.color.setXYZ(i, to.r, to.g, to.b);
+        break;
+      }
+    }
+    if (geo) { geo.attributes.color.needsUpdate = true; m.geometry = geo; }
+  });
+  return root;
+}
+
 export function applyWoodVariation(root, seed) {
   const h3 = (x, y, z) => { let n = Math.imul((x * 73856093) ^ (y * 19349663) ^ (z * 83492791) ^ (seed * 2654435761), 1) >>> 0; n = Math.imul(n ^ (n >>> 13), 1274126177) >>> 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
   const r0 = h3(1, 2, 3), r1 = h3(4, 5, 6);

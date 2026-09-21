@@ -18,6 +18,7 @@ import { AutoCamera } from './autoCam.js';
 // 操作パネルを隠して映像だけを出し、projects/<名前>/ を読んで再生する。romashige.com へ公開した時の見せ方。
 // 設定はその場限りの保存領域に入れる：手元で ?view= を開いても、編集画面の localStorage と settings.json を書き換えないように
 const VIEW_NAME = new URLSearchParams(location.search).get('view') || '';
+const COSTUME = new URLSearchParams(location.search).get('costume') || '';   // 衣装の試作：?costume=cecil で全員に着せる（2026-09-20 ユーザー指定）
 const LS = VIEW_NAME ? memoryStorage() : window.localStorage;
 function memoryStorage() {
   const m = new Map();
@@ -1255,7 +1256,7 @@ function placePuppets() {
   let seed = 1;
   for (const seat of seats) {
     seat.positions.forEach((pos) => {
-      const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++ });
+      const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++, costume: COSTUME });
       puppet.bowSync = bowSync;   // 同じリズムを弾く奏者どうしで弓の向きを揃える（2026-09-14 ユーザー指定）
       puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
@@ -1268,7 +1269,7 @@ function placePuppets() {
   lastSeats = seats;
   rebuildLabels();
   if (!conductor) {
-    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99 });
+    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99, costume: COSTUME });
     conductor.root.position.set(0, PODIUM_H, CONDUCTOR_Z);
   }
   scene.add(conductor.root);
