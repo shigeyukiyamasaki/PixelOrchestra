@@ -340,7 +340,8 @@ function randiHead() {
 // ---- プリム：金橙の大きな髪に緑の飾り、青い目、マゼンタのドレス ----
 const PRIMM = {
   HAIR: '#d87800', HAIR2: '#a05838', HAIR3: '#f0a820',
-  SKIN: '#f8d8a8', SKIN2: '#d88058', EYE: '#005870', OUT: '#483830', WHITE: '#f0f0f0',
+  // 肌は黄色すぎたのでピンク寄りへ（色相 36° → 14°、明るさはほぼ据え置き。2026-09-22 ユーザー指定）
+  SKIN: '#f8c4b4', SKIN2: '#d8907c', EYE: '#005870', OUT: '#483830', WHITE: '#f0f0f0',
   DRESS: '#a02870', DRESS2: '#e850b8', GEM: '#50a868', GEM2: '#98e8a8',
 };
 
@@ -363,7 +364,7 @@ function primmHead() {
   const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); };
   const back = { [OUT]: SKIN, [EYE]: SKIN, [WHITE]: SKIN, [SKIN2]: SKIN, '#c85868': SKIN, '#f0b0a0': SKIN,
                  [PRIMM.HAIR2]: SKIN };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head4', side });
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back, accent: 'primm|head5', side });
 }
 
 /**
@@ -719,8 +720,10 @@ function randi6HeadData(hairOnly = false) {
 
 
 /** 衣装ごとの部位の生成関数。persona(p) は手（肌色）や体型のために persona を差し替える。skirt があれば座奏で裾（ロングスカートと同じ仕組み）を付ける */
+// label = トラックごとの衣装選びに出す表示名（2026-09-22 ユーザー指定）
 export const COSTUMES = {
   cecil: {
+    label: 'セシル（暗黒騎士・鎧一式／不採用）',
     persona: (p) => ({ ...p, gender: 'm', age: 'adult', skin: CECIL.GAUNT, skin2: CECIL.GAUNT2, hair: CECIL.LO, style: 'short',
                        glasses: false, beard: false, build: 1.0, height: 1.02, key: 'cecil' }),   // 手は籠手。体型は固定
     head: () => part('cecilHead'),
@@ -730,6 +733,7 @@ export const COSTUMES = {
     legs: () => cecilLegs(),
   },
   tella: {
+    label: 'テラ（ローブ一式／不採用）',
     persona: (p) => ({ ...p, gender: 'm', age: 'senior', skin: TELLA.SKIN, skin2: TELLA.SKIN2, hair: TELLA.HAIR, style: 'bald',
                        glasses: true, beard: true, build: 0.95, height: 0.94, key: 'tella' }),   // 小柄な老人
     head: () => part('tellaHead'),
@@ -742,6 +746,7 @@ export const COSTUMES = {
   // 聖剣伝説2（2026-09-21 ユーザー指定）。いずれも顔と髪だけ作り、服は色だけ
   // 顔は奏者の様式（平らな四角い顔＋バンダナ）、髪は六面図の立体（2026-09-21 ユーザー指定）
   'randi6-flat': {
+    label: 'ランディ',
     persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: RANDI.SKIN, skin2: RANDI.SKIN2, hair: RANDI.HAIR,
                        style: 'short', glasses: false, beard: false, build: 0.95, height: 0.97, key: 'randi6f' }),
     head: () => part('randiHead'),      // 奏者と同じ平らな顔。バンダナもこちらが描く
@@ -751,6 +756,7 @@ export const COSTUMES = {
     shoe: RANDI.SHOE,
   },
   primm: {
+    label: 'プリム',
     persona: (p) => ({ ...p, gender: 'f', age: 'young', skin: PRIMM.SKIN, skin2: PRIMM.SKIN2, hair: PRIMM.HAIR, style: 'long',
                        glasses: false, beard: false, build: 0.95, height: 0.96, key: 'primm' }),   // 女性＝ドレスとロングスカート
     head: () => part('primmHead'),
@@ -759,6 +765,7 @@ export const COSTUMES = {
     tie: PRIMM.GEM,           // 緑の飾り（腰の帯・ブローチ）
   },
   popoi: {
+    label: 'ポポイ',
     persona: (p) => ({ ...p, gender: 'm', age: 'young', skin: POPOI.SKIN, skin2: POPOI.SKIN2, hair: POPOI.HAIR, style: 'short',
                        glasses: false, beard: false, build: 0.95, height: 0.82, key: 'popoi' }),   // 小柄
     head: () => part('popoiHead'),
@@ -769,6 +776,7 @@ export const COSTUMES = {
   },
   // 兜だけセシル、服は燕尾服のまま色だけ紺紫（採用方式。2026-09-21 ユーザー指定）
   'cecil-suit': {
+    label: 'セシル（暗黒騎士）',
     persona: (p) => ({ ...p, gender: 'm', age: 'adult', skin: CECIL.SKIN, skin2: CECIL.SKIN2, hair: CECIL.LO, style: 'short',
                        glasses: false, beard: false, build: 1.05, height: 1.02, key: 'cecil' }),   // 戦闘用は手が素肌
     head: () => part('cecilHead'),
@@ -781,6 +789,7 @@ export const COSTUMES = {
   },
   // 顔と髪だけテラ、服は燕尾服のまま色だけ紫（もう一案。2026-09-21 ユーザー指定）
   'tella-suit': {
+    label: '賢者テラ',
     persona: (p) => ({ ...p, gender: 'm', age: 'senior', skin: TELLA.SKIN, skin2: TELLA.SKIN2, hair: TELLA.HAIR, style: 'bald',
                        glasses: true, beard: true, build: 0.95, height: 0.94, key: 'tella' }),
     head: () => part('tellaHead'),

@@ -491,6 +491,11 @@ tr.pitch-row td { border-top: none; padding: 0 4px 6px 24px; color: var(--muted)
 tr.pitch-row input[type=number] { width: 44px; background: none; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 11px; margin: 0 2px; }
 tr.pitch-row .note-name { display: inline-block; min-width: 26px; color: var(--accent); }
 tr.pitch-row .pitch-label { margin-right: 4px; }
+/* 指揮者の衣装：トラック表の上に 1 行だけ置く（2026-09-22 ユーザー指定）。折りたたみ時は #panelRight の規則で一緒に隠れる */
+#panelRight .cond-costume { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; }
+#panelRight .cond-costume .lab { font-size: 11px; color: var(--dim); white-space: nowrap; }
+#panelRight .cond-costume select { flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
+                                   border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; font-size: 11px; }
 tr.pitch-row .dyn-label { margin-left: 0; }
 tr.pitch-row .dyn-label + select + .dyn-label { margin-left: 8px; }
 tr.merged td.name { color: var(--muted); }

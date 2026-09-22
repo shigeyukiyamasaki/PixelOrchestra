@@ -8,7 +8,7 @@
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
-import { setVoxelOverrides } from './costume.js';
+import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
@@ -33,6 +33,8 @@ const FAMILY_KEY = 'pixelOrchestra.families.v1';
 const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
+const COSTUME_KEY = 'pixelOrchestra.costumes.v1';     // トラック名 → 衣装のキー（そのセクションの首席 1 人だけが着る。2026-09-22 ユーザー指定）
+const CONDUCTOR_COSTUME_KEY = 'pixelOrchestra.conductorCostume.v1'; // 指揮者に着せる衣装のキー（2026-09-22 ユーザー指定）
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
 const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
@@ -46,7 +48,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -1063,6 +1065,27 @@ function saveDynSource(trackName, source) {
   try { LS.setItem(DYN_SOURCE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('強弱ソース保存失敗:', e); }
 }
 
+// 衣装：トラック名 → 衣装のキー。**そのセクションの首席（前列の 1 人）だけ**が着る（2026-09-22 ユーザー指定）。
+// 全員に着せたい時は従来どおり ?costume= を使う
+function loadCostumes() {
+  try { return JSON.parse(LS.getItem(COSTUME_KEY) || '{}'); } catch { return {}; }
+}
+function loadConductorCostume() {
+  try { const v = JSON.parse(LS.getItem(CONDUCTOR_COSTUME_KEY) || '""'); return COSTUMES[v] ? v : ''; } catch { return ''; }
+}
+function saveConductorCostume(key) {
+  try {
+    if (!key) LS.removeItem(CONDUCTOR_COSTUME_KEY); else LS.setItem(CONDUCTOR_COSTUME_KEY, JSON.stringify(key));
+    pushSettings();
+  } catch (e) { console.warn('指揮者の衣装保存失敗:', e); }
+}
+
+function saveCostume(trackName, key) {
+  const all = loadCostumes();
+  if (!key) delete all[trackName]; else all[trackName] = key;
+  try { LS.setItem(COSTUME_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('衣装保存失敗:', e); }
+}
+
 // トラック統合：トラック名 → 'auto' | 'none' | 統合先トラック名
 function loadMerges() {
   try { return JSON.parse(LS.getItem(MERGE_KEY) || '{}'); } catch { return {}; }
@@ -1258,18 +1281,28 @@ function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 // 同じリズムを弾いている弦どうし（ハモっていても）同じ向きになる（2026-09-14 ユーザー指定）
 const bowSync = { dirOf: new Map() };
 
+let conductorCostumeApplied = null;   // 今の指揮者に着せてある衣装（変わったら作り直す）
 function placePuppets() {
   setPartStyle(settings().partStyle);
   bowSync.dirOf.clear();
   setStageDepthWrite(settings().partStyle !== 'sprite'); // ボクセルは通常の深度、2D の板は描画順で前後を決める
   for (const p of puppets) scene.remove(p.puppet.root);
   puppets = [];
-  if (conductor && conductor.style !== settings().partStyle) { scene.remove(conductor.root); conductor = null; } // 方式が変わったら作り直す
+  // 方式が変わった時と、指揮者の衣装が変わった時は作り直す（Puppet は作る時にしか衣装を見ない）
+  const condCostume = loadConductorCostume() || COSTUME;
+  if (conductor && (conductor.style !== settings().partStyle || conductorCostumeApplied !== condCostume)) {
+    scene.remove(conductor.root); conductor = null;
+  }
   const seats = layoutSeats(engine.tracks, footprintOf);
   let seed = 1;
+  const costumes = loadCostumes();
   for (const seat of seats) {
-    seat.positions.forEach((pos) => {
-      const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++, costume: COSTUME });
+    // セクションの代表トラック名で引く（統合されたトラックは代表に寄せてある）。
+    // positions は前列・左から並ぶので、index 0 ＝ 首席。ここ 1 人だけに着せる（2026-09-22 ユーザー指定）
+    const secCostume = COSTUMES[costumes[seat.track.name]] ? costumes[seat.track.name] : '';
+    seat.positions.forEach((pos, i) => {
+      const costume = (i === 0 && secCostume) ? secCostume : COSTUME;
+      const puppet = new Puppet({ family: seat.track.family, variant: seat.track.variant, color: seat.track.color, seed: seed++, costume });
       puppet.bowSync = bowSync;   // 同じリズムを弾く奏者どうしで弓の向きを揃える（2026-09-14 ユーザー指定）
       puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
@@ -1282,7 +1315,8 @@ function placePuppets() {
   lastSeats = seats;
   rebuildLabels();
   if (!conductor) {
-    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99, costume: COSTUME });
+    conductor = new Puppet({ isConductor: true, color: '#ffffff', seed: 99, costume: condCostume });
+    conductorCostumeApplied = condCostume;
     conductor.root.position.set(0, PODIUM_H, CONDUCTOR_Z);
   }
   scene.add(conductor.root);
@@ -1378,6 +1412,19 @@ function renderTrackTable() {
     mgSel.title = '統合先。自動＝楽器が同じで、末尾の _HW/_CB 等と +N を除いた名前が一致するトラックへ統合。楽器が同じトラックだけ選べる';
     mgSel.addEventListener('change', () => { saveMerge(tr.name, mgSel.value); buildScene(currentMidi, { keepTime: true }); });
     td2.append(mgLab, mgSel);
+    // 衣装：このセクションの首席 1 人だけに着せる。統合されたトラックは席を持たないので選べない
+    const csLab = document.createElement('span'); csLab.className = 'pitch-label dyn-label'; csLab.textContent = '衣装';
+    const csSel = document.createElement('select'); csSel.className = 'dyn-select';
+    const cur = loadCostumes()[tr.name] || '';
+    const addCos = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (v === cur) o.selected = true; csSel.appendChild(o); };
+    addCos('', 'なし');
+    for (const [k, def] of Object.entries(COSTUMES)) addCos(k, def.label || k);
+    csSel.disabled = !!tr.mergeTarget;
+    csLab.title = csSel.title = tr.mergeTarget
+      ? '統合されたトラックは席を持たないので選べません（統合先のトラックで選んでください）'
+      : 'このセクションの首席（前列の 1 人）だけがこのキャラクターになります。全員に着せたい時は ?costume= を使います';
+    csSel.addEventListener('change', () => { saveCostume(tr.name, csSel.value); buildScene(currentMidi, { keepTime: true }); });
+    td2.append(document.createElement('br'), csLab, csSel);
     row2.appendChild(td2);
     tbody.appendChild(row2);
     const applyFilter = () => {
@@ -1432,6 +1479,16 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
 // 列の幅が変わるとプレビューの枠が変わり、上のサイズ監視が拾って取り直すので、ここでは何もしなくてよい。
 // 状態はこのブラウザにだけ覚える：プリセットにもブラウザ間の共有（settings.json）にも入れない
 // （プリセットを読み込んだら欄が勝手に閉じる、という動きにしないため）
+// 指揮者の衣装（2026-09-22 ユーザー指定）。奏者はトラックごと、指揮者だけはここで選ぶ
+{
+  const sel = $('conductorCostume');
+  const cur = loadConductorCostume();
+  const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (v === cur) o.selected = true; sel.appendChild(o); };
+  add('', 'なし');
+  for (const [k, def] of Object.entries(COSTUMES)) add(k, def.label || k);
+  sel.addEventListener('change', () => { saveConductorCostume(sel.value); buildScene(currentMidi, { keepTime: true }); });
+}
+
 {
   const FOLD_KEY = 'pixelOrchestra.ui.tracksFolded';
   const hd = $('tracksHd'), mark = hd.querySelector('.foldMark');

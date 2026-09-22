@@ -272,16 +272,22 @@ export function skirtSeated() { // 2 倍解像度（2026-09-10）。寸法は従
  * その場合は Group を返し、group.userData.fingers に [人差し指, 中指, 薬指, 小指] の順で Mesh が入る。
  * 各指の pivot は付け根（関節）で、rotation.x をマイナスにすると指先が手の甲側（+z）へ持ち上がる
  */
-export function handFor(p, side = 'R', { fingers = false } = {}) {
+/**
+ * 手。fingers=true で指 4 本を別メッシュにする（管楽器の運指用）。
+ * grip=true は**握りの形**：まっすぐな指の代わりに、掌と同じ厚みの塊（丸めた指）を付ける。
+ * 棒を持つ手が「平らな掌＋まっすぐな指」だと、棒が拳から突き出て見える（2026-09-22 ユーザー指摘）
+ */
+export function handFor(p, side = 'R', { fingers = false, grip = false } = {}) {
   const tx = side === 'R' ? 1 : 10; // 親指の x（内側）
   const palm = makePart(12, 12, 6, 2, (d) => {
     d.r(4, 2, 5, 1, p.skin);                                   // 手首側は少し細い
     d.r(3, 3, 7, 5, p.skin);                                   // 掌
     d.r(tx + (side === 'R' ? 1 : 0), 3, 1, 4, p.skin); d.r(tx, 4, 1, 3, p.skin); d.p(tx, 6, p.skin2); // 親指（斜めに出る）
-    if (!fingers) for (let i = 0; i < 4; i++) { const x = 3 + i * 2, tip = (i === 1 || i === 2) ? 10 : 9; d.r(x, 8, 1, tip - 8, p.skin); d.p(x, tip, p.skin2); } // 指 4 本
+    if (grip) { d.r(3, 8, 7, 2, p.skin); d.r(3, 9, 7, 1, p.skin2); }   // 丸めた指（掌と同じ厚み）＋第 2 関節の陰
+    else if (!fingers) for (let i = 0; i < 4; i++) { const x = 3 + i * 2, tip = (i === 1 || i === 2) ? 10 : 9; d.r(x, 8, 1, tip - 8, p.skin); d.p(x, tip, p.skin2); } // 指 4 本
     d.r(3, 7, 7, 1, p.skin2);                                  // 指の付け根（関節の線）
-  }, { res: 2, depth: 4, z0: -2, accent: `hand|${p.skin}|${side}|${fingers ? 'nf' : 'f'}`,
-       side: (d) => { d.r(0, 2, 4, 6, F); if (!fingers) d.r(1, 8, 2, 4, F); } }); // (z, y)：掌は 4 セル厚、指は 2 セル厚
+  }, { res: 2, depth: 4, z0: -2, accent: `hand|${p.skin}|${side}|${grip ? 'g' : fingers ? 'nf' : 'f'}`,
+       side: (d) => { d.r(0, 2, 4, grip ? 8 : 6, F); if (!fingers && !grip) d.r(1, 8, 2, 4, F); } }); // (z, y)：掌は 4 セル厚、指は 2 セル厚。握りは指も掌と同じ厚み
   if (!fingers) return palm;
   const g = new THREE.Group();
   g.add(palm);

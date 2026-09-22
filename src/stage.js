@@ -1837,11 +1837,14 @@ export function layoutSeats(tracks, footprintOf = null) {
       [...levels.entries()].sort((a, b) => a[0] - b[0]).forEach(([k0, idxs], k) => {
         // レベルごとに隣接先を変えられる（3 段目は金管の端）。基準列が無ければ木管の端
         const edge = (row.besideAt?.[k0] && edgeOf(row.besideAt[k0])) ?? edge0;
-        const total = idxs.reduce((a, i) => a + angleOf(sizes[i].cols, i), 0);
+        // トラック同士の余白。これが無いと鍵盤群（シロフォンとマリンバ等）が密着する（2026-09-22 ユーザー指摘）。
+        // 幅は扇の列（beside でない列）と同じ考え方＝奏者間隔の半分
+        const trackGap = (PUPPET_GAP / row.r) * 0.5;
+        const total = idxs.reduce((a, i) => a + angleOf(sizes[i].cols, i), 0) + trackGap * Math.max(0, idxs.length - 1);
         let cursor = row.side > 0 ? edge + gap : edge - gap - total;
         const rowK = { r: row.r + k * levelGap, h: row.h };
         for (const i of idxs) {
-          const c = cursor + angleOf(sizes[i].cols, i) / 2; cursor += angleOf(sizes[i].cols, i);
+          const c = cursor + angleOf(sizes[i].cols, i) / 2; cursor += angleOf(sizes[i].cols, i) + trackGap;
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする

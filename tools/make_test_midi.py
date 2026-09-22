@@ -33,7 +33,8 @@ PROG = [(60, [0, 4, 7]), (57, [0, 3, 7]), (53, [0, 4, 7]), (55, [0, 4, 7])] * 6
 # 強弱パターン（小節ごとの倍率）とパートごとの位相ずらし。全パートが最初から鳴り、強弱は混在（2026-09-11）
 DYN_PATTERN = [0.5, 0.95, 0.7, 1.0, 0.55, 0.85, 0.65, 1.0]
 DYN_PHASE = {'vn1': 0, 'vn2': 1, 'va': 2, 'vc': 3, 'cb': 4, 'picc': 5, 'fl': 6, 'ob': 7, 'cl': 1, 'fg': 3, 'hn': 2, 'tp': 5, 'tb': 6, 'tuba': 4,
-             'timp': 0, 'gc': 2, 'snare': 4, 'cym': 6, 'xylo': 1, 'mar': 3, 'cel': 5, 'pf': 7, 'hp': 2}
+             'timp': 0, 'gc': 2, 'snare': 4, 'cym': 6, 'xylo': 1, 'mar': 3, 'cel': 5, 'pf': 7, 'hp': 2,
+             'hh': 5, 'gong': 3, 'tub': 6, 'susp': 1}
 BARS = len(PROG)
 BEAT = PPQ
 FINAL = BARS - 1  # 最終小節：全員で全音符
@@ -44,6 +45,7 @@ FINAL_PITCH = {
     'fl': lambda r, c: r + 24 + c[2], 'ob': lambda r, c: r + 12 + c[1], 'cl': lambda r, c: r + c[2], 'fg': lambda r, c: r - 12,
     'hn': lambda r, c: r - 5 + c[1], 'tp': lambda r, c: r + 12, 'tb': lambda r, c: r - 12 + c[2], 'tuba': lambda r, c: r - 24,
     'cel': lambda r, c: r + 24, 'hp': lambda r, c: r + 12, 'pf': lambda r, c: r, 'mar': lambda r, c: r + 12 + c[1], 'xylo': lambda r, c: r + 36,
+    'tub': lambda r, c: r + 12,
 }
 
 def notes_for(part):
@@ -58,6 +60,10 @@ def notes_for(part):
             if part in FINAL_PITCH: ev.append((b0, 4 * BEAT - 40, FINAL_PITCH[part](root, chord), v(110)))
             elif part == 'timp': ev.append((b0, 4 * BEAT - 40, root - 24, v(120)))
             elif part in ('gc', 'cym'): ev.append((b0, 2 * BEAT, 36 if part == 'gc' else 49, v(120)))
+            elif part == 'gong': ev.append((b0, 4 * BEAT, 52, v(125)))
+            elif part == 'susp': ev.append((b0, 4 * BEAT, 51, v(110)))   # 長い音＝ロール
+            elif part == 'hh': 
+                for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 8, 42, v(70)))
             elif part == 'snare':
                 for i in range(16): ev.append((b0 + i * BEAT // 4, BEAT // 8, 38, v(70 + 3 * i)))
             continue
@@ -128,6 +134,14 @@ def notes_for(part):
         elif part == 'mar':  # 8分の分散和音（中音域）
             if True:
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + chord[i % 3] + (12 if i % 2 else 0), v(80)))
+        elif part == 'hh':    # ハイハット：8分の刻み（2026-09-22 ユーザー指定：登録済みの楽器を全部出す）
+            for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 8, 42, v(60 if i % 2 else 78)))
+        elif part == 'gong':  # 銅鑼：4 小節に 1 回、小節頭に一発
+            if bar % 4 == 0: ev.append((b0, 3 * BEAT, 52, v(120)))
+        elif part == 'susp':  # サスペンデッドシンバル：2 小節に 1 回、長い音（ロールになる）
+            if bar % 2 == 1: ev.append((b0 + 2 * BEAT, 2 * BEAT, 51, v(95)))
+        elif part == 'tub':   # チューブラーベル：小節頭に和音の根音
+            if bar % 2 == 0: ev.append((b0, 2 * BEAT, root + 12, v(95)))
         elif part == 'pf':  # 小節頭の和音＋4拍目の低音
             if True:
                 for n in chord: ev.append((b0, 2 * BEAT - 40, root + n, v(90)))
@@ -141,6 +155,8 @@ PARTS = [
     ('Horn', 60, 10, 'hn'), ('Trumpets_HW', 56, 11, 'tp'), ('Trumpets_CB', 56, 11, 'tp'), ('Trombone', 57, 12, 'tb'), ('Tuba', 58, 12, 'tuba'),
     ('Timpani', 47, 13, 'timp'), ('Gran Cassa', 116, 9, 'gc'), ('Snare Drum', 116, 9, 'snare'), ('Cymbals', 116, 9, 'cym'),
     ('Xylophone_HW', 13, 15, 'xylo'), ('Marimba', 12, 15, 'mar'), ('Celeste_BBC', 8, 15, 'cel'), ('Piano', 0, 15, 'pf'), ('Harp', 46, 14, 'hp'),
+    # 2026-09-22 ユーザー指定：登録済みの楽器（VARIANTS）を全部出す。名前は midiEngine の判定キーワードに合わせる
+    ('Hi-Hat', 116, 9, 'hh'), ('Tam-tam', 116, 9, 'gong'), ('Suspended Cymbal', 116, 9, 'susp'), ('Tubular Bells', 14, 15, 'tub'),
 ]
 
 def main():
