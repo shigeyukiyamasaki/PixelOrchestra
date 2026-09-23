@@ -325,6 +325,8 @@ export function applyWoodVariation(root, seed) {
     for (let i = 0; i + 5 < col.count; i += 6) {
       const r = col.getX(i), g = col.getY(i), b = col.getZ(i);
       if (!(r > g && g > b && r - b > 0.15)) continue; // 木の茶系だけ
+      if (isMetalColor(r, g, b)) continue;             // 金・真鍮・銅は茶系の条件に入ってしまうので除く。
+                                                       // ずらすと金属色の一致判定（metalOf）から外れる（2026-09-23）
       let cx = 0, cy = 0, cz = 0;
       for (let k = 0; k < 6; k++) { cx += pos.getX(i + k); cy += pos.getY(i + k); cz += pos.getZ(i + k); }
       const grain = h3(Math.floor(cx / 6 / cellPx + 50), Math.floor(cy / 6 / cellPx + 50), Math.floor(cz / 6 / cellPx + 50)) < 0.25 ? 0.9 : 1;
@@ -599,6 +601,22 @@ const ROSE_W = '#7e4234', ROSE_B = '#5e2f26';
 const ROSE = [ROSE_W, ROSE_B, ROSE_W, ROSE_B, ROSE_W, ROSE_W, ROSE_B, ROSE_W, ROSE_B, ROSE_W, ROSE_B, ROSE_W];
 const FRAME_BK = '#23232a';   // フレーム・脚（黒塗りのスチール）
 const BRASS = '#c9a24a', BRASS2 = '#8f6f2c';   // 共鳴管（くすんだ真鍮。C.gold は明るすぎた）
+// ---- 金属として扱う色（2026-09-23 ユーザー指定）----
+// 楽器単位ではなく**頂点色**でメタリックかどうかを決める。こうすると、木や革が主体の楽器
+// （スネア・グランカッサ・シロフォン等）でも、スタンドの銀・ラグ・共鳴管の真鍮だけが金属になる。
+// 頂点色にはパレットの色がそのまま入っている（面ごとの陰影は焼き込まれていない）ので、色の一致で判定できる。
+// 一致は「各成分の差が METAL_EPS 未満」の完全一致に近い判定にする。距離で緩く見ると
+// 木（C.wood #8a4b2a）と銅（C.copper2 #7e4a22）のように近い色を拾ってしまう
+const METAL_COLORS = [C.gold, C.gold2, C.silver, C.silver2, C.copper, C.copper2,
+  BRASS, BRASS2,
+  '#f3d27a',              // 金管のハイライトの帯
+  '#b8c0c8', '#eef2f6',   // フルートのリッププレート・ハイライト
+  '#c99a36'];             // 銅鑼の中央の打ち出し
+const METAL_EPS = 0.02;   // ≒ 5/255
+const METAL_RGB = METAL_COLORS.map((h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; });
+function isMetalColor(r, g, b) {
+  return METAL_RGB.some((c) => Math.abs(c[0] - r) < METAL_EPS && Math.abs(c[1] - g) < METAL_EPS && Math.abs(c[2] - b) < METAL_EPS);
+}
 
 /**
  * 鍵盤打楽器の立体を決める（実物写真 YX-320 / YM-460 に合わせて。2026-09-22 ユーザー提示）。
@@ -1195,7 +1213,11 @@ function metalShader(shader) {
   shader.uniforms.uMetalDepth = METAL_BLOOM.depth;
   shader.uniforms.uMetalRes = METAL_BLOOM.res;
   shader.uniforms.uMetalThr = METAL_BLOOM.thr;
-  shader.fragmentShader = 'uniform float uBloomPass;\nuniform sampler2D uMetalDepth;\nuniform vec2 uMetalRes;\nuniform float uMetalThr;\n' + shader.fragmentShader;
+  // 頂点色がパレットの金属色と一致するかを見る関数を足す（GLSL ES 1.0 でも通るよう、配列を使わず展開する）
+  const metalOf = 'float metalOf(vec3 c) {\n  float m = 0.0;\n'
+    + METAL_RGB.map(([r, g, b]) => `  m = max(m, step(max(max(abs(c.r - ${r.toFixed(4)}), abs(c.g - ${g.toFixed(4)})), abs(c.b - ${b.toFixed(4)})), ${METAL_EPS}));\n`).join('')
+    + '  return m;\n}\n';
+  shader.fragmentShader = 'uniform float uBloomPass;\nuniform sampler2D uMetalDepth;\nuniform vec2 uMetalRes;\nuniform float uMetalThr;\n' + metalOf + shader.fragmentShader;
   emissiveByVertexColor(shader);   // 打鍵フラッシュ（emissive）の頂点色掛けは Phong でも同じく要る
   // (1) 鏡面色を頂点色へ寄せる（金は金、銀は銀のハイライト）
   // (2) 金属は拡散反射が弱いので diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる。
@@ -1205,10 +1227,12 @@ function metalShader(shader) {
   //     「上げるほどツヤが減る」という逆の体感になっていた。今はスライダーは鏡面とフレネルだけを動かす
   shader.fragmentShader = shader.fragmentShader.replace('#include <lights_phong_fragment>',
     `#include <lights_phong_fragment>
-      material.diffuseColor *= 0.725;   // = mix(1.0, 0.45, 0.5)。金属の地の色の暗さ（固定）
+      float mtl = 0.0;
       #ifdef USE_COLOR
-        material.specularColor *= mix(vec3(1.0), vColor.rgb, 0.65);
-      #endif`);
+        mtl = metalOf(vColor.rgb);                                   // 0 = 木・革・布など / 1 = 銀・金・真鍮・銅
+        material.specularColor *= mtl * mix(vec3(1.0), vColor.rgb, 0.65);
+      #endif
+      material.diffuseColor *= mix(1.0, 0.725, mtl);   // 金属だけ地の色を落とす（= mix(1.0, 0.45, 0.5)）`);
   // (3) フレネル（縁の反射）。視線に対して浅い角度の面ほど強く光る。
   //     ボクセルは面が軸に平行な平面ばかりで、点光源の鏡面だけだと「明るくなった」以上にならなかった。
   //     フレネルは**カメラの角度で変わる**ので、視点を回した時に縁がギラっと動き、金属らしさが出る（2026-09-23 ユーザー指定）
@@ -1219,7 +1243,7 @@ function metalShader(shader) {
       #ifdef USE_COLOR
         fTint = mix(vec3(1.0), vColor.rgb, 0.6);
       #endif
-      outgoingLight += fres * specular * 0.8 * fTint;
+      outgoingLight += fres * specular * 0.8 * fTint * mtl;
     }
     #include <output_fragment>`);
   // (4) ブルームの素材として描く時（uBloomPass=1）：本編の深度で隠れた画素は捨てる
@@ -1232,6 +1256,7 @@ function metalShader(shader) {
   shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>',
     `#include <dithering_fragment>
       if (uBloomPass > 0.5) {
+        if (mtl < 0.5) discard;   // 金属でない画素は書かない（書くと全体ブルームが抜いた分を 0 で上書きしてしまう）
         float bm = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
         gl_FragColor.rgb *= max(0.0, bm - uMetalThr) / max(1e-3, bm);
         gl_FragColor.a = 1.0;
@@ -1284,16 +1309,17 @@ function applyMetal(obj, shininess) {
   });
   return obj;
 }
-// 楽器ごとの艶（shininess）。大きいほどハイライトが小さく鋭い。銀（フルート）を一番鋭く、太鼓の革を一番鈍く。
+// 楽器ごとの艶（shininess）。大きいほどハイライトが小さく鋭い。銀（フルート）を一番鋭く、太鼓の金具を一番鈍く。
 // ボクセルは面が平らなので、ハイライトは面ごとに一様に乗る（＝ドット絵の 2 階調の金属表現に近い見え方になる）
-const METAL_PARTS = { flute: 40, piccolo: 40, trumpet: 28, horn: 26, trombone: 28, tuba: 24, cymbal: 20, hihat: 20, suscymbal: 20, tubularbells: 28, timpani: 16 };
-for (const [k, shine] of Object.entries(METAL_PARTS)) {
+const METAL_SHINE = { flute: 40, piccolo: 40, trumpet: 28, horn: 26, trombone: 28, tuba: 24, cymbal: 20, hihat: 20, suscymbal: 20, tubularbells: 28, timpani: 16 };
+const METAL_SHINE_DEFAULT = 26;
+// **全ての楽器**に掛ける（2026-09-23 ユーザー指定）。金属かどうかは頂点色で決まる（metalOf）ので、
+// 木や革が主体の楽器でも、スタンドの銀・ラグ・共鳴管の真鍮だけが光る。銅鑼の木の枠も自動で除かれる
+for (const k of Object.keys(INSTRUMENT)) {
   const base = INSTRUMENT[k];
-  if (!base) continue;
+  const shine = METAL_SHINE[k] ?? METAL_SHINE_DEFAULT;
   INSTRUMENT[k] = () => applyMetal(base(), shine);
 }
-// 銅鑼は枠が木なので、吊られた円盤（userData.swing の中）だけ金属にする
-{ const base = INSTRUMENT.gong; INSTRUMENT.gong = () => { const o = base(); applyMetal(o.userData.swing, 45); return o; }; }
 
 /**
  * パート名ラベル（ドット風の小さな文字板）。常にカメラを向く Sprite。
