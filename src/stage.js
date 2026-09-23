@@ -26,7 +26,7 @@ export const ROWS = {
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
   // behind：その楽器の後ろに、内側（舞台の中央寄り）の端を揃えて並べる（2026-09-23 ユーザー指定：コントラバスはチェロの後ろ、ハープ/チェレスタは
   // 1st バイオリンの後ろ。木管の端に隣接させると、木管が少ない曲で必要以上に中央へ寄った）。その楽器がいない曲は従来どおり beside の隣
-  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65, behind: 'cello' }, // 前後の間隔は他の弦と同じ（2026-09-10）
+  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65, behind: 'cello', behindR: true },   // behindR：チェロのすぐ後ろの半径（r はチェロがいない時） // 前後の間隔は他の弦と同じ（2026-09-10）
   // 鍵盤群は奥行き 2 段に並べる：チェレスタ/ハープ → ピアノ（2026-09-10 は鍵盤打楽器を加えた 3 段。2026-09-23 に鍵盤打楽器を打楽器のひな壇へ移した）。
   // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
@@ -39,7 +39,7 @@ export const ROWS = {
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
 export const SECTION_SIZE = {
-  violin1: { cols: 3, rows: 3 }, violin2: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 2, rows: 2 },
+  violin1: { cols: 3, rows: 3 }, violin2: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 4, rows: 1 },   // チェロの後ろに 1 列（2026-09-24 ユーザー指定。以前は 2×2）
   piccolo: { cols: 1, rows: 1 }, flute: { cols: 2, rows: 1 }, oboe: { cols: 2, rows: 1 }, clarinet: { cols: 2, rows: 1 }, bassoon: { cols: 2, rows: 1 },
   horn: { cols: 2, rows: 2 }, trumpet: { cols: 3, rows: 1 }, trombone: { cols: 3, rows: 1 }, tuba: { cols: 1, rows: 1 },
 };
@@ -1875,20 +1875,25 @@ export function layoutSeats(tracks, footprintOf = null) {
         const edge = edgeB ?? edge0;
         // トラック同士の余白。これが無いと鍵盤群（シロフォンとマリンバ等）が密着する（2026-09-22 ユーザー指摘）。
         // 幅は扇の列（beside でない列）と同じ考え方＝奏者間隔の半分
-        const trackGap = (PUPPET_GAP / row.r) * 0.5;
-        const total = idxs.reduce((a, i) => a + angleOf(sizes[i].cols, i), 0) + trackGap * Math.max(0, idxs.length - 1);
-        let cursor = row.side > 0 ? edge + gap : edge - gap - total;
         // behind 指定の段（besideAt で金管に付けない段）は、その楽器の**内側（舞台の中央寄り）の端**に揃える（2026-09-23 ユーザー指定）。
         // いったん並べてから、この段の奏者の内側の端の角度を、基準の楽器の内側の端の角度まで回す
-        const refTh = edgeB == null && row.behind ? seats.filter((st) => st.track.variant === row.behind).flatMap((st) => st.positions.map((p) => Math.atan2(p.x, -p.z))) : [];
+        const refPs = edgeB == null && row.behind ? seats.filter((st) => st.track.variant === row.behind).flatMap((st) => st.positions) : [];
+        const refTh = refPs.map((p) => Math.atan2(p.x, -p.z));
+        // behindR：半径も基準の楽器の一番後ろの列 + 列の間隔にする（コントラバスをチェロのすぐ後ろに 1 列で。2026-09-24 ユーザー指定）。
+        // 角度の間隔はこの半径で計算する（後から半径だけ縮めると奏者が詰まる）
+        const rb = row.behindR && refPs.length ? Math.max(...refPs.map((p) => Math.hypot(p.x, p.z))) + (row.rowGap ?? ROW_GAP) : row.r;
+        const aOf = (cols, i) => (cols * slots[i].gap) / rb;
+        const trackGap = (PUPPET_GAP / rb) * 0.5;
+        const total = idxs.reduce((a, i) => a + aOf(sizes[i].cols, i), 0) + trackGap * Math.max(0, idxs.length - 1);
+        let cursor = row.side > 0 ? edge + gap : edge - gap - total;
         const start = seats.length;
         const rowK = { r: row.r + k * levelGap, h: row.h };
         for (const i of idxs) {
-          const c = cursor + angleOf(sizes[i].cols, i) / 2; cursor += angleOf(sizes[i].cols, i) + trackGap;
+          const c = cursor + aOf(sizes[i].cols, i) / 2; cursor += aOf(sizes[i].cols, i) + trackGap;
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
-          const positions = gridPositions({ r: row.r, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
+          const positions = gridPositions({ r: rb, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
