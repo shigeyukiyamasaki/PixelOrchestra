@@ -711,6 +711,12 @@ const GLOCK_BARS = keyboardRig({ barY: 5, frameY: 8, x0: 4, pitch: 3, n: 12, zc:
 const MARIMBA_BARS = keyboardRig({ barY: 3, frameY: 6, x0: 4, pitch: 3, n: 22, zc: 15, lo: 26, hi: 11, railW: 2, endX: 6, w: 74, casterY: 32,
   tubes: { y0: 6, len: MARIMBA_TUBE_LEN, depth: 2, off: 2.5, row: MARIMBA_TUBE_ROW } });
 
+// ビブラフォン：音板 行 2（奥行き z 2-23・奥の端 24、長さ 22→12）／フレーム 行 3-5／共鳴管 行 6〜（12→6 行）。2 列の振り分けはマリンバと同じ
+const VIBES = ROSE.map((c) => (c === ROSE_B ? C.gold2 : C.gold));
+const VIBES_TUBE_LEN = (i) => 12 - Math.floor(i * 6 / 15);
+const VIBES_BARS = keyboardRig({ barY: 3, frameY: 6, x0: 4, pitch: 3, n: 16, zc: 13, lo: 22, hi: 12, railW: 2, endX: 6, w: 56, casterY: 32,
+  tubes: { y0: 6, len: VIBES_TUBE_LEN, depth: 2, off: 2.5, row: MARIMBA_TUBE_ROW } });
+
 /**
  * 頭パーツ（24×30・res 2・pivot (12,24)）の pivot より下、rows 24-25 に「少し太い首」を足す。
  *
@@ -1230,6 +1236,19 @@ export const INSTRUMENT = {
   }, { res: 2, depth: 30, z0: 0,
        side: (d) => { d.r(0, 2, 30, 32, F); },   // 形（音板・レール・共鳴管・脚）は carve で削り出す
        top: (d) => { d.r(0, 0, 74, 30, F); }, carve: MARIMBA_BARS }),
+  // ビブラフォン 56×34（2026-09-23 ユーザー指定）：マリンバと同じ作りで小さく（音板 16 枚・幅はシロフォンと同じ 28px）。
+  // 実物は 3 オクターブ・幅 1.3〜1.4m で、マリンバ（4.3〜5 オクターブ・2〜2.5m）より一回り小さい。
+  // 音板は金色のメタリック（白鍵にあたる板は明るい金、黒鍵にあたる板は濃い金。どちらも METAL_COLORS）。共鳴管 2 列・打面 16px はマリンバと同じ
+  vibraphone: () => makePart(56, 34, 28, 34, (d) => {
+    d.r(2, 6, 1, 26, FRAME_BK); d.r(53, 6, 1, 26, FRAME_BK);                               // 脚（黒・1 セル＝0.5px。端の真下から接地まで）
+    d.r(0, 32, 5, 2, FRAME_BK); d.r(51, 32, 5, 2, FRAME_BK);                                // 脚の台（キャスター。脚を中心に 5 セル）
+    for (let i = 0; i < 16; i++) { const len = VIBES_TUBE_LEN(i); d.r(4 + i * 3, 6, 2, len, BRASS); d.r(5 + i * 3, 6, 1, len, BRASS2); } // 共鳴管（高音ほど短い。奥行きは carve で音板の中心に）
+    d.r(2, 3, 52, 3, FRAME_BK);                                                            // フレーム（黒。中は carve で前後 2 本のレールに）
+    d.r(0, 3, 6, 3, FRAME_BK); d.r(50, 3, 6, 3, FRAME_BK);                                 // 左右の端（3px。高さはレールと同じ）
+    for (let i = 0; i < 16; i++) d.r(4 + i * 3, 2, 2, 1, VIBES[i % 12]);                   // 音板（金・上端 2・厚み 1 セル＝0.5px）
+  }, { res: 2, depth: 26, z0: 0,
+       side: (d) => { d.r(0, 2, 26, 32, F); },   // 形は carve で削り出す
+       top: (d) => { d.r(0, 0, 56, 26, F); }, carve: VIBES_BARS }),
   // グランカッサ 52×60：正面向きの大太鼓（白い皮・木の胴・フープ・ラグ・スタンド）。pivot = 底中央
   bassdrum: () => makePart(52, 60, 26, 60, (d) => {
     d.r(22, 48, 8, 12, C.silver2); d.r(8, 56, 36, 4, C.silver2);                            // スタンド

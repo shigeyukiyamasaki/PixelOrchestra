@@ -7,9 +7,12 @@
  * 描画には一切依存しない（Three.js / Canvas どちらからでも使える）。
  */
 
-export const FAMILIES = ['strings', 'woodwind', 'brass', 'percussion', 'keyboard'];
+// 分類（2026-09-23 ユーザー指定で再編）：鍵盤打楽器＝シロフォン/マリンバ/グロッケン/ビブラフォン/チェレスタ/チューブラーベル/ピアノ、
+// 撥弦楽器＝ハープ（以前は「打楽器」と「鍵盤/ハープ」に分かれていた）。
+// 分類が決めるのは一覧の見出し・トラックの色・自動カメラのセクション。**動き（叩く／弾く）と配置は楽器ごと**（puppet.js の MOTION_OF、stage.js の rowKeyOf）
+export const FAMILIES = ['strings', 'woodwind', 'brass', 'percussion', 'mallet', 'plucked'];
 export const FAMILY_LABEL = {
-  strings: '弦', woodwind: '木管', brass: '金管', percussion: '打楽器', keyboard: '鍵盤/ハープ',
+  strings: '弦', woodwind: '木管', brass: '金管', percussion: '打楽器', mallet: '鍵盤打楽器', plucked: '撥弦楽器',
 };
 // 楽器（バリアント）の一覧：割り当て UI の選択肢。family はここから導出する（単一の正解）
 export const VARIANTS = {
@@ -31,17 +34,18 @@ export const VARIANTS = {
   timpani:    { family: 'percussion', label: 'ティンパニ' },
   bassdrum:   { family: 'percussion', label: 'バスドラム' },
   snare:      { family: 'percussion', label: 'スネア' },
-  xylophone:  { family: 'percussion', label: 'シロフォン' },
-  marimba:    { family: 'percussion', label: 'マリンバ' },
-  glocken:    { family: 'percussion', label: 'グロッケン' },   // 2026-09-23（以前はシロフォンで代用）
+  xylophone:  { family: 'mallet', label: 'シロフォン' },
+  marimba:    { family: 'mallet', label: 'マリンバ' },
+  glocken:    { family: 'mallet', label: 'グロッケン' },   // 2026-09-23（以前はシロフォンで代用）
+  vibraphone: { family: 'mallet', label: 'ビブラフォン' }, // 2026-09-23（以前はマリンバで代用）
   cymbal:     { family: 'percussion', label: 'シンバル' },
   hihat:      { family: 'percussion', label: 'ハイハット' },   // 2026-09-19
   gong:       { family: 'percussion', label: '銅鑼' },         // 2026-09-19（タムタム）
-  tubularbells: { family: 'percussion', label: 'チューブラーベル' },   // 2026-09-19
+  tubularbells: { family: 'mallet', label: 'チューブラーベル' },   // 2026-09-19
   suscymbal:  { family: 'percussion', label: 'サスペンデッドシンバル' }, // 2026-09-19
-  piano:      { family: 'keyboard',   label: 'ピアノ' },
-  celesta:    { family: 'keyboard',   label: 'チェレスタ' },
-  harp:       { family: 'keyboard',   label: 'ハープ' },
+  piano:      { family: 'mallet',   label: 'ピアノ' },
+  celesta:    { family: 'mallet',   label: 'チェレスタ' },
+  harp:       { family: 'plucked',   label: 'ハープ' },
 };
 
 // ---- 楽器名からの判定 ----
@@ -129,6 +133,7 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'piano',        keywords: ['ピアノ'] },
   { id: 'xylophone',    keywords: ['シロフォン', '木琴'] },
   { id: 'glocken',      keywords: ['グロッケン', '鉄琴'] },   // 2026-09-23
+  { id: 'vibraphone',   keywords: ['ビブラフォン', 'ヴィブラフォン', 'ビブラホン'] },   // 2026-09-23
   { id: 'marimba',      keywords: ['マリンバ'] },
   { id: 'celesta',      keywords: ['チェレスタ'] },
 ];
@@ -143,7 +148,7 @@ const ORCH_ID_TO_VARIANT = {
   horn: 'horn', trumpet: 'trumpet', trombone: 'trombone', tuba: 'tuba', flugelhorn: 'trumpet',
   violin1: 'violin1', violin2: 'violin2', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
-  marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'glocken', tubularbells: 'tubularbells',
+  marimba: 'marimba', vibraphone: 'vibraphone', xylophone: 'xylophone', glocken: 'glocken', tubularbells: 'tubularbells',
   triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'gong', suspendedcymbal: 'suscymbal', cymbals: 'cymbal', hihat: 'hihat',
   drums: 'snare', percussion: 'snare',
   piano: 'piano', celesta: 'celesta', organ: 'piano',
@@ -200,7 +205,8 @@ function variantFromProgram(family, program) {
       if (program === 60) return 'horn';
       return 'trumpet';
     case 'percussion':
-      if (program === 12 || program === 11) return 'marimba';   // Marimba / Vibraphone
+      if (program === 11) return 'vibraphone';                  // Vibraphone（2026-09-23 専用の絵）
+      if (program === 12) return 'marimba';                     // Marimba
       if (program === 9) return 'glocken';                      // Glockenspiel（2026-09-23 専用の絵）
       if (program === 13) return 'xylophone';                   // Xylophone
       return 'timpani';
@@ -213,7 +219,7 @@ function variantFromProgram(family, program) {
 }
 
 // ファミリー別の色相（ノート色・足元の光の基準）
-const FAMILY_HUE = { strings: 20, woodwind: 130, brass: 48, percussion: 285, keyboard: 205 };
+const FAMILY_HUE = { strings: 20, woodwind: 130, brass: 48, percussion: 285, mallet: 205, plucked: 330 };   // 鍵盤打楽器は旧「鍵盤」の青を引き継ぐ
 
 const ENERGY_RATE = 50;   // エネルギー包絡線のサンプリング周波数 [Hz]
 const ENERGY_DECAY = 0.86; // 1ステップ（20ms）ごとの減衰率（≒ 130ms で半減）

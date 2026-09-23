@@ -35,6 +35,10 @@ const WOOD_INSTRUMENTS = new Set(['violin1', 'violin2', 'viola', 'cello', 'contr
 //   打楽器（打点が rig 座標なので別途調整が要る）は据え置き：グランカッサ 1.5（ユーザー指定）
 // 楽器ごとの奏者の身長倍率（楽器は同じ大きさのまま。コントラバス奏者は少し背が高い。2026-09-11 ユーザー指定）
 const PLAYER_TALL = { contrabass: 1.08 };
+// 動きのテンプレート（叩く＝percussion／弾く＝keyboard）は分類ではなく楽器で決める（2026-09-23：分類「鍵盤打楽器」に
+// 叩く楽器と弾く楽器が混ざったため）。ここに無い楽器は分類（strings / woodwind / brass / percussion）がそのままテンプレート
+const MOTION_OF = { xylophone: 'percussion', marimba: 'percussion', glocken: 'percussion', vibraphone: 'percussion', tubularbells: 'percussion',
+                    piano: 'keyboard', celesta: 'keyboard', harp: 'keyboard' };
 const PERC_UP = [0, 1, 0]; // 鍵盤・ハープの手の甲の向きヒント（真上）
 // 棒を持つ打楽器の手の甲は**外側**（体から離れる向き）。実際の構えがそうなっている（2026-09-22 ユーザー指定）。
 // 真上にしていたので、甲が上を向いて小指だけで握っているように見えていた
@@ -301,6 +305,11 @@ const VARIANT = {
   marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 23.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 23.5] } } } },   // head z 22 → 23.5：低音の音板を伸ばして高音側の音板も奥へ下がった（2026-09-23）   // 打面 16px に合わせて -7（2026-09-22）
+  // ビブラフォン（2026-09-23）：マリンバと同じ構え・叩き方。打点（head の z）は一番短い音板（奥行き z 12〜23 セル）にも乗る 21.5。
+  // 音程の幅は 8：マレットの頭の x は ±3 ± 8 ＝ -11〜11（音板は x -12〜11）
+  vibraphone: { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 8,
+                strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
+                p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 21.5] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
   piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
                 p3: { pos: [0, 0, 43], rot3: [0, Math.PI, 0], keys: { y: 16.4, spread: 14, gap: 4, z: 10 } } }, // 1.17 倍：奥行き 30px×1.17 で鍵盤の縁が z≈8。鍵盤の高さ・音域幅も 1.17 倍、手は z 10（肘が畳まれないように前へ）
@@ -320,6 +329,7 @@ export class Puppet {
    */
   constructor(o) {
     this.family = o.isConductor ? 'conductor' : o.family;
+    this.motion = o.isConductor ? 'conductor' : (MOTION_OF[o.variant] ?? o.family);   // 動きのテンプレート（MOTION_OF）
     this.variant = o.isConductor ? 'conductor' : o.variant;
     this.cfg = VARIANT[this.variant] || VARIANT.violin;
     this.seed = o.seed || 0;
@@ -353,7 +363,7 @@ export class Puppet {
     this.hasWrist = this.cfg.wrist !== false; // 手首は全員（2026-09-10 全セクションへ展開）
 
     // 座る／立つ：打楽器と指揮者以外は椅子に座る（2026-09-09 ユーザー指定）。上半身の高さは立ち姿と同じにし、脚だけ差し替える
-    this.seated = !o.isConductor && this.family !== 'percussion' && this.variant !== 'contrabass'; // コントラバスは立奏（2026-09-10）
+    this.seated = !o.isConductor && this.motion !== 'percussion' && this.variant !== 'contrabass'; // コントラバスは立奏（2026-09-10）
     const P = this.persona;
     if (this.seated) {
       this.body = this.flat ? torsoSeated(o.color || '#c03030') : (K?.torso || torsoFor)(P, accentCol);
@@ -668,7 +678,7 @@ export class Puppet {
     // 長い休みでは楽器を下ろす（構え ⇄ 下ろしを補間）。手は楽器に付いて動く（2026-09-12 ユーザー指定）
     this._restPose(st, dt, t);
 
-    switch (this.family) {
+    switch (this.motion) {
       case 'strings': this._strings(st, ctx); break;
       case 'woodwind': this._wind(st, ctx); break;
       case 'brass': this._wind(st, ctx); break;

@@ -30,7 +30,7 @@ export const ROWS = {
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
   // 2 段目（r 19.5）・3 段目（r 22.5）は金管の扇の端に隣接
   keyboard:   { r: 16.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
-                depthOf: (v) => (v === 'xylophone' || v === 'marimba' || v === 'glocken' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
+                depthOf: (v) => (v === 'xylophone' || v === 'marimba' || v === 'glocken' || v === 'vibraphone' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -48,14 +48,17 @@ function sizeOf(track) {
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
 // 打楽器：ティンパニは常に向かって一番左（2026-09-19 ユーザー指定）。一覧にない楽器は従来どおり平均音程の高い順でその右に並ぶ
-// 鍵盤群：客席側から グロッケン → シロフォン → マリンバ で固定（2026-09-23 ユーザー指定。曲の音程では入れ替わらない）。
+// 鍵盤群：客席側から グロッケン → シロフォン → ビブラフォン → マリンバ で固定（2026-09-23 ユーザー指定。曲の音程では入れ替わらない。
+// ビブラフォンは音域の高い順でシロフォンとマリンバの間）。
 // ハープ・チェレスタ・ピアノは奥の段なので、この順とは別に平均音程の高い順
-const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani'], keyboard: ['glocken', 'xylophone', 'marimba'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
+const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani'], keyboard: ['glocken', 'xylophone', 'vibraphone', 'marimba'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {
   if (track.variant === 'contrabass') return 'contrabass';
-  if (track.variant === 'xylophone' || track.variant === 'marimba' || track.variant === 'glocken') return 'keyboard'; // 鍵盤打楽器は左の鍵盤群へ
+  // 配置は分類ではなく楽器で決める（2026-09-23：分類を「鍵盤打楽器」「撥弦楽器」に再編したが、配置は変えない）
+  if (['xylophone', 'marimba', 'glocken', 'vibraphone', 'piano', 'celesta', 'harp'].includes(track.variant)) return 'keyboard'; // 左の鍵盤群
+  if (track.variant === 'tubularbells') return 'percussion';   // チューブラーベルは打楽器のひな壇（分類は鍵盤打楽器）
   return track.family;
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
@@ -1192,9 +1195,11 @@ export function buildRisers(seats) {
       thMin = Math.min(thMin, th); thMax = Math.max(thMax, th);
     }
     if (!Number.isFinite(thMin)) { thMin = -deg(row.span) / 2; thMax = deg(row.span) / 2; }
-    // 左右対称にする（片側だけ広いと舞台らしくない）
-    const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN;
-    thMin = -half; thMax = half;
+    // 左右対称にする（片側だけ広いと舞台らしくない）。木管の段だけは、センター合わせで回した角度（woodwindShift）を軸にする
+    // ＝ひな壇ごと木管と一緒に動く（2026-09-23 ユーザー指定）
+    const c0 = fam === 'woodwind' ? woodwindShift : 0;
+    const half = Math.max(Math.abs(thMin - c0), Math.abs(thMax - c0)) + RISER_MARGIN;
+    thMin = c0 - half; thMax = c0 + half;
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
     // clipX 指定の段は x = ±clipX の垂直面で切る。扇の弧は clipX の外まで作っておき、はみ出しをクリップで落とす
     const cx = row.clipX;
@@ -1799,6 +1804,9 @@ function plankTexture() {
  *   自動的に間隔を広げ、占有範囲の中心が座席の中心に来るよう奏者をずらす（2026-09-10 ユーザー指定：大きな楽器の隣に隙間を空ける）。
  *   奥行き（minZ/maxZ）は row.depthCenter の段だけで使い、楽器を含めた中心がひな壇の帯の中心に来るよう半径をずらす（2026-09-23）
  */
+// 木管・コントラバス・鍵盤群の最前段（木管の左に隣接する段）をひとかたまりとして、左右の端の中点が中央（角度 0）に
+// 来るように回した角度 [rad]（2026-09-23 ユーザー指定：センターにバランスを取る。木管はひな壇ごと移動）。buildRisers が木管のひな壇に使う
+let woodwindShift = 0;
 export function layoutSeats(tracks, footprintOf = null) {
   // トラックごとの奏者 1 人分の間隔 [unit] と、座席中心からの横ずらし [unit]
   const slotOf = (tr) => {
@@ -1863,7 +1871,9 @@ export function layoutSeats(tracks, footprintOf = null) {
       const levelGap = row.levelGap ?? ROW_GAP;
       [...levels.entries()].sort((a, b) => a[0] - b[0]).forEach(([k0, idxs], k) => {
         // レベルごとに隣接先を変えられる（3 段目は金管の端）。基準列が無ければ木管の端
-        const edge = (row.besideAt?.[k0] && edgeOf(row.besideAt[k0])) ?? edge0;
+        const edgeB = row.besideAt?.[k0] ? edgeOf(row.besideAt[k0]) : null;
+        const edge = edgeB ?? edge0;
+        const inBlock = row.beside === 'woodwind' && edgeB == null;   // 木管の端に隣接する段＝センター合わせのかたまり
         // トラック同士の余白。これが無いと鍵盤群（シロフォンとマリンバ等）が密着する（2026-09-22 ユーザー指摘）。
         // 幅は扇の列（beside でない列）と同じ考え方＝奏者間隔の半分
         const trackGap = (PUPPET_GAP / row.r) * 0.5;
@@ -1879,7 +1889,7 @@ export function layoutSeats(tracks, footprintOf = null) {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
-          seats.push({ track: tr, puppets: sizes[i].cols * sizes[i].rows, positions });
+          seats.push({ track: tr, puppets: sizes[i].cols * sizes[i].rows, positions, centerBlock: inBlock });
         }
       });
       continue;
@@ -1895,8 +1905,19 @@ export function layoutSeats(tracks, footprintOf = null) {
       const { cols, rows } = sizes[i];
       const center = centers[i];
       centerAngle.set(tr, center);
-      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows, slots[i]) });
+      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows, slots[i]), centerBlock: fam === 'woodwind' });
     });
+  }
+  // センター合わせ：かたまり（木管・コントラバス・鍵盤群の最前段）の座席の角度の最小〜最大の中点を 0 に回す
+  woodwindShift = 0;
+  const blk = seats.filter((st) => st.centerBlock);
+  const ths = blk.flatMap((st) => st.positions.map((p) => Math.atan2(p.x, -p.z)));
+  if (ths.length) {
+    woodwindShift = -(Math.min(...ths) + Math.max(...ths)) / 2;
+    for (const st of blk) for (const p of st.positions) {
+      const th = Math.atan2(p.x, -p.z) + woodwindShift, r = Math.hypot(p.x, p.z);
+      p.x = r * Math.sin(th); p.z = -r * Math.cos(th);
+    }
   }
   // 指揮者以外を奥へ平行移動（座席の角度計算は指揮者中心のまま、最後にずらす。ひな壇は buildRisers 側で同じ量ずらす）
   for (const st of seats) for (const p of st.positions) p.z += SEAT_SHIFT_Z;
