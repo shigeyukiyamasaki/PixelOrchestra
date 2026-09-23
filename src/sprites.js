@@ -1240,7 +1240,11 @@ function metalShader(shader) {
 // 鏡面の強さ（左メニューの「金属のツヤ」スライダー。1〜3、既定 2）。1 を超える値を使う：
 // ボクセルの面は軸に平行な平面ばかりで、鏡面が 1 以下だとほとんどの面が反射角から外れて
 // 「変わっていない」ようにしか見えなかったため（2026-09-23 に実機で値を振って決めた）
-let metalSpec = 2;
+// 鏡面の強さ（固定）。以前は「金属のツヤ」スライダーだったが、金属のブルームを入れてからは
+// 見た目への影響がほとんど無くなったのでスライダーを廃止し、既定値 2 に固定した（2026-09-23 ユーザー指定）。
+// 1 を超える値を使う理由：ボクセルの面は軸に平行な平面ばかりで、鏡面が 1 以下だと
+// ほとんどの面が反射角から外れて「変わっていない」ようにしか見えなかった
+const METAL_SPEC = 2;
 // ブルーム用のレイヤー（0 = 本編 / 1 = 太陽 / 2 = 天気 / 3 = 金属。TOOL_CRAFT_RULES §10-7 で既存を grep して空き番号を確認）。
 // 金属だけ**低い閾値**でブルームに乗せるため、天気と同じ「専用レイヤーで素材だけ描き足す」方式を使う（2026-09-23 ユーザー指定）。
 // 全体ブルームの閾値（レンズ欄）を下げると画面全部が光ってしまうので、金属には別の閾値を持たせる
@@ -1256,14 +1260,8 @@ export const METAL_BLOOM = {
  * 以降に作られるパーツにも同じ値が乗るようモジュールの現在値を更新する。
  * ハイライトの鋭さ（shininess）は楽器ごとの固定値（METAL_PARTS）で、スライダーは廃止（2026-09-23 ユーザー指定）
  */
-export function applyMetalLook(root, spec, thr = METAL_BLOOM.thr.value) {
-  metalSpec = spec;
-  METAL_BLOOM.thr.value = thr;              // 閾値は全マテリアル共有のユニフォーム（天気と同じ作り）
-  root?.traverse((m) => {
-    const mat = m.material;
-    if (!mat || !mat.userData || !mat.userData.metalBase) return;
-    mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
-  });
+export function setMetalThreshold(thr) {
+  METAL_BLOOM.thr.value = thr;              // 閾値は全マテリアル共有のユニフォーム（天気と同じ作り）なのでシーンの走査は要らない
 }
 function applyMetal(obj, shininess) {
   if (PART_STYLE !== 'voxel' || !obj) return obj;  // 2D の板（テクスチャ付き）には掛けない
@@ -1271,13 +1269,13 @@ function applyMetal(obj, shininess) {
     if (!m.isMesh || !m.material || m.material.map || m.material.isMeshPhongMaterial) return;
     const old = m.material;
     const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess });
-    mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
+    mat.specular.setRGB(METAL_SPEC, METAL_SPEC, METAL_SPEC);
     // 差し替えで消えてはいけない設定を引き継ぐ。makePart の後から各パーツが付けているものがある。
     // 2026-09-23：トロンボーンの外管の polygonOffset（内管と面がぴったり重なるので手前へずらして
     // z-fighting を防いでいる）が消え、金色のスライドから内管の白がちらついて見えた
     for (const k of ['polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
                      'transparent', 'opacity', 'alphaTest', 'depthTest', 'depthWrite', 'side', 'blending', 'toneMapped']) mat[k] = old[k];
-    mat.userData.metalBase = shininess;            // 金属マテリアルの目印（applyMetalLook が探す）
+    mat.userData.metalBase = shininess;            // 金属マテリアルの目印（楽器ごとのハイライトの鋭さ）
     mat.onBeforeCompile = metalShader;
     m.material = mat;
     old.dispose();

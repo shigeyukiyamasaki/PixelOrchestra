@@ -9,7 +9,7 @@ import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteNa
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
-import { nameLabel, setGlowSoftness, setPartStyle, applyMetalLook, LABEL_FONT, dotPart } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
 import { PianoRoll } from './pianoRoll.js';
@@ -979,7 +979,7 @@ function settings() {
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
     instFlash: num('instFlash', 1),
-    metalSpec: num('metalSpec', 2), metalThrPct: num('metalThrPct', 65),   // 金属の楽器のツヤ／金属だけのブルーム閾値（レンズ欄の閾値に対する % 。2026-09-23 ユーザー指定。ハイライトの鋭さは楽器ごとの固定値にしてスライダーは廃止）
+    metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
     shakeAmt: num('shakeAmt', 1), shakeDecay: num('shakeDecay', 1), shakeDots: $('shakeDots').checked, // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
@@ -1277,7 +1277,7 @@ function followSunSliders(s) {
   }
 }
 let lastBloomAll = 0, lastBloomThr = 0.7;
-let lastMetalSpec = null, lastMetalThr = null;   // 金属のツヤ・金属だけのブルーム閾値（実効値。変わった時だけシーンを走査する）
+let lastMetalThr = null;   // 金属だけのブルーム閾値（実効値。変わった時だけ渡す）
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 // 弓の向きの共有台帳。キーは「音符の時刻 | 音の長さ」なので、同じパートの中はもちろん、
@@ -1732,7 +1732,7 @@ function animate() {
     // 割合の上限は 100%（＝他の素材と同じ閾値）。金属だけ光りにくい状態は作らない（2026-09-23 ユーザー指定）。
     // レンズ側を動かしたら金属側も追随する必要があるので、bloomThr も変化の判定に入れる
     const metalThr = Math.max(0, s.bloomThr * Math.min(100, s.metalThrPct) / 100);
-    if (s.metalSpec !== lastMetalSpec || metalThr !== lastMetalThr) { lastMetalSpec = s.metalSpec; lastMetalThr = metalThr; applyMetalLook(scene, s.metalSpec, metalThr); }
+    if (metalThr !== lastMetalThr) { lastMetalThr = metalThr; setMetalThreshold(metalThr); }
     applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
