@@ -228,6 +228,10 @@ const ENERGY_RATE = 50;   // エネルギー包絡線のサンプリング周波
 const ENERGY_DECAY = 0.86; // 1ステップ（20ms）ごとの減衰率（≒ 130ms で半減）
 
 // CC 列（time 昇順）の時刻 t における値。最初のイベントより前は最初の値、以降は直前の値（二分探索）
+// ティンパニのキースイッチ → 奏法（hit ＝ 1 打／roll ＝ CC1 で強弱のロール／cresc ＝ クレッシェンド込みのロール）
+const TIMP_KS = { 24: 'hit', 25: 'roll', 26: 'cresc', 27: 'cresc', 28: 'cresc', 29: 'cresc' };
+const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
+
 function ccValueAt(list, t) {
   if (!list.length) return 0;
   if (t < list[0].time) return list[0].value;
@@ -288,6 +292,23 @@ export class MidiEngine {
         const ccList = (num) => ((t.controlChanges && t.controlChanges[num]) || []).map((c) => ({ time: c.time, value: c.value })).sort((a, b) => a.time - b.time);
         const cc1 = ccList(1), cc11 = ccList(11);
         const varies = (list) => list.length >= 3 && (Math.max(...list.map((c) => c.value)) - Math.min(...list.map((c) => c.value))) > 0.1;
+        // ティンパニのキースイッチ（2026-09-23 ユーザー指定。Orchestral Tools のティンパニの割り当て）：
+        //   C0(24) シングルヒット／C#0(25) ロール（強弱は CC1）／D0〜F0(26〜29) クレッシェンドショート（膨らみ方まで収録）。
+        // 最後に押されたキースイッチが次の切り替えまで有効（ラッチ）。各音に art を付け、キースイッチの音は叩く音から除く
+        // （ティンパニの実音は 36 より上なので本物の音は消えない）。キースイッチの無い MIDI は何もしない＝全部シングルヒット扱い
+        if (variant === 'timpani') {
+          const ks = t.notes.filter((n) => TIMP_KS[n.midi]).map((n) => ({ time: n.time, art: TIMP_KS[n.midi] })).sort((a, b) => a.time - b.time);
+          if (ks.length) {
+            for (let k = notes.length - 1; k >= 0; k--) if (TIMP_KS[notes[k].midi]) notes.splice(k, 1);
+            let p = -1;
+            for (const n of notes) {
+              while (p + 1 < ks.length && ks[p + 1].time <= n.time + KS_EPS) p++;
+              n.art = p >= 0 ? ks[p].art : 'hit';
+              if (n.art === 'roll') n.cc1 = cc1;   // ロールの強弱は CC1（trackState の rollCC）
+            }
+            notes.forEach((n, i) => { n.index = i; });
+          }
+        }
         const dynSource = dynSources[name] || 'auto';
         let dynResolved = dynSource;
         if (dynSource === 'auto') {
@@ -541,8 +562,11 @@ export class MidiEngine {
     }
     const range = Math.max(1, track.maxPitch - track.minPitch);
     const pitchNorm = onset ? (onset.midi - track.minPitch) / range : 0.5;
+    // ロール（ティンパニのキースイッチ C#0）の音が鳴っている時は、その時刻の CC1（0〜1）。ロールの振りの大きさに使う
+    let rollCC = null;
+    for (const n of active) if (n.art === 'roll' && n.cc1?.length) { rollCC = ccValueAt(n.cc1, t); break; }
     return {
-      track,
+      track, rollCC,
       energy: this.energyAt(track, t),
       onset, next, active, pitchNorm,
       age: onset ? t - onset.time : Infinity,

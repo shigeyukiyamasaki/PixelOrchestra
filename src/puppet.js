@@ -242,7 +242,7 @@ const VARIANT = {
                 rest: { pos: [5, 2, 10], rot3: [0.25, 0.3, 0] } },
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   // 打楽器の hit/rest は手の先端（マレットの握り）。手首はその 4px 手前なので、握りを z 10〜12 に置いて手首を体の前 6〜8px に出す（2026-09-10）
-  timpani:    { floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' },
+  timpani:    { floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
                 p3: { pos: [0, 15, 14], strike: { L: { hit: [-7, 18.5, 17], rest: [-9, 22, 14], head: [-6, 15.5, 25] }, R: { hit: [7, 18.5, 17], rest: [9, 22, 14], head: [6, 15.5, 25] } } } },   // 手は打面（15.7）の上へ（2026-09-22） // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
@@ -1053,11 +1053,18 @@ export class Puppet {
     const spread = cfg.pitchSpread || 0; // 鍵盤打楽器：音程で叩く位置が横に動く（次の音へ向かって移動）
     // ロール（サスペンデッドシンバル。2026-09-19 ユーザー指定）：長い音の間、左右交互に叩き続ける。
     // 音源がクレッシェンド込みの収録なので、振り上げは音の始めほど小さく（roll.from）、終わりに向けて構えの高さまで大きくする
+    // ティンパニ（roll.byArt。2026-09-23 ユーザー指定）は音の長さではなくキースイッチの奏法（note.art）でロールにする：
+    //   cresc（D0〜F0）＝サスシンと同じく音の進み具合で大きく、roll（C#0）＝その時刻の CC1 で大きさを決める（CC1 が無ければ velocity）
     let roll = null;
     if (cfg.roll && onset) {
       const tNow = onset.time + age;
-      const n = st.active.filter((a) => a.end - a.time >= cfg.roll.minDur).sort((a, b) => b.time - a.time)[0];
-      if (n) roll = { p: clamp((tNow - n.time) / (n.end - n.time), 0, 1), ph: tNow * cfg.roll.rate };
+      const byArt = cfg.roll.byArt;
+      const n = st.active.filter((a) => (byArt ? a.art === 'roll' || a.art === 'cresc' : a.end - a.time >= cfg.roll.minDur)).sort((a, b) => b.time - a.time)[0];
+      if (n) {
+        const p = clamp((tNow - n.time) / (n.end - n.time), 0, 1);
+        const k = n.art === 'roll' ? clamp(st.rollCC ?? n.velocity, 0, 1) : p;
+        roll = { a: lerp(cfg.roll.from, 1, k), ph: tNow * cfg.roll.rate };   // a ＝ 振り上げの高さ（構えと打点の間の割合）
+      }
     }
     for (const side of ['L', 'R']) {
       const sp = strike?.[side];
@@ -1072,7 +1079,7 @@ export class Puppet {
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       const rest = [sp.rest[0] + dx, sp.rest[1] + 2 * vel, sp.rest[2] || 0];       // 強いほど高く構える（構えは肩より下が基本。2026-09-10 ユーザー指摘）
       const hit = [sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0];
-      if (roll) { const a = lerp(cfg.roll.from, 1, roll.p); for (let i = 0; i < 3; i++) rest[i] = hit[i] + (rest[i] - hit[i]) * a; } // 振り上げの高さ＝構えと打点の間を a の割合
+      if (roll) { const a = roll.a; for (let i = 0; i < 3; i++) rest[i] = hit[i] + (rest[i] - hit[i]) * a; } // 振り上げの高さ＝構えと打点の間を a の割合
       let target = [0, 1, 2].map((i) => lerp(rest[i], hit[i], s) + (rest[i] - hit[i]) * ant * (sp.wind ?? 0.6)); // wind = 振りかぶりの大きさ
       // arc：肩から腕全体で振る（銅鑼。2026-09-19 ユーザー指定：直線で寄せると肘から先だけで叩いて見えた）。
       // 手は肩を中心に「構え → 打点」の角度を回り、肩からの距離は構えと打点の間で変えるだけ（肘の角度がほぼ一定）。
