@@ -232,6 +232,13 @@ const ENERGY_DECAY = 0.86; // 1ステップ（20ms）ごとの減衰率（≒ 13
 const TIMP_KS = { 24: 'hit', 25: 'roll', 26: 'cresc', 27: 'cresc', 28: 'cresc', 29: 'cresc' };
 const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
 
+/** 区間 [t0, t1) の中で CC の値が変わる書き込みがあるか（ロールかショットかの判定） */
+function ccMovesIn(list, t0, t1) {
+  let prev = ccValueAt(list, t0);
+  for (const c of list) { if (c.time < t0) continue; if (c.time >= t1) break; if (Math.abs(c.value - prev) > 0.01) return true; prev = c.value; }
+  return false;
+}
+
 function ccValueAt(list, t) {
   if (!list.length) return 0;
   if (t < list[0].time) return list[0].value;
@@ -304,6 +311,9 @@ export class MidiEngine {
             for (const n of notes) {
               while (p + 1 < ks.length && ks[p + 1].time <= n.time + KS_EPS) p++;
               n.art = p >= 0 ? ks[p].art : 'hit';
+              // C#0（ロール）が有効でも、音の最中に CC1 が動いていない音はショット（1 打）。ロールの直後に C#0 のまま
+              // 置かれた止めの一打などが該当する（2026-09-23 ユーザー指摘：FFT_Antipyretic の最後の音がロールしていた）
+              if (n.art === 'roll' && !ccMovesIn(cc1, n.time, n.end)) n.art = 'hit';
               if (n.art === 'roll') n.cc1 = cc1;   // ロールの強弱は CC1（trackState の rollCC）
             }
             notes.forEach((n, i) => { n.index = i; });
