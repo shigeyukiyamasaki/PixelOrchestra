@@ -26,7 +26,7 @@ export const ROWS = {
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
   // behind：その楽器の後ろに、内側（舞台の中央寄り）の端を揃えて並べる（2026-09-23 ユーザー指定：コントラバスはチェロの後ろ、ハープ/チェレスタは
   // 1st バイオリンの後ろ。木管の端に隣接させると、木管が少ない曲で必要以上に中央へ寄った）。その楽器がいない曲は従来どおり beside の隣
-  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65, behind: 'cello', behindR: true },   // behindR：チェロのすぐ後ろの半径（r はチェロがいない時） // 前後の間隔は他の弦と同じ（2026-09-10）
+  contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65, behind: 'cello', behindR: true, gapScale: 1.3 },   // behindR：チェロのすぐ後ろの半径（r はチェロがいない時） // 前後の間隔は他の弦と同じ（2026-09-10）
   // 鍵盤群は奥行き 2 段に並べる：チェレスタ/ハープ → ピアノ（2026-09-10 は鍵盤打楽器を加えた 3 段。2026-09-23 に鍵盤打楽器を打楽器のひな壇へ移した）。
   // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
@@ -1852,7 +1852,8 @@ export function layoutSeats(tracks, footprintOf = null) {
     const fill = (s) => { if (s.total) { const rr = radii(s.rows); s.perRow = spreadByRadius(s.total, rr); s.cols = Math.max(...s.perRow.map((n, k) => (n * row.r) / rr[k])); } return s; };
     const sizes = list.map((tr) => fill(sizeOf(tr)));
     const span = deg(row.span);
-    const slots = list.map(slotOf);
+    // gapScale：その列の奏者の横の間隔の倍率（コントラバス。2026-09-24 ユーザー指定：左右の隙間を広げて客席側へ）
+    const slots = list.map(slotOf).map((sl) => ({ ...sl, gap: sl.gap * (row.gapScale ?? 1) }));
     const angleOf = (cols, i) => (cols * slots[i].gap) / row.r; // 1トラックが占める角度 [rad]
     if (!row.beside && list.length > 1) {
       // 収まらない時は「横の人数が最も多いトラック」から 1 列ずつ減らす（全トラック一斉に減らすと独奏 1 本で全セクションが痩せる）
