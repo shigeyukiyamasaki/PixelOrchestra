@@ -646,7 +646,9 @@ function isMetalColor(r, g, b) {
  * carve は **true を返したセルを削る**。座標は res 倍したセル番号。
  */
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const NEAR_RAIL_OUT = 2;   // 手前のレールを音板の手前の端から奏者側へ出す幅（セル。2 = 1px）
+// レールの幅 railW は手前・奥とも 2 セル＝1px（2026-09-23 ユーザー指定で 2px → 1.5px（内側を削る）→ 1px（外側も削る））
+const NEAR_RAIL_OUT = 1;   // 手前のレール（と左右の端）を音板の手前の端から奏者側へ出す幅（セル。1 = 0.5px）
+const FAR_RAIL_IN = 1;     // 奥のレール（と左右の端）の奥の端を、奥行きいっぱいから内側へ下げる幅（セル）。音板の奥の端から 0.5px 外に出る
 const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, legZ, casterY, tubes = null }) => {
   const far = zc + lo / 2;                                                           // 音板の奥の端（全部揃う）
   const nearAt = (x) => { const t = clamp01((x - x0) / pitch / (n - 1)); return far - (lo + (hi - lo) * t); }; // 列 x の音板の手前の端（連続）
@@ -661,13 +663,14 @@ const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, l
       return z + 0.5 > far || z + 0.5 < far - L;
     }
     if (y < frameY) {                                 // フレーム：前後のレールだけ残す（端は箱のまま）
-      if (x < endX || x >= w - endX) return z < frontAt(x);   // 左右の端（幅 endX）は中を抜かない。手前だけ斜めの線まで削る
+      const back = 2 * zc - 1 - FAR_RAIL_IN;                  // フレームの奥の端
+      if (x < endX || x >= w - endX) return z < frontAt(x) || z > back;   // 左右の端（幅 endX）は中を抜かない。前後はレールの外側の端で揃える
       // 手前のレールの手前の端（斜め）。音板の手前の端より NEAR_RAIL_OUT セル奏者側へ出して幅を広げる
       // （2026-09-23 ユーザー指定：幅を太く。奥側へ広げると音板の下に隠れて見えないので手前へ出す）
-      if (z < frontAt(x)) return true;                                                  // レールより手前は空ける
+      if (z < frontAt(x) || z > back) return true;                                      // レールより外は空ける
       // レールと奥のレールの間を抜く。手前のレールの幅は奥と同じ railW（外側＝手前の端はそのまま、内側を削る。
       // 2026-09-23 ユーザー指定：下から覗くと手前だけ太かった）
-      return z >= frontAt(x) + railW && z <= 2 * zc - 1 - railW;
+      return z >= frontAt(x) + railW && z <= back - railW;
     }
     // 共鳴管（tubes = { y0, len(i), depth, off, row(i) }）：各管を真上の音板の中心の奥行きに置く。音板は奥で揃い手前だけ短くなるので、
     // 中心は高音ほど奥へずれ、管の並びが音板の斜めの線に沿う（2026-09-23 ユーザー指定）。側面図は全部の管が入る帯にしておき、列ごとに削る
@@ -688,16 +691,16 @@ const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, l
     }
     return false;
   };
-  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w},${legZ.L}/${legZ.R},${casterY},${NEAR_RAIL_OUT},${tubes ? tubes.y0 + ':' + tubes.depth + ':' + tubes.off + ':' + tubes.len + ':' + tubes.row : ''})`;
+  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w},${legZ.L}/${legZ.R},${casterY},${NEAR_RAIL_OUT},${FAR_RAIL_IN},${tubes ? tubes.y0 + ':' + tubes.depth + ':' + tubes.off + ':' + tubes.len + ':' + tubes.row : ''})`;
   return f;
 };
 // シロフォン：音板 行 4（奥行き z 2-17・中心 10、長さ 16→9）／フレーム 行 5-7
-const XYLO_BARS = keyboardRig({ barY: 5, frameY: 8, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 4, endX: 6, w: 56, legZ: { L: [5, 13], R: [9, 16] }, casterY: 34 });   // 右の奥の脚は奥のレールの真下（2026-09-23 ユーザー指定：手前に入りすぎ）。
+const XYLO_BARS = keyboardRig({ barY: 5, frameY: 8, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 2, endX: 6, w: 56, legZ: { L: [5, 13], R: [9, 16] }, casterY: 34 });   // 右の奥の脚は奥のレールの真下（2026-09-23 ユーザー指定：手前に入りすぎ）。
 // 右の脚の前後の間隔は左より狭く（右 3.5px・左 4px。同日ユーザー指定。手前の脚で調節）
 const MARIMBA_TUBE_LEN = (i) => 15 - Math.floor(i * 10 / 21);   // マリンバの共鳴管の長さ（行。高音ほど短い）
 const MARIMBA_TUBE_ROW = (i) => (ROSE[i % 12] === ROSE_B ? 1 : -1); // 共鳴管の列：白鍵にあたる音板は手前、黒鍵にあたる音板は奥（実物どおり）
 // マリンバ：音板 行 2（奥行き z 2-21・中心 12、長さ 20→11）／フレーム 行 3-5
-const MARIMBA_BARS = keyboardRig({ barY: 3, frameY: 6, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 4, endX: 6, w: 74, legZ: { L: [5, 17], R: [10, 21] }, casterY: 32,   // 右の脚 2 本は右の端の奥行き（z 9〜23）の中央に合わせる（2026-09-23 ユーザー指定）
+const MARIMBA_BARS = keyboardRig({ barY: 3, frameY: 6, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 2, endX: 6, w: 74, legZ: { L: [5, 17], R: [10, 21] }, casterY: 32,   // 右の脚 2 本は右の端の奥行き（z 10〜22）の中央に合わせる（2026-09-23 ユーザー指定）
   tubes: { y0: 6, len: MARIMBA_TUBE_LEN, depth: 2, off: 2.5, row: MARIMBA_TUBE_ROW } });
 
 /**
