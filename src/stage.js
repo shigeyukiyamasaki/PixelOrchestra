@@ -277,13 +277,17 @@ export function createStage(container) {
   // 床・ひな壇・奏者は同じライトで陰影がつき、影は「光が届かない所」として出る
   //   環境光（半球）：跳ね返り光の近似。影の中の明るさを決める（setShadows の ambient）
   //   スポットライト 2 灯：客席側の上手・下手から舞台中央を照らす舞台照明。影付き・縁ぼかし。仰角・左右の開き・円錐の広がりは setShadows で
-  const hemi = new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.7);
+  // 金属のブルームのパス（camera.layers.set(METAL_LAYER)）でもライトを拾わせる。
+  // three.js は camera.layers に合わないオブジェクトを**ライトも含めて**スキップするので、
+  // 有効化しないと金属が真っ黒に描かれてブルームに何も乗らない（2026-09-23 に実際にそうなった）
+  const litEverywhere = (l) => { l.layers.enable(METAL_LAYER); return l; };
+  const hemi = litEverywhere(new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.7));
   scene.add(hemi);
-  const amb = new THREE.AmbientLight('#ffffff', 0);   // 環境光（跳ね返り）。屋外では天空光に少し足す（2026-09-17）
+  const amb = litEverywhere(new THREE.AmbientLight('#ffffff', 0));   // 環境光（跳ね返り）。屋外では天空光に少し足す（2026-09-17）
   scene.add(amb);
   const spots = [];
   for (const side of [-1, 1]) {
-    const sp = new THREE.SpotLight('#fff1d6', 1.6, 110, deg(30), 0.5, 1.0);
+    const sp = litEverywhere(new THREE.SpotLight('#fff1d6', 1.6, 110, deg(30), 0.5, 1.0));
     sp.userData.side = side;
     sp.target.position.set(0, 0, -12);
     sp.castShadow = true;
@@ -295,7 +299,7 @@ export function createStage(container) {
   }
   // 太陽光（屋外。2026-09-16 ユーザー指定）：平行光 1 本。スポットライトとは併用せず setShadows の mode で切り替える。
   // 影は直交カメラで舞台全体（±34 unit）を覆う。位置は方角・高度から setShadows が置く
-  const sun = new THREE.DirectionalLight('#ffffff', 1.2);
+  const sun = litEverywhere(new THREE.DirectionalLight('#ffffff', 1.2));
   sun.target.position.set(0, 0, -12);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -495,7 +499,7 @@ export function createStage(container) {
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
-  const flashLight = new THREE.AmbientLight('#cfe0ff', 0);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
+  const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
   stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
