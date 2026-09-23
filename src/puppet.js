@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, wristBall, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts } from './sprites.js';
 import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 import { COSTUMES, suitColors } from './costume.js';
 
@@ -40,6 +40,10 @@ const PERC_UP = [0, 1, 0]; // 鍵盤・ハープの手の甲の向きヒント�
 // 真上にしていたので、甲が上を向いて小指だけで握っているように見えていた
 const STICK_UP = { L: [-1, 0, 0], R: [1, 0, 0] };
 const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真下（拳を地面へ。2026-09-22 ユーザー指定）
+// 棒を持つ手の手首の曲がりの上限（前腕の延長からの角度）。拳を真下へ向けたいが、前腕がほぼ水平なので
+// そのままだと手首で 90° 折れ、拳が前腕の端からぶら下がって「手首が外れた」ように見えた（2026-09-23 ユーザー指摘）。
+// 真下の方へ曲げるのはこの角度まで。人の手首が無理なく曲がる範囲
+const STICK_WRIST_MAX = deg2rad(40);
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
 const GRIP_ITEMS = new Set(['stick', 'mallet', 'keymallet', 'bigmallet']);
 // ティンパニ 0.78・グランカッサ 1.5 → 1.4（2026-09-23 ユーザー指定：ひな壇に対して大きいので小さく）。
@@ -411,6 +415,7 @@ export class Puppet {
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
         const hm = this.flat ? hand() : handFor(P, side, { fingers: withFingers, grip: GRIP_ITEMS.has(this.cfg.held?.[side]) });
         h.add(hm); f.add(h);
+        if (!this.flat && GRIP_ITEMS.has(this.cfg.held?.[side])) h.add(wristBall(P.skin)); // 手首の関節の球：曲がった所の角が割れて見えない（棒を握る手。2026-09-23）
         this.fingers[side] = hm.userData?.fingers || null;
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
@@ -501,8 +506,9 @@ export class Puppet {
    *   「手首の位置」と「拳の向き」の両方を決めていた。拳を下に向けると手首まで持ち上がり、
    *   肘から手首へ上り坂ができる（2026-09-22 ユーザー指摘）。2 つに分けて解決する
    * handUp … 甲の向きのヒント（ねじれ）
+   * maxBend … 手首の曲がりの上限 [rad]（handFace と併用）。拳を handFace へ向けるのは前腕の延長からこの角度まで
    */
-  setHand(side, target, dt, rate = 30, handDir = null, pole = null, handUp = null, handFace = null) {
+  setHand(side, target, dt, rate = 30, handDir = null, pole = null, handUp = null, handFace = null, maxBend = null) {
     const cur = this.hand[side];
     const tz = this.flat ? 3 : (target[2] ?? 0);
     if (rate === Infinity) { cur[0] = target[0]; cur[1] = target[1]; cur[2] = tz; }
@@ -524,6 +530,19 @@ export class Puppet {
       // （持ち物は target の位置に置かれるため。2026-09-22 ユーザー指摘：スティックを握れていない）
       const back = handFace ? [this._handFace, HAND_GRIP] : [hd, HAND_LEN];
       goal = [cur[0] - back[0].x * back[1], cur[1] - back[0].y * back[1], cur[2] - back[0].z * back[1]];
+      // 手首の曲がりを maxBend までに抑える。前腕の向きは手首の位置で決まり、手首の位置は拳の向きで決まる循環なので、
+      // IK を 2 回回して収束させる（1 回目：拳を目標の向きにした時の前腕 → 拳をそこから maxBend まで → 手首を置き直す）
+      if (handFace && maxBend != null && !this.flat) {
+        const want = this._handFace.clone();
+        for (let it = 0; it < 2; it++) {
+          const S1 = this._shoulder(side, S0, goal, ARM_UPPER + fore - 0.05);
+          const fd = new THREE.Vector3(0, -1, 0).applyQuaternion(solveIK3(S1, goal, ARM_UPPER, fore, pole || POLE[side]).q2); // 前腕の向き（肘→手首）
+          let hf2 = want;
+          if (fd.angleTo(want) > maxBend) { const ax = new THREE.Vector3().crossVectors(fd, want); if (ax.lengthSq() > 1e-8) hf2 = fd.applyAxisAngle(ax.normalize(), maxBend); }
+          this._handFace = hf2.clone();
+          goal = [cur[0] - hf2.x * HAND_GRIP, cur[1] - hf2.y * HAND_GRIP, cur[2] - hf2.z * HAND_GRIP];
+        }
+      }
     }
     const S = this._shoulder(side, S0, goal, ARM_UPPER + fore - 0.05); // 肩関節：届かない時だけ肩を目標側へ出す
     this.arm[side].position.set(S[0] * PX, S[1] * PX, S[2] * PX);
@@ -1092,7 +1111,7 @@ export class Puppet {
         // 手首の位置は aim（打点の方向）＝**肘 → 前腕 → スティックが一直線**。拳の向きだけ真下（地面の方）。
         // handDir と handFace を分けているのがポイント：一本にすると、拳を下に向けた瞬間に
         // 手首の位置まで持ち上がって肘から上り坂になる（2026-09-22 ユーザー指摘）
-        this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, aim, null, STICK_UP[side], STICK_HAND_DIR);
+        this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, aim, null, STICK_UP[side], STICK_HAND_DIR, STICK_WRIST_MAX);
         if (aim) this.aimHeldDir(side, aim, 'ny', STICK_UP[side]);
       } else {
         // 合わせシンバルなど、棒以外を持つ手は従来どおり（甲は真上・手は持ち物の向きに寄る）。

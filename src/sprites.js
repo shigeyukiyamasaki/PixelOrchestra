@@ -576,6 +576,11 @@ export function upperArm() { // 2 倍解像度 10×22 セル（肩の下 10px = 
 export function shoulderPad() {
   return makePart(10, 10, 5, 5, (d) => { d.disc(5, 5, 4, C.coat); }, { res: 2, depth: 10, z0: -5, side: (d) => { d.disc(5, 5, 4, F); }, top: (d) => { d.disc(5, 5, 4, F); } });
 }
+/** 手首の球 2.5px（2 倍解像度で直径 5 セル）、pivot = 中心。手首で手が前腕に対して曲がった時、角が割れて見えないように埋める（2026-09-23） */
+export function wristBall(skin) {
+  return makePart(5, 5, 2.5, 2.5, (d) => { d.disc(2, 2, 2, skin); }, { res: 2, depth: 5, z0: -2.5, accent: `wrist|${skin}`,
+    side: (d) => { d.disc(2, 2, 2, F); }, top: (d) => { d.disc(2, 2, 2, F); } });
+}
 /** 前腕＋手 5×10、pivot = 肘（上端中央） */
 export function foreArm() {
   return makePart(5, 10, 2, 1, (d) => { d.r(1, 0, 3, 6, C.coat); d.r(1, 6, 3, 4, C.skin); }, { depth: 3, z0: -1.5 });
