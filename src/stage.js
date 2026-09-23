@@ -30,7 +30,7 @@ export const ROWS = {
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
   // 2 段目（r 19.5）・3 段目（r 22.5）は金管の扇の端に隣接
   keyboard:   { r: 16.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
-                depthOf: (v) => (v === 'xylophone' || v === 'marimba' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
+                depthOf: (v) => (v === 'xylophone' || v === 'marimba' || v === 'glocken' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -53,7 +53,7 @@ const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings:
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {
   if (track.variant === 'contrabass') return 'contrabass';
-  if (track.variant === 'xylophone' || track.variant === 'marimba') return 'keyboard'; // 鍵盤打楽器は左の鍵盤群へ
+  if (track.variant === 'xylophone' || track.variant === 'marimba' || track.variant === 'glocken') return 'keyboard'; // 鍵盤打楽器は左の鍵盤群へ
   return track.family;
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）

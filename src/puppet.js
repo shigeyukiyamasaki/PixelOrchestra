@@ -293,9 +293,14 @@ const VARIANT = {
   xylophone:  { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 18], rest: [-7, 25], head: [-3, 11] }, R: { hit: [3, 18], rest: [7, 25], head: [3, 11] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 14.5, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 14.5, 21.5] } } } },   // 打面 16px に合わせて -4（2026-09-22） // 握り z 8（手首 ≒ 5）
+  // グロッケン（2026-09-23）：シロフォンと同じ構え・叩き方。楽器が小さいので打点（head の z）は短い音板にも乗る 21。
+  // 音程の幅（pitchSpread）は 5：マレットの頭の x は ±3 ± pitchSpread なので -8〜8 に収まる（音板は x -9〜8。7 だと両端で 1〜2px はみ出した）
+  glocken:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 5,
+                strike: { L: { hit: [-3, 18], rest: [-7, 25], head: [-3, 11] }, R: { hit: [3, 18], rest: [7, 25], head: [3, 11] } },
+                p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 14.5, 21] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 14.5, 21] } } } },   // head z 19.5 → 21（同上）
   marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
-                p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 22] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 22] } } } },   // 打面 16px に合わせて -7（2026-09-22）
+                p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 23.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 23.5] } } } },   // head z 22 → 23.5：低音の音板を伸ばして高音側の音板も奥へ下がった（2026-09-23）   // 打面 16px に合わせて -7（2026-09-22）
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
   piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
                 p3: { pos: [0, 0, 43], rot3: [0, Math.PI, 0], keys: { y: 16.4, spread: 14, gap: 4, z: 10 } } }, // 1.17 倍：奥行き 30px×1.17 で鍵盤の縁が z≈8。鍵盤の高さ・音域幅も 1.17 倍、手は z 10（肘が畳まれないように前へ）

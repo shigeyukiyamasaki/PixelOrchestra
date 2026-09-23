@@ -33,6 +33,7 @@ export const VARIANTS = {
   snare:      { family: 'percussion', label: 'スネア' },
   xylophone:  { family: 'percussion', label: 'シロフォン' },
   marimba:    { family: 'percussion', label: 'マリンバ' },
+  glocken:    { family: 'percussion', label: 'グロッケン' },   // 2026-09-23（以前はシロフォンで代用）
   cymbal:     { family: 'percussion', label: 'シンバル' },
   hihat:      { family: 'percussion', label: 'ハイハット' },   // 2026-09-19
   gong:       { family: 'percussion', label: '銅鑼' },         // 2026-09-19（タムタム）
@@ -127,6 +128,7 @@ const INSTRUMENT_KEYWORDS = [
   { id: 'bassdrum',     keywords: ['バスドラム', '大太鼓', 'グランカッサ'] },
   { id: 'piano',        keywords: ['ピアノ'] },
   { id: 'xylophone',    keywords: ['シロフォン', '木琴'] },
+  { id: 'glocken',      keywords: ['グロッケン', '鉄琴'] },   // 2026-09-23
   { id: 'marimba',      keywords: ['マリンバ'] },
   { id: 'celesta',      keywords: ['チェレスタ'] },
 ];
@@ -141,7 +143,7 @@ const ORCH_ID_TO_VARIANT = {
   horn: 'horn', trumpet: 'trumpet', trombone: 'trombone', tuba: 'tuba', flugelhorn: 'trumpet',
   violin1: 'violin1', violin2: 'violin2', viola: 'viola', cello: 'cello', contrabass: 'contrabass', harp: 'harp', dulcimer: 'harp',
   timpani: 'timpani', snare: 'snare', bassdrum: 'bassdrum',
-  marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'xylophone', tubularbells: 'tubularbells',
+  marimba: 'marimba', vibraphone: 'marimba', xylophone: 'xylophone', glocken: 'glocken', tubularbells: 'tubularbells',
   triangle: 'cymbal', windchimes: 'cymbal', tambourine: 'cymbal', tamtam: 'gong', suspendedcymbal: 'suscymbal', cymbals: 'cymbal', hihat: 'hihat',
   drums: 'snare', percussion: 'snare',
   piano: 'piano', celesta: 'celesta', organ: 'piano',
@@ -199,7 +201,8 @@ function variantFromProgram(family, program) {
       return 'trumpet';
     case 'percussion':
       if (program === 12 || program === 11) return 'marimba';   // Marimba / Vibraphone
-      if (program === 13 || program === 9) return 'xylophone';  // Xylophone / Glockenspiel
+      if (program === 9) return 'glocken';                      // Glockenspiel（2026-09-23 専用の絵）
+      if (program === 13) return 'xylophone';                   // Xylophone
       return 'timpani';
     case 'keyboard':
       if (program === 46) return 'harp';

@@ -5,7 +5,7 @@ Usage:
   python3 tools/make_test_midi.py                 # samples/test_orchestra.mid を生成
   python3 tools/make_test_midi.py out.mid         # 出力先を指定
   python3 tools/make_test_midi.py out.mid 110     # テンポ指定
-最終更新: 2026-09-09 / v0.1 / 生成元: PixelOrchestra
+最終更新: 2026-09-23 / v0.2（グロッケン追加） / 生成元: PixelOrchestra
 """
 import sys, os, struct, random
 
@@ -34,7 +34,7 @@ PROG = [(60, [0, 4, 7]), (57, [0, 3, 7]), (53, [0, 4, 7]), (55, [0, 4, 7])] * 6
 DYN_PATTERN = [0.5, 0.95, 0.7, 1.0, 0.55, 0.85, 0.65, 1.0]
 DYN_PHASE = {'vn1': 0, 'vn2': 1, 'va': 2, 'vc': 3, 'cb': 4, 'picc': 5, 'fl': 6, 'ob': 7, 'cl': 1, 'fg': 3, 'hn': 2, 'tp': 5, 'tb': 6, 'tuba': 4,
              'timp': 0, 'gc': 2, 'snare': 4, 'cym': 6, 'xylo': 1, 'mar': 3, 'cel': 5, 'pf': 7, 'hp': 2,
-             'hh': 5, 'gong': 3, 'tub': 6, 'susp': 1}
+             'hh': 5, 'gong': 3, 'tub': 6, 'susp': 1, 'glock': 4}
 BARS = len(PROG)
 BEAT = PPQ
 FINAL = BARS - 1  # 最終小節：全員で全音符
@@ -45,7 +45,7 @@ FINAL_PITCH = {
     'fl': lambda r, c: r + 24 + c[2], 'ob': lambda r, c: r + 12 + c[1], 'cl': lambda r, c: r + c[2], 'fg': lambda r, c: r - 12,
     'hn': lambda r, c: r - 5 + c[1], 'tp': lambda r, c: r + 12, 'tb': lambda r, c: r - 12 + c[2], 'tuba': lambda r, c: r - 24,
     'cel': lambda r, c: r + 24, 'hp': lambda r, c: r + 12, 'pf': lambda r, c: r, 'mar': lambda r, c: r + 12 + c[1], 'xylo': lambda r, c: r + 36,
-    'tub': lambda r, c: r + 12,
+    'tub': lambda r, c: r + 12, 'glock': lambda r, c: r + 24 + c[2],
 }
 
 def notes_for(part):
@@ -142,6 +142,8 @@ def notes_for(part):
             if bar % 2 == 1: ev.append((b0 + 2 * BEAT, 2 * BEAT, 51, v(95)))
         elif part == 'tub':   # チューブラーベル：小節頭に和音の根音
             if bar % 2 == 0: ev.append((b0, 2 * BEAT, root + 12, v(95)))
+        elif part == 'glock': # グロッケン：4 分音符の分散和音（高音。2026-09-23 追加）
+            for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, root + 24 + chord[i % 3] + (12 if i == 3 else 0), v(85)))
         elif part == 'pf':  # 小節頭の和音＋4拍目の低音
             if True:
                 for n in chord: ev.append((b0, 2 * BEAT - 40, root + n, v(90)))
@@ -157,6 +159,8 @@ PARTS = [
     ('Xylophone_HW', 13, 15, 'xylo'), ('Marimba', 12, 15, 'mar'), ('Celeste_BBC', 8, 15, 'cel'), ('Piano', 0, 15, 'pf'), ('Harp', 46, 14, 'hp'),
     # 2026-09-22 ユーザー指定：登録済みの楽器（VARIANTS）を全部出す。名前は midiEngine の判定キーワードに合わせる
     ('Hi-Hat', 116, 9, 'hh'), ('Tam-tam', 116, 9, 'gong'), ('Suspended Cymbal', 116, 9, 'susp'), ('Tubular Bells', 14, 15, 'tub'),
+    # 2026-09-23：グロッケン（専用の絵を追加）。末尾に足すので乱数の順が変わらず、既存パートの音は変わらない
+    ('Glockenspiel', 9, 15, 'glock'),
 ]
 
 def main():
