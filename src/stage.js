@@ -1897,7 +1897,7 @@ export function layoutSeats(tracks, footprintOf = null) {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
-          seats.push({ track: tr, puppets: sizes[i].cols * sizes[i].rows, positions });
+          seats.push({ track: tr, puppets: positions.length, positions });
         }
         if (refTh.length) {
           const mine = seats.slice(start).flatMap((st) => st.positions);
@@ -1919,7 +1919,8 @@ export function layoutSeats(tracks, footprintOf = null) {
       const { cols, rows } = sizes[i];
       const center = centers[i];
       centerAngle.set(tr, center);
-      seats.push({ track: tr, puppets: cols * rows, positions: gridPositions(row, center, cols, rows, slots[i]) });
+      const positions = gridPositions(row, center, cols, rows, slots[i]);
+      seats.push({ track: tr, puppets: positions.length, positions });
     });
   }
   // 指揮者以外を奥へ平行移動（座席の角度計算は指揮者中心のまま、最後にずらす。ひな壇は buildRisers 側で同じ量ずらす）
@@ -1927,18 +1928,24 @@ export function layoutSeats(tracks, footprintOf = null) {
   return seats;
 }
 
-// 中心角 center を軸に cols × rows の格子で座らせる。奥の列ほど半径が大きい。偶数列は半人分ずらす（重なり防止・自然な見た目）
+// 中心角 center を軸に座らせる。奥の列ほど半径が大きい。**扇形**：奏者の間隔はどの列も同じ（slot.gap）で、
+// 後ろの列ほど人数を増やして同じ角度の幅を埋める（列の人数 = cols × その列の半径 ÷ 最前列の半径。2026-09-24 ユーザー指定）。
+// 人数が前の列と同じ列だけ、偶数列を半人分ずらす（重なり防止・自然な見た目）
 // slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit], dr: 同じく奥行きのずらし [unit]（row.depthCenter の段だけ効く） }
 function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0, dr: 0 }) {
   const positions = [];
   const rowGap = row.rowGap ?? ROW_GAP;
   const dr = row.depthCenter ? (slot.dr || 0) : 0;  // 楽器を含めた占有範囲の中心を座席の中心に合わせる
   const k0 = row.rowsCenter ? (rows - 1) / 2 : 0;  // 列全体の中心を r（＝ひな壇の帯の中心）に合わせる
+  const r0 = row.r - k0 * rowGap + dr;             // 最前列の半径
   for (let k = 0; k < rows; k++) {
     const r = row.r + (k - k0) * rowGap + dr;
-    const stagger = (k % 2) * 0.5;
-    for (let j = 0; j < cols; j++) {
-      const th = center + (slot.off + (j - (cols - 1) / 2 + stagger) * slot.gap) / row.r;
+    const n = Math.max(1, Math.round(cols * r / r0));
+    const stagger = n === cols ? (k % 2) * 0.5 : 0;
+    for (let j = 0; j < n; j++) {
+      // 横の間隔は**その列の半径**で角度にする（2026-09-24 ユーザー指定）。以前は最前列の半径（row.r）で割っていたので、
+      // 後ろの列ほど弧の上の間隔が開き、1st バイオリンの 3 列目（r 11.8）は 1.8 倍の隙間になっていた
+      const th = center + (slot.off + (j - (n - 1) / 2 + stagger) * slot.gap) / r;
       positions.push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th), row: k });
     }
   }
