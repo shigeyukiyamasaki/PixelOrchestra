@@ -1240,6 +1240,11 @@ function applyMetal(obj, shininess) {
     const old = m.material;
     const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess });
     mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
+    // 差し替えで消えてはいけない設定を引き継ぐ。makePart の後から各パーツが付けているものがある。
+    // 2026-09-23：トロンボーンの外管の polygonOffset（内管と面がぴったり重なるので手前へずらして
+    // z-fighting を防いでいる）が消え、金色のスライドから内管の白がちらついて見えた
+    for (const k of ['polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
+                     'transparent', 'opacity', 'alphaTest', 'depthTest', 'depthWrite', 'side', 'blending', 'toneMapped']) mat[k] = old[k];
     mat.userData.metalBase = shininess;            // 金属マテリアルの目印（applyMetalLook が探す）
     mat.onBeforeCompile = metalShader;
     m.material = mat;
