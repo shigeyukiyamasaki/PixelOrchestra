@@ -137,6 +137,10 @@
       <label class="dly" title="MIDI（奏者の動き・ピアノロール）を何秒遅らせるか。マイナスで早める"><span>MIDI遅延</span><input type="range" id="midiDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="midiDelay">0</b><small>秒</small></label>
       <label class="dly" title="音声を何秒遅らせるか。マイナスで早める。映像と音がずれる時に調整"><span>音声遅延</span><input type="range" id="audioDelay" min="-2" max="3" step="0.05" value="0"><b data-value-for="audioDelay">0</b><small>秒</small></label>
     </div>
+    <!-- 空振りは遅延スライダーの右（2026-09-23 ユーザー指定：縦に並べない） -->
+    <div class="delays">
+      <label class="dly" title="曲の頭から再生する時、曲が始まる前に指揮者が空振りする拍の数（0 で無し）。最初のテンポと拍子で振り、空振りの直後に曲の 1 拍目が来る（MIDI遅延・音声遅延も含めて揃える）。自動カメラがオンなら、空振りの間は指揮者のアップ"><span>空振り</span><input type="range" id="preBeats" min="0" max="8" step="1" value="0"><b data-value-for="preBeats">0</b><small>拍</small></label>
+    </div>
     <span class="spacer"></span>
     <!-- 巻き戻し・早送り：5 秒ずつ（2026-09-18 に MIDIOrchestra と同じ 10 秒で入れ、2026-09-19 ユーザー指定で 5 秒に）。再生中なら再生を続けたまま移る -->
     <!-- 記号は文字でなく図形（SVG）：文字だと字形ごとに上下の位置がずれて中央に揃わない（2026-09-18 ユーザー指摘）。24×24 の升目の中央に描く -->

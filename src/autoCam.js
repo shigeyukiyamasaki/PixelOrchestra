@@ -32,6 +32,7 @@ const BAR_SCAN_STEP = 0.02;   // 小節の頭を探す時の刻み [s]
 // ---- カメラの置き方（すべて world unit）----
 const WIDE = { z: 13, dolly: 3, y: 9, sway: 3, yWave: 1.5, target: [0, 3, -12] };
 const COND = { dist: 7, dolly: 1.2, y: 3.4, targetY: 2.4, swing: 0.4, base: 0.5 };  // swing/base は [rad]
+const COND_CLOSE = 0.65;       // 空振りの間の指揮者のアップ：通常の指揮者のショットの距離に対する倍率
 // 候補に残す下限。「そのパート自身の曲中の最大」に対する割合で見る。
 // 小節内の一番強いパートと比べると、打楽器は絶対値で金管・弦に勝てず一度も候補に入らない
 // （2026-09-13 実測：上位 8 に入る小節が 24 中 1〜2）。自分比なら「今このパートは頑張っている」を拾える
@@ -284,6 +285,11 @@ export class AutoCamera {
    * @param {{conductorZ:number, move:number, moveFreq:number}} env
    *   move = 動きの量（0〜1）、moveFreq = 動くショットの割合（0 で全部固定、1 で全部動く）
    */
+  /** 空振り（曲前の指揮）の間の固定ショット：指揮者のアップ（2026-09-23 ユーザー指定）。指揮者のショットと同じく奏者側の斜めから、距離は通常の COND_CLOSE 倍 */
+  conductorClose(conductorZ = 0) {
+    const a = COND.base, d = COND.dist * COND_CLOSE;
+    return { pos: [Math.sin(a) * d, COND.y, conductorZ - Math.cos(a) * d], target: [0, COND.targetY, conductorZ] };
+  }
   at(t, env = {}) {
     const sh = this.shotAt(t);
     if (!sh) return null;

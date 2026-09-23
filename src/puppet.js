@@ -737,7 +737,9 @@ export class Puppet {
     // 音が止んだ時刻を控えて、そこから REST_HOLD 秒経つまでは構えたまま待つ（シークで巻き戻った時は取り直す）
     if (active.length) this._silentAt = null;
     else if (this._silentAt == null || this._silentAt > t) this._silentAt = first ? t - REST_HOLD : t;
-    const held = this._silentAt == null ? 0 : t - this._silentAt;
+    // まだ 1 音も鳴らしていない（曲の頭・空振りの間）は「音が止んだ直後」ではないので待たない：出番の REST_LEAD 秒前まで下ろしたまま。
+    // 以前は頭に戻すと音が止んだ扱いで REST_HOLD 秒構えて待つので、全員がいったん構えていた（2026-09-23 ユーザー指定）
+    const held = !onset ? Infinity : this._silentAt == null ? 0 : t - this._silentAt;
     const want = (!active.length && held >= REST_HOLD && gap >= REST_GAP && lead > REST_LEAD) ? 1 : 0;
     this._rest = first ? want : approach(this._rest, want, 2.2, dt); // 出だしは補間せず即その姿勢
     const r = this._rest;

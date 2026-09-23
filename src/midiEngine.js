@@ -537,7 +537,19 @@ export class MidiEngine {
   }
 
   // 連続拍番号（4分音符単位）・小節内拍・拍内位相
+  /** 曲の頭の 1 拍（拍子の分母の音符）の秒数。空振り（曲前の指揮）の長さに使う */
+  beatSecAt0() {
+    const [, den] = this.timeSigs[0].timeSignature || [4, 4];
+    return (60 / Math.max(1, this.tempos[0].bpm)) * (4 / den);
+  }
   beatAt(t) {
+    // 曲の頭より前（空振り。2026-09-23 ユーザー指定）は、最初のテンポと拍子で拍を数え続ける
+    if (t < 0) {
+      const [num, den] = this.timeSigs[0].timeSignature || [4, 4];
+      const b = t / this.beatSecAt0();              // 拍（負）
+      const fb = Math.floor(b);
+      return { beat: b * (4 / den), beatInBar: ((fb % num) + num) % num, beatPhase: b - fb, beatsPerBar: num, beatUnit: den };
+    }
     const ticks = Math.max(0, this.midi.header.secondsToTicks(t));
     const beat = ticks / this.ppq;
     let sig = this.timeSigs[0];

@@ -169,6 +169,8 @@ let audioLoaded = false;
 // どちらもプラスで遅らせる（MIDIOrchestra と同じ向き。2026-09-14 ユーザー指定）
 function midiDelaySec() { const v = parseFloat($('midiDelay').value); return Number.isFinite(v) ? v : 0; }
 function audioDelaySec() { const v = parseFloat($('audioDelay').value); return Number.isFinite(v) ? v : 0; }
+// 空振り（曲前に指揮者が振る拍の数。2026-09-23 ユーザー指定）の長さ [秒]（MIDI の時刻で −preRollSec() 〜 0 が空振り）
+function preRollSec() { const n = parseInt($('preBeats').value, 10) || 0; return n > 0 && engine ? n * engine.beatSecAt0() : 0; }
 
 // 舞台の時計（マスター）。音声が実際に鳴っている間だけ音声の時計に従う
 // （音声遅延がプラスの頭は、まだ鳴っていないので performance.now() で進める）
@@ -210,6 +212,9 @@ function wakeTransport() {
 function play() {
   if (!engine) return;
   if (clock.t >= engine.duration + midiDelaySec()) clock.t = 0;
+  // 曲の頭から再生する時は、空振りの分だけ前から時計を動かす。MIDI の時刻 = t − MIDI遅延 が −空振り から始まるように
+  // （MIDI遅延がある時もその差で揃う。音声は従来どおり t = 音声遅延 で頭から鳴る）
+  if (clock.t === 0) clock.t = Math.min(0, midiDelaySec() - preRollSec());
   clock.playing = true;
   clock.tStart = clock.t;
   clock.perfStart = performance.now();
@@ -1613,7 +1618,11 @@ function updateAutoCam(s, t) {
       },
     }, CONDUCTOR_Z);
   }
-  const shot = autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove, moveFreq: s.camMoveFreq });
+  // 空振りの間（MIDI の時刻がマイナス）は必ず指揮者のアップ（2026-09-23 ユーザー指定）。
+  // 再生前に頭で止まっている時（再生すると空振りから始まる）も同じアップにする（静止画も揃える）
+  const atHead = !clock.playing && clock.t === 0;
+  const shot = preRollSec() > 0 && (t < 0 || atHead) ? autoCam.conductorClose(CONDUCTOR_Z)
+    : autoCam.at(t, { conductorZ: CONDUCTOR_Z, move: s.camMove, moveFreq: s.camMoveFreq });
   if (!shot) return;
   autoDriving = true;
   camera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);
@@ -1699,7 +1708,9 @@ function animate() {
     syncAudio(t);                            // 音声遅延の待ち合わせ
     if (clock.playing && t >= engine.duration + md + 1) pause();
     const s = settings();
-    const beat = engine.beatAt(tm);
+    // 拍：空振りの範囲（MIDI の時刻 −空振り 〜 0）はマイナスの時刻のまま数える。それより前（MIDI遅延の待ちなど）は従来どおり頭で止める
+    const pre = preRollSec();
+    const beat = engine.beatAt(Math.max(tm, -pre));
     const g = engine.globalEnergyAt(tm);
     const ctx = { t: tm, dt, beat, settings: s, globalEnergy: g, bpm: engine.bpmAt(tm) };   // bpm は姿勢の均し（拍の長さ）に使う
     shakeNow = shakeAt(tm, s);               // 画面の揺れ（描画の直前に掛ける）
@@ -1714,7 +1725,9 @@ function animate() {
       puppet.update(engine.trackState(part, tp), ctx);
     }
     face(conductor);
-    conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
+    // 空振りの間は曲の強弱がまだ無いので、振りの大きさは中くらい（0.5）に固定
+    const gC = pre > 0 && tm < 0 && tm >= -pre ? 0.5 : g;
+    conductor.update({ energy: gC, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
 
     labels.visible = s.showNames;
     if (s.labelSize !== labelSizeApplied || s.labelOutline !== labelOutlineApplied) {
