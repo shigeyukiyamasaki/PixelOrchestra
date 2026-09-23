@@ -1246,7 +1246,7 @@ export const METAL_LAYER = 3;
 export const METAL_BLOOM = {
   pass: { value: 0 },                       // 1 = ブルームの素材として描いている（renderFrame が切り替える）
   depth: { value: null }, res: { value: new THREE.Vector2(1, 1) },   // 本編の深度で隠れた画素を捨てる
-  thr: { value: 0.35 },                     // 金属だけのブルーム閾値。下げるほど乗りやすい
+  thr: { value: 0.35 },                     // 金属だけのブルーム閾値（実効値）。main.js が「レンズ欄の閾値 × 割合」で入れる。下げるほど乗りやすい
 };
 /**
  * 金属の見え方をまとめて変える（左メニューの「金属のツヤ」スライダー、1〜3）。
