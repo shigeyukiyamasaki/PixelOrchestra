@@ -39,7 +39,11 @@ export const ROWS = {
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
 export const SECTION_SIZE = {
-  violin1: { cols: 3, rows: 3 }, violin2: { cols: 3, rows: 3 }, viola: { cols: 3, rows: 2 }, cello: { cols: 3, rows: 2 }, contrabass: { cols: 4, rows: 1 },   // チェロの後ろに 1 列（2026-09-24 ユーザー指定。以前は 2×2）
+  // 弦は合計の人数（total）で指定し、列ごとの人数は半径に比例して配る（扇形。gridPositions）。
+  // 12・10・8・6・4 の標準的な編成（2026-09-24 ユーザー指定。以前は 1st/2nd 3×3、Va/Vc 3×2 からの扇形で 12・12・7・7・4）
+  violin1: { total: 12, rows: 3 }, violin2: { total: 10, rows: 3 }, viola: { total: 8, rows: 3 },   // ヴィオラは 3 列（2・3・3）：2 列目が窮屈だったので 3 列目へ（2026-09-24 ユーザー指定）
+  cello: { total: 6, rows: 2 },
+  contrabass: { total: 4, rows: 1 },   // チェロの後ろに 1 列（2026-09-24 ユーザー指定。以前は 2×2）
   piccolo: { cols: 1, rows: 1 }, flute: { cols: 2, rows: 1 }, oboe: { cols: 2, rows: 1 }, clarinet: { cols: 2, rows: 1 }, bassoon: { cols: 2, rows: 1 },
   horn: { cols: 2, rows: 2 }, trumpet: { cols: 3, rows: 1 }, trombone: { cols: 3, rows: 1 }, tuba: { cols: 1, rows: 1 },
 };
@@ -66,6 +70,7 @@ function rowKeyOf(track) {
   if (['piano', 'celesta', 'harp'].includes(track.variant)) return 'keyboard'; // 左の鍵盤群
   return track.family;
 }
+const STRING_GAP_SCALE = 1.15;   // 弦の奏者の横の間隔の倍率（弦だけ。2026-09-24 ユーザー指定）
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
 export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
@@ -1840,7 +1845,12 @@ export function layoutSeats(tracks, footprintOf = null) {
     });
 
     // 各トラックの人数（横×奥行き）。列の角度幅に収まらない時は横の人数を均等に減らす
-    const sizes = list.map((tr) => sizeOf(tr));
+    // 合計の人数（total）で指定されたトラックは、列ごとの人数（perRow）を半径に比例して配る
+    const radii = (rows) => { const k0 = row.rowsCenter ? (rows - 1) / 2 : 0, g = row.rowGap ?? ROW_GAP; return Array.from({ length: rows }, (_, k) => row.r + (k - k0) * g); };
+    // cols は角度の幅の見積もり用：一番広い列の幅を「最前列の半径での人数」に直した値（小数あり）。
+    // 最前列の人数だけで見積もると、後ろの列が比率より多い時（ヴィオラ 3・5 など）に隣のセクションへはみ出した
+    const fill = (s) => { if (s.total) { const rr = radii(s.rows); s.perRow = spreadByRadius(s.total, rr); s.cols = Math.max(...s.perRow.map((n, k) => (n * row.r) / rr[k])); } return s; };
+    const sizes = list.map((tr) => fill(sizeOf(tr)));
     const span = deg(row.span);
     const slots = list.map(slotOf);
     const angleOf = (cols, i) => (cols * slots[i].gap) / row.r; // 1トラックが占める角度 [rad]
@@ -1852,7 +1862,8 @@ export function layoutSeats(tracks, footprintOf = null) {
         let k = -1;
         sizes.forEach((s, i) => { if (s.cols > 1 && (k < 0 || s.cols >= sizes[k].cols)) k = i; });
         if (k < 0) break;
-        sizes[k].cols--;
+        if (sizes[k].total) { sizes[k].total = Math.max(sizes[k].rows, sizes[k].total - sizes[k].rows); fill(sizes[k]); }   // 合計の指定：各列 1 人ずつ減らして配り直す
+        else sizes[k].cols--;
       }
     }
 
@@ -1893,7 +1904,7 @@ export function layoutSeats(tracks, footprintOf = null) {
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
-          const positions = gridPositions({ r: rb, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
+          const positions = gridPositions({ r: rb, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i], sizes[i].perRow).map((p) => {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
@@ -1915,11 +1926,40 @@ export function layoutSeats(tracks, footprintOf = null) {
       centers = sizes.map((s, i) => { const c = cursor + angleOf(s.cols, i) / 2; cursor += angleOf(s.cols, i) + gap; return c; });
     }
 
+    // 弦：弦全体を 1 つの扇として、弧の列ごとにセクションをまたいで等間隔に左から詰める（2026-09-24 ユーザー指定：
+    // セクションごとの扇形でなくてよいので、列ごとに均等に）。どの列も左端を揃え、1 列目がちょうど中央に来る位置から始める。
+    // 偶数の列は半人分ずらす。セクションの形は列ごとにずれる。1 列目より幅の広い列は中央揃え
+    if (fam === 'strings') {
+      // 横の間隔は奏者の占有幅の STRING_GAP_SCALE 倍（2026-09-24 ユーザー指定：左右の間隔を広げ、客席側へ広げる。
+      // 列の半径は変えないので、両端が客席側へ伸びる）
+      const g = Math.max(...slots.map((sl) => sl.gap)) * STRING_GAP_SCALE;
+      const counts = sizes.map((sz) => sz.perRow || Array(sz.rows).fill(Math.round(sz.cols)));
+      const rowsMax = Math.max(...counts.map((c) => c.length));
+      const rr = (k) => row.r + k * (row.rowGap ?? ROW_GAP);
+      const th0 = -(counts.reduce((a, c) => a + (c[0] || 0), 0) * g / rr(0)) / 2;   // 左端（1 列目を中央に）
+      const pos = list.map(() => []);
+      for (let k = 0; k < rowsMax; k++) {
+        const r = rr(k), stagger = (k % 2) * 0.5;
+        // 1 列目より幅の広い列は中央に揃える（左端揃えのままだと右へはみ出す：2 列目のチェロ。2026-09-24 ユーザー指定）
+        const w = (counts.reduce((a, c) => a + (c[k] || 0), 0) * g) / r;
+        const cen = -w / 2 - (stagger * g) / r;          // 中央揃え（半人分のずらしも打ち消して左右対称に）
+        const start = cen < th0 ? cen : th0;
+        let j = 0;
+        list.forEach((tr, i) => {
+          for (let m = 0; m < (counts[i][k] || 0); m++, j++) {
+            const th = start + ((j + 0.5 + stagger) * g) / r;
+            pos[i].push({ x: r * Math.sin(th), y: row.h, z: -r * Math.cos(th), row: k });
+          }
+        });
+      }
+      list.forEach((tr, i) => { centerAngle.set(tr, centers[i]); seats.push({ track: tr, puppets: pos[i].length, positions: pos[i] }); });
+      continue;
+    }
     list.forEach((tr, i) => {
       const { cols, rows } = sizes[i];
       const center = centers[i];
       centerAngle.set(tr, center);
-      const positions = gridPositions(row, center, cols, rows, slots[i]);
+      const positions = gridPositions(row, center, cols, rows, slots[i], sizes[i].perRow);
       seats.push({ track: tr, puppets: positions.length, positions });
     });
   }
@@ -1928,11 +1968,22 @@ export function layoutSeats(tracks, footprintOf = null) {
   return seats;
 }
 
+/** 合計 total 人を、各列の半径 radii に比例して配る（最大剰余法。各列 1 人以上）。後ろの列ほど多い＝扇形 */
+function spreadByRadius(total, radii) {
+  const sum = radii.reduce((a, r) => a + r, 0);
+  const raw = radii.map((r) => (total * r) / sum);
+  const n = raw.map((x) => Math.max(1, Math.floor(x)));
+  let rest = total - n.reduce((a, b) => a + b, 0);
+  const order = raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0]);
+  for (let j = 0; rest > 0 && j < order.length; j++, rest--) n[order[j][1]]++;
+  return n;
+}
+
 // 中心角 center を軸に座らせる。奥の列ほど半径が大きい。**扇形**：奏者の間隔はどの列も同じ（slot.gap）で、
 // 後ろの列ほど人数を増やして同じ角度の幅を埋める（列の人数 = cols × その列の半径 ÷ 最前列の半径。2026-09-24 ユーザー指定）。
 // 人数が前の列と同じ列だけ、偶数列を半人分ずらす（重なり防止・自然な見た目）
 // slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit], dr: 同じく奥行きのずらし [unit]（row.depthCenter の段だけ効く） }
-function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0, dr: 0 }) {
+function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0, dr: 0 }, perRow = null) {
   const positions = [];
   const rowGap = row.rowGap ?? ROW_GAP;
   const dr = row.depthCenter ? (slot.dr || 0) : 0;  // 楽器を含めた占有範囲の中心を座席の中心に合わせる
@@ -1940,7 +1991,7 @@ function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0
   const r0 = row.r - k0 * rowGap + dr;             // 最前列の半径
   for (let k = 0; k < rows; k++) {
     const r = row.r + (k - k0) * rowGap + dr;
-    const n = Math.max(1, Math.round(cols * r / r0));
+    const n = perRow ? perRow[k] : Math.max(1, Math.round(cols * r / r0));   // perRow：合計の人数から配った列ごとの人数
     const stagger = n === cols ? (k % 2) * 0.5 : 0;
     for (let j = 0; j < n; j++) {
       // 横の間隔は**その列の半径**で角度にする（2026-09-24 ユーザー指定）。以前は最前列の半径（row.r）で割っていたので、
