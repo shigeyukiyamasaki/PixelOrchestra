@@ -332,6 +332,10 @@ export function applyWoodVariation(root, seed) {
       const grain = h3(Math.floor(cx / 6 / cellPx + 50), Math.floor(cy / 6 / cellPx + 50), Math.floor(cz / 6 / cellPx + 50)) < 0.25 ? 0.9 : 1;
       c.setRGB(r, g, b).getHSL(hsl);
       c.setHSL((hsl.h + hueShift + 1) % 1, hsl.s, Math.min(1, hsl.l * lightMul * grain));
+      // ずらした先が金属色に入ってしまったら元の色のままにする。
+      // 例：ファゴットの木 #8a4e2a がニスの個体差で #7c4726 になり、濃い銅 #7e4a22 と一致して
+      // 胴の一部が金属として光っていた（2026-09-23）
+      if (isMetalColor(c.r, c.g, c.b)) continue;
       for (let k = 0; k < 6; k++) col.setXYZ(i + k, c.r, c.g, c.b);
     }
     col.needsUpdate = true;
