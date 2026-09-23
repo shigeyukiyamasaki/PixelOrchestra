@@ -22,15 +22,17 @@ export const ROWS = {
   // depthCenter: 奏者ではなく「奏者＋楽器」の奥行きの中心をひな壇の帯の中心に合わせる。
   // スネアのように楽器が前に出ていると、奏者を中心に置くと楽器がひな壇の内縁から落ちそうに見える（2026-09-23 ユーザー指定）
   percussion: { r: 23,   h: 3.0,  span: 110, depthCenter: true, rowsCenter: true },
-  // コントラバス（右）と鍵盤群（左：ハープ/ピアノ/チェレスタ/シロフォン/マリンバ）は、木管の扇のすぐ外側に隣接して床に立つ
+  // コントラバス（右）と鍵盤群（左：チェレスタ/ハープ/ピアノ）は、木管の扇のすぐ外側に隣接して床に立つ
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
   contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65 }, // 前後の間隔は他の弦と同じ（2026-09-10）
-  // 鍵盤群は数が多いと奥行き 3 段に並べる（2026-09-10 ユーザー指定）：鍵盤打楽器（シロフォン/マリンバ）→ ハープ/チェレスタ → ピアノ。
+  // 鍵盤群は奥行き 2 段に並べる：チェレスタ/ハープ → ピアノ（2026-09-10 は鍵盤打楽器を加えた 3 段。2026-09-23 に鍵盤打楽器を打楽器のひな壇へ移した）。
   // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
   // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
-  // 2 段目（r 19.5）・3 段目（r 22.5）は金管の扇の端に隣接
+  // 2 段目（r 19.5）は金管の扇の端に隣接
   keyboard:   { r: 16.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
-                depthOf: (v) => (v === 'xylophone' || v === 'marimba' || v === 'glocken' || v === 'vibraphone' ? 0 : v === 'piano' ? 2 : 1), besideAt: { 1: 'brass', 2: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
+                // 鍵盤打楽器は打楽器のひな壇へ移した（2026-09-23）。残るのはチェレスタ/ハープ（手前の段）とピアノ（奥の段）。
+                // besideAt は**使われている段の順番**（手前から 0, 1…）で引く：手前の段は木管の左隣（センター合わせのかたまりに入る）、奥の段は金管の左隣
+                depthOf: (v) => (v === 'piano' ? 1 : 0), besideAt: { 1: 'brass' } }, // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -48,17 +50,18 @@ function sizeOf(track) {
 // 列内の並び順を楽器で固定するファミリー（無指定は平均音程の高い順＝左から右）
 // 金管：ホルンを左、トランペットをその右（2026-09-09 ユーザー指定で入れ替え）
 // 打楽器：ティンパニは常に向かって一番左（2026-09-19 ユーザー指定）。一覧にない楽器は従来どおり平均音程の高い順でその右に並ぶ
-// 鍵盤群：客席側から グロッケン → シロフォン → ビブラフォン → マリンバ で固定（2026-09-23 ユーザー指定。曲の音程では入れ替わらない。
-// ビブラフォンは音域の高い順でシロフォンとマリンバの間）。
-// ハープ・チェレスタ・ピアノは奥の段なので、この順とは別に平均音程の高い順
-const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani'], keyboard: ['glocken', 'xylophone', 'vibraphone', 'marimba'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
+// 打楽器の列：ティンパニが一番左、その右に鍵盤打楽器を グロッケン → シロフォン → ビブラフォン → マリンバ で固定（2026-09-23 ユーザー指定）。
+// 残りの打楽器はその右に平均音程の高い順
+const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani', 'glocken', 'xylophone', 'vibraphone', 'marimba'] }; // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
 function rowKeyOf(track) {
   if (track.variant === 'contrabass') return 'contrabass';
   // 配置は分類ではなく楽器で決める（2026-09-23：分類を「鍵盤打楽器」「撥弦楽器」に再編したが、配置は変えない）
-  if (['xylophone', 'marimba', 'glocken', 'vibraphone', 'piano', 'celesta', 'harp'].includes(track.variant)) return 'keyboard'; // 左の鍵盤群
-  if (track.variant === 'tubularbells') return 'percussion';   // チューブラーベルは打楽器のひな壇（分類は鍵盤打楽器）
+  // 鍵盤打楽器（マレットで叩く台）とチューブラーベルは打楽器のひな壇に並ぶ（2026-09-23 ユーザー指定：スネアやバスドラと並ぶのが普通。
+  // 以前は木管の左の床＝鍵盤群に置いていた）
+  if (['xylophone', 'marimba', 'glocken', 'vibraphone', 'tubularbells'].includes(track.variant)) return 'percussion';
+  if (['piano', 'celesta', 'harp'].includes(track.variant)) return 'keyboard'; // 左の鍵盤群
   return track.family;
 }
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
@@ -1871,7 +1874,7 @@ export function layoutSeats(tracks, footprintOf = null) {
       const levelGap = row.levelGap ?? ROW_GAP;
       [...levels.entries()].sort((a, b) => a[0] - b[0]).forEach(([k0, idxs], k) => {
         // レベルごとに隣接先を変えられる（3 段目は金管の端）。基準列が無ければ木管の端
-        const edgeB = row.besideAt?.[k0] ? edgeOf(row.besideAt[k0]) : null;
+        const edgeB = row.besideAt?.[k] ? edgeOf(row.besideAt[k]) : null;
         const edge = edgeB ?? edge0;
         const inBlock = row.beside === 'woodwind' && edgeB == null;   // 木管の端に隣接する段＝センター合わせのかたまり
         // トラック同士の余白。これが無いと鍵盤群（シロフォンとマリンバ等）が密着する（2026-09-22 ユーザー指摘）。

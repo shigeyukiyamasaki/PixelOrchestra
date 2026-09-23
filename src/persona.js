@@ -60,7 +60,10 @@ export function headFor(p) {
   const bald = style === 'bald';
   const front = (d) => {
     d.r(2, 6, 20, 18, skin);                                  // 顔の箱の前面（あご下端 row 23）
-    d.r(2, 12, 2, 4, skin2); d.r(20, 12, 2, 4, skin2);        // 耳（横の髪で隠れる。禿げは見える）
+    // 耳：顔の箱の左右の外へ 1px 出した肌色の出っ張り（縦 2px・奥行き 1px。奥行きは carve で中央だけ残す）。
+    // 2026-09-23 ユーザー指定：ランディの頭に編集で付けた耳（assets/voxel/randiHead.json）と同じ位置・大きさを標準に。
+    // 以前は顔の端の 2 列を濃い肌色で塗っていたが、押し出すと顔の横に濃い線が引かれて見えたので廃止
+    d.r(0, 14, 2, 4, skin); d.r(22, 14, 2, 4, skin);
     // 眉・目・鼻・口
     const browC = hair === '#e8e8e8' || hair === '#c9c9c9' ? '#8a8a8a' : hair;
     d.r(7, 12, browW, 1, browC); d.r(17 - browW, 12, browW, 1, browC);
@@ -80,7 +83,16 @@ export function headFor(p) {
   };
   const side = (d) => { d.r(0, 6, 16, 18, F); d.r(15, 15, 1, 3, F); headNeckStubSide(d); }; // 箱＋鼻＋首の付け根
   const backMap = { [C.eye]: skin, '#ffffff': skin, [lips]: skin, [skin2]: skin, '#e8a99a': skin, '#2a2a30': skin, '#8a8a8a': skin, [hair]: skin };
-  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head2|${p.key}`, side });
+  // 耳は奥行きの中央 2 セルだけ。同じ所に髪があれば耳を消す（重ねると面が同じ平面に乗ってチラつく。
+  // 2026-09-23 ユーザー指定：耳と髪が同じ位置にある時は耳を見せない）。髪は 1px セルなので、耳のセルを含む髪のセルの中心で判定
+  const hk = hairKeep(p);
+  const carve = (x, y, z) => {
+    if (!(x < 2 || x > 21)) return false;
+    if (z !== 8 && z !== 9) return true;
+    const X = (x + 0.5 - 12) / 2, Y = (24 - y - 0.5) / 2, Z = (z + 0.5) / 2 - 4;   // 頭の中心からの px
+    return hk(Math.floor(X) + 0.5, Math.floor(Y) + 0.5, Math.floor(Z) + 0.5);
+  };
+  return makePart(24, 30, 12, 24, front, { res: 2, depth: 16, z0: -8, back: backMap, accent: `head2|${p.key}`, side, carve });
 }
 
 /**
@@ -88,8 +100,11 @@ export function headFor(p) {
  * 形は carve（体積関数 keep）で決める：前髪（箱の前 z 4-5）・横（x ±5-6）・後ろ（z -5〜-4）・頭頂のドーム（y 9-12）＋髪型ごとの房・裾・付属。
  * 参考画像のスタイル（顔は平面、髪は粗い立体。2026-09-11 ユーザー指定）。房の位置は seed で左右が入れ替わる
  */
-export function hairFor(p) {
-  const { hair, style, gender } = p;
+/**
+ * 髪の形（頭の中心からの px、1px セルの中心で判定）。hairFor の形と、headFor の耳を髪で隠す判定（同じ所に髪があれば耳を消す）で共有する
+ */
+function hairKeep(p) {
+  const { style, gender } = p;
   const flip = p.seed % 2 ? -1 : 1;                     // 房の左右
   const box = (x, y, z, x0, x1, y0, y1, z0, z1) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1;
   const male = gender === 'm';
@@ -152,6 +167,13 @@ export function hairFor(p) {
     }
     return false;
   };
+  return keep;
+}
+
+export function hairFor(p) {
+  const { hair, style, gender } = p;
+  const flip = p.seed % 2 ? -1 : 1;                     // 房の左右
+  const keep = hairKeep(p);
   const carve = (cx, cy, cz) => !keep(cx - 7 + 0.5, 16 - cy - 0.5, cz - 8 + 0.5);
   carve.toString = () => `hair(${style},${gender},${flip})`;
   // 二色：房単位（2px 幅）で少し暗い粒を混ぜる（髪の塊感）。人物ごとに違う
