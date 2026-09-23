@@ -218,6 +218,9 @@ function variantFromProgram(family, program) {
   return 'violin1';
 }
 
+// ソロ役の奏者がソロで動く時間の幅：ソロの音の SOLO_HOLD 秒後まで・SOLO_LEAD 秒前から（その外はセクションと一緒に弾く）
+const SOLO_HOLD = 1.0, SOLO_LEAD = 0.5;
+
 // ファミリー別の色相（ノート色・足元の光の基準）
 const FAMILY_HUE = { strings: 20, woodwind: 130, brass: 48, percussion: 285, mallet: 205, plucked: 330 };   // 鍵盤打楽器は旧「鍵盤」の青を引き継ぐ
 
@@ -303,6 +306,7 @@ export class MidiEngine {
 
     this._resolveMerges();
     this.tracks = this._buildSections();
+    this._buildSoloParts();
     this.assignColors();
 
     this.allNotes = this.tracks.flatMap((tr) => tr.notes.map((n) => ({ ...n, track: tr })))
@@ -315,7 +319,8 @@ export class MidiEngine {
   }
 
   // ---- トラック統合 ----
-  // 自動：楽器が同じで、末尾サフィックス（_HW / _CB 等）と「+N」を除いた名前が一致する先行トラックへ統合
+  // 自動：楽器が同じで、末尾サフィックス（_HW / _CB 等）と「+N」を除いた名前が一致する先行トラックへ統合。
+  // 加えて、名前に solo を含むトラックは同じ楽器のセクション（solo でないトラック）へ統合
   //（Trumpets_HW + Trumpets_CB + Trumpets +3_CB → 1 セクション。Violins 1_HW と Violins 2_HW は別）
   // 末尾サフィックス（_HW 等）と「+3」のような追加人数の表記を除いた基底名（"Trumpets +3_CB" → "trumpets"）
   static baseName(name) { return name.replace(/_[^_]*$/, '').replace(/\s*\+\s*\d+\s*$/, '').trim().toLowerCase(); }
@@ -329,6 +334,9 @@ export class MidiEngine {
       else {
         const base = MidiEngine.baseName(src.name);
         target = this.sources.find((o) => o !== src && o.index < src.index && o.variant === src.variant && MidiEngine.baseName(o.name) === base) || null;
+        // ソロ（名前に solo）は、同じ楽器のセクション（solo でないトラック）があればそこへ統合する（2026-09-23 ユーザー指定：
+        // solo バイオリン → 1st バイオリン、solo チェロ → チェロ。以前は独立した 1 人の奏者だった）。セクションが無ければ従来どおり独立
+        if (!target && /solo/i.test(src.name)) target = this.sources.find((o) => o !== src && o.variant === src.variant && !/solo/i.test(o.name)) || null;
       }
       // 統合先が自分／楽器違い／さらに統合されている → その先を辿る（1 段まで）。自己参照・楽器違いは無効
       if (target && target.mergeTarget) target = target.mergeTarget;
@@ -336,6 +344,33 @@ export class MidiEngine {
       src.mergeTarget = target;
       src.mergeResolved = target ? target.name : 'none';
     }
+  }
+  /**
+   * ソロを統合したセクションを、ソロのパートとそれ以外（本来のセクション）のパートに分けて持つ（2026-09-23 ユーザー指定：
+   * ソロがセクションと違う動きをする時・セクションが休みでソロだけ鳴る時は、奏者のうち 1 人だけがソロの動きをする）。
+   * 奏者の動き（main.js）だけが使う。ピアノロール・足元の光・全体の強弱はセクション全体の音のまま。
+   * 音域（min/maxPitch）はセクションのものを引き継ぐ（手の位置などがセクションと揃うように）
+   */
+  _buildSoloParts() {
+    for (const sec of this.tracks) {
+      const solos = sec.sources.filter((src) => /solo/i.test(src.name));
+      if (!solos.length || solos.length === sec.sources.length) continue;
+      const part = (srcs) => {
+        const notes = srcs.flatMap((src) => src.notes).map((n) => ({ ...n })).sort((a, b) => a.time - b.time);
+        notes.forEach((n, i) => { n.index = i; });
+        return { ...sec, sources: srcs, notes, maxDur: notes.length ? Math.max(...notes.map((n) => n.duration)) : 0 };
+      };
+      sec.soloPart = part(solos);
+      sec.tuttiPart = part(sec.sources.filter((src) => !solos.includes(src)));
+    }
+  }
+  /** ソロのパートが時刻 t の前後（SOLO_HOLD 秒前〜SOLO_LEAD 秒後）で鳴っているか。ソロ役の奏者がソロとセクションのどちらで動くかの判定 */
+  soloActiveAt(sec, t) {
+    const part = sec.soloPart, ns = part?.notes;
+    if (!ns?.length) return false;
+    const li = this._lastIndex(ns, t + SOLO_LEAD);
+    for (let j = li; j >= 0 && ns[j].time > t - SOLO_HOLD - part.maxDur; j--) if (ns[j].end > t - SOLO_HOLD) return true;
+    return false;
   }
   // 統合後のセクション（奏者・ロール・エネルギーの単位）を作る
   _buildSections() {
@@ -383,7 +418,7 @@ export class MidiEngine {
   _precomputeEnergy() {
     const len = Math.ceil(this.duration * ENERGY_RATE) + ENERGY_RATE;
     const global = new Float32Array(len);
-    for (const tr of this.tracks) {
+    const energyOf = (tr) => {
       const E = new Float32Array(len);
       let e = 0, p = 0; // p: 次に処理するノート index
       const notes = tr.notes;
@@ -425,9 +460,13 @@ export class MidiEngine {
           d = useCC ? Math.min(1, cc + Math.max(0, e - sus) * 0.35) : e;
         }
         E[k] = d;
-        global[k] += d;
       }
-      tr.energy = E;
+      return E;
+    };
+    for (const tr of this.tracks) {
+      tr.energy = energyOf(tr);
+      for (let k = 0; k < len; k++) global[k] += tr.energy[k];
+      if (tr.soloPart) { tr.soloPart.energy = energyOf(tr.soloPart); tr.tuttiPart.energy = energyOf(tr.tuttiPart); }   // ソロ／セクションのパート（奏者の動き用）
     }
     // 全体エネルギーは曲中最大値で正規化（指揮者の振り幅用）
     let gmax = 0;

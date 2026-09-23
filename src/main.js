@@ -1310,7 +1310,8 @@ function placePuppets() {
       puppet.delay = 0.035 * (pos.row || 0); // 後列ほどわずかに遅れる（プルトの揃いと奥行き感）
       puppet.root.position.set(pos.x, pos.y, pos.z);
       scene.add(puppet.root);
-      puppets.push({ puppet, track: seat.track });
+      // 首席（index 0）がソロ役：ソロを統合したセクションでは、ソロが鳴る間だけソロの動きをする（2026-09-23 ユーザー指定）
+      puppets.push({ puppet, track: seat.track, soloist: i === 0 && !!seat.track.soloPart });
     });
   }
   roll.setSeats(seats); // 頭上ロールの列位置を座席に合わせる
@@ -1704,9 +1705,13 @@ function animate() {
     shakeNow = shakeAt(tm, s);               // 画面の揺れ（描画の直前に掛ける）
 
     const face = (p) => (s.facing === 'conductor' ? p.faceToward(0, CONDUCTOR_Z) : p.faceCamera(camera));
-    for (const { puppet, track } of puppets) {
+    for (const { puppet, track, soloist } of puppets) {
       face(puppet);
-      puppet.update(engine.trackState(track, tm - puppet.delay), ctx);
+      const tp = tm - puppet.delay;
+      // ソロを統合したセクション：ソロ役はソロが鳴る前後だけソロのパート、それ以外はセクションのパート（ソロ抜き）で動く。
+      // セクションが休みでソロだけ鳴る時は、ソロ役 1 人だけが動く
+      const part = !track.soloPart ? track : (soloist && engine.soloActiveAt(track, tp) ? track.soloPart : track.tuttiPart);
+      puppet.update(engine.trackState(part, tp), ctx);
     }
     face(conductor);
     conductor.update({ energy: g, active: [], onset: null, next: null, age: Infinity, toNext: Infinity, pitchNorm: 0.5 }, ctx);
