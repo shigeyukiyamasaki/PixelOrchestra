@@ -66,7 +66,6 @@
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
       <label class="ctl" title="金管・シンバル・フルート等、金属の楽器のツヤ。鏡面反射・縁の反射（フレネル）の強さと、拡散反射の落とし具合をまとめて動かす。上げるほど明暗のコントラストが付き、視点を回した時に縁が光る"><span>金属のツヤ <b data-value-for="metalSpec">2</b></span><input type="range" id="metalSpec" min="1" max="3" step="0.05" value="2"></label>
-      <label class="ctl" title="金属だけに使うブルームの閾値を、レンズ欄の「ブルーム閾値」に対する割合で指定する [%]。上限は 100 ＝ 他の素材と同じ閾値で、金属だけ光りにくくなることはない。下げるほど金属が乗りやすい。レンズ側を動かすと金属側も追随する。金属は専用レイヤーで別に抜くので、レンズの閾値を下げた時のように画面全体が光ることはない"><span>金属のブルーム閾値 <b data-value-for="metalThrPct">65</b>%</span><input type="range" id="metalThrPct" min="0" max="100" step="5" value="65"></label>
     </div>
       <!-- 画面の揺れ（2026-09-18 ユーザー指定）：バスドラム（に割り当てたトラック）が鳴った瞬間に画面全体を揺らす。連動先は固定（選択なし） -->
       <div class="box" id="boxShake">
@@ -244,6 +243,7 @@
           <div>
           <label class="ctl" title="太陽（と月）の眩しさ（レンズと目のグレア）。ブルーム（光のにじみ）・光のかぶり・光条の強さと広がり。0 で無し、2 で最大"><span>太陽の眩しさ <b data-value-for="sunBloom">1.5</b></span><input type="range" id="sunBloom" min="0" max="2" step="0.05" value="1.5"></label>
           <label class="ctl" title="ブルームの閾値。この明るさ（最大チャンネル）を超えた部分だけがにじむ。低いほど広い範囲がにじむ"><span>ブルーム閾値 <b data-value-for="bloomThr">0.7</b></span><input type="range" id="bloomThr" min="0" max="1" step="0.01" value="0.7"></label>
+          <label class="ctl" title="金属（金管・シンバル類・フルート等）だけに使うブルームの閾値を、すぐ上の「ブルーム閾値」に対する割合で指定する。上限は 100 ＝ 他の素材と同じ閾値で、金属だけ光りにくくなることはない。下げるほど金属が乗りやすい。上の閾値を動かすと金属側も追随する。金属は専用レイヤーで別に抜くので、上の閾値を下げた時のように画面全体が光ることはない"><span>金属のﾌﾞﾙｰﾑ閾値（%） <b data-value-for="metalThrPct">65</b></span><input type="range" id="metalThrPct" min="0" max="100" step="5" value="65"></label>
           </div>
         </div>
       </div>
@@ -379,6 +379,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20260923e"></script>
+  <script type="module" src="src/main.js?v=20260923f"></script>
 </body>
 </html>

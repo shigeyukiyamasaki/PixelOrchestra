@@ -1198,12 +1198,14 @@ function metalShader(shader) {
   shader.fragmentShader = 'uniform float uBloomPass;\nuniform sampler2D uMetalDepth;\nuniform vec2 uMetalRes;\nuniform float uMetalThr;\n' + shader.fragmentShader;
   emissiveByVertexColor(shader);   // 打鍵フラッシュ（emissive）の頂点色掛けは Phong でも同じく要る
   // (1) 鏡面色を頂点色へ寄せる（金は金、銀は銀のハイライト）
-  // (2) 金属は拡散反射が弱いので、ツヤに応じて diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる
-  //     mAmt はツヤ（uniform specular）から作る。ツヤ 0 なら mAmt 0 ＝ 従来の Lambert 相当の見え方に戻る
+  // (2) 金属は拡散反射が弱いので diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる。
+  //     この暗さは**「金属のツヤ」スライダーから切り離した固定値**にする（2026-09-23 ユーザー指定）。
+  //     ツヤに連動させていた時（mAmt = clamp(ツヤ × 0.5, 0, 1)）は、ツヤ 2 で頭打ちになる一方、
+  //     ボクセルの面は軸に平行な平面ばかりで大半が鏡面の角度に入らないため、上げるほど地の色が暗くなるだけで
+  //     「上げるほどツヤが減る」という逆の体感になっていた。今はスライダーは鏡面とフレネルだけを動かす
   shader.fragmentShader = shader.fragmentShader.replace('#include <lights_phong_fragment>',
     `#include <lights_phong_fragment>
-      float mAmt = clamp(specular.r * 0.5, 0.0, 1.0);
-      material.diffuseColor *= mix(1.0, 0.45, mAmt);
+      material.diffuseColor *= 0.725;   // = mix(1.0, 0.45, 0.5)。金属の地の色の暗さ（固定）
       #ifdef USE_COLOR
         material.specularColor *= mix(vec3(1.0), vColor.rgb, 0.65);
       #endif`);
