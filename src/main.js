@@ -1739,7 +1739,10 @@ function animate() {
     const metalThr = Math.max(0, s.bloomThr * Math.min(100, s.metalThrPct) / 100);
     if (metalThr !== lastMetalThr) { lastMetalThr = metalThr; setMetalThreshold(metalThr); }
     applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
-    applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
+    // 屋外オフ（屋内＝ホールの想定）の時は背景を真っ暗に（2026-09-23 ユーザー指定）。空の球は stage.js 側で消えるが、
+    // その後ろの #view のグラデーションが空の色のまま残っていた
+    if (s.lightMode === 'sun') applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
+    else applyBackground('#000000', '#000000', s.bgMid, s.bgFlip, 1);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam && !VIEW_NAME;   // 自動の間はマウス操作を止める。視聴モードも止める（保存したカメラで見せる）
