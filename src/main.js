@@ -9,7 +9,7 @@ import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteNa
 import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
-import { nameLabel, setGlowSoftness, setPartStyle, LABEL_FONT, dotPart } from './sprites.js';
+import { nameLabel, setGlowSoftness, setPartStyle, applyMetalLook, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
 import { TENCHI } from './logoData.js';
 import { PianoRoll } from './pianoRoll.js';
@@ -979,6 +979,7 @@ function settings() {
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
     instFlash: num('instFlash', 1),
+    metalSpec: num('metalSpec', 2),   // 金属の楽器のツヤ（2026-09-23 ユーザー指定。ハイライトの鋭さは楽器ごとの固定値にしてスライダーは廃止）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
     shakeAmt: num('shakeAmt', 1), shakeDecay: num('shakeDecay', 1), shakeDots: $('shakeDots').checked, // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
@@ -1207,8 +1208,9 @@ function buildScene(midi, { keepTime = false } = {}) {
 // デバッグ用フック（DevTools から window.__po.puppets 等を参照できる）
 window.__po = { get mediaList() { return mediaList; }, get seats() { return lastSeats; }, get autoCam() { return autoCam; }, get engine() { return engine; }, get puppets() { return puppets; }, get conductor() { return conductor; }, camera, controls, scene, renderer, Puppet, audio, clock, currentTime };
 
-// 楽器を含む奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左）。variant ごとに 1 度だけ仮のパペットを作って測る。
-// 大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間が空く
+// 楽器を含む奏者 1 人の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左、+z = 奏者の前＝指揮者側）。variant ごとに 1 度だけ仮のパペットを作って測る。
+// 横（minX/maxX）は大きな楽器（グランカッサ・ピアノ・ハープ等）の隣に自動で隙間を空けるため、
+// 奥行き（minZ/maxZ）は打楽器の段で楽器ごと後ろに下げるために使う（stage.js の depthCenter）
 const footprintCache = new Map();
 function footprintOf(track) {
   const key = `${track.variant}|${settings().partStyle}`;
@@ -1275,6 +1277,7 @@ function followSunSliders(s) {
   }
 }
 let lastBloomAll = 0, lastBloomThr = 0.7;
+let lastMetalSpec = null;   // 金属のツヤ（変わった時だけシーンを走査する）
 function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 // 弓の向きの共有台帳。キーは「音符の時刻 | 音の長さ」なので、同じパートの中はもちろん、
@@ -1724,6 +1727,8 @@ function animate() {
                  sunAmbient: s.sunAmbient, sunAuto: s.sunManual ? null : { hour: s.sunHour, cloud: s.sunCloud, facing: s.stageFacing, moonAge: s.moonAge },
                  moonAzimuth: s.moonAzimuth, moonElev: s.moonElev, moonBright: s.moonBright, stageFacing: s.stageFacing, hour: s.sunHour, horizonHex: s.bgBottom,
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, starTwinkle: s.starTwinkle, sunBloom: s.sunBloom, skyTint: s.skyTint, groundBounceOn: s.groundBounceOn, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
+    // 金属のツヤ（値が変わった時だけシーンを走査してマテリアルに反映）
+    if (s.metalSpec !== lastMetalSpec) { lastMetalSpec = s.metalSpec; applyMetalLook(scene, s.metalSpec); }
     applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）

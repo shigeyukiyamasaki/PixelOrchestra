@@ -14,9 +14,14 @@ export const ROWS = {
   // 弦：1 列目を指揮者に寄せ（r 8→6.5）、列の間隔を広げる（rowGap 2.65。3 列目は 11.8 のまま）。2026-09-10 ユーザー指定「前後 3 列が詰まりすぎ」
   // 12 列分の弧が r=6.5 では 180° 必要（指揮者の真横まで）なので span を 180 に。これ以上寄せると 1 列目の人数が削られる
   strings:    { r: 6.5,  h: 0,    span: 180, rowGap: 2.65 },
-  woodwind:   { r: 15,   h: 1.0,  span: 90 },
-  brass:      { r: 19,   h: 2.0,  span: 100 },
-  percussion: { r: 23,   h: 3.0,  span: 110 },
+  // rowsCenter: 前後 2 列以上になる時、1 列目を r に置くのではなく**列全体**をひな壇の帯の中心に合わせる。
+  // ホルン（2×2）の後列が帯の後端に追いやられていた（2026-09-23 ユーザー指摘）。ひな壇のある段だけに付ける
+  // （弦・鍵盤群は床置きで帯が無く、r が最前列の位置という前提で調整済みのため）
+  woodwind:   { r: 15,   h: 1.0,  span: 90,  rowsCenter: true },
+  brass:      { r: 19,   h: 2.0,  span: 100, rowsCenter: true },
+  // depthCenter: 奏者ではなく「奏者＋楽器」の奥行きの中心をひな壇の帯の中心に合わせる。
+  // スネアのように楽器が前に出ていると、奏者を中心に置くと楽器がひな壇の内縁から落ちそうに見える（2026-09-23 ユーザー指定）
+  percussion: { r: 23,   h: 3.0,  span: 110, depthCenter: true, rowsCenter: true },
   // コントラバス（右）と鍵盤群（左：ハープ/ピアノ/チェレスタ/シロフォン/マリンバ）は、木管の扇のすぐ外側に隣接して床に立つ
   // （ひな壇なし・真ん中寄せ。2026-09-09 ユーザー指定）
   contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65 }, // 前後の間隔は他の弦と同じ（2026-09-10）
@@ -1770,19 +1775,22 @@ function plankTexture() {
  */
 /**
  * @param {Array} tracks
- * @param {(track) => {minX:number, maxX:number} | null} [footprintOf]
- *   奏者 1 人の横方向の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左 = 角度が増す向き）。楽器が大きいトラックは
- *   自動的に間隔を広げ、占有範囲の中心が座席の中心に来るよう奏者をずらす（2026-09-10 ユーザー指定：大きな楽器の隣に隙間を空ける）
+ * @param {(track) => {minX:number, maxX:number, minZ:number, maxZ:number} | null} [footprintOf]
+ *   奏者 1 人の占有範囲 [unit]（奏者の原点基準、+x = 奏者の左 = 角度が増す向き、+z = 奏者の前 = 指揮者側）。楽器が大きいトラックは
+ *   自動的に間隔を広げ、占有範囲の中心が座席の中心に来るよう奏者をずらす（2026-09-10 ユーザー指定：大きな楽器の隣に隙間を空ける）。
+ *   奥行き（minZ/maxZ）は row.depthCenter の段だけで使い、楽器を含めた中心がひな壇の帯の中心に来るよう半径をずらす（2026-09-23）
  */
 export function layoutSeats(tracks, footprintOf = null) {
   // トラックごとの奏者 1 人分の間隔 [unit] と、座席中心からの横ずらし [unit]
   const slotOf = (tr) => {
     const f = footprintOf?.(tr);
-    if (!f) return { gap: PUPPET_GAP, off: 0 };
+    if (!f) return { gap: PUPPET_GAP, off: 0, dr: 0 };
     // 手持ち楽器（弓・バイオリン等）は隣と少し重なってよいので 0.3 の食い込みを許す。これが無いと弦の間隔が 1.87 に広がり、
     // 独奏トラックが 1 つ増えただけで弦の扇が溢れて各セクションの人数が削られる（2026-09-10 ユーザー報告）
     const w = f.maxX - f.minX - 0.3;
-    return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2 };
+    // 奥行きのずらし量 [unit]。+z = 奏者の前（指揮者側）なので、楽器が前に出ているほど半径を増やして後ろへ下げる
+    const dr = Number.isFinite(f.minZ) ? (f.minZ + f.maxZ) / 2 : 0;
+    return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2, dr };
   };
   const byFam = {};
   for (const tr of tracks) (byFam[rowKeyOf(tr)] ||= []).push(tr);
@@ -1848,7 +1856,7 @@ export function layoutSeats(tracks, footprintOf = null) {
           const tr = list[i];
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
-          const positions = gridPositions({ r: row.r, h: row.h, rowGap: row.rowGap }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
+          const positions = gridPositions({ r: row.r, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i]).map((p) => {
             const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
@@ -1877,12 +1885,14 @@ export function layoutSeats(tracks, footprintOf = null) {
 }
 
 // 中心角 center を軸に cols × rows の格子で座らせる。奥の列ほど半径が大きい。偶数列は半人分ずらす（重なり防止・自然な見た目）
-// slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit] }
-function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0 }) {
+// slot = { gap: 奏者間隔 [unit], off: 占有範囲の中心を座席中心に合わせるための横ずらし [unit], dr: 同じく奥行きのずらし [unit]（row.depthCenter の段だけ効く） }
+function gridPositions(row, center, cols, rows, slot = { gap: PUPPET_GAP, off: 0, dr: 0 }) {
   const positions = [];
   const rowGap = row.rowGap ?? ROW_GAP;
+  const dr = row.depthCenter ? (slot.dr || 0) : 0;  // 楽器を含めた占有範囲の中心を座席の中心に合わせる
+  const k0 = row.rowsCenter ? (rows - 1) / 2 : 0;  // 列全体の中心を r（＝ひな壇の帯の中心）に合わせる
   for (let k = 0; k < rows; k++) {
-    const r = row.r + k * rowGap;
+    const r = row.r + (k - k0) * rowGap + dr;
     const stagger = (k % 2) * 0.5;
     for (let j = 0; j < cols; j++) {
       const th = center + (slot.off + (j - (cols - 1) / 2 + stagger) * slot.gap) / row.r;

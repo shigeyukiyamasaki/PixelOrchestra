@@ -1091,6 +1091,13 @@ export const INSTRUMENT = {
   // （2026-09-22 ユーザー指摘：拳からスティックが突き出ているように見える＝握りが柄の端にあった）
   mallet: () => makePart(6, 26, 3, 6, (d) => { d.r(2, 0, 2, 20, C.wood2); d.disc(3, 22, 3, C.ivory); },
     { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 20, F); d.disc(3, 22, 3, F); }, top: (d) => { d.disc(3, 3, 3, F); } }),
+  // 鍵盤打楽器（シロフォン・マリンバ）用の小さいマレット。頭の直径 2px（ティンパニ等の mallet は 3px）。
+  // 音板 1 本の幅が 1px なので、3px の頭だと 2 本ぶんを覆ってしまっていた（2026-09-23 ユーザー指摘）。
+  // 実物もティンパニのマレット（頭 5cm 前後）よりシロフォンのマレット（2.5〜3cm ＝ 音板の幅と同程度）の方が小さい
+  // ※ disc の半径は整数のみ（for (let y = -rad; y <= rad; y++) が非整数だとセルに乗らない）。
+  //   半径 1 = 3 セル = 1.5px、半径 2 = 5 セル = 2.5px、半径 3 = 6 セル = 3px（従来の mallet）
+  keymallet: () => makePart(6, 26, 3, 6, (d) => { d.r(2, 0, 2, 22, C.wood2); d.disc(3, 24, 1, C.ivory); },
+    { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 22, F); d.disc(3, 24, 1, F); }, top: (d) => { d.disc(3, 3, 1, F); } }),
   // 大マレット（グランカッサ）：同じく pivot = 握り（柄の端から 3px 先）
   bigmallet: () => makePart(10, 28, 5, 6, (d) => { d.r(4, 0, 2, 19, C.wood2); d.disc(5, 22, 5, C.white); d.r(3, 20, 1, 4, '#e6e6e6'); },
     { res: 2, depth: 10, z0: -5, side: (d) => { d.r(4, 0, 2, 19, F); d.disc(5, 22, 5, F); }, top: (d) => { d.disc(5, 5, 5, F); } }),
@@ -1175,6 +1182,82 @@ export const INSTRUMENT = {
 };
 INSTRUMENT.violin2 = INSTRUMENT.violin1;
 INSTRUMENT.violin = INSTRUMENT.violin1;
+
+// ---- メタリック表現（2026-09-23 ユーザー指定）----
+// Lambert には鏡面反射項が無いので、これまで金・銀は色（C.gold / C.gold2 の 2 階調）でしか表せなかった。
+// 金属の楽器だけ MeshPhongMaterial に差し替えてハイライトを出す。環境マップ（PMREM）は使わない：
+// 空の時刻・雲・天気を変えるたびに作り直しが要り、設定項目の多いこのツールと相性が悪いため。
+// 鏡面色は頂点色に寄せる（metalShader）。1 つのパーツに金と銀が混ざっていても、それぞれの色で光る。
+// パーツ側の opts は触らず、INSTRUMENT の生成関数を包んでマテリアルだけ差し替える（絵の定義に手を入れない）
+function metalShader(shader) {
+  emissiveByVertexColor(shader);   // 打鍵フラッシュ（emissive）の頂点色掛けは Phong でも同じく要る
+  // (1) 鏡面色を頂点色へ寄せる（金は金、銀は銀のハイライト）
+  // (2) 金属は拡散反射が弱いので、ツヤに応じて diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる
+  //     mAmt はツヤ（uniform specular）から作る。ツヤ 0 なら mAmt 0 ＝ 従来の Lambert 相当の見え方に戻る
+  shader.fragmentShader = shader.fragmentShader.replace('#include <lights_phong_fragment>',
+    `#include <lights_phong_fragment>
+      float mAmt = clamp(specular.r * 0.5, 0.0, 1.0);
+      material.diffuseColor *= mix(1.0, 0.45, mAmt);
+      #ifdef USE_COLOR
+        material.specularColor *= mix(vec3(1.0), vColor.rgb, 0.65);
+      #endif`);
+  // (3) フレネル（縁の反射）。視線に対して浅い角度の面ほど強く光る。
+  //     ボクセルは面が軸に平行な平面ばかりで、点光源の鏡面だけだと「明るくなった」以上にならなかった。
+  //     フレネルは**カメラの角度で変わる**ので、視点を回した時に縁がギラっと動き、金属らしさが出る（2026-09-23 ユーザー指定）
+  shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>',
+    `{
+      float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 3.0);
+      vec3 fTint = vec3(1.0);
+      #ifdef USE_COLOR
+        fTint = mix(vec3(1.0), vColor.rgb, 0.6);
+      #endif
+      outgoingLight += fres * specular * 0.8 * fTint;
+    }
+    #include <output_fragment>`);
+}
+// 鏡面の強さ（左メニューの「金属のツヤ」スライダー。1〜3、既定 2）。1 を超える値を使う：
+// ボクセルの面は軸に平行な平面ばかりで、鏡面が 1 以下だとほとんどの面が反射角から外れて
+// 「変わっていない」ようにしか見えなかったため（2026-09-23 に実機で値を振って決めた）
+let metalSpec = 2;
+/**
+ * 金属の見え方をまとめて変える（左メニューの「金属のツヤ」スライダー、1〜3）。
+ * root 以下の金属マテリアル（userData.metalBase を持つもの）に適用し、
+ * 以降に作られるパーツにも同じ値が乗るようモジュールの現在値を更新する。
+ * ハイライトの鋭さ（shininess）は楽器ごとの固定値（METAL_PARTS）で、スライダーは廃止（2026-09-23 ユーザー指定）
+ */
+export function applyMetalLook(root, spec) {
+  metalSpec = spec;
+  root?.traverse((m) => {
+    const mat = m.material;
+    if (!mat || !mat.userData || !mat.userData.metalBase) return;
+    mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
+  });
+}
+function applyMetal(obj, shininess) {
+  if (PART_STYLE !== 'voxel' || !obj) return obj;  // 2D の板（テクスチャ付き）には掛けない
+  obj.traverse((m) => {
+    if (!m.isMesh || !m.material || m.material.map || m.material.isMeshPhongMaterial) return;
+    const old = m.material;
+    const mat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess });
+    mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
+    mat.userData.metalBase = shininess;            // 金属マテリアルの目印（applyMetalLook が探す）
+    mat.onBeforeCompile = metalShader;
+    m.material = mat;
+    old.dispose();
+    m.userData.baseColor = mat.color.clone();      // フラッシュの対象の目印（makePart と同じ）
+  });
+  return obj;
+}
+// 楽器ごとの艶（shininess）。大きいほどハイライトが小さく鋭い。銀（フルート）を一番鋭く、太鼓の革を一番鈍く。
+// ボクセルは面が平らなので、ハイライトは面ごとに一様に乗る（＝ドット絵の 2 階調の金属表現に近い見え方になる）
+const METAL_PARTS = { flute: 40, piccolo: 40, trumpet: 28, horn: 26, trombone: 28, tuba: 24, cymbal: 20, hihat: 20, suscymbal: 20, tubularbells: 28, timpani: 16 };
+for (const [k, shine] of Object.entries(METAL_PARTS)) {
+  const base = INSTRUMENT[k];
+  if (!base) continue;
+  INSTRUMENT[k] = () => applyMetal(base(), shine);
+}
+// 銅鑼は枠が木なので、吊られた円盤（userData.swing の中）だけ金属にする
+{ const base = INSTRUMENT.gong; INSTRUMENT.gong = () => { const o = base(); applyMetal(o.userData.swing, 45); return o; }; }
 
 /**
  * パート名ラベル（ドット風の小さな文字板）。常にカメラを向く Sprite。

@@ -41,8 +41,10 @@ const PERC_UP = [0, 1, 0]; // 鍵盤・ハープの手の甲の向きヒント�
 const STICK_UP = { L: [-1, 0, 0], R: [1, 0, 0] };
 const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真下（拳を地面へ。2026-09-22 ユーザー指定）
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
-const GRIP_ITEMS = new Set(['stick', 'mallet', 'bigmallet']);
-const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.5 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
+const GRIP_ITEMS = new Set(['stick', 'mallet', 'keymallet', 'bigmallet']);
+// ティンパニ 0.78・グランカッサ 1.5 → 1.4（2026-09-23 ユーザー指定：ひな壇に対して大きいので小さく）。
+// どちらも打点（p3.strike の hit/rest/head）は触っていない：拡縮の原点（p3.pos）が打面の高さにあるので打面はほとんど動かない
+const INST_SCALE_VARIANT = { contrabass: 1.3, cello: 1.25, piccolo: 1.0, flute: 1.05, oboe: 1.0, clarinet: 1.05, trumpet: 0.9, trombone: 1.6, tuba: 1.35, harp: 1.5, piano: 1.17, celesta: 1.2, bassdrum: 1.4, timpani: 0.78 }; // グランカッサは 1.5 倍（2026-09-10 ユーザー指定）。奏者側の打面は pivot の x に固定なので打点は変わらない // コントラバスは体との比率上 1.1（1.25 だと上部が頭の高さまで来て体にめり込む）
 const HEAD_Y_PX = 29.5; // 頭の付け根（首の上端 29 に少し食い込ませる）
 const SPINE_Y = 13;     // 腰の高さ（座面の高さ・上半身の回転軸）
 // リグの座標系は「正面（+z）を向いたキャラを鏡で見た向き」で定義されている（R = ローカル +x）。
@@ -282,10 +284,10 @@ const VARIANT = {
   tubularbells: { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { R: 'mallet' }, singleArm: 'R', pitchSpread: 11,
                 strike: { R: { hit: [0, 26], rest: [0, 24], head: [0, 30] } }, fixedHand: { L: [-8, 12] },
                 p3: { pos: [0, 0, 14], strike: { R: { hit: [0, 25.5, 4.8], rest: [0, 25, 1.5], head: [0, 29.5, 12] } }, fixedHand: { L: [-8, 12, 3] } } },
-  xylophone:  { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 9,
+  xylophone:  { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 9,
                 strike: { L: { hit: [-3, 18], rest: [-7, 25], head: [-3, 11] }, R: { hit: [3, 18], rest: [7, 25], head: [3, 11] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 14.5, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 14.5, 21.5] } } } },   // 打面 16px に合わせて -4（2026-09-22） // 握り z 8（手首 ≒ 5）
-  marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, pitchSpread: 13,
+  marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, pitchSpread: 13,
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 22] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 22] } } } },   // 打面 16px に合わせて -7（2026-09-22）
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
@@ -460,11 +462,18 @@ export class Puppet {
     this.group.rotation.set(0, this._bodyYaw(), 0);   // 体ごと横を向く楽器（銅鑼）は、その向きで楽器の幅を測る
     this.root.updateMatrixWorld(true);
     let minX = -0.55, maxX = 0.55; // 体の幅（±7px）
+    // 奥行きは胴の箱から測る（+z = 奏者の前＝指揮者側）。楽器が前に出ている分を知るため（2026-09-23 ユーザー指定）
+    let minZ = 0, maxZ = 0;
+    if (this.body) {
+      const bb = new THREE.Box3().setFromObject(this.body);
+      if (Number.isFinite(bb.min.z)) { minZ = bb.min.z; maxZ = bb.max.z; }
+    }
     if (this.inst) {
       const box = new THREE.Box3().setFromObject(this.inst);
       if (Number.isFinite(box.min.x)) { minX = Math.min(minX, box.min.x); maxX = Math.max(maxX, box.max.x); }
+      if (Number.isFinite(box.min.z)) { minZ = Math.min(minZ, box.min.z); maxZ = Math.max(maxZ, box.max.z); }
     }
-    return { minX, maxX };
+    return { minX, maxX, minZ, maxZ };
   }
   /** カメラの方を向く。2D の板は完全に正対（見下ろしても潰れない）、立体は水平回転のみ */
   faceCamera(cam) {
