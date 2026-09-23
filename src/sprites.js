@@ -632,6 +632,10 @@ function isMetalColor(r, g, b) {
  *
  * ・**打面（音板の上端）は全部同じ高さ**（打点が音程によらず固定なので傾けられない）
  * ・長さの違いは**奥行き**で表す（高音ほど短い）。音板は薄く前後に長い＝写真どおりの比率
+ * ・**奥（奏者から遠い側）の端は一直線**に揃え、長さの違いは手前側だけで付ける（実物どおり。2026-09-23 ユーザー指定）。
+ *   楽器は奏者の前（rig +z）に回転なしで置くので、セルの z が大きい側が奥
+ * ・手前のレールも音板の手前の端に沿って**斜め**にする（同日ユーザー指定。直線のままだと高音側の音板が浮いて見えた）。
+ *   ただし手前の脚（側面図の z legZ）の列だけはレールを脚まで残す（脚の取り付け部。残さないと高音側の脚が宙に浮く）
  * ・**1 列**。白鍵・黒鍵の 2 列にすると、この解像度（幅 28px に 16 枚）では 1 枚あたりの
  *   奥行きが半分になり、音板が「厚い短いブロック」に見えてしまうので採らない。
  *   鍵盤の並びは色（白鍵をやや明るく）だけで示す
@@ -639,27 +643,32 @@ function isMetalColor(r, g, b) {
  *
  * carve は **true を返したセルを削る**。座標は res 倍したセル番号。
  */
-const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w }) => {
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, legX, legZ }) => {
+  const far = zc + lo / 2;                                                           // 音板の奥の端（全部揃う）
+  const nearAt = (x) => { const t = clamp01((x - x0) / pitch / (n - 1)); return far - (lo + (hi - lo) * t); }; // 列 x の音板の手前の端（連続）
   const f = (x, y, z) => {
-    if (y < barY) {                                   // 音板：高音ほど短い台形
+    if (y < barY) {                                   // 音板：高音ほど短い。奥の端（一番長い音板の奥端）で揃え、手前側だけ短くなる
       const i = Math.round((x - x0) / pitch);
       if (i < 0 || i >= n) return false;
-      const L = lo + (hi - lo) * (i / (n - 1));
-      return Math.abs(z + 0.5 - zc) > L / 2;
+      const L = lo + (hi - lo) * (i / (n - 1)), far = zc + lo / 2;
+      return z + 0.5 > far || z + 0.5 < far - L;
     }
     if (y < frameY) {                                 // フレーム：前後のレールだけ残す（端は箱のまま）
       if (x < endX || x > w - endX) return false;
-      return z >= railW && z <= 2 * zc - 1 - railW;
+      const r0 = legX.includes(x) ? Math.min(legZ, Math.floor(nearAt(x))) : Math.floor(nearAt(x)); // 手前のレールの手前の端（斜め）
+      if (z < r0) return true;                        // レールより手前は空ける
+      return z >= Math.floor(nearAt(x)) + railW && z <= 2 * zc - 1 - railW;   // レールと奥のレールの間を抜く
     }
     return false;                                     // 共鳴管・脚はそのまま
   };
-  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w})`;
+  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w},${legX},${legZ})`;
   return f;
 };
 // シロフォン：音板 行 4-5（奥行き z 2-17・中心 10、長さ 16→9）／フレーム 行 6-8
-const XYLO_BARS = keyboardRig({ barY: 6, frameY: 9, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 4, endX: 6, w: 56 });
+const XYLO_BARS = keyboardRig({ barY: 6, frameY: 9, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 4, endX: 6, w: 56, legX: [7, 8, 47, 48], legZ: 5 });
 // マリンバ：音板 行 2-3（奥行き z 2-21・中心 12、長さ 20→11）／フレーム 行 4-6
-const MARIMBA_BARS = keyboardRig({ barY: 4, frameY: 7, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 4, endX: 6, w: 72 });
+const MARIMBA_BARS = keyboardRig({ barY: 4, frameY: 7, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 4, endX: 6, w: 72, legX: [7, 8, 63, 64], legZ: 5 });
 
 /**
  * 頭パーツ（24×30・res 2・pivot (12,24)）の pivot より下、rows 24-25 に「少し太い首」を足す。
