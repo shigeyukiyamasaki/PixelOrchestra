@@ -1190,6 +1190,10 @@ INSTRUMENT.violin = INSTRUMENT.violin1;
 // 鏡面色は頂点色に寄せる（metalShader）。1 つのパーツに金と銀が混ざっていても、それぞれの色で光る。
 // パーツ側の opts は触らず、INSTRUMENT の生成関数を包んでマテリアルだけ差し替える（絵の定義に手を入れない）
 function metalShader(shader) {
+  // onBeforeCompile は「マテリアルを this」にして呼ばれる。ライブ更新用に shader を控える（2026-09-23）
+  this.userData.shader = shader;
+  shader.uniforms.uMetalBloom = { value: metalBloom };
+  shader.fragmentShader = 'uniform float uMetalBloom;\n' + shader.fragmentShader;
   emissiveByVertexColor(shader);   // 打鍵フラッシュ（emissive）の頂点色掛けは Phong でも同じく要る
   // (1) 鏡面色を頂点色へ寄せる（金は金、銀は銀のハイライト）
   // (2) 金属は拡散反射が弱いので、ツヤに応じて diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる
@@ -1211,26 +1215,34 @@ function metalShader(shader) {
       #ifdef USE_COLOR
         fTint = mix(vec3(1.0), vColor.rgb, 0.6);
       #endif
-      outgoingLight += fres * specular * 0.8 * fTint;
+      outgoingLight += fres * specular * 0.8 * fTint * uMetalBloom;
     }
     #include <output_fragment>`);
+  // ブルームは「明るさが閾値を超えた分」を抜いてぼかす方式（stage.js の brightMat）なので、
+  // 鏡面（＝金属の光っている部分）だけを増幅すれば、拡散反射を明るくせずにブルームへ乗る（2026-09-23 ユーザー指定）
+  shader.fragmentShader = shader.fragmentShader.replace(
+    'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;',
+    'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + (reflectedLight.directSpecular + reflectedLight.indirectSpecular) * uMetalBloom + totalEmissiveRadiance;');
 }
 // 鏡面の強さ（左メニューの「金属のツヤ」スライダー。1〜3、既定 2）。1 を超える値を使う：
 // ボクセルの面は軸に平行な平面ばかりで、鏡面が 1 以下だとほとんどの面が反射角から外れて
 // 「変わっていない」ようにしか見えなかったため（2026-09-23 に実機で値を振って決めた）
-let metalSpec = 2;
+let metalSpec = 2, metalBloom = 2;
 /**
  * 金属の見え方をまとめて変える（左メニューの「金属のツヤ」スライダー、1〜3）。
  * root 以下の金属マテリアル（userData.metalBase を持つもの）に適用し、
  * 以降に作られるパーツにも同じ値が乗るようモジュールの現在値を更新する。
  * ハイライトの鋭さ（shininess）は楽器ごとの固定値（METAL_PARTS）で、スライダーは廃止（2026-09-23 ユーザー指定）
  */
-export function applyMetalLook(root, spec) {
-  metalSpec = spec;
+export function applyMetalLook(root, spec, bloom = metalBloom) {
+  metalSpec = spec; metalBloom = bloom;
   root?.traverse((m) => {
     const mat = m.material;
     if (!mat || !mat.userData || !mat.userData.metalBase) return;
     mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
+    // uMetalBloom はシェーダーがコンパイルされてから存在する（onBeforeCompile で控えた shader 経由で書く）
+    const u = mat.userData.shader?.uniforms?.uMetalBloom;
+    if (u) u.value = metalBloom;
   });
 }
 function applyMetal(obj, shininess) {
