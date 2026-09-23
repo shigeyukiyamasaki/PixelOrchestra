@@ -1190,10 +1190,12 @@ INSTRUMENT.violin = INSTRUMENT.violin1;
 // 鏡面色は頂点色に寄せる（metalShader）。1 つのパーツに金と銀が混ざっていても、それぞれの色で光る。
 // パーツ側の opts は触らず、INSTRUMENT の生成関数を包んでマテリアルだけ差し替える（絵の定義に手を入れない）
 function metalShader(shader) {
-  // onBeforeCompile は「マテリアルを this」にして呼ばれる。ライブ更新用に shader を控える（2026-09-23）
-  this.userData.shader = shader;
-  shader.uniforms.uMetalBloom = { value: metalBloom };
-  shader.fragmentShader = 'uniform float uMetalBloom;\n' + shader.fragmentShader;
+  // ブルームの素材として描くためのユニフォーム（全マテリアルで共有。renderFrame が pass を切り替える）
+  shader.uniforms.uBloomPass = METAL_BLOOM.pass;
+  shader.uniforms.uMetalDepth = METAL_BLOOM.depth;
+  shader.uniforms.uMetalRes = METAL_BLOOM.res;
+  shader.uniforms.uMetalThr = METAL_BLOOM.thr;
+  shader.fragmentShader = 'uniform float uBloomPass;\nuniform sampler2D uMetalDepth;\nuniform vec2 uMetalRes;\nuniform float uMetalThr;\n' + shader.fragmentShader;
   emissiveByVertexColor(shader);   // 打鍵フラッシュ（emissive）の頂点色掛けは Phong でも同じく要る
   // (1) 鏡面色を頂点色へ寄せる（金は金、銀は銀のハイライト）
   // (2) 金属は拡散反射が弱いので、ツヤに応じて diffuse を落とす。明暗のコントラストが付いて「塗り」から離れる
@@ -1215,34 +1217,50 @@ function metalShader(shader) {
       #ifdef USE_COLOR
         fTint = mix(vec3(1.0), vColor.rgb, 0.6);
       #endif
-      outgoingLight += fres * specular * 0.8 * fTint * uMetalBloom;
+      outgoingLight += fres * specular * 0.8 * fTint;
     }
     #include <output_fragment>`);
-  // ブルームは「明るさが閾値を超えた分」を抜いてぼかす方式（stage.js の brightMat）なので、
-  // 鏡面（＝金属の光っている部分）だけを増幅すれば、拡散反射を明るくせずにブルームへ乗る（2026-09-23 ユーザー指定）
-  shader.fragmentShader = shader.fragmentShader.replace(
-    'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;',
-    'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + (reflectedLight.directSpecular + reflectedLight.indirectSpecular) * uMetalBloom + totalEmissiveRadiance;');
+  // (4) ブルームの素材として描く時（uBloomPass=1）：本編の深度で隠れた画素は捨てる
+  shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>',
+    `#include <clipping_planes_fragment>
+      if (uBloomPass > 0.5 && gl_FragCoord.z > texture2D(uMetalDepth, gl_FragCoord.xy / uMetalRes).r + 0.00002) discard;`);
+  // (5) 同じく、最終色から「金属だけの閾値を超えた分」を抜いて出す。
+  //     stage.js の brightMat（全体ブルームの明るさ抽出）と同じ式で、閾値だけ金属専用のものを使う。
+  //     dithering_fragment の後＝トーンマッピング・エンコードまで済んだ最終色に掛ける
+  shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>',
+    `#include <dithering_fragment>
+      if (uBloomPass > 0.5) {
+        float bm = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
+        gl_FragColor.rgb *= max(0.0, bm - uMetalThr) / max(1e-3, bm);
+        gl_FragColor.a = 1.0;
+      }`);
 }
 // 鏡面の強さ（左メニューの「金属のツヤ」スライダー。1〜3、既定 2）。1 を超える値を使う：
 // ボクセルの面は軸に平行な平面ばかりで、鏡面が 1 以下だとほとんどの面が反射角から外れて
 // 「変わっていない」ようにしか見えなかったため（2026-09-23 に実機で値を振って決めた）
-let metalSpec = 2, metalBloom = 2;
+let metalSpec = 2;
+// ブルーム用のレイヤー（0 = 本編 / 1 = 太陽 / 2 = 天気 / 3 = 金属。TOOL_CRAFT_RULES §10-7 で既存を grep して空き番号を確認）。
+// 金属だけ**低い閾値**でブルームに乗せるため、天気と同じ「専用レイヤーで素材だけ描き足す」方式を使う（2026-09-23 ユーザー指定）。
+// 全体ブルームの閾値（レンズ欄）を下げると画面全部が光ってしまうので、金属には別の閾値を持たせる
+export const METAL_LAYER = 3;
+export const METAL_BLOOM = {
+  pass: { value: 0 },                       // 1 = ブルームの素材として描いている（renderFrame が切り替える）
+  depth: { value: null }, res: { value: new THREE.Vector2(1, 1) },   // 本編の深度で隠れた画素を捨てる
+  thr: { value: 0.35 },                     // 金属だけのブルーム閾値。下げるほど乗りやすい
+};
 /**
  * 金属の見え方をまとめて変える（左メニューの「金属のツヤ」スライダー、1〜3）。
  * root 以下の金属マテリアル（userData.metalBase を持つもの）に適用し、
  * 以降に作られるパーツにも同じ値が乗るようモジュールの現在値を更新する。
  * ハイライトの鋭さ（shininess）は楽器ごとの固定値（METAL_PARTS）で、スライダーは廃止（2026-09-23 ユーザー指定）
  */
-export function applyMetalLook(root, spec, bloom = metalBloom) {
-  metalSpec = spec; metalBloom = bloom;
+export function applyMetalLook(root, spec, thr = METAL_BLOOM.thr.value) {
+  metalSpec = spec;
+  METAL_BLOOM.thr.value = thr;              // 閾値は全マテリアル共有のユニフォーム（天気と同じ作り）
   root?.traverse((m) => {
     const mat = m.material;
     if (!mat || !mat.userData || !mat.userData.metalBase) return;
     mat.specular.setRGB(metalSpec, metalSpec, metalSpec);
-    // uMetalBloom はシェーダーがコンパイルされてから存在する（onBeforeCompile で控えた shader 経由で書く）
-    const u = mat.userData.shader?.uniforms?.uMetalBloom;
-    if (u) u.value = metalBloom;
   });
 }
 function applyMetal(obj, shininess) {
@@ -1262,6 +1280,7 @@ function applyMetal(obj, shininess) {
     m.material = mat;
     old.dispose();
     m.userData.baseColor = mat.color.clone();      // フラッシュの対象の目印（makePart と同じ）
+    m.layers.enable(METAL_LAYER);                  // 本編（0）に加えて、ブルーム用の描画でも拾う
   });
   return obj;
 }

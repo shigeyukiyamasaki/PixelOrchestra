@@ -6,7 +6,7 @@
  * トラック → 座席位置（扇形配置）の計算。
  */
 
-import { PX } from './sprites.js';
+import { PX, METAL_LAYER, METAL_BLOOM } from './sprites.js';
 
 // 列の定義：r=指揮者からの半径（そのセクションの最前列）、h=ひな壇の高さ、span=列が占める角度幅 [deg]
 // 弦は 3 列（r 6.5 / 9.15 / 11.8）に広がるので、木管以降のひな壇（内径 r-2）はその外側に置く
@@ -886,6 +886,19 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
       // 深度の参照は必ず外す：持たせたままだと、次のフレームで本編（post.main）を描く時に
       // 「描き込み先の深度テクスチャを同時に読む」状態になり、WebGL が INVALID_OPERATION を出す
       WEATHER_BLOOM.pass.value = 0; WEATHER_BLOOM.depth.value = null;
+    }
+    // 金属（金管・シンバル類等）を、全体より**低い閾値**でブルームの素材へ描き足す（2026-09-23 ユーザー指定）。
+    // 全体の閾値を下げると画面全部が光るので、金属だけ別の閾値で抜く。天気と同じ作り（専用レイヤー＋深度で遮蔽を捨てる）
+    if (METAL_BLOOM.thr.value < 1) {
+      METAL_BLOOM.pass.value = 1; METAL_BLOOM.depth.value = post.main.depthTexture; METAL_BLOOM.res.value.set(post.c.width, post.c.height);
+      const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
+      renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
+      camera.layers.set(METAL_LAYER);
+      renderer.setRenderTarget(post.c); renderer.render(scene, camera);
+      camera.layers.set(0);
+      renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
+      // 深度の参照は必ず外す（天気と同じ理由：次のフレームで post.main を描く時に同時読みになる）
+      METAL_BLOOM.pass.value = 0; METAL_BLOOM.depth.value = null;
     }
     blurPass(renderer, post.c, post.d, 1, 0, sp); blurPass(renderer, post.d, post.c, 0, 1, sp);
     blurPass(renderer, post.c, post.d, 1, 0, 3 * sp); blurPass(renderer, post.d, post.c, 0, 1, 3 * sp);
