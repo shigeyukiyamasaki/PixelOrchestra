@@ -635,7 +635,9 @@ function isMetalColor(r, g, b) {
  * ・**奥（奏者から遠い側）の端は一直線**に揃え、長さの違いは手前側だけで付ける（実物どおり。2026-09-23 ユーザー指定）。
  *   楽器は奏者の前（rig +z）に回転なしで置くので、セルの z が大きい側が奥
  * ・手前のレールも音板の手前の端に沿って**斜め**にする（同日ユーザー指定。直線のままだと高音側の音板が浮いて見えた）。
- *   ただし手前の脚（側面図の z legZ）の列だけはレールを脚まで残す（脚の取り付け部。残さないと高音側の脚が宙に浮く）
+ * ・脚は左右の端の外寄りから生やす。音板・共鳴管の列と重ならない（2026-09-23）。
+ *   左右の端も手前の端は斜めの線まで削る（右＝高音側の端が音板より手前へ出っ張っていた。同日ユーザー指定）。
+ *   そのため右の手前の脚は、削った後の端の手前の縁（legZ.R の手前の値を自動計算）から生やす
  * ・**1 列**。白鍵・黒鍵の 2 列にすると、この解像度（幅 28px に 16 枚）では 1 枚あたりの
  *   奥行きが半分になり、音板が「厚い短いブロック」に見えてしまうので採らない。
  *   鍵盤の並びは色（白鍵をやや明るく）だけで示す
@@ -644,9 +646,13 @@ function isMetalColor(r, g, b) {
  * carve は **true を返したセルを削る**。座標は res 倍したセル番号。
  */
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, legX, legZ }) => {
+const NEAR_RAIL_OUT = 2;   // 手前のレールを音板の手前の端から奏者側へ出す幅（セル。2 = 1px）
+const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, legZ, casterY, tubes = null }) => {
   const far = zc + lo / 2;                                                           // 音板の奥の端（全部揃う）
   const nearAt = (x) => { const t = clamp01((x - x0) / pitch / (n - 1)); return far - (lo + (hi - lo) * t); }; // 列 x の音板の手前の端（連続）
+  const frontAt = (x) => Math.floor(nearAt(x)) - NEAR_RAIL_OUT;                   // 列 x のフレーム（レール・端）の手前の縁
+  // 脚の奥行き（手前, 奥）。右の手前は削った後の端の手前の縁から（左は legZ.L のまま）
+  const legs = { L: legZ.L, R: [Math.max(legZ.R[0], frontAt(w - 1)), legZ.R[1]] };
   const f = (x, y, z) => {
     if (y < barY) {                                   // 音板：高音ほど短い。奥の端（一番長い音板の奥端）で揃え、手前側だけ短くなる
       const i = Math.round((x - x0) / pitch);
@@ -655,20 +661,44 @@ const keyboardRig = ({ barY, frameY, x0, pitch, n, zc, lo, hi, railW, endX, w, l
       return z + 0.5 > far || z + 0.5 < far - L;
     }
     if (y < frameY) {                                 // フレーム：前後のレールだけ残す（端は箱のまま）
-      if (x < endX || x > w - endX) return false;
-      const r0 = legX.includes(x) ? Math.min(legZ, Math.floor(nearAt(x))) : Math.floor(nearAt(x)); // 手前のレールの手前の端（斜め）
-      if (z < r0) return true;                        // レールより手前は空ける
-      return z >= Math.floor(nearAt(x)) + railW && z <= 2 * zc - 1 - railW;   // レールと奥のレールの間を抜く
+      if (x < endX || x >= w - endX) return z < frontAt(x);   // 左右の端（幅 endX）は中を抜かない。手前だけ斜めの線まで削る
+      // 手前のレールの手前の端（斜め）。音板の手前の端より NEAR_RAIL_OUT セル奏者側へ出して幅を広げる
+      // （2026-09-23 ユーザー指定：幅を太く。奥側へ広げると音板の下に隠れて見えないので手前へ出す）
+      if (z < frontAt(x)) return true;                                                  // レールより手前は空ける
+      // レールと奥のレールの間を抜く。手前のレールの幅は奥と同じ railW（外側＝手前の端はそのまま、内側を削る。
+      // 2026-09-23 ユーザー指定：下から覗くと手前だけ太かった）
+      return z >= frontAt(x) + railW && z <= 2 * zc - 1 - railW;
     }
-    return false;                                     // 共鳴管・脚はそのまま
+    // 共鳴管（tubes = { y0, len(i), depth, off, row(i) }）：各管を真上の音板の中心の奥行きに置く。音板は奥で揃い手前だけ短くなるので、
+    // 中心は高音ほど奥へずれ、管の並びが音板の斜めの線に沿う（2026-09-23 ユーザー指定）。側面図は全部の管が入る帯にしておき、列ごとに削る
+    if (tubes && y >= tubes.y0 && (x - x0) % pitch < 2) {
+      const i = Math.floor((x - x0) / pitch);
+      if (i >= 0 && i < n && y < tubes.y0 + tubes.len(i)) {
+        // 2 列（2026-09-23 ユーザー指定）：tubes.row(i) が -1 なら手前の列、+1 なら奥の列。音板の中心から tubes.off ずらす
+        const c = far - (lo + (hi - lo) * (i / (n - 1))) / 2 + (tubes.row ? tubes.row(i) * tubes.off : 0);
+        const k = Math.round(c - tubes.depth / 2);        // 奥行きは幅と同じ tubes.depth セル＝断面が正方形（2026-09-23 ユーザー指定）
+        return z < k || z >= k + tubes.depth;
+      }
+    }
+    // 左右の端の下：その側の脚 2 本（2 セル）とキャスター（脚の 2 セル手前から 6 セル）の奥行きだけ残す。
+    // 側面図は左右両方の脚・共鳴管が入る帯にしてあるので、列ごとに削り分ける
+    if (x < endX || x >= w - endX) {
+      const [a, b] = y >= casterY ? [-2, 4] : [0, 2];
+      return !legs[x < endX ? 'L' : 'R'].some((lz) => z >= lz + a && z < lz + b);
+    }
+    return false;
   };
-  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w},${legX},${legZ})`;
+  f.toString = () => `keyboardRig(${barY},${frameY},${x0},${pitch},${n},${zc},${lo},${hi},${railW},${endX},${w},${legZ.L}/${legZ.R},${casterY},${NEAR_RAIL_OUT},${tubes ? tubes.y0 + ':' + tubes.depth + ':' + tubes.off + ':' + tubes.len + ':' + tubes.row : ''})`;
   return f;
 };
-// シロフォン：音板 行 4-5（奥行き z 2-17・中心 10、長さ 16→9）／フレーム 行 6-8
-const XYLO_BARS = keyboardRig({ barY: 6, frameY: 9, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 4, endX: 6, w: 56, legX: [7, 8, 47, 48], legZ: 5 });
-// マリンバ：音板 行 2-3（奥行き z 2-21・中心 12、長さ 20→11）／フレーム 行 4-6
-const MARIMBA_BARS = keyboardRig({ barY: 4, frameY: 7, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 4, endX: 6, w: 72, legX: [7, 8, 63, 64], legZ: 5 });
+// シロフォン：音板 行 4（奥行き z 2-17・中心 10、長さ 16→9）／フレーム 行 5-7
+const XYLO_BARS = keyboardRig({ barY: 5, frameY: 8, x0: 4, pitch: 3, n: 16, zc: 10, lo: 16, hi: 9, railW: 4, endX: 6, w: 56, legZ: { L: [5, 13], R: [9, 16] }, casterY: 34 });   // 右の奥の脚は奥のレールの真下（2026-09-23 ユーザー指定：手前に入りすぎ）。
+// 右の脚の前後の間隔は左より狭く（右 3.5px・左 4px。同日ユーザー指定。手前の脚で調節）
+const MARIMBA_TUBE_LEN = (i) => 15 - Math.floor(i * 10 / 21);   // マリンバの共鳴管の長さ（行。高音ほど短い）
+const MARIMBA_TUBE_ROW = (i) => (ROSE[i % 12] === ROSE_B ? 1 : -1); // 共鳴管の列：白鍵にあたる音板は手前、黒鍵にあたる音板は奥（実物どおり）
+// マリンバ：音板 行 2（奥行き z 2-21・中心 12、長さ 20→11）／フレーム 行 3-5
+const MARIMBA_BARS = keyboardRig({ barY: 3, frameY: 6, x0: 4, pitch: 3, n: 22, zc: 12, lo: 20, hi: 11, railW: 4, endX: 6, w: 74, legZ: { L: [5, 17], R: [10, 21] }, casterY: 32,   // 右の脚 2 本は右の端の奥行き（z 9〜23）の中央に合わせる（2026-09-23 ユーザー指定）
+  tubes: { y0: 6, len: MARIMBA_TUBE_LEN, depth: 2, off: 2.5, row: MARIMBA_TUBE_ROW } });
 
 /**
  * 頭パーツ（24×30・res 2・pivot (12,24)）の pivot より下、rows 24-25 に「少し太い首」を足す。
@@ -1151,27 +1181,31 @@ export const INSTRUMENT = {
   // 高音ほど打面が下がり、固定高さ（rig y 22）で振り下ろすマレットが空を叩いていた（2026-09-22 ユーザー指摘）。
   // 音程による長さの違いは実物どおり**奥行き**で表す（高音ほど短い）＝下の carve
   xylophone: () => makePart(56, 36, 28, 36, (d) => {   // h 36：打面 16px。スネアの打面と同じ高さにして、腕の形・叩き方を揃える（2026-09-22 ユーザー指定）
-    d.r(7, 9, 2, 25, FRAME_BK); d.r(47, 9, 2, 25, FRAME_BK);                               // 脚（黒・細く 2 セル＝1px。フレームの真下から接地まで）
-    d.r(5, 34, 6, 2, FRAME_BK); d.r(45, 34, 6, 2, FRAME_BK);                                // 脚の台（キャスター）
-    for (let i = 0; i < 16; i++) { const len = 5 - Math.floor(i / 6); d.r(4 + i * 3, 9, 2, len, BRASS); d.r(5 + i * 3, 9, 1, len, BRASS2); } // 共鳴管（真鍮・短い。右半分を暗くして丸みを出す）
-    d.r(2, 6, 52, 3, FRAME_BK);                                                            // フレーム（黒。中は carve で前後 2 本のレールに）
-    d.r(2, 4, 4, 5, FRAME_BK); d.r(50, 4, 4, 5, FRAME_BK);                                 // 左右の端の箱（音板の高さまで立ち上がる）
-    for (let i = 0; i < 16; i++) d.r(4 + i * 3, 4, 2, 2, ROSE[i % 12]);                    // 音板（紫檀・上端 4・厚み 2 セル＝1px・幅 2 セル）
+    // 脚は左右の端の箱の外寄りから生やす（2026-09-23 ユーザー指定：内側にあると音板・共鳴管の列と重なった）
+    d.r(0, 8, 2, 26, FRAME_BK); d.r(54, 8, 2, 26, FRAME_BK);                               // 脚（黒・細く 2 セル＝1px。端の箱の真下から接地まで）
+    d.r(0, 34, 6, 2, FRAME_BK); d.r(50, 34, 6, 2, FRAME_BK);                                // 脚の台（キャスター）
+    // 共鳴管は 2026-09-23 ユーザー指定で削除
+    d.r(2, 5, 52, 3, FRAME_BK);                                                            // フレーム（黒。中は carve で前後 2 本のレールに）
+    d.r(0, 5, 6, 3, FRAME_BK); d.r(50, 5, 6, 3, FRAME_BK);                                 // 左右の端（外側へ広げて 3px。高さはレールと同じ。2026-09-23 ユーザー指定）
+    for (let i = 0; i < 16; i++) d.r(4 + i * 3, 4, 2, 1, ROSE[i % 12]);                    // 音板（紫檀・上端 4・厚み 1 セル＝0.5px・幅 2 セル。2026-09-23 ユーザー指定で 1px → 0.5px、フレームごと 0.5px 上げた）
   }, { res: 2, depth: 20, z0: 0,
-       side: (d) => { d.r(2, 4, 16, 5, F); d.r(0, 6, 20, 3, F); d.r(8, 9, 4, 5, F); d.r(5, 9, 2, 25, F); d.r(13, 9, 2, 25, F); d.r(3, 34, 6, 2, F); d.r(11, 34, 6, 2, F); },
-       top: (d) => { d.r(2, 0, 52, 20, F); }, carve: XYLO_BARS }),
+       side: (d) => { d.r(2, 4, 16, 4, F); d.r(0, 5, 20, 3, F); d.r(5, 8, 2, 26, F); d.r(9, 8, 2, 26, F); d.r(3, 34, 10, 2, F); d.r(16, 8, 2, 26, F); d.r(14, 34, 6, 2, F); d.r(13, 8, 2, 26, F); d.r(3, 34, 6, 2, F); d.r(11, 34, 6, 2, F); },
+       top: (d) => { d.r(0, 0, 56, 20, F); }, carve: XYLO_BARS }),
   // マリンバ 72×36：紫檀の音板 22 枚・下に共鳴管・フレーム・脚。pivot = 底中央
   // 打面はシロフォンと同じ理由で全部同じ高さ。音程の違いは奥行き（carve）と共鳴管の長さで見せる
-  marimba: () => makePart(72, 34, 36, 34, (d) => {   // h 34：打面 16px。シロフォンと同じくスネアの高さに揃える（2026-09-22 ユーザー指定）
-    d.r(7, 7, 2, 25, FRAME_BK); d.r(63, 7, 2, 25, FRAME_BK);                               // 脚（黒・細く 2 セル＝1px。フレームの真下から接地まで）
-    d.r(5, 32, 6, 2, FRAME_BK); d.r(61, 32, 6, 2, FRAME_BK);                                // 脚の台（キャスター）
-    for (let i = 0; i < 22; i++) { const len = 15 - Math.floor(i * 10 / 21); d.r(4 + i * 3, 7, 2, len, BRASS); d.r(5 + i * 3, 7, 1, len, BRASS2); } // 共鳴管（真鍮・高音ほど短い。右半分を暗く）
-    d.r(2, 4, 68, 3, FRAME_BK);                                                            // フレーム（黒。中は carve で前後 2 本のレールに）
-    d.r(2, 2, 4, 5, FRAME_BK); d.r(66, 2, 4, 5, FRAME_BK);                                 // 左右の端の箱
-    for (let i = 0; i < 22; i++) d.r(4 + i * 3, 2, 2, 2, ROSE[i % 12]);                    // 音板（紫檀・上端 2・厚み 2 セル＝1px）
+  marimba: () => makePart(74, 34, 36, 34, (d) => {   // 幅 74：右の縁を外へ 2 セル（2026-09-23 下記）。pivot は 36 のまま（楽器の位置・打点は動かない）
+   // h 34：打面 16px。シロフォンと同じくスネアの高さに揃える（2026-09-22 ユーザー指定）
+    // 脚は左右の端の箱の外寄りから生やす（シロフォンと同じ。共鳴管の列と重ならない）
+    d.r(0, 6, 2, 26, FRAME_BK); d.r(72, 6, 2, 26, FRAME_BK);                               // 脚（黒・細く 2 セル＝1px。端の箱の真下から接地まで）
+    d.r(0, 32, 6, 2, FRAME_BK); d.r(68, 32, 6, 2, FRAME_BK);                                // 脚の台（キャスター）
+    for (let i = 0; i < 22; i++) { const len = MARIMBA_TUBE_LEN(i); d.r(4 + i * 3, 6, 2, len, BRASS); d.r(5 + i * 3, 6, 1, len, BRASS2); } // 共鳴管（真鍮・高音ほど短い。右半分を暗く。奥行きは carve で音板の中心に）
+    d.r(2, 3, 68, 3, FRAME_BK);                                                            // フレーム（黒。中は carve で前後 2 本のレールに）
+    d.r(0, 3, 6, 3, FRAME_BK); d.r(68, 3, 6, 3, FRAME_BK);                                 // 左右の端（外側へ広げて 3px。高さはレールと同じ。2026-09-23 ユーザー指定）
+    // 右の端は 66 → 68 へ：最後の音板（x 67-68）と深く重なり、音板の外に 3 セルしか見えずシロフォン（5 セル）より細く見えた（同日ユーザー指定）
+    for (let i = 0; i < 22; i++) d.r(4 + i * 3, 2, 2, 1, ROSE[i % 12]);                    // 音板（紫檀・上端 2・厚み 1 セル＝0.5px。シロフォンと同じくフレームごと 0.5px 上げた）
   }, { res: 2, depth: 24, z0: 0,
-       side: (d) => { d.r(2, 2, 20, 5, F); d.r(0, 4, 24, 3, F); d.r(10, 7, 4, 15, F); d.r(5, 7, 2, 25, F); d.r(17, 7, 2, 25, F); d.r(3, 32, 6, 2, F); d.r(15, 32, 6, 2, F); },
-       top: (d) => { d.r(2, 0, 68, 24, F); }, carve: MARIMBA_BARS }),
+       side: (d) => { d.r(2, 2, 20, 4, F); d.r(0, 3, 24, 3, F); d.r(7, 6, 15, 15, F); d.r(10, 6, 2, 26, F); d.r(3, 32, 11, 2, F); d.r(21, 6, 2, 26, F); d.r(19, 32, 5, 2, F); d.r(5, 6, 2, 26, F); d.r(17, 6, 2, 26, F); d.r(3, 32, 6, 2, F); d.r(15, 32, 6, 2, F); },
+       top: (d) => { d.r(0, 0, 74, 24, F); }, carve: MARIMBA_BARS }),
   // グランカッサ 52×60：正面向きの大太鼓（白い皮・木の胴・フープ・ラグ・スタンド）。pivot = 底中央
   bassdrum: () => makePart(52, 60, 26, 60, (d) => {
     d.r(22, 48, 8, 12, C.silver2); d.r(8, 56, 36, 4, C.silver2);                            // スタンド
