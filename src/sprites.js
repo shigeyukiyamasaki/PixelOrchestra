@@ -1081,11 +1081,18 @@ export const INSTRUMENT = {
       d.r(0, 4, 2, 86, C.wood2); d.r(62, 4, 2, 86, C.wood2); d.r(0, 4, 64, 3, C.wood2);      // 柱・横木
       d.r(0, 2, 2, 2, C.gold2); d.r(62, 2, 2, 2, C.gold2);                                   // 柱の頭の飾り
     }, opts);
+    // 円盤はシンバルのように中央へ向けて段差を付けて立体にする（2026-09-23 ユーザー指定）。
+    // 縁〜打ち出しの輪の外は従来の 2 セル（1px）のまま、輪（半径 18）の内側で +1 セル、中央（半径 7）で +2 セル、
+    // **正面（+z）側へ**盛り上げる。奏者が叩く裏面（-z）の位置は変わらないので、打点（puppet.js の strike）は触らない。
+    // 段の境目は絵の輪・中央の円と同じ判定（Pen.disc の r² ≤ rad² + rad/2）で揃える
+    const inDisc = (x, y, rad) => (x - 32) ** 2 + (y - 42) ** 2 <= rad * rad + rad * 0.5;
     const hanging = makePart(64, 90, 32, 7, (d) => {
       d.r(26, 7, 1, 9, C.black); d.r(37, 7, 1, 9, C.black);                                  // 吊り紐
-      d.disc(32, 42, 27, C.gold2); d.ring(32, 42, 27, C.copper2); d.ring(32, 42, 26, C.copper2); // 円盤・縁（濃い）
-      d.ring(32, 42, 18, C.gold); d.disc(32, 42, 7, '#c99a36');                              // 打ち出しの輪・中央
-    }, opts);
+      // 円盤の地と打ち出しの輪の色は 2026-09-23 ユーザー指定で入れ替え（地＝明るい金、輪＝濃い金）
+      d.disc(32, 42, 27, C.gold); d.ring(32, 42, 27, C.copper2); d.ring(32, 42, 26, C.copper2); // 円盤・縁（濃い）
+      d.ring(32, 42, 18, C.gold2); d.disc(32, 42, 7, '#c99a36');                             // 打ち出しの輪・中央
+    }, { ...opts, side: (d) => { d.r(11, 2, 4, 84, F); d.r(0, 86, 24, 4, F); },
+         carve: (x, y, z) => (z === 13 ? !inDisc(x, y, 18) : z === 14 ? !inDisc(x, y, 7) : false) });
     const swing = new THREE.Group();
     swing.position.set(0, (90 - 7) / 2 * PX, 0);   // 支点：絵の行 7（res 2 なので 1 行 = 0.5px）
     swing.add(hanging);
