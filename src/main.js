@@ -1729,8 +1729,9 @@ function animate() {
                  bgFlip: s.bgFlip, skyGlowSpread: s.skyGlowSpread, starTwinkle: s.starTwinkle, sunBloom: s.sunBloom, skyTint: s.skyTint, groundBounceOn: s.groundBounceOn, groundBounce: s.groundBounce });   // 天空光の色相は stage 側で夕焼け色から決める。地面の色は床の平均色（stage 側）
     // 金属のツヤ（値が変わった時だけシーンを走査してマテリアルに反映）
     // 金属だけのブルーム閾値は「レンズ欄のブルーム閾値 × 割合」で決める（2026-09-23 ユーザー指定：絶対値ではなく相対値）。
+    // 割合の上限は 100%（＝他の素材と同じ閾値）。金属だけ光りにくい状態は作らない（2026-09-23 ユーザー指定）。
     // レンズ側を動かしたら金属側も追随する必要があるので、bloomThr も変化の判定に入れる
-    const metalThr = Math.min(1, Math.max(0, s.bloomThr * s.metalThrPct / 100));
+    const metalThr = Math.max(0, s.bloomThr * Math.min(100, s.metalThrPct) / 100);
     if (s.metalSpec !== lastMetalSpec || metalThr !== lastMetalThr) { lastMetalSpec = s.metalSpec; lastMetalThr = metalThr; applyMetalLook(scene, s.metalSpec, metalThr); }
     applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
     applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
