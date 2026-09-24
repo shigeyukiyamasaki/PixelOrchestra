@@ -894,6 +894,55 @@ function celestaCell(xRaw, y, z) {
   return null;
 }
 
+// ---- ハープの立体（2026-09-24 ユーザー指定：見た目が変）----
+// 以前は共鳴胴が下の中央に台形の山として置かれ、弦がその斜面へ下りる竪琴のような形だった。実物は「柱・ネック・斜めの共鳴胴」の三角形：
+// 共鳴胴は台座から奏者の肩の方へ斜めに伸び（下ほど太く深い）、弦は柱の近くが長い低音、共鳴胴の上端に近いほど短い高音。
+// 高さも奏者（座った肩の高さ）に対して 3 割大きかったので、柱頭を 18 行下げて実物の比率（共鳴胴の上端 ≒ 肩の高さ）にした。
+// 座標は res:2 のセル：x 0..43（柱の側が 0。以前の絵と同じ向き）、y 0..71（床が 72）、z 0..11（柱・弦は z 5〜6。以前と同じ）
+const HARP = { W: 44, H: 72, D: 12 };
+// 柱頭の上の行。台座の上（行 66）から 49 行だった柱を 1.2 倍の 59 行にした（2026-09-24 ユーザー指定）
+const HARP_COL_TOP = 7;
+// 柱の左端の列。1 本目の弦（x 11）との間が弦どうしと同じ 1 セルになるよう奏者側へ寄せた（2026-09-24 ユーザー指定。以前は 4〜5）
+const HARP_COL_X = 8;
+const HARP_NECK_T = 4;   // ネックの上下の厚み [行]
+const HARP_NECK_Z0 = 5, HARP_NECK_Z1 = 7;   // ネックの奥行き [z0, z1)：上から見た幅（2026-09-24 ユーザー指定で 4 → 2 セルに細く。弦 z 5 を含む）
+// ネックの下の縁：柱頭のすぐ下（柱の側 x 9 で HARP_COL_TOP + 6）から共鳴胴の上端（x 40 で 36）へ S 字に下がる。
+// 柱を伸ばした時に柱頭につなぐよう、柱の側の端を上げた（2026-09-24 ユーザー指定。うねりも 2.5 → 3.5 行）
+const harpNeckY = (x) => { const t = (x - 9) / 31, y0 = HARP_COL_TOP + 6; return Math.round(y0 + (36 - y0) * t + 3.5 * Math.sin(2 * Math.PI * t)); };
+// 共鳴胴（行 38..64）の左右の縁。付け根（行 64）は x 11〜21 で奥から 1 本目の弦（x 11）から始まる（2026-09-24 ユーザー指定。以前は中心 22 で
+// 4 本目の弦から）。上端（行 38、中心 39）は変えていない
+const harpBox = (y) => { const s = (64 - y) / 26; const cx = 16 + 23 * s, w = 10 - 6 * s; return { x0: cx - w / 2, x1: cx + w / 2, s }; };
+function harpCell(x, y, z) {
+  // 台座（行 66..71）と、正面（z 0）に並ぶ 7 本のペダル。
+  // 横は柱の左端から共鳴胴の付け根の右端まで（2026-09-24 ユーザー指定：奥・手前のはみ出しを詰めた。以前は x 4..30）
+  if (y >= 66) {
+    const bx0 = HARP_COL_X, bx1 = Math.ceil(harpBox(64).x1);
+    if (x >= bx0 && x < bx1 && z >= 1 && z < 11) return C.wood2;
+    if (y >= 68 && y <= 69 && z === 0 && x >= bx0 && x < bx1 && (x - bx0) % 2 === 0) return C.gold2;   // ペダル：2 セルおき
+    return null;
+  }
+  // 柱（x HARP_COL_X..）：上に柱頭（HARP_COL_TOP から 4 行の立方体）。下は柱脚を付けず、そのまま台座につなぐ（2026-09-24 ユーザー指定）
+  if (z >= 4 && z < 8) {
+    if (y >= HARP_COL_TOP && y < HARP_COL_TOP + 4 && x >= HARP_COL_X - 1 && x < HARP_COL_X + 3) return C.gold2;   // 柱頭：柱を中心に 4×4×4（以前は横 9・高さ 6）
+    // 柱：断面は奥行きと同じ幅の正方形（2026-09-24 ユーザー指定。以前は横 5 セル・中央に陰の筋）。奥行きはネックと同じ
+    if (y >= HARP_COL_TOP + 4 && x >= HARP_COL_X && x < HARP_COL_X + (HARP_NECK_Z1 - HARP_NECK_Z0) && z >= HARP_NECK_Z0 && z < HARP_NECK_Z1) return C.gold;
+  }
+  // ネック（柱頭から共鳴胴の上端まで、厚み HARP_NECK_T 行、奥行き HARP_NECK_Z0..Z1）。下の縁（弦の上端）は変えずに上側で厚みを決める
+  if (x >= 9 && x < 42 && z >= HARP_NECK_Z0 && z < HARP_NECK_Z1) { const nb = harpNeckY(x); if (y >= nb - HARP_NECK_T && y < nb) return C.gold; }
+  // 共鳴胴（行 38..64）：下ほど太く、奥行きも深い。弦が付く左の縁は濃い色
+  if (y >= 38 && y <= 64) {
+    const b = harpBox(y), half = 2 + 3 * (1 - b.s);
+    if (x >= Math.floor(b.x0) && x < Math.ceil(b.x1) && Math.abs(z + 0.5 - 6) <= half) return x === Math.floor(b.x0) ? C.wood2 : C.wood;
+  }
+  // 弦（x 11..37 の奇数列、z 5）：ネックの下から共鳴胴の左の縁（その列に胴が無ければ台座）まで。C の弦は赤
+  if (z === 5 && x >= 11 && x <= 37 && x % 2 === 1 && y >= harpNeckY(x)) {
+    let yb = 66;
+    for (let yy = 38; yy <= 64; yy++) { if (x >= Math.floor(harpBox(yy).x0)) { yb = yy; break; } }
+    if (y < yb) return ((x - 11) / 2) % 7 === 0 ? '#e05050' : C.silver;
+  }
+  return null;
+}
+
 export const INSTRUMENT = {
   // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
   // 胴：ネック＋渦巻き ≒ 6：4（実物の比率）。駒は x=10（基本座標 -2）
@@ -1373,18 +1422,12 @@ export const INSTRUMENT = {
       for (let z = PIANO.D - 1; z >= 0; z--) { const c = pianoCell(x, y, z); if (c) { d.p(x, y, c); break; } }
     }
   }, { res: 2, depth: PIANO.D, z0: 0, carve: (x, y, z) => !pianoCell(x, y, z), colorOf: pianoCell, colorBack: true }),
-  // ハープ 44×72：柱・湾曲したネック・弦（C 弦は赤）・共鳴胴（下ほど深い）・台座。pivot = 底中央
-  harp: () => makePart(44, 72, 22, 72, (d) => {
-    const neckY = (x) => 2 + Math.round(Math.pow((x - 8) / 33, 1.3) * 26);
-    const boxAt = (y) => ({ x0: 10 + Math.round((68 - y) * 12 / 28), w: 32 - Math.round((68 - y) * 24 / 28) });
-    for (let y = 40; y < 68; y++) { const b = boxAt(y); d.r(b.x0, y, b.w, 1, C.wood); d.p(b.x0, y, C.wood2); d.p(b.x0 + b.w - 1, y, C.wood2); } // 共鳴胴
-    for (let x = 12; x <= 40; x += 2) { const yt = neckY(x) + 4; let yb = 68; for (let y = 40; y < 68; y++) { const b = boxAt(y); if (x >= b.x0 && x < b.x0 + b.w) { yb = y; break; } } d.r(x, yt, 1, yb - yt, x % 14 === 0 ? '#e05050' : C.silver); } // 弦
-    for (let x = 8; x < 42; x++) d.r(x, neckY(x), 1, 4, C.gold);                            // ネック
-    d.r(4, 0, 6, 66, C.gold); d.r(6, 2, 1, 62, '#c99a2f'); d.r(2, 0, 10, 4, C.gold2); d.r(2, 62, 10, 6, C.gold2); // 柱・柱頭・柱脚
-    d.r(2, 68, 42, 4, C.wood2);                                                             // 台座
-  }, { res: 2, depth: 12, z0: 0,
-       side: (d) => { d.r(3, 0, 6, 4, F); d.r(4, 0, 4, 32, F); d.r(5, 0, 2, 68, F); for (let y = 40; y < 68; y++) { const w = 4 + Math.round((y - 40) * 8 / 28); d.r(Math.round(6 - w / 2), y, w, 1, F); } d.r(0, 68, 12, 4, F); },
-       top: (d) => { d.r(2, 3, 10, 6, F); d.r(10, 0, 34, 12, F); } }),
+  // ハープ 44×72×12：形と色は harpCell（2026-09-24 作り直し）。正面図は立体を手前から見た色（2D の板用）。pivot = 底中央
+  harp: () => makePart(HARP.W, HARP.H, 22, HARP.H, (d) => {
+    for (let y = 0; y < HARP.H; y++) for (let x = 0; x < HARP.W; x++) {
+      for (let z = HARP.D - 1; z >= 0; z--) { const c = harpCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: HARP.D, z0: 0, carve: (x, y, z) => !harpCell(x, y, z), colorOf: harpCell, colorBack: true }),
   // 2nd バイオリンは 1st と同じ絵（2026-09-12）。旧データの 'violin' も同じ
   baton: () => makePart(24, 1, 0, 0, (d) => { d.r(0, 0, 24, 1, C.ivory); d.r(0, 0, 4, 1, C.black); }, { res: 2, depth: 1, z0: -0.5 }),
 };
