@@ -1468,9 +1468,11 @@ for (const ev of ['pointermove', 'pointerdown']) $('viewArea').addEventListener(
 $('viewTransport').addEventListener('click', (e) => e.stopPropagation());   // 公開ページの「画面を押すと一時停止」に伝えない
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space') return;
-  // 文字/数値入力とプルダウンの中だけはスペースを通す。ファイル選択・ボタン・スライダーにフォーカスがあっても再生/停止にする
+  // 文字/数値入力の中だけはスペースを通す。ファイル選択・ボタン・スライダー・プルダウンにフォーカスがあっても再生/停止にする。
+  // プルダウンはプリセット等を選んだ後もフォーカスが残り、スペースで再生できなかった（2026-09-24 ユーザー報告）。
+  // 開いたリストの中のキー操作はページに届かないので、選ぶ操作には影響しない
   const el = e.target;
-  const typing = (el.tagName === 'INPUT' && ['text', 'number', 'search'].includes(el.type)) || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA';
+  const typing = (el.tagName === 'INPUT' && ['text', 'number', 'search'].includes(el.type)) || el.tagName === 'TEXTAREA';
   if (typing) return;
   e.preventDefault();
   clock.playing ? pause() : play();
