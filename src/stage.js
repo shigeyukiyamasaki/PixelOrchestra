@@ -27,14 +27,16 @@ export const ROWS = {
   // behind：その楽器の後ろに、内側（舞台の中央寄り）の端を揃えて並べる（2026-09-23 ユーザー指定：コントラバスはチェロの後ろ、ハープ/チェレスタは
   // 1st バイオリンの後ろ。木管の端に隣接させると、木管が少ない曲で必要以上に中央へ寄った）。その楽器がいない曲は従来どおり beside の隣
   contrabass: { r: 13.5, h: 0,    span: 0, beside: 'woodwind', side: +1, fallbackDeg: 40, rowGap: 2.65, behind: 'cello', behindR: true, gapScale: 1.3 },   // behindR：チェロのすぐ後ろの半径（r はチェロがいない時） // 前後の間隔は他の弦と同じ（2026-09-10）
-  // 鍵盤群は奥行き 2 段に並べる：チェレスタ/ハープ → ピアノ（2026-09-10 は鍵盤打楽器を加えた 3 段。2026-09-23 に鍵盤打楽器を打楽器のひな壇へ移した）。
-  // 使われている段だけ手前から詰める。楽器が大きいので段の間隔は広め。
-  // 1 段目は 2 列目相当（r 16.5）から始める：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
-  // 2 段目（r 19.5）は金管の扇の端に隣接
+  // 鍵盤群（チェレスタ/ハープ/ピアノ）は 1st バイオリンの後ろ（内側の端を揃える）。鍵盤打楽器は 2026-09-23 に打楽器のひな壇へ移した。
+  // 段：ピアノ（横向き）が 1 段目＝1st バイオリンのすぐ後ろ、ハープ/チェレスタはその後ろ（2026-09-24 ユーザー指定）。
+  // 使われている段だけ手前から詰めるので、ピアノの無い曲はハープ/チェレスタが 1 段目（r 16.5。従来の位置）。
+  // 1 段目は r 16.5：r 13.5 だとバイオリンの 3 列目（r 11.8）のすぐ後ろに来て密着する（2026-09-10 ユーザー指摘）。
+  // fluid：2 段目以降の半径は固定の段の間隔ではなく、前の段の楽器の奥の端 + 隙間 + この段の楽器の手前への張り出し
+  // （ひな壇の列に縛られない。2026-09-24 ユーザー指定）
   keyboard:   { r: 16.5, h: 0,    span: 0, beside: 'woodwind', side: -1, fallbackDeg: -40, levelGap: 3.0,
-                // 鍵盤打楽器は打楽器のひな壇へ移した（2026-09-23）。残るのはチェレスタ/ハープ（手前の段）とピアノ（奥の段）。
-                // besideAt は**使われている段の順番**（手前から 0, 1…）で引く：手前の段は木管の左隣、奥の段は金管の左隣
-                depthOf: (v) => (v === 'piano' ? 1 : 0), besideAt: { 1: 'brass' }, behind: 'violin1' },   // 手前の段（ハープ/チェレスタ）は 1st バイオリンの後ろ // 3 段目も金管の端に揃える（打楽器の扇は広く、端に付けると床の縁まで出てしまう）
+                // outDeg：段（depthOf の値）ごとに、揃えた位置から同じ弧の上を外側（客席側）へ回す角度 [deg]。
+                // ピアノは 1st バイオリンの内側の端に揃えると奥すぎたので客席側へ（2026-09-24 ユーザー指定）
+                depthOf: (v) => (v === 'piano' ? 0 : 1), behind: 'violin1', fluid: true, outDeg: { 0: 15 } },
 };
 // 楽器ごとの人数（横 cols × 奥行き rows）。実際のオーケストラの人数感（2026-09-09 ユーザー指定：1st Vn = 3×3）
 // 未指定は 1 人
@@ -71,6 +73,7 @@ function rowKeyOf(track) {
   return track.family;
 }
 const STRING_GAP_SCALE = 1.15;   // 弦の奏者の横の間隔の倍率（弦だけ。2026-09-24 ユーザー指定）
+const FLUID_MARGIN = 0.3;   // 鍵盤群の流動的な段：前の段の楽器の奥の端との隙間 [unit]
 const PUPPET_GAP = 1.7;   // 同一トラック内の奏者間隔（横）[unit]（奏者の幅 ≒ 1.2）
 
 export const PODIUM_H = 0.6;      // 指揮台の高さ [unit]
@@ -1816,13 +1819,14 @@ export function layoutSeats(tracks, footprintOf = null) {
   // トラックごとの奏者 1 人分の間隔 [unit] と、座席中心からの横ずらし [unit]
   const slotOf = (tr) => {
     const f = footprintOf?.(tr);
-    if (!f) return { gap: PUPPET_GAP, off: 0, dr: 0 };
+    if (!f) return { gap: PUPPET_GAP, off: 0, dr: 0, front: 1, back: 1 };
     // 手持ち楽器（弓・バイオリン等）は隣と少し重なってよいので 0.3 の食い込みを許す。これが無いと弦の間隔が 1.87 に広がり、
     // 独奏トラックが 1 つ増えただけで弦の扇が溢れて各セクションの人数が削られる（2026-09-10 ユーザー報告）
     const w = f.maxX - f.minX - 0.3;
     // 奥行きのずらし量 [unit]。+z = 奏者の前（指揮者側）なので、楽器が前に出ているほど半径を増やして後ろへ下げる
     const dr = Number.isFinite(f.minZ) ? (f.minZ + f.maxZ) / 2 : 0;
-    return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2, dr };
+    // front / back：座席から手前（指揮者側）・奥へ張り出す量 [unit]（鍵盤群の流動的な段の奥行きに使う）
+    return { gap: Math.max(PUPPET_GAP, w), off: -(f.minX + f.maxX) / 2, dr, front: Math.max(0, f.maxZ), back: Math.max(0, -f.minZ) };
   };
   const byFam = {};
   for (const tr of tracks) (byFam[rowKeyOf(tr)] ||= []).push(tr);
@@ -1881,6 +1885,7 @@ export function layoutSeats(tracks, footprintOf = null) {
       const levels = new Map();
       list.forEach((tr, i) => { const k = row.depthOf ? row.depthOf(tr.variant) : 0; (levels.get(k) || levels.set(k, []).get(k)).push(i); });
       const levelGap = row.levelGap ?? ROW_GAP;
+      let prevBack = null;
       [...levels.entries()].sort((a, b) => a[0] - b[0]).forEach(([k0, idxs], k) => {
         // レベルごとに隣接先を変えられる（3 段目は金管の端）。基準列が無ければ木管の端
         const edgeB = row.besideAt?.[k] ? edgeOf(row.besideAt[k]) : null;
@@ -1893,7 +1898,11 @@ export function layoutSeats(tracks, footprintOf = null) {
         const refTh = refPs.map((p) => Math.atan2(p.x, -p.z));
         // behindR：半径も基準の楽器の一番後ろの列 + 列の間隔にする（コントラバスをチェロのすぐ後ろに 1 列で。2026-09-24 ユーザー指定）。
         // 角度の間隔はこの半径で計算する（後から半径だけ縮めると奏者が詰まる）
-        const rb = row.behindR && refPs.length ? Math.max(...refPs.map((p) => Math.hypot(p.x, p.z))) + (row.rowGap ?? ROW_GAP) : row.r;
+        let rb = row.behindR && refPs.length ? Math.max(...refPs.map((p) => Math.hypot(p.x, p.z))) + (row.rowGap ?? ROW_GAP) : row.r;
+        // fluid（鍵盤群。2026-09-24 ユーザー指定）：2 段目以降は、前の段の楽器の奥の端 + 隙間 + この段の楽器の手前への張り出し。
+        // ひな壇の列（木管・金管）に縛られず、楽器の大きさに合わせて詰める
+        const fluidR = row.fluid && k > 0 && prevBack != null;
+        if (fluidR) rb = prevBack + FLUID_MARGIN + Math.max(...idxs.map((i) => slots[i].front));
         const aOf = (cols, i) => (cols * slots[i].gap) / rb;
         const trackGap = (PUPPET_GAP / rb) * 0.5;
         const total = idxs.reduce((a, i) => a + aOf(sizes[i].cols, i), 0) + trackGap * Math.max(0, idxs.length - 1);
@@ -1906,16 +1915,23 @@ export function layoutSeats(tracks, footprintOf = null) {
           centerAngle.set(tr, c);
           // 角度間隔は最前列の半径基準（gridPositions は row.r を使う）。奥のレベルは半径だけ大きくする
           const positions = gridPositions({ r: rb, h: row.h, rowGap: row.rowGap, depthCenter: row.depthCenter }, c, sizes[i].cols, sizes[i].rows, slots[i], sizes[i].perRow).map((p) => {
-            const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + k * levelGap;
+            const th = Math.atan2(p.x, -p.z), r = Math.hypot(p.x, p.z) + (fluidR || row.fluid ? 0 : k * levelGap);
             return { x: r * Math.sin(th), y: rowK.h, z: -r * Math.cos(th), row: p.row + k };
           });
           seats.push({ track: tr, puppets: positions.length, positions });
         }
+        prevBack = Math.max(...idxs.map((i) => rb + slots[i].back));   // この段の楽器の奥の端（次の段の fluid 用）
         if (refTh.length) {
           const mine = seats.slice(start).flatMap((st) => st.positions);
           const ths = mine.map((p) => Math.atan2(p.x, -p.z));
           const delta = row.side > 0 ? Math.min(...refTh) - Math.min(...ths) : Math.max(...refTh) - Math.max(...ths);
           for (const p of mine) { const th = Math.atan2(p.x, -p.z) + delta, r = Math.hypot(p.x, p.z); p.x = r * Math.sin(th); p.z = -r * Math.cos(th); }
+        }
+        const out = row.outDeg?.[k0];   // 外側（客席側）へ回す。side -1（左）は角度を減らす向き
+        if (out) {
+          for (const p of seats.slice(start).flatMap((st) => st.positions)) {
+            const th = Math.atan2(p.x, -p.z) + row.side * deg(out), r = Math.hypot(p.x, p.z); p.x = r * Math.sin(th); p.z = -r * Math.cos(th);
+          }
         }
       });
       continue;

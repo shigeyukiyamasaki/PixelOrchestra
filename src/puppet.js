@@ -311,7 +311,11 @@ const VARIANT = {
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 21.5] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
-  piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 },
+  // ピアノは横向き（2026-09-24 ユーザー指定）：オーケストラの中のピアノは 1st バイオリンの後ろで、協奏曲と同じく奏者は壁側（外側）に座り、
+  // しっぽは舞台の中央へ向く。客席から見て真横から、指揮者の方へ sideYaw だけ振る（奏者の向きは舞台基準。faceToward で計算）。
+  // 首は体と指揮者の方向の差だけひねって指揮者を見る。bodyYaw は席が決まる前（配置の幅を測る時）の見込み：真横 90° − 振り 30° − 席の方位 ≈45°。
+  // 縦向き（胴が指揮者へ伸びる）だと前後に 6.5 も要り、1st バイオリンの後ろに収まらなかった
+  piano:      { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 14, spread: 12, gap: 4 }, sideYaw: Math.PI / 6, bodyYaw: Math.PI / 12,
                 p3: { pos: [0, 0, 43], rot3: [0, Math.PI, 0], keys: { y: 16.4, spread: 14, gap: 4, z: 10 } } }, // 1.17 倍：奥行き 30px×1.17 で鍵盤の縁が z≈8。鍵盤の高さ・音域幅も 1.17 倍、手は z 10（肘が畳まれないように前へ）
   celesta:    { inst: { pos: [0, 0, 4], rot: 0 }, keys: { y: 16, spread: 7, gap: 3 },
                 p3: { pos: [0, 0, 20], rot3: [0, Math.PI, 0], keys: { y: 19.2, spread: 8.4, gap: 3, z: 10 } } }, // 1.2 倍：奥行き 10px×1.2 で鍵盤の縁が z≈8、手は z 10
@@ -506,10 +510,20 @@ export class Puppet {
   /** 向きを固定：指定の点（指揮者）の方を向く。指揮者自身は楽団（-z）の方を向く */
   faceToward(px, pz) {
     const yaw = this.family === 'conductor' ? Math.PI : Math.atan2(px - this.root.position.x, pz - this.root.position.z);
+    // sideYaw（ピアノ）：舞台基準で「客席から見て真横・中央向き」から指揮者の方へ sideYaw 振る。指揮者の方向との差を体の上乗せにする
+    const sy = this.cfg.sideYaw;
+    if (sy != null && !this.flat) {
+      const side = this.root.position.x < 0 ? Math.PI / 2 : -Math.PI / 2;   // +x へ向く＝yaw +90°（左側の席は中央 = +x）
+      const diff = Math.atan2(Math.sin(yaw - side), Math.cos(yaw - side));
+      this._sideRel = side + Math.sign(diff) * Math.min(Math.abs(diff), sy) - yaw;
+    }
     this.group.rotation.set(0, yaw + this._bodyYaw(), 0);
   }
-  /** 体の向きの上乗せ [rad]（+ で奏者の左へ回る）。楽器の設定 bodyYaw。ボクセルのみ（2D の板は正対のまま）。2026-09-19 ユーザー指定：銅鑼の奏者は真横を向く */
-  _bodyYaw() { return this.flat ? 0 : (this.cfg.bodyYaw ?? 0); }
+  /** 体の向きの上乗せ [rad]（+ で奏者の左へ回る）。楽器の設定 bodyYaw。ボクセルのみ（2D の板は正対のまま）。2026-09-19 ユーザー指定：銅鑼の奏者は真横を向く。
+   *  sideYaw の楽器は faceToward で求めた値（席が決まる前は bodyYaw を見込みとして使う） */
+  _bodyYaw() { return this.flat ? 0 : (this._sideRel ?? this.cfg.bodyYaw ?? 0); }
+  /** 首のひねり [rad]。sideYaw の楽器は体の上乗せと同じ量（符号の決まりは銅鑼と同じ）で、顔を指揮者へ戻す */
+  _headYaw() { return this.cfg.sideYaw != null ? this._bodyYaw() : (this.cfg.headYaw ?? 0); }
 
   // ---- 手の配置：目標へ滑らかに寄せてから 3D IK（rate が大きいほど即応。Infinity で即時）----
   // handDir（rig 空間）を渡すと手首あり：手首＝目標 − handDir×手の長さ、前腕は手首へ、手は handDir を向く
@@ -634,7 +648,7 @@ export class Puppet {
     const { active, age, next, toNext } = st;
     const wantConductor = (!active.length && (age > 0.5 || (next && toNext < 1.0)));
     this._gaze = approach(this._gaze ?? 0, wantConductor ? 0 : 1, 4, dt);
-    this.headPivot.rotation.y += gazeYaw * this._gaze + (this.cfg.headYaw ?? 0);   // headYaw：体を横に向けた楽器（銅鑼）で、首をひねって顔を指揮者へ向け続ける（2026-09-19 ユーザー指定）
+    this.headPivot.rotation.y += gazeYaw * this._gaze + this._headYaw();   // headYaw：体を横に向けた楽器（銅鑼）で、首をひねって顔を指揮者へ向け続ける（2026-09-19 ユーザー指定）
     // 前傾しても顔は起こす（腰の前傾を首で打ち消す）。gazeDown は「楽器を見る」分だけ足す
     this.headPivot.rotation.x += -this._lean * 0.9 + gazeDown * this._gaze;
   }
