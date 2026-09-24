@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, wristBall, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts } from './sprites.js';
+import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, wristBall, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts, HARP_LEAN_CELLS } from './sprites.js';
 import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 import { COSTUMES, suitColors } from './costume.js';
 
@@ -39,9 +39,11 @@ const PLAYER_TALL = { contrabass: 1.08 };
 // 叩く楽器と弾く楽器が混ざったため）。ここに無い楽器は分類（strings / woodwind / brass / percussion）がそのままテンプレート
 const MOTION_OF = { xylophone: 'percussion', marimba: 'percussion', glocken: 'percussion', vibraphone: 'percussion', tubularbells: 'percussion',
                     piano: 'keyboard', celesta: 'keyboard', harp: 'keyboard' };
-const HARP_HEAD_ROLL = 12 * Math.PI / 180;
+const HARP_HEAD_ROLL = 18 * Math.PI / 180;   // 2026-09-24 ユーザー指定で 12° → 18°
 // ハープ奏者の体だけを回す角度（+ で奏者の左へ。2026-09-24 ユーザー指定：左手が奥の弦に届く余裕を作る）。ハープは床に対して動かさない
-const HARP_TURN = -10 * Math.PI / 180;
+// ハープを右肩の動きに合わせて台座の底を軸に傾ける倍率（1 = 共鳴胴の上端が肩と同じだけ動く。0 で傾けない。2026-09-24 ユーザー指定）
+const HARP_LEAN_GAIN = 1;
+const HARP_TURN = -5 * Math.PI / 180;   // 2026-09-24 ユーザー指定で −10° → 0° → −5°（少しハープの方へ）
 const HARP_STRING_Z = 2.75;   // ハープの弦の面の奥行き [楽器ローカル px]（sprites.js の harpCell：弦は z 5 のセル。変えたら揃える）
 const PERC_UP = [0, 1, 0]; // 鍵盤・ハープの手の甲の向きヒント（真上）
 // 棒を持つ打楽器の手の甲は**外側**（体から離れる向き）。実際の構えがそうなっている（2026-09-22 ユーザー指定）。
@@ -327,13 +329,17 @@ const VARIANT = {
   // ハープ：柱を前、短い弦（高音）を体側にして胸の前に置き、上部を奏者側へ少し倒す（y 回転を +0.7 に反転して右手が体を横切らないように。2026-09-10）
   // headRoll：首を横に倒す角度 [rad]（2026-09-24 ユーザー指定：奏者と向かい合った側から見て右＝奏者の左へ 12°。符号は画面で確認）
   // turn：奏者の体だけを回す（bodyYaw と同じ量だけ首を戻して顔は指揮者へ、楽器は逆に回して床に対してそのまま）
-  harp:       { inst: { pos: [-9, 0, 4], rot: 0 }, harp: true, headRoll: HARP_HEAD_ROLL, turn: HARP_TURN,
+  // headFixed：首を振らない（2026-09-24 ユーザー指定）。向きは headYaw（turn の打ち消し）＋ headRoll に固定し、上半身の揺れ・前かがみも首で打ち消す
+  harp:       { inst: { pos: [-9, 0, 4], rot: 0 }, harp: true, headRoll: HARP_HEAD_ROLL, turn: HARP_TURN, headFixed: true,
                 // 向き（2026-09-24 ユーザー指定）：実物どおり共鳴胴の上端を右肩に寄りかけ、柱は正面の先（前 2.0）。
                 // 弦の面は体の正面の面に対して約 72°（以前は rot3 y 0.7 で約 41°、共鳴胴の上端が右へ 1.27 離れていた）。
                 // 弦の面は右肩のすぐ左を通す（楽器の奥行きで 4 セル奏者の左へ。右肩が弦の右手側に来る）：面が右肩の上を通ると、
                 // 弦の右側からはじく右腕が肩の直後で面を横切り、共鳴胴にめり込んでいた
                 // 奏者との距離（2026-09-24 ユーザー指定：少し空ける）：正面へ 2px（z 15.89 → 17.89）。2.5px では左手が奥の弦に届かない瞬間があった
-                p3: { pos: [-5.56, 0, 17.89], rot3: [-0.12, 1.26, 0], harp: true } },
+                // 傾き・位置（2026-09-24 ユーザー指定）：10° 寝かせた分を戻し、奏者側へ 4px 引き寄せた（共鳴胴を伸ばして右肩にかけるため）。
+                // 台座の一番低い角が床に着く高さ（y −0.63。台座の横幅を狭くした時・柱を外へ 2 セル移した時に、床に着いていた角が無くなって浮いたので下げた）。
+                // 奏者をハープに対して左へ 5px ずらした（x −5.56 → −0.56。2026-09-24 ユーザー指定）
+                p3: { pos: [-0.56, -0.63, 13.89], rot3: [-0.12, 1.26, 0], harp: true } },
   conductor:  { held: { R: 'baton' } },
 };
 VARIANT.violin2 = VARIANT.violin1; // 2nd バイオリンは 1st と同じ構え（2026-09-12）
@@ -480,6 +486,7 @@ export class Puppet {
       const sc = (INST_SCALE_VARIANT[this.variant] ?? INST_SCALE[this.family] ?? 1) / (PLAYER_TALL[this.variant] ?? 1); // 奏者を大きくする分、楽器は相殺して同じ大きさに
       m.scale.set(this.cfg.inst.mirror ? -sc : sc, sc, sc);
       m.userData.baseQ = m.quaternion.clone();
+      m.userData.restPos = m.position.clone(); m.userData.restQ = m.quaternion.clone();   // 構えの位置・向き（_harpLean の基準）
       this.inst = m;
       // 床に置く楽器は床に固定：上半身（揺れ・呼吸・前かがみ）ではなく rig に付ける。止まっている時は upper と rig の座標が一致するので位置・向きはそのまま。
       // 鍵盤（ピアノ/チェレスタ。2026-09-24 ユーザー指定：前かがみでピアノごと最大 7° 傾き、手前が床に 0.3 沈んでいた）と、
@@ -553,6 +560,24 @@ export class Puppet {
    *  _rigToUpperBegin() をこのフレームの前かがみ（_spineGaze）の後に 1 回呼んでから使う */
   _rigToUpperBegin() { this.spine.updateMatrix(); this.upper.updateMatrix(); _mUp.multiplyMatrices(this.spine.matrix, this.upper.matrix).invert(); }
   _rigToUpper(p) { _a.set(p[0] * PX, p[1] * PX, (p[2] ?? 0) * PX).applyMatrix4(_mUp); return [_a.x / PX, _a.y / PX, _a.z / PX]; }
+  /** ハープ：右肩が構えの位置から動いた分だけ、共鳴胴の上端がついていくよう、台座の底の中心を軸に傾ける（2026-09-24 ユーザー指定）。
+   *  楽器は rig に付いている（instFixed）ので、ここで毎フレーム構えの位置・向きから置き直す。台座は床から離れない */
+  _harpLean() {
+    const inst = this.inst, ud = inst?.userData;
+    if (!ud?.restQ || !HARP_LEAN_GAIN) return;
+    const c = PX / 2, L = HARP_LEAN_CELLS;   // res:2 の 1 セル = PX/2（楽器ローカル）
+    const loc = (p) => _c.set((p[0] - L.W / 2) * c * inst.scale.x, (L.H - p[1]) * c * inst.scale.y, p[2] * c * inst.scale.z).applyQuaternion(ud.restQ).add(ud.restPos);
+    const P = loc(L.pivot).clone(), T = loc(L.top).clone();
+    // 右肩：upper の座標（構えでは rig と一致）→ 腰の曲がり・揺れを掛けた rig の座標
+    this.spine.updateMatrix(); this.upper.updateMatrix();
+    const S0 = SHOULDER.R;
+    _d.set(S0[0] * PX, S0[1] * PX, S0[2] * PX).applyMatrix4(this.upper.matrix).applyMatrix4(this.spine.matrix);
+    _d.sub(_a.set(S0[0] * PX, S0[1] * PX, S0[2] * PX)).multiplyScalar(HARP_LEAN_GAIN);   // 肩の動き
+    const from = _a.copy(T).sub(P).normalize(), to = _b.copy(T).add(_d).sub(P).normalize();
+    _q.setFromUnitVectors(from, to);
+    inst.quaternion.copy(ud.restQ).premultiply(_q);
+    inst.position.copy(ud.restPos).sub(P).applyQuaternion(_q).add(P);
+  }
   /** 向き（マレットの狙いなど）は回転だけ掛ける */
   _rigToUpperDir(d) { _b.set(d[0], d[1], d[2] ?? 0).transformDirection(_mUp).multiplyScalar(Math.hypot(d[0], d[1], d[2] ?? 0)); return [_b.x, _b.y, _b.z]; }
 
@@ -1214,6 +1239,7 @@ export class Puppet {
     const armOf = (n) => (normOf(n) < 0.5 ? 'L' : 'R');
     // 前かがみ・視線は手より先に決める（床に固定した鍵盤では、このフレームの腰の曲がりで手の目標を上半身の座標に直すため）
     this._spineGaze(st, dt, 0.1 * st.posture, keys ? 0.3 : 0.15, keys ? 0 : MIRROR * -0.25); // 鍵盤を見る／ハープの弦を見る
+    if (cfg.harp && this.instFixed) this._harpLean();
     if (this.instFixed) this._rigToUpperBegin();
     for (const side of ['L', 'R']) {
       let s = 0, ant = 0, pn = pitchNorm;
@@ -1230,10 +1256,11 @@ export class Puppet {
       } else { // ハープ：高い音ほど短い弦（右側）。はじくと手が弦から 1.5px 離れる。座標は楽器ローカル（pivot 基準）。指は弦へ
         // 左手は奥（柱側の長い弦）から中ほど、右手は手前（体側の短い弦）だけ（2026-09-24 ユーザー指定：右手が奥まで触ると腕がハープにめり込む）。
         // どちらの手で弾くかは音域の下半分＝左・上半分＝右（armOf）なので、pn もそれぞれの半分を端から端へ割り当てる。
-        // 右手の右端（4px ＋はじく 1.5px）は、右手の高さで共鳴胴の縁（≈5.5px。共鳴胴の付け根を奥へ寄せた 2026-09-24 以降）に入らない範囲
-        const lx = side === 'L' ? -6 + clamp(pn * 2, 0, 1) * 7 : 1.5 + clamp((pn - 0.5) * 2, 0, 1) * 2.5;
-        // 胸の高さ（肩の高さだと肘が折り畳まれる）。右手は 17：共鳴胴の上端の高さ。15 だと前腕が共鳴胴の縁に当たっていた（2026-09-24）
-        const ly = side === 'L' ? 19 : 17;
+        // 右手の右端（3.5px ＋はじく 1.5px）は、右手の高さで共鳴胴の縁（≈5.5px）と、奏者側で下へ凹んだネックに当たらない範囲（2026-09-24）
+        const lx = side === 'L' ? -6 + clamp(pn * 2, 0, 1) * 7 : 1.5 + clamp((pn - 0.5) * 2, 0, 1) * 2;
+        // 胸の高さ（肩の高さだと肘が折り畳まれる）。右手は 19：共鳴胴を伸ばして右肩にかけた後（2026-09-24 ユーザー指定で弾く弦を上へ）。
+        // 16 → 19 で肘の角度はほぼ同じ（56〜89°）で、毎回届く。左手は 17：ネックの凹みを柱寄りにした時に 19 だと手がネックに当たった
+        const ly = side === 'L' ? 17 : 19;
         // 奥行き：弦の面（sprites.js の harpCell で弦は z 5 のセル＝中心 2.75px）の両側 0.5px。以前は 0 を中心に ±1.5px で、
         // 弦から見て左手は 4.25px 手前で届かず、右手は弦を越えていた（2026-09-24 ユーザー指摘）
         let p = this.inst ? instPoint(this.inst, lx + 1.5 * s, ly + 0.5 * ant, this.flat ? 0 : HARP_STRING_Z + sign * 0.5) : [lx - 9, ly, 0];
@@ -1244,6 +1271,11 @@ export class Puppet {
       }
     }
     this.headPivot.rotation.z += -0.06 * st.posture + (cfg.headRoll ?? 0);   // headRoll：首を横に倒す（ハープ）
+    // headFixed：揺れ・うなずき・視線の動きを捨て、上半身（spine）の回転の逆をかけて頭の向きを rig に対して一定にする
+    if (cfg.headFixed && !this.flat) {
+      _q.setFromEuler(new THREE.Euler(0, this._headYaw(), cfg.headRoll ?? 0));
+      this.headPivot.quaternion.copy(this.spine.quaternion).invert().multiply(_q);
+    }
   }
 
   // ---- 指揮者：拍子に応じた振り図形（4拍子：下→内→外→上）。イクタスで跳ね、強いほど大きく ----

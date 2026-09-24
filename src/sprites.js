@@ -900,18 +900,56 @@ function celestaCell(xRaw, y, z) {
 // 高さも奏者（座った肩の高さ）に対して 3 割大きかったので、柱頭を 18 行下げて実物の比率（共鳴胴の上端 ≒ 肩の高さ）にした。
 // 座標は res:2 のセル：x 0..43（柱の側が 0。以前の絵と同じ向き）、y 0..71（床が 72）、z 0..11（柱・弦は z 5〜6。以前と同じ）
 const HARP = { W: 44, H: 72, D: 12 };
-// 柱頭の上の行。台座の上（行 66）から 49 行だった柱を 1.2 倍の 59 行にした（2026-09-24 ユーザー指定）
-const HARP_COL_TOP = 7;
 // 柱の左端の列。1 本目の弦（x 11）との間が弦どうしと同じ 1 セルになるよう奏者側へ寄せた（2026-09-24 ユーザー指定。以前は 4〜5）
-const HARP_COL_X = 8;
-const HARP_NECK_T = 4;   // ネックの上下の厚み [行]
+// 2026-09-24：赤い C の弦を 3 本入れるため低音側に 1 本足し（15 本）、柱を 2 セル外側へ（8 → 6）
+const HARP_COL_X = 6;
+const HARP_STR_X0 = 9;   // 一番低い弦の列（弦は x HARP_STR_X0..37 の 2 セルおき。共鳴胴の付け根もここから）
+// ネックの上下の太さ [行]：奏者側（共鳴胴の上端）で T0、柱に近づくほど太く、柱の側で T1（2026-09-24 ユーザー指定。以前は一定の 4）
+const HARP_NECK_T0 = 4, HARP_NECK_T1 = 9;
 const HARP_NECK_Z0 = 5, HARP_NECK_Z1 = 7;   // ネックの奥行き [z0, z1)：上から見た幅（2026-09-24 ユーザー指定で 4 → 2 セルに細く。弦 z 5 を含む）
-// ネックの下の縁：柱頭のすぐ下（柱の側 x 9 で HARP_COL_TOP + 6）から共鳴胴の上端（x 40 で 36）へ S 字に下がる。
-// 柱を伸ばした時に柱頭につなぐよう、柱の側の端を上げた（2026-09-24 ユーザー指定。うねりも 2.5 → 3.5 行）
-const harpNeckY = (x) => { const t = (x - 9) / 31, y0 = HARP_COL_TOP + 6; return Math.round(y0 + (36 - y0) * t + 3.5 * Math.sin(2 * Math.PI * t)); };
-// 共鳴胴（行 38..64）の左右の縁。付け根（行 64）は x 11〜21 で奥から 1 本目の弦（x 11）から始まる（2026-09-24 ユーザー指定。以前は中心 22 で
-// 4 本目の弦から）。上端（行 38、中心 39）は変えていない
-const harpBox = (y) => { const s = (64 - y) / 26; const cx = 16 + 23 * s, w = 10 - 6 * s; return { x0: cx - w / 2, x1: cx + w / 2, s }; };
+// ネックの下の縁（＝弦の上端）。t = 0 が柱のすぐ隣（HARP_NECK_X0）、1 が共鳴胴の上端（x 40）。HARP_NECK_KEYS の点 [t, 行] を、
+// 各点で傾きが 0 になる余弦のつなぎで結ぶ。奏者側から「小さな山 → 凹み → 柱へ上がる」（2026-09-24 ユーザー指定：
+// 実物は奏者側で一度凹んでから柱へ上がり、凹む手前に小さな山がある。以前は直線＋S 字のうねりで奏者側が持ち上がっていた）
+// 山は低く幅広に（2026-09-24 ユーザー指定：尖っていたので丸く。以前は [0.88, 33]、凹みは 0.65）
+// 共鳴胴の上端の行。38 から 6 行上げて、上端を右肩より少し上（首の横）に届かせた（2026-09-24 ユーザー指定：共鳴胴を右肩にかける構え。
+// 写真どおり）。奏者側のネックの点（凹み・山・端）も同じだけ上げる
+const HARP_SB_TOP = 28;   // さらに 4 行上げた（2026-09-24 ユーザー指定。32 → 28）
+// 柱の側に丸い山（0.3 の位置で柱の付け根より 3 行上）を足した（2026-09-24 ユーザー指定：本物のように。以前は柱から凹みへ斜めに下がるだけ。
+// 最初の [0.22, 9] は尖っていたので低く幅広に）
+// 柱の側の端は行 15：柱から水平に出て丸く山へ上がる（2026-09-24 ユーザー指定：柱とつながらず、山から柱へ直線的に下がって見えた。以前は 13）
+const HARP_NECK_X0 = HARP_COL_X + 2;   // ネックの始まり（柱のすぐ隣。柱を動かすとついてくる。以前は x 9 固定で、柱を外へ移した時に隙間ができた）
+const HARP_NECK_KEYS = [[0, 15], [0.35, 12],   // 山は柱の端より 3 行上（2026-09-24 ユーザー指定：尖りすぎたので低く。以前は [0.3, 10]）
+  [0.5, 17],   // 山から凹みへの下りを弧にする中間点（2026-09-24 ユーザー指定：内径をもっと曲線に）
+  [0.63, HARP_SB_TOP], [0.86, HARP_SB_TOP - 4], [1, HARP_SB_TOP - 2]];   // 柱の側・柱側の山・（中間点）・凹み・小さな山・共鳴胴の上端
+const HARP_NECK_Y0 = HARP_NECK_KEYS[0][1];
+// 点を単調 3 次補間（Fritsch–Carlson）で結ぶ：全体で傾きがなめらかにつながり、山・凹みでは水平（行き過ぎない）。
+// 以前は区間ごとの余弦（点ごとに傾きが 0 になり、長い区間の途中が直線に見えた）
+const HARP_NECK_TAN = (() => {
+  const K = HARP_NECK_KEYS, n = K.length, d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d.push((K[i + 1][1] - K[i][1]) / (K[i + 1][0] - K[i][0]));
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) continue;   // 山・凹み：水平
+    const h0 = K[i][0] - K[i - 1][0], h1 = K[i + 1][0] - K[i][0], w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+    m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);   // 重み付き調和平均
+  }
+  return m;   // 両端は水平（柱から水平に出る・共鳴胴に水平に着く）
+})();
+const harpNeckY = (x) => {
+  const t = Math.min(1, Math.max(0, (x - HARP_NECK_X0) / (40 - HARP_NECK_X0))), K = HARP_NECK_KEYS, M = HARP_NECK_TAN;
+  let i = 0; while (i < K.length - 2 && t > K[i + 1][0]) i++;
+  const [t0, y0] = K[i], [t1, y1] = K[i + 1], h = t1 - t0, u = (t - t0) / h;
+  const h00 = 2 * u ** 3 - 3 * u ** 2 + 1, h10 = u ** 3 - 2 * u ** 2 + u, h01 = -2 * u ** 3 + 3 * u ** 2, h11 = u ** 3 - u ** 2;
+  return Math.round(h00 * y0 + h10 * h * M[i] + h01 * y1 + h11 * h * M[i + 1]);
+};
+const harpNeckT = (x) => Math.round(HARP_NECK_T1 + (HARP_NECK_T0 - HARP_NECK_T1) * Math.min(1, Math.max(0, (x - HARP_NECK_X0) / (40 - HARP_NECK_X0))));
+// 柱頭の上の行：柱の側のネックの上の縁に柱頭（4 行）が乗る（1 行重ねる）。ネックを太くした分だけ柱が高くなる
+// （2026-09-24 ユーザー指定。以前は 7 で、台座の上から 59 行＝最初の 1.2 倍）
+const HARP_COL_TOP = HARP_NECK_Y0 - HARP_NECK_T1 - 3;
+// 共鳴胴（行 HARP_SB_TOP..64）の左右の縁。付け根（行 64）の左端は奥から 1 本目の弦（HARP_STR_X0）から始まる（2026-09-24 ユーザー指定）。上端の中心は x 39
+// 横幅（弦の面に向かって見た幅）は下 6・上 3 セル（2026-09-24 ユーザー指定で細く。以前は下 10・上 4）
+const harpBox = (y) => { const s = (64 - y) / (64 - HARP_SB_TOP); const w = 6 - 3 * s, cx = (HARP_STR_X0 + w / 2) + (39 - HARP_STR_X0 - w / 2) * s; return { x0: cx - w / 2, x1: cx + w / 2, s }; };
+// ハープを肩の動きで傾ける時の点（楽器ローカルのセル座標 [x, y, z]。puppet.js の _harpLean が使う）：台座の底の中心と共鳴胴の上端
+export const HARP_LEAN_CELLS = { W: HARP.W, H: HARP.H, pivot: [(HARP_COL_X + Math.ceil(harpBox(64).x1)) / 2, HARP.H, 6], top: [39, HARP_SB_TOP, 5.5] };
 function harpCell(x, y, z) {
   // 台座（行 66..71）と、正面（z 0）に並ぶ 7 本のペダル。
   // 横は柱の左端から共鳴胴の付け根の右端まで（2026-09-24 ユーザー指定：奥・手前のはみ出しを詰めた。以前は x 4..30）
@@ -927,18 +965,24 @@ function harpCell(x, y, z) {
     // 柱：断面は奥行きと同じ幅の正方形（2026-09-24 ユーザー指定。以前は横 5 セル・中央に陰の筋）。奥行きはネックと同じ
     if (y >= HARP_COL_TOP + 4 && x >= HARP_COL_X && x < HARP_COL_X + (HARP_NECK_Z1 - HARP_NECK_Z0) && z >= HARP_NECK_Z0 && z < HARP_NECK_Z1) return C.gold;
   }
-  // ネック（柱頭から共鳴胴の上端まで、厚み HARP_NECK_T 行、奥行き HARP_NECK_Z0..Z1）。下の縁（弦の上端）は変えずに上側で厚みを決める
-  if (x >= 9 && x < 42 && z >= HARP_NECK_Z0 && z < HARP_NECK_Z1) { const nb = harpNeckY(x); if (y >= nb - HARP_NECK_T && y < nb) return C.gold; }
-  // 共鳴胴（行 38..64）：下ほど太く、奥行きも深い。弦が付く左の縁は濃い色
-  if (y >= 38 && y <= 64) {
+  // ネック（柱頭から共鳴胴の上端まで、太さ harpNeckT 行、奥行き HARP_NECK_Z0..Z1）。下の縁（弦の上端）は変えずに上側で太さを決める
+  if (x >= HARP_NECK_X0 && x < 42 && z >= HARP_NECK_Z0 && z < HARP_NECK_Z1) {
+    const nb = harpNeckY(x);
+    if (y >= nb - harpNeckT(x) && y < nb) return C.gold;
+    // 共鳴胴の上端の真上では、ネックの下の縁から共鳴胴の上面まで埋める（2026-09-24 ユーザー指定：隙間が空いていた）
+    const b = harpBox(HARP_SB_TOP);
+    if (x >= Math.floor(b.x0) && x < Math.ceil(b.x1) && y >= nb && y < HARP_SB_TOP) return C.gold;
+  }
+  // 共鳴胴（行 HARP_SB_TOP..64）：下ほど太く、奥行きも深い。弦が付く左の縁は濃い色
+  if (y >= HARP_SB_TOP && y <= 64) {
     const b = harpBox(y), half = 2 + 3 * (1 - b.s);
     if (x >= Math.floor(b.x0) && x < Math.ceil(b.x1) && Math.abs(z + 0.5 - 6) <= half) return x === Math.floor(b.x0) ? C.wood2 : C.wood;
   }
   // 弦（x 11..37 の奇数列、z 5）：ネックの下から共鳴胴の左の縁（その列に胴が無ければ台座）まで。C の弦は赤
-  if (z === 5 && x >= 11 && x <= 37 && x % 2 === 1 && y >= harpNeckY(x)) {
+  if (z === 5 && x >= HARP_STR_X0 && x <= 37 && (x - HARP_STR_X0) % 2 === 0 && y >= harpNeckY(x)) {
     let yb = 66;
-    for (let yy = 38; yy <= 64; yy++) { if (x >= Math.floor(harpBox(yy).x0)) { yb = yy; break; } }
-    if (y < yb) return ((x - 11) / 2) % 7 === 0 ? '#e05050' : C.silver;
+    for (let yy = HARP_SB_TOP; yy <= 64; yy++) { if (x >= Math.floor(harpBox(yy).x0)) { yb = yy; break; } }
+    if (y < yb) return ((x - HARP_STR_X0) / 2) % 7 === 0 ? '#e05050' : C.silver;   // 一番低い弦から 7 本ごとが C（赤）
   }
   return null;
 }
@@ -1548,10 +1592,17 @@ const METAL_SHINE = { flute: 40, piccolo: 40, trumpet: 28, horn: 26, trombone: 2
 const METAL_SHINE_DEFAULT = 26;
 // **全ての楽器**に掛ける（2026-09-23 ユーザー指定）。金属かどうかは頂点色で決まる（metalOf）ので、
 // 木や革が主体の楽器でも、スタンドの銀・ラグ・共鳴管の真鍮だけが光る。銅鑼の木の枠も自動で除かれる
+// 編集画面（edit.html）で直したボクセルを楽器にも差し込めるようにする（2026-09-24 ユーザー指定：ハープを直接いじりたい）。
+// INSTRUMENT_BASE は手続き的に作る元の形（編集の出発点。金属の処理の前）。上書きがあればそちらを使い、金属の処理は同じく掛ける
+export const INSTRUMENT_BASE = {};
+const INSTRUMENT_OVERRIDE = {};
+/** 楽器の形を差し替える（make = () => mesh）。null で元の形へ戻す */
+export function setInstrumentOverride(k, make) { if (make) INSTRUMENT_OVERRIDE[k] = make; else delete INSTRUMENT_OVERRIDE[k]; }
 for (const k of Object.keys(INSTRUMENT)) {
   const base = INSTRUMENT[k];
+  INSTRUMENT_BASE[k] = base;
   const shine = METAL_SHINE[k] ?? METAL_SHINE_DEFAULT;
-  INSTRUMENT[k] = () => applyMetal(base(), shine);
+  INSTRUMENT[k] = () => applyMetal((INSTRUMENT_OVERRIDE[k] || base)(), shine);
 }
 
 /**

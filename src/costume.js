@@ -10,7 +10,7 @@
  *   - 正面図は 2 倍解像度（res:2）のセル、pivot は頭＝首の付け根中央 / 胴＝腰の中央 / 脚＝足元中央
  *   - 立体パーツ（兜・肩当て）は res:1 の 1px 粒。carve は「体積関数 keep」で形を決め、colorOf で部位の色を塗る
  */
-import { makePart, C, roundColumn, voxelPart, headNeckStub, headNeckStubSide } from './sprites.js';
+import { makePart, C, roundColumn, voxelPart, headNeckStub, headNeckStubSide, INSTRUMENT_BASE, setInstrumentOverride } from './sprites.js';
 import { RANDI3 } from './randi3Data.js';
 
 /**
@@ -562,7 +562,14 @@ const VOXELS = {};
 export function setVoxelOverrides(map) {
   for (const k of Object.keys(VOXELS)) delete VOXELS[k];
   Object.assign(VOXELS, map || {});
+  // 楽器の部位（INSTRUMENT_PARTS）は sprites.js の INSTRUMENT へ差し込む（奏者が楽器を作る時に使われる）
+  for (const k of INSTRUMENT_PARTS) {
+    const v = VOXELS[k];
+    setInstrumentOverride(k, v ? () => voxelPart(v, k + '|' + (v.rev || 0)) : null);
+  }
 }
+// 編集画面でいじれる楽器（キー = INSTRUMENT のキー。保存先は assets/voxel/<キー>.json）。2026-09-24 ユーザー指定
+const INSTRUMENT_PARTS = ['harp'];
 export function hasVoxelOverride(key) { return !!VOXELS[key]; }
 
 /** 編集できる部位の一覧（編集画面のプルダウン）。make は手続き的に作る元の形 */
@@ -584,6 +591,8 @@ export const PARTS = {
                  make: () => voxelPart(randi6HeadData(), 'randi6Head') },
   randi6Shell: { label: 'ランディ六面図：髪の殻', bake: () => randi6HeadData(true),
                  make: () => voxelPart(randi6HeadData(true), 'randi6Shell') },
+  // 楽器（2026-09-24 ユーザー指定）。元の形は sprites.js の手続き的な形。保存すると奏者の楽器に差し込まれる（setVoxelOverrides）
+  harp:        { label: '楽器：ハープ', make: () => INSTRUMENT_BASE.harp() },
 };
 
 /** 部位を作る。編集済みのボクセルがあればそちらを使う */
