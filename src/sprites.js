@@ -71,6 +71,7 @@ function emissiveByVertexColor(shader) {
  * opts.top: 上面図の描画関数（省略可）。幅 = w（x は正面図と同じ列）・高さ = depth（上が背面 z0）。3 面削り出し。
  * opts.carve: (x, y, z) => true で削る（ベルの穴・太鼓の中など、面図では表せない中空用）。x=列, y=行(上が0), z=0..depth-1
  * opts.colorOf: (x, y, z) => '#rrggbb' | null。ボクセルごとの色の上書き（頭の後ろ半分を髪色にする等）
+ * opts.colorBack: true で、一番奥の面（背面）の色にも colorOf を使う（既定は正面図の色＋opts.back の置換）
  */
 /** 直前に makePart が受け取った引数（bakePart が同じ形を焼き出すために使う。2026-09-21） */
 let _lastPartArgs = null;
@@ -86,7 +87,7 @@ export function makePart(w, h, pivotX, pivotY, draw, opts = {}) {
   if (!geo) {
     const { img, sideImg, topImg } = partImages(w, h, depth, draw, opts);
     const cell = PX / res;   // グリッド単位 → 世界サイズ（res:1 は 1 ドット = 2×2 ボクセル、res:2 = 1 ボクセル）
-    geo = voxelize(img, w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null, opts.colorOf || null);
+    geo = voxelize(img, w, h, pivotX, pivotY, depth, z0, opts.back || null, cell, sideImg, topImg, opts.carve || null, opts.colorOf || null, !!opts.colorBack);
     partCache.set(key, geo);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -184,13 +185,14 @@ const rgb2hex = (r, g, b) => '#' + [r, g, b].map((v) => v.toString(16).padStart(
 
 // ピクセル → ボクセル → 露出面のみの BufferGeometry（頂点色・法線付き）
 // cell: 1 グリッドの世界サイズ。sideImg があれば側面図（幅 depth × 高さ h）で z 方向を削る（2 面削り出し）
-function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null, colorOf = null) {
+function voxelize(img, w, h, pivotX, pivotY, depth, z0, back, cell = PX, sideImg = null, topImg = null, carve = null, colorOf = null, colorBack = false) {
   const o = occupancy(img, w, h, depth, sideImg, topImg, carve);
   const d = img.data;
   const colorAt = (x, y) => [d[(y * w + x) * 4] / 255, d[(y * w + x) * 4 + 1] / 255, d[(y * w + x) * 4 + 2] / 255];
   // 背面色の置換：キー色との距離が近ければ置換（hsl→rgb の丸めで 1 ずれることがあるので厳密一致にしない）
   const backEntries = back ? Object.entries(back).map(([k, v]) => { const a = parseInt(k.slice(1), 16); return [[(a >> 16) & 255, (a >> 8) & 255, a & 255], hex2rgb(v)]; }) : [];
-  const backAt = (x, y) => {
+  const backAt = (x, y, z) => {
+    if (colorBack && colorOf) { const c = colorOf(x, y, z); if (c) return hex2rgb(c); }   // colorBack：背面もセルの色（ピアノ。正面の絵の色だと尾部に鍵盤の白が写る）
     const i = (y * w + x) * 4;
     for (const [k, v] of backEntries) {
       if (Math.abs(d[i] - k[0]) <= 6 && Math.abs(d[i + 1] - k[1]) <= 6 && Math.abs(d[i + 2] - k[2]) <= 6) return v;
@@ -795,6 +797,103 @@ function withScroll(body, scroll, pos, axis = 'x', fb = null) {
   return g;
 }
 
+// ---- グランドピアノの立体（2026-09-24 ユーザー指定：鍵盤の位置などがおかしい）----
+// 以前は正面・側面・上面の 3 面削り出しで、胴が鍵盤の真上に覆いかぶさり鍵盤の上面が見えなかった。
+// 3 面では「鍵盤の上だけ胴を抜く」「蓋を斜めに開ける」が表せないので、セルごとの色を直接返す関数で形を決める（carve / colorOf で使う）。
+// 座標は res:2 のセル：x 0..79（奏者の体は鏡像 MIRROR で組まれ、楽器の x も反転して見えるので、関数の中で xm = 79 − x に直す。xm 0 = 奏者の左＝低音側の直線の側板）、y 0..H−1（上が 0、床が H）、z 0..59（0 = 尾部、59 = 奏者側）。
+// 鍵盤の手前の縁（z 59）は以前と同じ（奏者の手の前後の位置 VARIANT.piano.p3.keys.z を変えずに済むように）。鍵盤の上面は y 28（脚が LIFT 分長いので、床からはその分高い）
+// LIFT：脚を伸ばすセル数（2026-09-24 ユーザー指定：奏者の手と鍵盤に隙間があった）。床（H）だけ下へ延ばし、胴・鍵盤・蓋の行はそのまま
+// （pivot が底なので、その分だけ全体が持ち上がる）。1 セル ≈0.044（PX/2 × 1.17）。鳴っている間の手の下端と鍵盤の上面の差が
+// ふだん 0.35 前後・一番深く押した時 0.19〜0.24 だったので 7 セル＝0.31 上げる
+const PIANO = { W: 80, H: 52 + 7, D: 60, LIFT: 7 };
+const PIANO_KEY_GAP = '#9a9a9a';   // 白鍵の間の溝（銀にすると金属の光り方になるのでただの灰色）
+const pianoWidthAt = (z) => (z >= 30 ? 80 : Math.round(80 - (29 - z) * 1.6));   // 上から見た翼型：鍵盤側は全幅、尾部ほど右（高音側）が細い
+const pianoLidY = (x) => 19 - Math.floor(x / 10);   // 蓋：低音側（x 0）の蝶番から高音側へ上がる（短い突っかい棒で開けた角度）
+function pianoCell(xRaw, y, z) {
+  const x = PIANO.W - 1 - xRaw;   // 奏者から見た左からの位置（上の注記）
+  const w = pianoWidthAt(z);
+  const inWing = x < w;
+  // 胴（y 20..33）：譜面台より奥（z < 44）は縁を 2 セル残して 2 段くぼませ、底に金色のフレームを見せる
+  if (z < 50 && inWing && y >= 20 && y <= 33) {
+    const inner = z >= 2 && z < 44 && x >= 2 && x < w - 2;
+    if (inner && y < 22) return null;
+    if (inner && y === 22) return C.gold2;
+    return C.black;
+  }
+  // 鍵盤まわり（z 50..59）：拍子木（両脇）・鍵盤・その下の鍵盤の台
+  if (z >= 50) {
+    if ((x >= 2 && x < 6) || (x >= 74 && x < 78)) return y >= 26 && y <= 33 ? C.black : null;   // 拍子木
+    if (x < 6 || x >= 74) return null;
+    if (y >= 30 && y <= 33) return C.black;                                                     // 鍵盤の台（前框）
+    const k = Math.floor((x - 6) / 3), kx = (x - 6) % 3;                                        // 白鍵 3 セル幅（右端 1 セルは溝）
+    const blackKey = z < 56 && ((kx === 2 && [0, 1, 3, 4, 5].includes(k % 7)) || (kx === 0 && k > 0 && [0, 1, 3, 4, 5].includes((k - 1) % 7)));
+    if (blackKey) return y >= 27 && y <= 29 ? C.black : null;                                   // 黒鍵：白鍵より 1 セル高く、奥側だけ
+    if (y === 28 || y === 29) return kx === 2 ? PIANO_KEY_GAP : C.white;
+    return null;
+  }
+  // 譜面台（z 44..45、胴の上）
+  if (z >= 44 && z < 46 && x >= 20 && x < 60 && y >= 12 && y < 20) return y === 12 ? C.coat2 : C.black;
+  // 蓋（胴の上・譜面台より奥）：厚み 1 セル
+  if (z < 44 && inWing && y === pianoLidY(x)) return C.black;
+  // 突っかい棒（高音側の奥）
+  if (x === 70 && z === 22 && y > pianoLidY(x) && y < 20) return C.black;
+  // 脚：鍵盤側 2 本・尾部 1 本。ペダルのリラ（支柱と金のペダル）
+  if (y >= 34) {
+    if (((x >= 4 && x < 8) || (x >= 72 && x < 76)) && z >= 46 && z < 50) return C.black;
+    if (x >= 18 && x < 22 && z >= 4 && z < 8) return C.black;
+    const pedal = PIANO.H - 6;   // ペダルは床から 4〜6 セル（脚を伸ばしても床の近く）。リラの支柱がその分伸びる
+    if (x >= 38 && x < 42 && z >= 44 && z < 47 && y < pedal) return C.black;
+    if (x >= 35 && x < 45 && z >= 44 && z < 50 && y >= pedal && y < pedal + 2) return C.gold2;
+  }
+  return null;
+}
+
+// ---- チェレスタの立体（2026-09-24 ユーザー指定：形状が変）----
+// 以前は 3 面削り出しで、鍵盤蓋の縁が鍵盤の真上にかぶさり鍵盤の上面が見えず、鍵盤の上の箱も背が高すぎた（戸棚のよう）。
+// ピアノと同じくセルごとの色を返す関数で形を決める。実物は小型のアップライトピアノ風：鍵盤が手前に出て、上の箱は低い。
+// 座標は res:2 のセル：x 0..51（ピアノと同じく関数の中で左右を反転。0 = 奏者の左）、y 0..59（床が 60）、z 0..19（0 = 背面、19 = 奏者側）。
+// 鍵盤の手前の縁（z 19）は以前と同じ。鍵盤の上面は y 25（以前の 29 から 4 セル上げ、止まっている時の手の高さに合わせた）
+const CELESTA = { W: 52, H: 60, D: 20 };
+function celestaCell(xRaw, y, z) {
+  const x = CELESTA.W - 1 - xRaw;
+  const body = x >= 2 && x < 50;
+  // 天板（y 10..11）：箱より 1 セル張り出す
+  if (y >= 10 && y <= 11) return x >= 1 && x < 51 && z < 13 ? C.wood2 : null;
+  // 上の箱（y 12..24、z 0..11）：正面に一段くぼんだ濃い板
+  if (y >= 12 && y <= 24 && z < 12) {
+    if (!body) return null;
+    if (z === 11 && x >= 6 && x < 46 && y >= 14 && y <= 22) return null;   // くぼみ
+    if (z === 10 && x >= 6 && x < 46 && y >= 14 && y <= 22) return '#4a2410';
+    return C.wood;
+  }
+  // 鍵盤まわり（z 12..19）：拍子木・鍵盤・鍵盤の台
+  if (z >= 12) {
+    if ((x >= 2 && x < 6) || (x >= 46 && x < 50)) return y >= 23 && y <= 29 ? C.wood2 : null;   // 拍子木
+    if (!body) return null;
+    if (y >= 27 && y <= 29) return C.wood2;                                                    // 鍵盤の台（前框）
+    if (x < 6 || x >= 46) return null;
+    const k = Math.floor((x - 6) / 3), kx = (x - 6) % 3;                                       // 白鍵 3 セル幅（右端 1 セルは溝）
+    const blackKey = z < 16 && ((kx === 2 && [0, 1, 3, 4, 5].includes(k % 7)) || (kx === 0 && k > 0 && [0, 1, 3, 4, 5].includes((k - 1) % 7)));
+    if (blackKey) return y >= 24 && y <= 26 ? C.black : null;                                  // 黒鍵：白鍵より 1 セル高く、奥側だけ
+    if (y === 25 || y === 26) return kx === 2 ? PIANO_KEY_GAP : C.white;
+    // 下の箱の手前に出るペダル（床の近く）
+    if (y >= 56 && y <= 57 && x >= 22 && x < 30 && z < 17) return C.gold2;
+    return null;
+  }
+  // 下の箱（y 25..47、z 0..11）：正面に一段くぼんだ板
+  if (y >= 25 && y <= 47) {
+    if (!body) return null;
+    if (z === 11 && x >= 6 && x < 46 && y >= 31 && y <= 44) return null;
+    if (z === 10 && x >= 6 && x < 46 && y >= 31 && y <= 44) return C.wood2;
+    return C.wood;
+  }
+  // ペダルの支柱：下の箱の底からペダルへ（y 48..55）
+  if (y >= 48 && y <= 57 && x >= 25 && x < 27 && z >= 10 && z < 12) return C.wood2;
+  // 脚 4 本（y 48..59）
+  if (y >= 48 && ((x >= 3 && x < 7) || (x >= 45 && x < 49)) && ((z >= 1 && z < 4) || (z >= 8 && z < 11))) return C.wood2;
+  return null;
+}
+
 export const INSTRUMENT = {
   // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
   // 胴：ネック＋渦巻き ≒ 6：4（実物の比率）。駒は x=10（基本座標 -2）
@@ -1262,29 +1361,18 @@ export const INSTRUMENT = {
 
   // ---- 鍵盤・ハープ（2倍解像度）----
   // チェレスタ 52×60：小さなアップライト型。上部パネル・鍵盤（手前に張り出す）・脚・ペダル。pivot = 底中央
-  celesta: () => makePart(52, 60, 26, 60, (d) => {
-    d.r(4, 0, 44, 52, C.wood); d.r(6, 2, 40, 22, C.wood2); d.r(8, 4, 36, 18, '#4a2410');    // 筐体・上部パネル
-    d.r(2, 26, 48, 3, C.wood2);                                                             // 鍵盤蓋の縁
-    d.r(6, 29, 40, 6, C.white); for (let i = 0; i < 13; i++) { if ([0, 1, 3, 4, 5].includes(i % 7)) d.r(8 + i * 3, 29, 2, 4, C.black); } // 鍵盤
-    d.r(6, 35, 40, 2, C.black); d.r(6, 38, 40, 12, C.wood2);                                // 鍵盤の台・下のパネル
-    d.r(6, 52, 4, 8, C.wood2); d.r(42, 52, 4, 8, C.wood2);                                  // 脚
-    d.r(22, 54, 8, 4, C.gold2);                                                             // ペダル
-  }, { res: 2, depth: 20, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(14, 26, 6, 10, F); d.r(2, 52, 4, 8, F); d.r(10, 52, 4, 8, F); }, top: (d) => { d.r(4, 0, 44, 16, F); d.r(6, 14, 40, 6, F); },
-       back: { [C.white]: C.wood, [C.black]: C.wood, '#4a2410': C.wood2, [C.gold2]: C.wood } }),
-  // グランドピアノ 80×52：蓋・胴（上から見て翼型）・鍵盤（白鍵 24・黒鍵はオクターブ配列）・脚 3 本・ペダル。pivot = 底中央
-  piano: () => makePart(80, 52, 40, 52, (d) => {
-    d.r(8, 0, 64, 8, C.black); d.r(10, 1, 60, 2, C.coat2);                                  // 蓋
-    d.r(0, 8, 80, 20, C.black); d.r(2, 10, 76, 1, C.coat2); d.r(4, 26, 72, 2, C.coat2);     // 胴・艶・鍵盤蓋
-    d.r(4, 28, 72, 6, C.white); for (let i = 0; i < 24; i++) { if ([0, 1, 3, 4, 5].includes(i % 7)) d.r(6 + i * 3, 28, 2, 4, C.black); } // 鍵盤
-    d.r(2, 34, 76, 2, C.black);                                                             // 鍵盤の台
-    d.r(6, 36, 4, 16, C.black); d.r(70, 36, 4, 16, C.black); d.r(22, 36, 4, 16, C.black);   // 脚（鍵盤側 2 本＋尾部 1 本。どれをどの奥行きに残すかは carve）
-    d.r(39, 36, 2, 4, C.black); d.r(38, 40, 4, 6, C.black); d.r(36, 46, 8, 3, C.gold2);     // ペダルのリラ（支柱・リラ・ペダル）
-  }, { res: 2, depth: 60, z0: 0,
-       side: (d) => { d.r(0, 0, 44, 8, F); d.r(0, 8, 60, 20, F); d.r(50, 28, 10, 8, F); d.r(2, 36, 4, 16, F); d.r(54, 36, 4, 16, F); d.r(54, 36, 6, 13, F); },
-       top: (d) => { d.r(0, 30, 80, 30, F); for (let z = 0; z < 30; z++) d.r(0, z, Math.round(80 - (29 - z) * 1.6), 1, F); }, // 鍵盤側は全幅、奥（尾部）ほど細い翼型
-       // 脚：鍵盤側（z ≥ 50）は x=6・70 の 2 本、尾部（z < 10）は x=22 の 1 本。リラは鍵盤側だけ
-       carve: (x, y, z) => y >= 36 && ((z >= 50 && x >= 22 && x < 26) || (z < 10 && (x < 10 || (x >= 36 && x < 44)))),
-       back: { [C.white]: C.black, [C.coat2]: C.black, [C.gold2]: C.black } }),
+  // チェレスタ 52×60×20：形と色は celestaCell（2026-09-24 作り直し）。正面図は立体を手前から見た色（2D の板用）。pivot = 底中央
+  celesta: () => makePart(CELESTA.W, CELESTA.H, 26, CELESTA.H, (d) => {
+    for (let y = 0; y < CELESTA.H; y++) for (let x = 0; x < CELESTA.W; x++) {
+      for (let z = CELESTA.D - 1; z >= 0; z--) { const c = celestaCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: CELESTA.D, z0: 0, carve: (x, y, z) => !celestaCell(x, y, z), colorOf: celestaCell, colorBack: true }),
+  // グランドピアノ 80×52×60：形と色は pianoCell（2026-09-24 作り直し）。正面図は立体を手前から見た色（2D の板用）。pivot = 底中央
+  piano: () => makePart(PIANO.W, PIANO.H, 40, PIANO.H, (d) => {
+    for (let y = 0; y < PIANO.H; y++) for (let x = 0; x < PIANO.W; x++) {
+      for (let z = PIANO.D - 1; z >= 0; z--) { const c = pianoCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: PIANO.D, z0: 0, carve: (x, y, z) => !pianoCell(x, y, z), colorOf: pianoCell, colorBack: true }),
   // ハープ 44×72：柱・湾曲したネック・弦（C 弦は赤）・共鳴胴（下ほど深い）・台座。pivot = 底中央
   harp: () => makePart(44, 72, 22, 72, (d) => {
     const neckY = (x) => 2 + Math.round(Math.pow((x - 8) / 33, 1.3) * 26);
