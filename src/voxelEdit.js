@@ -61,8 +61,9 @@ view.appendChild(renderer.domElement);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.12;
 
-scene.add(new THREE.HemisphereLight('#ffffff', '#444a5a', 0.9));
-const key1 = new THREE.DirectionalLight('#ffffff', 0.7); key1.position.set(3, 5, 4); scene.add(key1);
+// 面の向きごとの明るさの差を大きくする（2026-09-24 ユーザー指定：真っ黒な楽器の陰影が分かりにくい。以前は全体光 0.9・斜めの光 0.7）
+scene.add(new THREE.HemisphereLight('#ffffff', '#444a5a', 0.55));
+const key1 = new THREE.DirectionalLight('#ffffff', 1.15); key1.position.set(3, 5, 4); scene.add(key1);
 const key2 = new THREE.DirectionalLight('#aab4cc', 0.35); key2.position.set(-4, 2, -3); scene.add(key2);
 
 const grid = new THREE.GridHelper(4, 40, 0x38405a, 0x252b3c);
@@ -120,6 +121,7 @@ function rebuild() {
   if (pairMesh) { scene.remove(pairMesh); pairMesh.geometry.dispose(); pairMesh.material.dispose(); pairMesh = null; }
   if (!data) return;
   mesh = voxelPart(data, 'edit', { cache: false });
+  if (showEdges) addCellEdges(mesh);
   scene.add(mesh);
   const pk = PAIR[key];
   if (pk && pairMode !== 'off') {
@@ -132,6 +134,24 @@ function rebuild() {
     scene.add(pairMesh);
   }
   updateHud();
+}
+
+// セルの境目の線（2026-09-24 ユーザー指定：真っ黒な楽器では段差や角が見えない）。見えている面の 1 セルごとに枠を描く。
+// meshCells は面 1 枚を 6 頂点（a b c a c e）で積むので、角 a b c e を拾って 4 辺にする
+let showEdges = true;
+function addCellEdges(m) {
+  const p = m.geometry.attributes.position.array, out = [];
+  for (let i = 0; i + 18 <= p.length; i += 18) {
+    const v = (k) => [p[i + k * 3], p[i + k * 3 + 1], p[i + k * 3 + 2]];
+    const a = v(0), b = v(1), c = v(2), e = v(5);
+    out.push(...a, ...b, ...b, ...c, ...c, ...e, ...e, ...a);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#7a8296', transparent: true, opacity: 0.55 }));
+  lines.raycast = () => {};   // クリックの当たり判定はボクセルだけ
+  m.material.polygonOffset = true; m.material.polygonOffsetFactor = 1; m.material.polygonOffsetUnits = 1;   // 線が面に埋もれないよう面を奥へ
+  m.add(lines);
 }
 
 function frameCamera() {
@@ -378,11 +398,18 @@ function hideHover() {
  * 解像度を倍にすると元の 1 セルは 2X, 2X+1 の 2 つになるので、
  * **筆 2 ＋偶数吸着でちょうど元の粒**に戻る。吸着させないと半セルずれた位置に描けてしまう。
  */
+// 列ごと（2026-09-24 ユーザー指定）：クリックした面に垂直な向きに、部位の端から端まで（筆の太さの断面で）まとめて効かせる。
+// 削る＝列の全部を消す、塗る＝列の中の埋まっているセルを塗る、足す＝列の中の空いているセルを埋める
+let colMode = false;
 function targetBlock(ev) {
   const h = pick(ev);
   if (!h) return null;
   if (ev.altKey) return { x: h.x, y: h.y, z: h.z, n: 1, mode: 'pick' };
   const n = brush, snap = (v) => Math.floor(v / n) * n;
+  if (colMode) {
+    const axis = h.nx ? 'x' : h.ny ? 'y' : 'z';
+    return { x: axis === 'x' ? 0 : snap(h.x), y: axis === 'y' ? 0 : snap(h.y), z: axis === 'z' ? 0 : snap(h.z), n, axis, mode: tool };
+  }
   if (tool === 'add') {                                     // 当たった面の外側へ 1 ブロック
     const t = { x: snap(h.x) + h.nx * n, y: snap(h.y) - h.ny * n, z: snap(h.z) + h.nz * n, n, mode: 'add' };
     return blockCells(t).length ? t : { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: 'out' };
@@ -392,12 +419,16 @@ function targetBlock(ev) {
   return { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: tool };
 }
 
+/** ブロックの大きさ [x, y, z]（列ごとの時は、その向きだけ部位の端から端まで） */
+function blockSize(t) {
+  return [t.axis === 'x' ? data.w : t.n, t.axis === 'y' ? data.h : t.n, t.axis === 'z' ? data.depth : t.n];
+}
 /** ブロックの中で、部位の枠に収まっているセルだけ返す */
 function blockCells(t) {
-  const out = [];
-  for (let z = t.z; z < t.z + t.n; z++)
-    for (let y = t.y; y < t.y + t.n; y++)
-      for (let x = t.x; x < t.x + t.n; x++)
+  const out = [], [sx, sy, sz] = blockSize(t);
+  for (let z = t.z; z < t.z + sz; z++)
+    for (let y = t.y; y < t.y + sy; y++)
+      for (let x = t.x; x < t.x + sx; x++)
         if (x >= 0 && y >= 0 && z >= 0 && x < data.w && y < data.h && z < data.depth) out.push([x, y, z]);
   return out;
 }
@@ -408,21 +439,21 @@ function showHover(ev) {
   const t = targetBlock(ev);
   if (!t) { hideHover(); return; }
   const st = HOVER[t.mode];
-  const cell = cellOf(data), half = t.n / 2;
-  const q = new THREE.Vector3((t.x + half - data.pivotX) * cell,
-                              (data.pivotY - t.y - half) * cell,
-                              (t.z + half + data.z0) * cell);
+  const cell = cellOf(data), [sx, sy, sz] = blockSize(t);
+  const q = new THREE.Vector3((t.x + sx / 2 - data.pivotX) * cell,
+                              (data.pivotY - t.y - sy / 2) * cell,
+                              (t.z + sz / 2 + data.z0) * cell);
   mesh.localToWorld(q);
   hoverFill.position.copy(q); hoverEdge.position.copy(q);
-  hoverFill.scale.setScalar(cell * t.n * 1.02); hoverEdge.scale.setScalar(cell * t.n * 1.02);
+  hoverFill.scale.set(cell * sx * 1.02, cell * sy * 1.02, cell * sz * 1.02); hoverEdge.scale.copy(hoverFill.scale);
   hoverFill.material.color.set(st.fill ?? color);
   hoverFill.material.opacity = st.a;
   hoverEdge.material.color.set(st.edge);
   hoverFill.visible = hoverEdge.visible = true;
   renderer.domElement.style.cursor = t.mode === 'out' ? 'not-allowed' : 'crosshair';
   const same = hoverCell && hoverCell.x === t.x && hoverCell.y === t.y && hoverCell.z === t.z
-               && hoverCell.mode === t.mode && hoverCell.n === t.n;
-  if (!same) { hoverCell = { ...t, tint: st.edge, note: st.note }; updateHud(); }
+               && hoverCell.mode === t.mode && hoverCell.n === t.n && hoverCell.axis === t.axis;
+  if (!same) { hoverCell = { ...t, tint: st.edge, note: t.axis ? `${st.note}（${t.axis} 方向の列ごと）` : st.note }; updateHud(); }
 }
 
 /** 道具を変えた・Alt を押した／離した時に、同じ位置で描き直す */
@@ -626,8 +657,24 @@ $('newColor').oninput = (e) => setColor(e.target.value);
 $('addSwatchBtn').onclick = addSwatch;
 $('dropUnusedBtn').onclick = dropUnused;
 function setPairMode(m) { pairMode = m; rebuild(); }
+function setColMode(on) { colMode = on; $('colMode').checked = on; refreshHover(); }
+$('colMode').onchange = (e) => setColMode(e.target.checked);
 for (const b of document.querySelectorAll('[data-pair]')) b.onclick = () => setPairMode(b.dataset.pair);
 $('showGrid').onchange = (e) => { grid.visible = e.target.checked; };
+// 明るい背景（2026-09-24 ユーザー指定）。選んだ状態はこのブラウザだけに覚える（読めなければ暗い背景のまま）
+function setLightBg(on) {
+  scene.background.set(on ? '#d4d8e0' : '#0e1016');
+  view.classList.toggle('light', on);
+  $('lightBg').checked = on;
+  try { localStorage.setItem('voxelEdit.lightBg', on ? '1' : '0'); } catch (e) { /* 保存できなくても表示は切り替わる */ }
+}
+$('lightBg').onchange = (e) => setLightBg(e.target.checked);
+$('cellEdges').onchange = (e) => {
+  showEdges = e.target.checked; rebuild();
+  try { localStorage.setItem('voxelEdit.cellEdges', showEdges ? '1' : '0'); } catch (err) { /* 保存できなくても表示は切り替わる */ }
+};
+try { if (localStorage.getItem('voxelEdit.cellEdges') === '0') { showEdges = false; $('cellEdges').checked = false; } } catch (e) { /* 読めなければ線あり */ }
+try { if (localStorage.getItem('voxelEdit.lightBg') === '1') setLightBg(true); } catch (e) { /* 読めなければ暗い背景 */ }
 $('bakeBackBtn').onclick = bakeBack;
 $('upscaleBtn').onclick = upscale;
 $('saveBtn').onclick = save;
@@ -642,6 +689,7 @@ addEventListener('keydown', (e) => {
   if (e.key === '3') document.querySelector('[data-tool=paint]').click();
   if (e.key === '[') setBrush(brush === 4 ? 2 : 1);
   if (e.key === ']') setBrush(brush === 1 ? 2 : 4);
+  if (e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey) setColMode(!colMode);
   if (e.key.toLowerCase() === 'p') setPairMode({ off: 'ghost', ghost: 'solid', solid: 'off' }[pairMode]);
 });
 addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });

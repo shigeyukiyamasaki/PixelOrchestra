@@ -33,6 +33,9 @@
     #msg { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); font-size:13px;
            background:#000a; padding:6px 14px; border-radius:6px; opacity:0; transition:opacity .2s; }
     #msg.show { opacity:1; }
+    /* 明るい背景（2026-09-24 ユーザー指定）：黒いピアノや暗い色が見やすい。HUD の文字は暗くして影を外す */
+    #view.light { background:#d4d8e0; }
+    #view.light #hud { color:#2a2f3c; text-shadow:none; }
     .tool { display:inline-block; width:calc(33.33% - 4px); text-align:center; background:#252838; color:var(--fg);
             border:1px solid var(--line); border-radius:5px; padding:7px 0; font:inherit; font-size:12px; cursor:pointer; }
     .tool.on { background:#2b3550; border-color:var(--accent); color:#fff; }
@@ -80,6 +83,7 @@
         ><button class="tool" data-brush="4">4</button>
       </div>
       <div class="row">2 以上は「その倍数」に吸着。解像度を倍にしたあと、元の粒で描ける</div>
+      <label class="chk"><input type="checkbox" id="colMode"> 列ごと（クリックした面の奥まで貫通）　c で切替</label>
 
       <h2>色</h2>
       <div class="swatches" id="swatches"></div>
@@ -99,6 +103,8 @@
       </div>
       <div class="row" id="pairNote"></div>
       <label class="chk"><input type="checkbox" id="showGrid" checked> 床のマス目</label>
+      <label class="chk"><input type="checkbox" id="lightBg"> 明るい背景</label>
+      <label class="chk"><input type="checkbox" id="cellEdges" checked> セルの境目を線で表示</label>
 
       <h2>解像度</h2>
       <button class="big" id="upscaleBtn">解像度を倍にする</button>
