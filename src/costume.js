@@ -569,7 +569,7 @@ export function setVoxelOverrides(map) {
   }
 }
 // 編集画面でいじれる楽器（キー = INSTRUMENT のキー。保存先は assets/voxel/<キー>.json）。2026-09-24 ユーザー指定
-const INSTRUMENT_PARTS = ['harp'];
+const INSTRUMENT_PARTS = ['harp', 'piano'];
 export function hasVoxelOverride(key) { return !!VOXELS[key]; }
 
 /** 編集できる部位の一覧（編集画面のプルダウン）。make は手続き的に作る元の形 */
@@ -593,6 +593,7 @@ export const PARTS = {
                  make: () => voxelPart(randi6HeadData(true), 'randi6Shell') },
   // 楽器（2026-09-24 ユーザー指定）。元の形は sprites.js の手続き的な形。保存すると奏者の楽器に差し込まれる（setVoxelOverrides）
   harp:        { label: '楽器：ハープ', make: () => INSTRUMENT_BASE.harp() },
+  piano:       { label: '楽器：ピアノ', make: () => INSTRUMENT_BASE.piano() },
 };
 
 /** 部位を作る。編集済みのボクセルがあればそちらを使う */

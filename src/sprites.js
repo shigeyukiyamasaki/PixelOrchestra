@@ -807,15 +807,44 @@ function withScroll(body, scroll, pos, axis = 'x', fb = null) {
 // ふだん 0.35 前後・一番深く押した時 0.19〜0.24 だったので 7 セル＝0.31 上げる
 const PIANO = { W: 80, H: 52 + 7, D: 60, LIFT: 7 };
 const PIANO_KEY_GAP = '#9a9a9a';   // 白鍵の間の溝（銀にすると金属の光り方になるのでただの灰色）
-const pianoWidthAt = (z) => (z >= 30 ? 80 : Math.round(80 - (29 - z) * 1.6));   // 上から見た翼型：鍵盤側は全幅、尾部ほど右（高音側）が細い
+// 上から見た輪郭 [左端, 右端)（2026-09-24 ユーザー指定：直線的な台形から、本物のグランドピアノの丸みのある形へ）。z は 0 = 尾部、59 = 鍵盤側。
+// 低音側（左）はまっすぐで、尾部の左奥だけ丸い（PIANO_TAIL_R）。高音側（右）は PIANO_RIGHT_KEYS の点 [z, x] を単調 3 次補間で結ぶ：
+// 尾部の先端 → 外へふくらむ弧で右へ回り込む（凸）→ 内側へくびれる（凹）→ 鍵盤の手前でまっすぐな側板へ。
+// （以前の楕円の弧は中心がピアノの外にあり、鍵盤の奥で幅が 1 行に 11 セル削れて横腹をかじり取ったような形だった）
+const PIANO_TAIL_R = 10;
+// 尾部のあとの外へのふくらみ（z 0〜28）を大きく長く取り、その先（z 28〜47）で内側へくびれる
+const PIANO_RIGHT_KEYS = [[0, 14], [5, 30], [12, 44], [20, 52], [28, 57], [36, 62], [42, 70], [47, 78], [50, 80]];
+const pianoRightX = monotoneCubic(PIANO_RIGHT_KEYS);
+function pianoEdge(z) {
+  const xr = z >= 50 ? 80 : Math.round(pianoRightX(z));
+  const xl = z >= PIANO_TAIL_R ? 0 : Math.round(PIANO_TAIL_R - PIANO_TAIL_R * Math.sqrt(Math.max(0, 1 - ((PIANO_TAIL_R - z) / PIANO_TAIL_R) ** 2)));
+  return [xl, xr];
+}
+/** 点 [[t, v], …]（t は増加順）を単調 3 次補間（Fritsch–Carlson）で結ぶ関数を返す。行き過ぎ（オーバーシュート）が無い */
+function monotoneCubic(K) {
+  const n = K.length, d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d.push((K[i + 1][1] - K[i][1]) / (K[i + 1][0] - K[i][0]));
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) continue;
+    const h0 = K[i][0] - K[i - 1][0], h1 = K[i + 1][0] - K[i][0], w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+    m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+  }
+  m[n - 1] = 0;   // 鍵盤側の端はまっすぐな側板へ水平につなぐ
+  return (t) => {
+    let i = 0; while (i < n - 2 && t > K[i + 1][0]) i++;
+    const [t0, y0] = K[i], [t1, y1] = K[i + 1], h = t1 - t0, u = Math.min(1, Math.max(0, (t - t0) / h));
+    return (2 * u ** 3 - 3 * u ** 2 + 1) * y0 + (u ** 3 - 2 * u ** 2 + u) * h * m[i] + (-2 * u ** 3 + 3 * u ** 2) * y1 + (u ** 3 - u ** 2) * h * m[i + 1];
+  };
+}
 const pianoLidY = (x) => 19 - Math.floor(x / 10);   // 蓋：低音側（x 0）の蝶番から高音側へ上がる（短い突っかい棒で開けた角度）
 function pianoCell(xRaw, y, z) {
   const x = PIANO.W - 1 - xRaw;   // 奏者から見た左からの位置（上の注記）
-  const w = pianoWidthAt(z);
-  const inWing = x < w;
+  const [xl, xr] = pianoEdge(z);
+  const inWing = x >= xl && x < xr;
   // 胴（y 20..33）：譜面台より奥（z < 44）は縁を 2 セル残して 2 段くぼませ、底に金色のフレームを見せる
   if (z < 50 && inWing && y >= 20 && y <= 33) {
-    const inner = z >= 2 && z < 44 && x >= 2 && x < w - 2;
+    const inner = z >= 2 && z < 44 && x >= xl + 2 && x < xr - 2;
     if (inner && y < 22) return null;
     if (inner && y === 22) return C.gold2;
     return C.black;
@@ -835,8 +864,8 @@ function pianoCell(xRaw, y, z) {
   if (z >= 44 && z < 46 && x >= 20 && x < 60 && y >= 12 && y < 20) return y === 12 ? C.coat2 : C.black;
   // 蓋（胴の上・譜面台より奥）：厚み 1 セル
   if (z < 44 && inWing && y === pianoLidY(x)) return C.black;
-  // 突っかい棒（高音側の奥）
-  if (x === 70 && z === 22 && y > pianoLidY(x) && y < 20) return C.black;
+  // 突っかい棒（高音側の奥）：輪郭の右端から 4 セル内側
+  if (z === 26 && x === pianoEdge(26)[1] - 4 && y > pianoLidY(x) && y < 20) return C.black;
   // 脚：鍵盤側 2 本・尾部 1 本。ペダルのリラ（支柱と金のペダル）
   if (y >= 34) {
     if (((x >= 4 && x < 8) || (x >= 72 && x < 76)) && z >= 46 && z < 50) return C.black;
