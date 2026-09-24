@@ -64,6 +64,7 @@ const POLE_FLAT = { L: [-1, -0.3, 0], R: [1, -0.3, 0] };
 
 // ---- ベクトル・回転の小道具（THREE を使う。使い回しのテンポラリ）----
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _m = new THREE.Matrix4();
+const _mUp = new THREE.Matrix4();   // rig → upper の変換（床に固定した鍵盤の手の位置。_keyboard）
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const v3 = (arr) => new THREE.Vector3(arr[0], arr[1], arr[2] || 0);
 
@@ -462,7 +463,12 @@ export class Puppet {
       m.scale.set(this.cfg.inst.mirror ? -sc : sc, sc, sc);
       m.userData.baseQ = m.quaternion.clone();
       this.inst = m;
-      this.upper.add(m);
+      // 床に置く楽器は床に固定：上半身（揺れ・呼吸・前かがみ）ではなく rig に付ける。止まっている時は upper と rig の座標が一致するので位置・向きはそのまま。
+      // 鍵盤（ピアノ/チェレスタ。2026-09-24 ユーザー指定：前かがみでピアノごと最大 7° 傾き、手前が床に 0.3 沈んでいた）と、
+      // 打楽器のうち楽器を床に置く・吊るもの（手に持つ合わせシンバルは inst が無いので対象外。2026-09-24 ユーザー指定：4〜10° 傾いていた）。
+      // チェロ・コントラバスの floorStand は体と一緒に傾ける楽器なので対象外（_standOnFloor で位置だけ床に留める）
+      this.instFixed = !this.flat && (!!this.cfg.keys || this.motion === 'percussion');
+      (this.instFixed ? this.rig : this.upper).add(m);
     }
 
     // 状態
@@ -524,6 +530,12 @@ export class Puppet {
   _bodyYaw() { return this.flat ? 0 : (this._sideRel ?? this.cfg.bodyYaw ?? 0); }
   /** 首のひねり [rad]。sideYaw の楽器は体の上乗せと同じ量（符号の決まりは銅鑼と同じ）で、顔を指揮者へ戻す */
   _headYaw() { return this.cfg.sideYaw != null ? this._bodyYaw() : (this.cfg.headYaw ?? 0); }
+  /** 床に固定した楽器（instFixed）の手：rig の座標で決めた目標を、このフレームの腰の曲がり・揺れの逆をかけて上半身（upper）の座標に直す。
+   *  _rigToUpperBegin() をこのフレームの前かがみ（_spineGaze）の後に 1 回呼んでから使う */
+  _rigToUpperBegin() { this.spine.updateMatrix(); this.upper.updateMatrix(); _mUp.multiplyMatrices(this.spine.matrix, this.upper.matrix).invert(); }
+  _rigToUpper(p) { _a.set(p[0] * PX, p[1] * PX, (p[2] ?? 0) * PX).applyMatrix4(_mUp); return [_a.x / PX, _a.y / PX, _a.z / PX]; }
+  /** 向き（マレットの狙いなど）は回転だけ掛ける */
+  _rigToUpperDir(d) { _b.set(d[0], d[1], d[2] ?? 0).transformDirection(_mUp).multiplyScalar(Math.hypot(d[0], d[1], d[2] ?? 0)); return [_b.x, _b.y, _b.z]; }
 
   // ---- 手の配置：目標へ滑らかに寄せてから 3D IK（rate が大きいほど即応。Infinity で即時）----
   // handDir（rig 空間）を渡すと手首あり：手首＝目標 − handDir×手の長さ、前腕は手首へ、手は handDir を向く
@@ -687,7 +699,7 @@ export class Puppet {
     this.headPivot.rotation.x = 0;
 
     // エンドピンで床に立てる楽器（チェロ・コントラバス）は、上半身が傾いても床に立ったままにする
-    if (this.cfg.floorStand && this.inst && this.p3?.pos) this._standOnFloor();
+    if (this.cfg.floorStand && this.inst && this.p3?.pos && !this.instFixed) this._standOnFloor();
 
     // 長い休みでは楽器を下ろす（構え ⇄ 下ろしを補間）。手は楽器に付いて動く（2026-09-12 ユーザー指定）
     this._restPose(st, dt, t);
@@ -1082,9 +1094,16 @@ export class Puppet {
         roll = { a: lerp(cfg.roll.from, 1, k), ph: tNow * cfg.roll.rate };   // a ＝ 振り上げの高さ（構えと打点の間の割合）
       }
     }
+    // 床に固定した楽器：前かがみを手より先に決め（打つ強さは前のフレームの値。なめらかに追うので差は見えない）、手の目標を上半身の座標に直す
+    const fixed = this.instFixed;
+    if (fixed) {
+      this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * (this._strikePrev ?? 0), 0.25, cfg.gazeYaw ?? 0);
+      this._rigToUpperBegin();
+    }
+    const U = (p) => (fixed && p ? this._rigToUpper(p) : p), UD = (d) => (fixed && d ? this._rigToUpperDir(d) : d);
     for (const side of ['L', 'R']) {
       const sp = strike?.[side];
-      if (!sp) { if (fixedHand?.[side]) this.setHand(side, fixedHand[side], dt, 10); continue; }
+      if (!sp) { if (fixedHand?.[side]) this.setHand(side, U(fixedHand[side]), dt, 10); continue; }
       let s = 0, ant = 0, vel = 0.5, pn = pitchNorm;
       if (onset && (both || armOf(onset) === side)) { vel = vScale(onset.velocity); s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 14); }
       if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * vScale(next.velocity); vel = Math.max(vel, vScale(next.velocity)); if (spread) pn = normOf(next); }
@@ -1149,20 +1168,20 @@ export class Puppet {
         // 手首の位置は aim（打点の方向）＝**肘 → 前腕 → スティックが一直線**。拳の向きだけ真下（地面の方）。
         // handDir と handFace を分けているのがポイント：一本にすると、拳を下に向けた瞬間に
         // 手首の位置まで持ち上がって肘から上り坂になる（2026-09-22 ユーザー指摘）
-        this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, aim, null, STICK_UP[side], STICK_HAND_DIR, STICK_WRIST_MAX);
-        if (aim) this.aimHeldDir(side, aim, 'ny', STICK_UP[side]);
+        this.setHand(side, U(target), dt, s > 0.5 ? Infinity : 22, UD(aim), null, STICK_UP[side], STICK_HAND_DIR, STICK_WRIST_MAX);
+        if (aim) this.aimHeldDir(side, UD(aim), 'ny', STICK_UP[side]);
       } else {
         // 合わせシンバルなど、棒以外を持つ手は従来どおり（甲は真上・手は持ち物の向きに寄る）。
         // 棒用の扱いを当てたら手が崩れた（2026-09-22 ユーザー指摘）
         let hd = null;
         if (aim) { const a = v3(aim).normalize(); const w = 0.55 - 0.35 * s; hd = [a.x, a.y * (1 - w) + w * -0.2, a.z]; }
-        this.setHand(side, target, dt, s > 0.5 ? Infinity : 22, hd, null, PERC_UP);
-        if (aim) this.aimHeldDir(side, aim, 'ny', PERC_UP);
+        this.setHand(side, U(target), dt, s > 0.5 ? Infinity : 22, UD(hd), null, PERC_UP);
+        if (aim) this.aimHeldDir(side, UD(aim), 'ny', PERC_UP);
       }
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);
     }
-    const sNow = this._strikeMax ?? 0; this._strikeMax = 0;
-    this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
+    const sNow = this._strikeMax ?? 0; this._strikeMax = 0; this._strikePrev = sNow;
+    if (!fixed) this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
     this.headPivot.rotation.z += -0.06 * st.posture;
   }
 
@@ -1174,6 +1193,9 @@ export class Puppet {
     const tr = st.track;
     const normOf = (n) => (n.midi - (tr?.minPitch ?? 60)) / Math.max(1, (tr?.maxPitch ?? 72) - (tr?.minPitch ?? 60));
     const armOf = (n) => (normOf(n) < 0.5 ? 'L' : 'R');
+    // 前かがみ・視線は手より先に決める（床に固定した鍵盤では、このフレームの腰の曲がりで手の目標を上半身の座標に直すため）
+    this._spineGaze(st, dt, 0.1 * st.posture, keys ? 0.3 : 0.15, keys ? 0 : MIRROR * -0.25); // 鍵盤を見る／ハープの弦を見る
+    if (this.instFixed) this._rigToUpperBegin();
     for (const side of ['L', 'R']) {
       let s = 0, ant = 0, pn = pitchNorm;
       if (onset && armOf(onset) === side) { s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * 12); }
@@ -1182,7 +1204,10 @@ export class Puppet {
       if (keys) { // ピアノ/チェレスタ：鍵盤の上。音程で左右、押鍵で 1.5px 沈む、直前に 1px 浮く。指は鍵盤へ（前方・やや下）
         const x = (pn - 0.5) * 2 * keys.spread + sign * keys.gap;
         const y = keys.y + 3 - 1.5 * s + 1.0 * ant;
-        this.setHand(side, [x, y, keys.z ?? 0], dt, s > 0.5 ? Infinity : 14, [0, -0.4 - 0.3 * s, 1], null, PERC_UP); // 甲は真上（指の向きが前向きなので、前向きのヒントだと不定になり手首が裏返る。2026-09-11）
+        let tgt = [x, y, keys.z ?? 0];
+        // 床に固定した鍵盤：目標は rig の座標（楽器と同じ）なので、腰の曲がり・揺れの逆をかけて上半身の座標に直す。手は鍵盤の上に留まる
+        if (this.instFixed) tgt = this._rigToUpper(tgt);
+        this.setHand(side, tgt, dt, s > 0.5 ? Infinity : 14, [0, -0.4 - 0.3 * s, 1], null, PERC_UP); // 甲は真上（指の向きが前向きなので、前向きのヒントだと不定になり手首が裏返る。2026-09-11）
       } else { // ハープ：高い音ほど短い弦（右側）。はじくと手が弦から 1.5px 離れる。座標は楽器ローカル（pivot 基準）。指は弦へ
         const lx = -3 + pn * 8 + (side === 'L' ? -3 : 2);  // 左手は柱側（長い弦）へ、右手は体側（短い弦）。幅 8 は右腕が低音側で伸び切らない範囲
         const ly = side === 'L' ? 19 : 15;                    // 胸の高さ（肩の高さだと肘が折り畳まれる）
@@ -1193,7 +1218,6 @@ export class Puppet {
       }
     }
     this.headPivot.rotation.z += -0.06 * st.posture;
-    this._spineGaze(st, dt, 0.1 * st.posture, keys ? 0.3 : 0.15, keys ? 0 : MIRROR * -0.25); // 鍵盤を見る／ハープの弦を見る
   }
 
   // ---- 指揮者：拍子に応じた振り図形（4拍子：下→内→外→上）。イクタスで跳ね、強いほど大きく ----
