@@ -821,11 +821,52 @@ let credits = (() => {
 function saveCredits() {
   try { LS.setItem(CREDITS_KEY, JSON.stringify(credits)); pushSettings(); } catch (e) { console.warn('クレジット履歴の保存失敗:', e); }
 }
-function fillCreditList(n) {
-  const dl = document.getElementById(`creditHist${n}`);
-  if (!dl) return;
-  dl.textContent = '';
-  for (const v of credits.hist[n] || []) dl.appendChild(Object.assign(document.createElement('option'), { value: v }));
+// 履歴の候補リスト（2026-09-25 ユーザー指定）。datalist は欄に文字が入っているとそれに一致する候補しか出さず、
+// ▾ を押しても今の入力しか出なかったので自前にした。▾ ＝ 入力に関係なく全部、文字を打つ ＝ 含むものだけに絞る
+let creditMenuFor = 0, creditMenuSel = -1, creditMenuQ = '';
+function openCreditMenu(n, filter = '') {
+  creditMenuQ = filter;
+  const menu = $('creditMenu'), inp = $(`credit${n}`), q = filter.trim().toLowerCase();
+  const items = (credits.hist[n] || []).filter((v) => !q || v.toLowerCase().includes(q));
+  if (!items.length) { closeCreditMenu(); return; }
+  menu.textContent = '';
+  for (const v of items) {
+    const it = Object.assign(document.createElement('div'), { className: 'histItem', title: v });
+    it.dataset.value = v;
+    it.appendChild(Object.assign(document.createElement('span'), { className: 'histText', textContent: v }));
+    // 赤い ×：その履歴だけ消す（2026-09-25 ユーザー指定）。候補は開いたまま、残りを出し直す
+    const del = Object.assign(document.createElement('span'), { className: 'histDel', textContent: '×', title: 'この履歴を消す' });
+    del.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); forgetCredit(n, v); });
+    it.appendChild(del);
+    it.addEventListener('pointerdown', (e) => { e.preventDefault(); pickCredit(n, v); });   // preventDefault：入力欄のフォーカスを外さない
+    menu.appendChild(it);
+  }
+  const base = menu.offsetParent || menu.parentElement, pr = base.getBoundingClientRect(), r = inp.parentElement.getBoundingClientRect();
+  Object.assign(menu.style, { left: `${r.left - pr.left}px`, top: `${r.bottom - pr.top + 2}px`, width: `${r.width}px` });
+  menu.hidden = false;
+  creditMenuFor = n; creditMenuSel = -1;
+}
+function forgetCredit(n, v) {
+  const list = credits.hist[n] || [], i = list.indexOf(v);
+  if (i >= 0) list.splice(i, 1);
+  if (n === 1) delete credits.byGame[v];   // 消したゲーム名で作曲者が勝手に入らないよう、対応も消す
+  saveCredits();
+  openCreditMenu(n, creditMenuQ);   // 残りが無ければ閉じる
+}
+function closeCreditMenu() { $('creditMenu').hidden = true; creditMenuFor = 0; creditMenuSel = -1; }
+function pickCredit(n, v) {
+  const inp = $(`credit${n}`);
+  closeCreditMenu();
+  inp.value = v;
+  inp.dispatchEvent(new Event('input', { bubbles: true }));    // 反映と保存はいつもの経路で
+  inp.dispatchEvent(new Event('change', { bubbles: true }));   // 履歴の並べ替え・ゲーム名 → 作曲者
+}
+function moveCreditSel(d) {
+  const items = [...$('creditMenu').children];
+  if (!items.length) return;
+  creditMenuSel = (creditMenuSel + d + items.length) % items.length;
+  items.forEach((it, i) => it.classList.toggle('sel', i === creditMenuSel));
+  items[creditMenuSel].scrollIntoView({ block: 'nearest' });
 }
 function rememberCredit(n, v) {
   const t = (v || '').trim();
@@ -835,11 +876,31 @@ function rememberCredit(n, v) {
   if (i >= 0) list.splice(i, 1);
   list.unshift(t);                       // 使ったものが先頭
   list.length = Math.min(list.length, CREDIT_HIST_MAX);
-  fillCreditList(n);
 }
 function setupCredits() {
-  for (const n of [1, 2, 3, 4]) fillCreditList(n);
   const el = (n) => $(`credit${n}`);
+  for (const n of [1, 2, 3, 4]) {
+    const inp = el(n), btn = document.querySelector(`.histBtn[data-hist="${n}"]`);
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (creditMenuFor === n) closeCreditMenu(); else { inp.focus(); openCreditMenu(n); }
+    });
+    inp.addEventListener('input', (e) => { if (e.isTrusted) openCreditMenu(n, inp.value); });   // 手で打った時だけ（選んだ時の input では開き直さない）
+    inp.addEventListener('blur', () => { if (creditMenuFor === n) closeCreditMenu(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (creditMenuFor !== n) openCreditMenu(n);
+        moveCreditSel(e.key === 'ArrowDown' ? 1 : -1);
+      } else if (e.key === 'Enter' && creditMenuFor === n && creditMenuSel >= 0) {
+        e.preventDefault();
+        pickCredit(n, $('creditMenu').children[creditMenuSel].dataset.value);
+      } else if (e.key === 'Escape' && creditMenuFor === n) {
+        e.stopPropagation();   // 候補だけ閉じ、設定のポップアップは閉じない
+        closeCreditMenu();
+      }
+    });
+  }
   const commit = (n) => { rememberCredit(n, el(n).value); learnGame(); saveCredits(); };
   const learnGame = () => {                // ゲーム名と作曲者が揃っていたら対応を覚える
     const g = el(1).value.trim(), c = el(3).value.trim();
@@ -1865,7 +1926,7 @@ function applySnapshot(p, src) {
   catch (e) { console.warn('スカイドームの復元失敗:', e); }
   renderScreens(); setScreens(screens); setDomes(domes);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
-  for (const n of [1, 2, 3, 4]) fillCreditList(n);
+  closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
   if (src) {
     if (src.midi?.bytes) {

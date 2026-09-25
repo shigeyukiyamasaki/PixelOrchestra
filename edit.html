@@ -84,6 +84,7 @@
       </div>
       <div class="row">2 以上は「その倍数」に吸着。解像度を倍にしたあと、元の粒で描ける</div>
       <label class="chk"><input type="checkbox" id="colMode"> 列ごと（クリックした面の奥まで貫通）　c で切替</label>
+      <label class="chk">列の深さ <input type="number" id="colDepth" min="0" step="1" value="0" style="width:56px"> セル（0 = 端まで貫通）</label>
 
       <h2>色</h2>
       <div class="swatches" id="swatches"></div>
@@ -125,6 +126,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script type="module" src="src/voxelEdit.js?v=20260922d"></script>
+  <script type="module" src="src/voxelEdit.js?v=20260925a"></script>
 </body>
 </html>

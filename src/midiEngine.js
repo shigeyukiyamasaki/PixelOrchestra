@@ -230,6 +230,9 @@ const ENERGY_DECAY = 0.86; // 1ステップ（20ms）ごとの減衰率（≒ 13
 // CC 列（time 昇順）の時刻 t における値。最初のイベントより前は最初の値、以降は直前の値（二分探索）
 // ティンパニのキースイッチ → 奏法（hit ＝ 1 打／roll ＝ CC1 で強弱のロール／cresc ＝ クレッシェンド込みのロール）
 const TIMP_KS = { 24: 'hit', 25: 'roll', 26: 'cresc', 27: 'cresc', 28: 'cresc', 29: 'cresc' };
+// バスドラ（グランカッサ）のキースイッチ（2026-09-25 ユーザー指定）：D#0(27) がロール。ほかの低い音（C#0 等）は通常の打撃に戻す。
+// ラッチ式（最後に押したものが次の切り替えまで有効）。実際の MIDI（FFT_Antipyretic の Gran Cassas_MJ）は C#0 を長く押し、途中で D#0 に替えていた
+const BD_KS = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [24 + i, 24 + i === 27 ? 'roll' : 'hit']));
 const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
 
 /** 区間 [t0, t1) の中で CC の値が変わる書き込みがあるか（ロールかショットかの判定） */
@@ -303,18 +306,21 @@ export class MidiEngine {
         //   C0(24) シングルヒット／C#0(25) ロール（強弱は CC1）／D0〜F0(26〜29) クレッシェンドショート（膨らみ方まで収録）。
         // 最後に押されたキースイッチが次の切り替えまで有効（ラッチ）。各音に art を付け、キースイッチの音は叩く音から除く
         // （ティンパニの実音は 36 より上なので本物の音は消えない）。キースイッチの無い MIDI は何もしない＝全部シングルヒット扱い
-        if (variant === 'timpani') {
-          const ks = t.notes.filter((n) => TIMP_KS[n.midi]).map((n) => ({ time: n.time, art: TIMP_KS[n.midi] })).sort((a, b) => a.time - b.time);
+        // バスドラも同じ仕組み（BD_KS）。ただし下の「CC1 が動かない音は 1 打」は入れない（ロールの音に CC1 を書かない MIDI があるため）
+        const KS = variant === 'timpani' ? TIMP_KS : variant === 'bassdrum' ? BD_KS : null;
+        if (KS) {
+          const ks = t.notes.filter((n) => KS[n.midi]).map((n) => ({ time: n.time, art: KS[n.midi] })).sort((a, b) => a.time - b.time);
           if (ks.length) {
-            for (let k = notes.length - 1; k >= 0; k--) if (TIMP_KS[notes[k].midi]) notes.splice(k, 1);
+            for (let k = notes.length - 1; k >= 0; k--) if (KS[notes[k].midi]) notes.splice(k, 1);
             let p = -1;
             for (const n of notes) {
               while (p + 1 < ks.length && ks[p + 1].time <= n.time + KS_EPS) p++;
               n.art = p >= 0 ? ks[p].art : 'hit';
               // C#0（ロール）が有効でも、音の最中に CC1 が動いていない音はショット（1 打）。ロールの直後に C#0 のまま
               // 置かれた止めの一打などが該当する（2026-09-23 ユーザー指摘：FFT_Antipyretic の最後の音がロールしていた）
-              if (n.art === 'roll' && !ccMovesIn(cc1, n.time, n.end)) n.art = 'hit';
-              if (n.art === 'roll') n.cc1 = cc1;   // ロールの強弱は CC1（trackState の rollCC）
+              if (variant === 'timpani' && n.art === 'roll' && !ccMovesIn(cc1, n.time, n.end)) n.art = 'hit';
+              // ロールの強弱は CC1（trackState の rollCC）。バスドラは CC1 が動いている時だけ（無ければ velocity）
+              if (n.art === 'roll' && (variant === 'timpani' || ccMovesIn(cc1, n.time, n.end))) n.cc1 = cc1;
             }
             notes.forEach((n, i) => { n.index = i; });
           }

@@ -480,6 +480,25 @@ export function createStage(container) {
   controls.maxPolarAngle = deg(170); // 床の高さまで下り、さらに見上げられる（太陽を画面に入れるため。2026-09-16 ユーザー指定）。カメラ Y の下限 0.5 で床には潜らない
   // 水平方向の制限なし（ボクセル化で全周から見られる。2026-09-09）
   controls.update();
+  // ホイールで限界に当たらないようにする（2026-09-25 ユーザー指定）。OrbitControls のホイールは「中心点までの距離」を伸縮するだけなので、
+  // 中心点から minDistance より近く・maxDistance より遠くへは行けず、その先の場所に届かなかった。
+  // 限界に達している時だけ、カメラと中心点を一緒に視線の方向へ平行移動する（回転の軸までの距離は範囲内のまま）。
+  // OrbitControls より先に受けるため capture で聞き、平行移動した時は OrbitControls には渡さない
+  renderer.domElement.addEventListener('wheel', (e) => {
+    if (!controls.enabled || !e.deltaY) return;
+    const d = camera.position.distanceTo(controls.target), k = 0.95;   // k：OrbitControls の 1 刻みの倍率（zoomSpeed 1）
+    const closer = e.deltaY < 0;
+    if (closer ? d * k > controls.minDistance : d / k < controls.maxDistance) return;   // まだ余裕がある → いつもの伸縮
+    e.preventDefault(); e.stopImmediatePropagation();
+    const dir = new THREE.Vector3().subVectors(controls.target, camera.position).normalize();
+    let step = Math.min(Math.abs(e.deltaY), 100) / 100 * controls.minDistance * 0.1 * (closer ? 1 : -1);   // マウスの 1 刻み（100）で 0.5
+    // 床に潜らない（カメラ Y の下限 0.5 はスライダーと同じ）。下がり切ったら、それ以上は進まない
+    const dy = dir.y * step, FLOOR_Y = 0.5;
+    if (dy < 0 && camera.position.y + dy < FLOOR_Y) step *= Math.max(0, camera.position.y - FLOOR_Y) / -dy;
+    if (!step) return;
+    camera.position.addScaledVector(dir, step); controls.target.addScaledVector(dir, step);
+    controls.update();
+  }, { capture: true, passive: false });
 
   // 床・ひな壇・指揮台の深度書き込みは絵の方式で切り替える（setStageDepthWrite）。
   //   2D の板：深度を書かない（depthWrite:false, 先に描く）。奏者の板は足元を軸にカメラへ正対するため、見下ろすと板の上半分が

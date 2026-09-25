@@ -160,10 +160,10 @@
   <label class="chk" title="プレビューの左下にクレジットを重ねて表示する"><input type="checkbox" id="showCredits"> 表示する</label>
   <div class="twocol">
     <div>
-      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><input type="text" id="credit1" list="creditHist1" placeholder="（例）天地創造" autocomplete="off"></label>
-      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><input type="text" id="credit2" list="creditHist2" placeholder="（例）ソレイユ" autocomplete="off"></label>
-      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><input type="text" id="credit3" list="creditHist3" placeholder="（例）光田康典" autocomplete="off"></label>
-      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><input type="text" id="credit4" list="creditHist4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"></label>
+      <label class="ctl" title="1 行目（小さめ。原作名・シリーズ名など）"><span>1 行目</span><span class="histWrap"><input type="text" id="credit1" placeholder="（例）天地創造" autocomplete="off"><button type="button" class="histBtn" data-hist="1" tabindex="-1" title="履歴から選ぶ（文字を打つと絞り込み）">▾</button></span></label>
+      <label class="ctl" title="2 行目（大きめ。曲名）"><span>2 行目</span><span class="histWrap"><input type="text" id="credit2" placeholder="（例）ソレイユ" autocomplete="off"><button type="button" class="histBtn" data-hist="2" tabindex="-1" title="履歴から選ぶ（文字を打つと絞り込み）">▾</button></span></label>
+      <label class="ctl" title="作曲者。入力がある時だけ「Comp.」付きで出る"><span>作曲</span><span class="histWrap"><input type="text" id="credit3" placeholder="（例）光田康典" autocomplete="off"><button type="button" class="histBtn" data-hist="3" tabindex="-1" title="履歴から選ぶ（文字を打つと絞り込み）">▾</button></span></label>
+      <label class="ctl" title="編曲者。入力がある時だけ「Arr.」付きで出る"><span>編曲</span><span class="histWrap"><input type="text" id="credit4" value="Romashige" placeholder="（例）Romashige" autocomplete="off"><button type="button" class="histBtn" data-hist="4" tabindex="-1" title="履歴から選ぶ（文字を打つと絞り込み）">▾</button></span></label>
     </div>
     <div>
       <label class="ctl" title="全体の大きさの倍率"><span>大きさ <b data-value-for="creditScale">1</b></span><input type="range" id="creditScale" min="0.4" max="2.5" step="0.05" value="1"></label>
@@ -171,8 +171,8 @@
       <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="creditOpacity">0.8</b></span><input type="range" id="creditOpacity" min="0.1" max="1" step="0.05" value="0.8"></label>
     </div>
   </div>
-  <datalist id="creditHist1"></datalist><datalist id="creditHist2"></datalist>
-  <datalist id="creditHist3"></datalist><datalist id="creditHist4"></datalist>
+  <!-- 履歴の候補（2026-09-25：datalist は欄に文字が入っていると一致する候補しか出さないので自前にした）。ポップアップの外に置くと、選んだ時に「外を押した」扱いで設定が閉じる -->
+  <div id="creditMenu" class="histMenu" hidden></div>
   </div>
   <div class="box">
   <h3 class="hd">テンポ・拍子</h3>

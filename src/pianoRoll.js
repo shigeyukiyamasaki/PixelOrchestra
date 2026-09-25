@@ -176,7 +176,10 @@ export class PianoRoll {
       const w = semi * 0.9;
       // 列の中で音程を横に展開。基準は音域の中央ではなく平均音高：外れ値（キースイッチ等の低い音）で音域が広がっても、
       // 鳴っている音の塊がパート名（重心）の真上に来る（2026-09-16 ユーザー指摘：1st バイオリンがずれる）
-      const localX = (n.midi - tr.meanPitch) * semi;
+      // 列の幅（線の長さ）の中に収める（2026-09-25 ユーザー指摘）：音域フィルターの無いトラックのキースイッチ（C0 等）が平均から 40 半音以上離れ、
+      // 隣の列（クラリネットの C0 がオーボエの列）の上に細い線として描かれ、CC1 の線のように見えていた
+      const half = Math.max(0, col.width / 2 - w / 2);
+      const localX = Math.max(-half, Math.min(half, (n.midi - tr.meanPitch) * semi));
       // 横オフセットは座席の弧の接線（世界座標で固定）に沿って置く
       const x = col.x + col.tx * localX;
       const z = col.z + col.tz * localX;

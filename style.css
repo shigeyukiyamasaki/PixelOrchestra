@@ -308,12 +308,28 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 /* 文字入力（クレジットの行） */
 .ctl input[type=text] { width: 100%; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+/* 履歴の ▾ と候補リスト（クレジットの行。2026-09-25） */
+.histWrap { display: flex; }
+.histWrap input[type=text] { flex: 1; min-width: 0; border-radius: 4px 0 0 4px; }
+.histBtn { width: 22px; padding: 0; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-left: none;
+  border-radius: 0 4px 4px 0; font-size: 11px; cursor: pointer; }
+.histBtn:hover { color: var(--accent); }
+.histMenu { position: absolute; z-index: 5; max-height: 220px; overflow-y: auto; background: #15152a; border: 1px solid var(--line);
+  border-radius: 4px; box-shadow: 0 8px 20px rgba(0,0,0,.5); }
+.histItem { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; font-size: 12px; cursor: pointer; }
+.histText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.histDel { flex: 0 0 auto; width: 16px; text-align: center; color: #ff4d5e; font-weight: 700; border-radius: 3px; }
+.histDel:hover { background: #ff4d5e; color: #fff; }
+.histItem:hover, .histItem.sel { background: var(--panel2); color: var(--accent); }
 .ctl.row { flex-direction: row; align-items: center; justify-content: space-between; }
 .ctl input[type=color] { width: 48px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); cursor: pointer; }
 
 /* 上：タイトル・ファイル・再生。左：表示設定、右：トラック一覧。どれも半透明でステージが透ける */
 #topbar { grid-row: 1; grid-column: 1 / -1; height: 72px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 0 14px;
   background: var(--panel); border-bottom: 1px solid var(--line); }
+/* 設定を開いている間は上部バーごと一番上へ（2026-09-25 ユーザー指定）。#topbar の z-index 3 が重なりの区切りになり、
+   中の #settingsPop（z-index 20）が再生バー（#viewTransport 6）やカメラ欄（5）の下に潜っていた */
+#topbar:has(#settingsPop:not([hidden])) { z-index: 40; }
 #topbar h1 { margin: 0 8px 0 0; white-space: nowrap; }
 #topbar .status { margin: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ファイル（MIDI / 音声）と遅延（MIDI / 音声）をそれぞれ 2 段に積む。2026-09-14 ユーザー指定 */

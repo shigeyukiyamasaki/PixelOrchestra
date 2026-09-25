@@ -5,7 +5,7 @@ Usage:
   python3 tools/make_test_midi.py                 # samples/test_orchestra.mid を生成
   python3 tools/make_test_midi.py out.mid         # 出力先を指定
   python3 tools/make_test_midi.py out.mid 110     # テンポ指定
-最終更新: 2026-09-23 / v0.3（グロッケン・ビブラフォン追加） / 生成元: PixelOrchestra
+最終更新: 2026-09-25 / v0.4（チューブラーベルを毎小節 4 音に） / 生成元: PixelOrchestra
 """
 import sys, os, struct, random
 
@@ -140,8 +140,14 @@ def notes_for(part):
             if bar % 4 == 0: ev.append((b0, 3 * BEAT, 52, v(120)))
         elif part == 'susp':  # サスペンデッドシンバル：2 小節に 1 回、長い音（ロールになる）
             if bar % 2 == 1: ev.append((b0 + 2 * BEAT, 2 * BEAT, 51, v(95)))
-        elif part == 'tub':   # チューブラーベル：小節頭に和音の根音
-            if bar % 2 == 0: ev.append((b0, 2 * BEAT, root + 12, v(95)))
+        elif part == 'tub':   # チューブラーベル：4 分音符で 4 音（2026-09-25 ユーザー指定：もっと叩かせる。以前は 2 小節に 1 音）
+            # 和音の音（手前の列）に半音の経過音（奥の列）を混ぜる。偶数小節は上がり、奇数小節は下がる。
+            # 強さは乱数を使わない。ただし以前と同じ回数だけ乱数を消費する（偶数小節に 1 回）：
+            # 変えると後ろに並ぶグロッケン・ビブラフォンの強さがずれる
+            if bar % 2 == 0: v(95)
+            seq = [root + 12, root + 12 + chord[1], root + 13 + chord[1], root + 12 + chord[2]]
+            if bar % 2 == 1: seq = seq[::-1]
+            for i, n in enumerate(seq): ev.append((b0 + i * BEAT, BEAT - 40, n, max(20, min(127, int((100 if i == 0 else 80) * dyn)))))
         elif part == 'glock': # グロッケン：4 分音符の分散和音（高音。2026-09-23 追加）
             for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, root + 24 + chord[i % 3] + (12 if i == 3 else 0), v(85)))
         elif part == 'vib':   # ビブラフォン：2 分音符の和音（中音域。2026-09-23 追加）

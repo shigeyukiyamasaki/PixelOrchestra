@@ -401,6 +401,7 @@ function hideHover() {
 // 列ごと（2026-09-24 ユーザー指定）：クリックした面に垂直な向きに、部位の端から端まで（筆の太さの断面で）まとめて効かせる。
 // 削る＝列の全部を消す、塗る＝列の中の埋まっているセルを塗る、足す＝列の中の空いているセルを埋める
 let colMode = false;
+let colDepth = 0;            // 列の深さ（2026-09-25 ユーザー指定）：0 = 端から端まで、N = クリックした面から N セル奥まで
 function targetBlock(ev) {
   const h = pick(ev);
   if (!h) return null;
@@ -408,7 +409,15 @@ function targetBlock(ev) {
   const n = brush, snap = (v) => Math.floor(v / n) * n;
   if (colMode) {
     const axis = h.nx ? 'x' : h.ny ? 'y' : 'z';
-    return { x: axis === 'x' ? 0 : snap(h.x), y: axis === 'y' ? 0 : snap(h.y), z: axis === 'z' ? 0 : snap(h.z), n, axis, mode: tool };
+    const t = { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, axis, mode: tool };
+    const full = { x: data.w, y: data.h, z: data.depth }[axis];
+    if (colDepth > 0 && colDepth < full) {
+      // 当たったセルから面の内側へ N セル。y は下向きが正なので法線の符号が x・z と逆になる
+      const inward = axis === 'x' ? -h.nx : axis === 'y' ? h.ny : -h.nz;
+      t[axis] = inward > 0 ? h[axis] : h[axis] - colDepth + 1;
+      t.len = colDepth;
+    } else { t[axis] = 0; t.len = full; }
+    return t;
   }
   if (tool === 'add') {                                     // 当たった面の外側へ 1 ブロック
     const t = { x: snap(h.x) + h.nx * n, y: snap(h.y) - h.ny * n, z: snap(h.z) + h.nz * n, n, mode: 'add' };
@@ -419,9 +428,9 @@ function targetBlock(ev) {
   return { x: snap(h.x), y: snap(h.y), z: snap(h.z), n, mode: tool };
 }
 
-/** ブロックの大きさ [x, y, z]（列ごとの時は、その向きだけ部位の端から端まで） */
+/** ブロックの大きさ [x, y, z]（列ごとの時は、その向きだけ列の深さ t.len。0 指定なら部位の端から端まで） */
 function blockSize(t) {
-  return [t.axis === 'x' ? data.w : t.n, t.axis === 'y' ? data.h : t.n, t.axis === 'z' ? data.depth : t.n];
+  return [t.axis === 'x' ? t.len : t.n, t.axis === 'y' ? t.len : t.n, t.axis === 'z' ? t.len : t.n];
 }
 /** ブロックの中で、部位の枠に収まっているセルだけ返す */
 function blockCells(t) {
@@ -452,8 +461,8 @@ function showHover(ev) {
   hoverFill.visible = hoverEdge.visible = true;
   renderer.domElement.style.cursor = t.mode === 'out' ? 'not-allowed' : 'crosshair';
   const same = hoverCell && hoverCell.x === t.x && hoverCell.y === t.y && hoverCell.z === t.z
-               && hoverCell.mode === t.mode && hoverCell.n === t.n && hoverCell.axis === t.axis;
-  if (!same) { hoverCell = { ...t, tint: st.edge, note: t.axis ? `${st.note}（${t.axis} 方向の列ごと）` : st.note }; updateHud(); }
+               && hoverCell.mode === t.mode && hoverCell.n === t.n && hoverCell.axis === t.axis && hoverCell.len === t.len;
+  if (!same) { hoverCell = { ...t, tint: st.edge, note: t.axis ? `${st.note}（${t.axis} 方向の列ごと${colDepth > 0 ? '・深さ ' + colDepth : ''}）` : st.note }; updateHud(); }
 }
 
 /** 道具を変えた・Alt を押した／離した時に、同じ位置で描き直す */
@@ -659,6 +668,16 @@ $('dropUnusedBtn').onclick = dropUnused;
 function setPairMode(m) { pairMode = m; rebuild(); }
 function setColMode(on) { colMode = on; $('colMode').checked = on; refreshHover(); }
 $('colMode').onchange = (e) => setColMode(e.target.checked);
+// 列の深さ。このブラウザだけに覚える（読めなければ 0 = 端まで）
+function setColDepth(v) {
+  colDepth = Math.max(0, Math.floor(+v) || 0);
+  $('colDepth').value = colDepth;
+  try { localStorage.setItem('voxelEdit.colDepth', String(colDepth)); } catch (e) { /* 保存できなくても効く */ }
+  refreshHover();
+}
+$('colDepth').onchange = (e) => setColDepth(e.target.value);
+$('colDepth').onkeydown = (e) => { if (e.key === 'Enter') e.target.blur(); };   // Enter で確定して欄から出る（blur で change も発火する）
+try { setColDepth(localStorage.getItem('voxelEdit.colDepth') || 0); } catch (e) { /* 読めなければ 0 */ }
 for (const b of document.querySelectorAll('[data-pair]')) b.onclick = () => setPairMode(b.dataset.pair);
 $('showGrid').onchange = (e) => { grid.visible = e.target.checked; };
 // 明るい背景（2026-09-24 ユーザー指定）。選んだ状態はこのブラウザだけに覚える（読めなければ暗い背景のまま）
@@ -682,6 +701,7 @@ $('undoBtn').onclick = undo;
 $('redoBtn').onclick = redo;
 $('resetBtn').onclick = resetPart;
 addEventListener('keydown', (e) => {
+  if (e.target.matches?.('input[type=number], input[type=text]')) return;   // 数値欄への入力（列の深さ等）でショートカットを動かさない
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (dirty) save(); }
   if (e.key === '1') document.querySelector('[data-tool=erase]').click();

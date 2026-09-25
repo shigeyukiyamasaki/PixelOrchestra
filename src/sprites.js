@@ -923,6 +923,203 @@ function celestaCell(xRaw, y, z) {
   return null;
 }
 
+// ---- チューブラーベルの立体（2026-09-25 ユーザー指定：見た目の完成度を上げる）----
+// 管は十字断面（3×3 の角を落とす）で丸く見せ、ハイライト・地・陰の 3 階調。上に銀のキャップ、紐で上の横木から吊る。
+// 枠には客席側のダンパー（赤いフェルトの押さえ棒）、床の脚・キャスター 4 個・奏者側へ出るペダル。
+// 高さは実物に合わせて立った奏者より高い（2026-09-25 ユーザー指摘）：枠の上端 46px（≈ 205cm。奏者の頭の上端は 38px）、
+// キャップは手前の列が 40px・奥の列が 43px（頭より上。腕を上へ伸ばして叩く）。
+// **2 列**（2026-09-25 ユーザー指定）：実物どおりピアノの鍵盤の並び。C〜1 オクターブ上の F の 18 本で、白鍵にあたる 11 本が奏者側（手前）、
+// 黒鍵にあたる 7 本が奥の列（白鍵どうしの境目の奥）。奥の列は吊る位置が高く、キャップが手前の列より 3px 上にはみ出る
+// （手前のキャップに触れずに奥のキャップを叩ける高さ。マレットの頭の半径は 1.5px）。
+// 管の長さは音程で決める（半音ごとに 2^(-1/24) 倍。一番長い C が 30px ≈ 135cm、一番短い F はその 6 割）。
+// 座標は res:2 のセル：x 0..59（低音が左）、y 0..91（床が 92）、z 0..11（0 = 奏者側。z0 -4 なので z 3 の奏者側の面が楽器ローカル z -0.5）。
+// 手の位置は tubularTube(k) で puppet.js に渡す（管の位置をここ 1 か所で決める）
+const TUBULAR = { W: 60, H: 92, D: 12 };   // 高さ 92 セル＝46px（2026-09-25 ユーザー指定で打点ごと 4px 上げた。管の長さはそのまま、枠を下へ伸ばした）
+const TB_BASE = TUBULAR.H - 6;     // 下の横木の一番上の行（その下に脚・キャスター）
+const TB_ROW = [{ cap: 10, z: 3 }, { cap: 4, z: 7 }];   // 手前の列・奥の列：キャップの一番上の行と、管の奏者側の奥行き（3 セル厚）
+const TB_NATURAL = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17];   // 白鍵にあたる半音（C から）
+const TB_TUBES = [];               // k（C からの半音 0..17）→ { col: 左端の列, row: 0 手前 / 1 奥, len: 管の長さ（行） }
+for (let k = 0; k < 18; k++) {
+  const n = TB_NATURAL.indexOf(k);
+  const col = n >= 0 ? 8 + 4 * n : 8 + 4 * TB_NATURAL.indexOf(k - 1) + 2;   // 白鍵は 4 セルおき、黒鍵は下の白鍵と次の白鍵の境目
+  TB_TUBES.push({ col, row: n >= 0 ? 0 : 1, len: Math.round(60 * Math.pow(2, -k / 24)) });
+}
+const TB_AT = [new Array(TUBULAR.W).fill(-1), new Array(TUBULAR.W).fill(-1)];   // 列ごと・列（手前/奥）ごとの管の番号
+TB_TUBES.forEach((t, k) => { for (let d = 0; d < 3; d++) TB_AT[t.row][t.col + d] = k; });
+/** 管 k（C からの半音 0..17）の位置：楽器ローカル px の { x: 管の中心, y: キャップの中心, z: 管の奏者側の面, row: 0 手前 / 1 奥 } */
+export function tubularTube(k) {
+  const t = TB_TUBES[k], r = TB_ROW[t.row];
+  return { x: (t.col + 1.5 - 30) / 2, y: (TUBULAR.H - r.cap - 1.5) / 2, z: (r.z - 4) / 2, row: t.row };
+}
+const TB_HI = '#eef2f6', TB_GOLD_HI = '#f3d27a', TB_FELT = '#7a2230', TB_FELT2 = '#551520';
+// 柱の外側の列（左 x 5..6 / 右 52..53）。管（x 8..50）との隙間を左右とも 1 セルに詰めた（2026-09-25 ユーザー指定。以前は x 0..1 / 58..59 で 6〜7 セル空いていた）。
+// 枠の中心 29.5 は管の並びの中心と同じなので、管と打点は動かない
+const TB_L = 5, TB_R = 53;
+function tubularCell(x, y, z) {
+  if (x < TB_L - 1 || x > TB_R + 1) return null;
+  const frameZ = z >= 3 && z <= 9;   // 枠（柱・横木）は 2 列ぶんの奥行き
+  const pillar = x >= TB_L && x <= TB_L + 1 ? TB_L : x >= TB_R - 1 && x <= TB_R ? TB_R - 1 : -1;   // 柱の左の列（柱でなければ -1）
+  const inner = x >= TB_L && x <= TB_R;
+  // 柱と上の横木（y 0..2）
+  if (y <= 2) return frameZ && inner ? (y === 0 ? TB_HI : C.silver2) : null;
+  const dampB = TB_ROW[1].cap + 5;   // ダンパーの一番上の行
+  if (pillar >= 0 && y <= TB_BASE + 1) {
+    if (frameZ) return x === pillar ? C.silver : C.silver2;
+    if (y === dampB && z >= 10) return C.silver2;                              // 客席側のダンパーの受け金具
+    return null;
+  }
+  // ダンパー（3 行）：客席側（z 10）のフェルトが奥の列に当たり、前に金属の棒（z 11、1 行）。
+  // 列の間（z 6）のフェルトは 2026-09-25 ユーザー指定で削除
+  if (inner && z >= 10 && y >= dampB && y <= dampB + 2) {
+    if (z === 11) return y === dampB ? C.silver : null;
+    return y === dampB + 2 ? TB_FELT2 : TB_FELT;
+  }
+  // 下の横木（2 行）
+  const b = y - TB_BASE;
+  if (b === 0 || b === 1) {
+    if (frameZ && inner) return b === 0 ? C.silver : C.silver2;
+    if (b === 1 && x >= 26 && x <= 33 && z <= 2) return '#2b2b33';            // ペダル（奏者側へ出る）
+    return null;
+  }
+  if (b === 2 && x >= 26 && x <= 33 && z <= 2) return C.black;
+  // 脚（2 行、前後に広い）とキャスター（2 行）
+  const foot = (x >= TB_L - 1 && x <= TB_L + 2) || (x >= TB_R - 2 && x <= TB_R + 1);   // 柱の下で内外に 1〜2 セル広い
+  if (b === 2 || b === 3) return foot ? (b === 2 ? C.silver : C.silver2) : null;
+  if (b >= 4) return pillar >= 0 && (z <= 1 || z >= 10) ? C.black : null;
+  // 管（手前の列 z 3..5・奥の列 z 7..9）
+  const row = z >= 3 && z <= 5 ? 0 : z >= 7 && z <= 9 ? 1 : -1;
+  if (row < 0) return null;
+  const k = TB_AT[row][x];
+  if (k < 0) return null;
+  const t = TB_TUBES[k], cap = TB_ROW[row].cap, dx = x - t.col, zc = TB_ROW[row].z + 1;
+  if (y < cap) return dx === 1 && z === zc ? C.black : null;                   // 吊り紐
+  if (y <= cap + 2) return y === cap || dx === 0 ? TB_HI : dx === 1 ? C.silver : C.silver2;   // キャップ（叩く所）
+  const bottom = cap + 2 + t.len;
+  if (y > bottom) return null;
+  if (dx !== 1 && z !== zc) return null;                                       // 角を落として丸く
+  if (y === bottom || y === cap + 3) return C.gold2;                           // キャップの下の継ぎ目・下端の縁
+  return dx === 0 ? TB_GOLD_HI : dx === 1 ? C.gold : C.gold2;
+}
+
+// ---- チューバの立体（2026-09-25 ユーザー指定：見た目を実物に近づける。以前は箱を積んだだけの形）----
+// ユーザー提供の写真（ロータリー式のアップライト・チューバ）どおり：
+//   ベルは頭より高く、左肩の外へ傾けて大きく開く。ベル管は斜めに下りて膝の上のボトムボウへ回り、反対側を上がってロータリーバルブ 4 個（体の前・膝の高さ）へ。
+//   バルブからは銀の長い管が 3 本、ベル管と平行に斜め上へ伸び、上端の金の U 字を左手で抱える。右手は手前からバルブのレバーを押さえる。
+//   マウスパイプはベル管の手前（胸の高さ）から弧を描いて口へ。前面の下に楕円のループ（チューニング管）。
+// 管は「太さを持った線分の連なり」（TUBA_SEGS）で表し、セルの中心がどれかの線分の太さの内側なら埋める。色は断面の向きで 3 階調。
+// 設計座標（xo, yo, zo）は以前の 32×44 の絵と同じ原点：xo 16 が底の中央、yo 44 が底、zo 0 が楽器の奏者側の面（口は zo -5）。
+// 奏者の体は鏡像（puppet.js の MIRROR）なので、**xo が小さい側が奏者の左**（ベルの側）。
+// 配列の添字は (xi, yi, zi) = (xo + 13, yo + 20, zo + 8)。ベルを頭より上・左肩の外へ出すため、以前より上と奏者の左へ広い。
+// 口・手の位置（設計座標）は画面で実測：口 (16, 5, -5)。手は puppet.js の tuba で、左手を外側の U 字の上 (5.5, 7, 17)、右手をレバーの先 (17.5, 15.5, 18.5) に合わせた（抱きかかえるため、どちらも楽器ごと zo −3 寄せてある）。
+// 手の位置（puppet.js の tuba）を変えたら、U 字・バルブの位置もここで合わせる
+const TUBA = { W: 39, H: 64, D: 30, XI: 13, YI: 20, ZI: 8 };   // YI 20：斜めのベルの縁の上端（yo −17.6）まで入れる。13 だと縁が水平に切れていた（2026-09-25）
+const TUBA_SEGS = [];   // { a, b, ra, rb, kind, da, db（ベルの縁からの管に沿った距離）, open（a 側の端を丸めない） }
+function tubaPath(pts, kind, open = false) {
+  let dist = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [ax, ay, az, ra] = pts[i], [bx, by, bz, rb] = pts[i + 1];
+    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    TUBA_SEGS.push({ a: [ax, ay, az], b: [bx, by, bz], ra, rb, kind, da: dist, db: dist + len, open: open && i === 0 });
+    dist += len;
+  }
+}
+{
+  // 楽器の中の並びは写真どおり：ベル管が本体の奏者の右寄りから左上の外へ斜めに立ち上がり、
+  // バルブ・銀の管・外側の U 字はベル管のさらに奏者の左側に付く（2026-09-25 ユーザー指摘：以前はバルブがベル管の反対側で、並びが写真と逆だった）
+  // 底（ボトムボウ）は太ももの上に乗せる（2026-09-25 ユーザー指定）。太ももの上面は yo 28.5、左の太ももは xo 10〜21・右は 19〜30（画面で実測）。
+  // 口（yo 5）から膝までが実物の写真より短いので、下半分（バルブ・ボトムボウ）を縦に詰めてある
+  // ベル管：左の太ももの内側 (21, 22, 10) から縁の中心 (-2, -12, 9) へ。縁の半径 10 から指数で細り、下で 3.4
+  const A = [-2, -12, 9], B = [21, 22, 10], L = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+  const bell = [];
+  for (const d of [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 19, 24, 30, 36, L]) {
+    const t = d / L;
+    bell.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t, 3.4 + 6.6 * Math.exp(-d / 4.5)]);
+  }
+  tubaPath(bell, 'bell', true);
+  // ボトムボウ：中心 (14.5, 22.5)・横 6.5・縦 3.5 の半楕円で、ベル管の下から奏者の左へ回る。一番下の面が太ももの上面（yo 28.6）
+  const bow = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, a = Math.PI * t;
+    bow.push([14.5 + 6.5 * Math.cos(a), 22.5 + 3.5 * Math.sin(a), 10 + 2 * t, 3.4 - 0.8 * t]);
+  }
+  tubaPath(bow, 'gold');
+  tubaPath([[8, 22.5, 12, 2.6], [10, 20.5, 13, 2.1], [11.1, 19.5, 14, 1.7]], 'gold');   // 奏者の左から上がってバルブへ
+  // ロータリーバルブ 4 個：前後向きの短い円筒（真鍮の胴・銀の蓋）。腹の前に斜めに並び、平たいレバーを右手の側（奏者の右）へ出す。
+  // 右手で押しやすいよう、レバーの先は体の中央寄り（xo 17.5）に置く（2026-09-25 ユーザー指定。以前はバルブが xo 5〜7.5 で、右手が体の左端まで伸びていた）
+  [[13.5, 10.5], [12.7, 13], [11.9, 15.5], [11.1, 18]].forEach(([x, y]) => {
+    tubaPath([[x, y, 13.5, 1.25], [x, y, 16.5, 1.25]], 'valve');
+    tubaPath([[x, y, 16.5, 0.9], [x, y, 17.3, 0.9]], 'cap');
+    tubaPath([[x + 0.5, y, 17.3, 0.4], [16.8, y + 0.8, 18.2, 0.4]], 'cap');
+    tubaPath([[17.1, y + 0.8, 18.2, 0.8], [17.7, y + 0.8, 18.2, 0.8]], 'cap');
+  });
+  // 長い管 3 本：バルブの上からベル管と平行に斜め上（奏者の左）へ。上端はあご〜肩の高さ。
+  // 銀はバルブ（蓋・レバー）だけにし、ほかは金（2026-09-25 ユーザー指定）
+  [[14.5, 15.4], [15.9, 16.4], [13.1, 16.2]].forEach(([x, z]) => tubaPath([[x, 16.5, z, 0.95], [x - 6.5, 9, z + 1, 0.95]], 'gold'));
+  // 外側の大きな U 字：銀の管の上端から奏者の左へ回って下り、バルブの下へ戻る（左手で上を抱える）
+  tubaPath([[8, 9, 16.4, 1.2], [7, 6.5, 16.6, 1.2], [4, 6.5, 16.6, 1.2], [2.5, 9, 16.3, 1.2],
+            [2.5, 17, 15.5, 1.2], [4, 20, 14.5, 1.2], [8, 21, 13.5, 1.2]], 'gold');
+  tubaPath([[9.4, 9, 17.4, 1.0], [9.4, 7.8, 17.4, 1.0], [6.6, 9, 16.2, 1.0]], 'gold');
+  // 前面の下の楕円ループ（チューニング管）
+  const loop = [];
+  for (let i = 0; i <= 16; i++) { const a = 2 * Math.PI * i / 16; loop.push([14 + 5 * Math.cos(a), 24 + 1.8 * Math.sin(a), 16, 1.1]); }
+  tubaPath(loop, 'gold');
+  tubaPath([[11, 20, 14, 1.1], [12, 22.5, 15.5, 1.1]], 'gold');
+  // マウスパイプ：口から奏者の左下へ出て、ベル管の手前で弧を描き、長い管の上端へ入る。先にマウスピース
+  tubaPath([[13, 11, 16.5, 0.9], [14.5, 10.5, 15.5, 0.85], [15.5, 9, 13, 0.8], [16, 8, 6, 0.8], [16.3, 6, -2.5, 0.75]], 'gold');
+  tubaPath([[16.3, 6, -2.5, 0.8], [16, 5, -4.2, 0.8], [16, 4.8, -5, 1.15]], 'gold');
+  // 支え（細い棒）：長い管とベル管、ボトムボウの内側
+  tubaPath([[10, 12, 16, 0.4], [12, 12.5, 12.5, 0.4]], 'gold');
+  tubaPath([[9, 21, 12, 0.4], [18, 21, 10.5, 0.4]], 'gold');
+  // 抱きかかえる（2026-09-25 ユーザー指定）：楽器全体を体へ 3 セル寄せる（胴の前面は zo 2 前後）。口元のマウスピース（zo −2.5 より奥）は動かさず、
+  // その手前 6 セルでなだらかにつなぐ。手の位置（puppet.js）も同じだけ寄せてある
+  const hug = (p) => { p[2] -= 3 * Math.max(0, Math.min(1, (p[2] + 2.5) / 6)); };
+  for (const sg of TUBA_SEGS) { hug(sg.a); hug(sg.b); }
+}
+// ベルの縁の面（管に垂直）。これより外は描かない（線分の端の丸みが縁の上にはみ出すのを防ぐ）
+const TUBA_BELL = (() => {
+  const b = TUBA_SEGS.filter((sg) => sg.kind === 'bell'), a = b[0].a, e = b[b.length - 1].b;
+  const u = [e[0] - a[0], e[1] - a[1], e[2] - a[2]], l = Math.hypot(...u);
+  return { a, u: u.map((c) => c / l) };
+})();
+const TUBA_LIGHT = (() => { const v = [-0.3, -0.6, 0.75], l = Math.hypot(...v); return v.map((c) => c / l); })();   // 上・手前から
+const TUBA_HI = '#f3d27a', TUBA_IN = '#6e4c10';
+let TUBA_GRID = null;
+/** セル (xi, yi, zi) の色。空なら null。最初の呼び出しで全セルを計算して控える */
+function tubaCell(x, y, zi) {
+  if (!TUBA_GRID) {
+    TUBA_GRID = new Array(TUBA.W * TUBA.H * TUBA.D).fill(null);
+    for (let k = 0; k < TUBA.D; k++) for (let j = 0; j < TUBA.H; j++) for (let i = 0; i < TUBA.W; i++)
+      TUBA_GRID[(k * TUBA.H + j) * TUBA.W + i] = tubaColor(i - TUBA.XI + 0.5, j - TUBA.YI + 0.5, k - TUBA.ZI + 0.5);
+  }
+  if (x < 0 || y < 0 || zi < 0 || x >= TUBA.W || y >= TUBA.H || zi >= TUBA.D) return null;
+  return TUBA_GRID[(zi * TUBA.H + y) * TUBA.W + x];
+}
+function tubaColor(px, py, pz) {
+  let best = null, bestM = 0, bq = null, bd = 0, br = 0, bAlong = 0;
+  for (const s of TUBA_SEGS) {
+    const [ax, ay, az] = s.a, dx = s.b[0] - ax, dy = s.b[1] - ay, dz = s.b[2] - az;
+    const L2 = dx * dx + dy * dy + dz * dz;
+    let t = L2 ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / L2 : 0;
+    if (s.kind === 'bell' && (px - TUBA_BELL.a[0]) * TUBA_BELL.u[0] + (py - TUBA_BELL.a[1]) * TUBA_BELL.u[1] + (pz - TUBA_BELL.a[2]) * TUBA_BELL.u[2] < 0) continue;   // ベルの縁より外
+    t = Math.max(0, Math.min(1, t));
+    const qx = ax + dx * t, qy = ay + dy * t, qz = az + dz * t;
+    const d = Math.hypot(px - qx, py - qy, pz - qz), r = s.ra + (s.rb - s.ra) * t;
+    if (r - d > bestM) { bestM = r - d; best = s; bq = [qx, qy, qz]; bd = d; br = r; bAlong = s.da + (s.db - s.da) * t; }
+  }
+  if (!best) return null;
+  // ベルの口（縁から管に沿って 7 セル）は中空：肉厚 1.2 セルの殻だけ残し、奥で塞ぐ。内側は暗く、縁は明るく
+  if (best.kind === 'bell' && bAlong < 7) {
+    if (bd < br - 1.2) return bAlong >= 6 ? TUBA_IN : null;
+    if (bAlong < 1.2) return TUBA_HI;
+    if (bd < br - 0.6) return TUBA_IN;
+  }
+  const n = [px - bq[0], py - bq[1], pz - bq[2]], nl = Math.hypot(...n) || 1;
+  const lit = (n[0] * TUBA_LIGHT[0] + n[1] * TUBA_LIGHT[1] + n[2] * TUBA_LIGHT[2]) / nl;
+  if (best.kind === 'cap') return lit > 0.5 ? C.silver2 : '#5f6873';   // 銀は光沢とブルームで明るく出るので暗めに
+  if (best.kind === 'valve') return lit > 0.55 ? C.gold : C.gold2;
+  return lit > 0.55 ? TUBA_HI : lit > -0.25 ? C.gold : C.gold2;
+}
+
 // ---- ハープの立体（2026-09-24 ユーザー指定：見た目が変）----
 // 以前は共鳴胴が下の中央に台形の山として置かれ、弦がその斜面へ下りる竪琴のような形だった。実物は「柱・ネック・斜めの共鳴胴」の三角形：
 // 共鳴胴は台座から奏者の肩の方へ斜めに伸び（下ほど太く深い）、弦は柱の近くが長い低音、共鳴胴の上端に近いほど短い高音。
@@ -1247,18 +1444,12 @@ export const INSTRUMENT = {
     root.userData.size = body.userData.size;
     return root;
   },
-  // チューバ 32×44：上に開く大きなベル（中空）・巻いた胴・ピストン 4 本・左へ出るマウスパイプ。pivot = 底中央
-  tuba: () => makePart(32, 44, 16, 44, (d) => {
-    d.r(4, 0, 24, 2, C.gold2); d.r(5, 2, 22, 4, C.gold); d.r(8, 6, 16, 4, C.gold); d.r(10, 10, 12, 4, C.gold); // ベル（上向き）・喉
-    d.r(6, 14, 20, 2, C.gold); d.r(4, 16, 24, 24, C.gold); d.r(6, 40, 20, 2, C.gold); d.r(8, 42, 16, 2, C.gold2); // 胴（丸み）
-    d.r(6, 22, 20, 1, C.gold2); d.r(6, 31, 20, 1, C.gold2);                                 // 管の継ぎ目
-    d.r(11, 18, 10, 12, C.gold2); for (let x = 10; x <= 19; x += 3) d.r(x, 16, 2, 2, C.silver); // ピストンとボタン
-    d.r(3, 25, 8, 2, C.gold); d.r(0, 24, 3, 3, C.silver);                                   // マウスパイプ・マウスピース
-    d.r(6, 18, 2, 20, '#f3d27a');                                                          // ハイライト（1px の帯）
-  }, { res: 2, depth: 20, z0: -4,
-       side: (d) => { d.r(2, 0, 16, 2, F); d.r(3, 2, 14, 4, F); d.r(5, 6, 10, 4, F); d.r(6, 10, 8, 4, F); d.r(2, 14, 16, 28, F); d.r(4, 42, 12, 2, F); },
-       top: (d) => { d.disc(16, 10, 12, F); d.r(4, 4, 24, 12, F); d.r(0, 6, 6, 6, F); },
-       carve: (x, y, z) => { if (y > 10) return false; const R = y < 2 ? 11 : y < 6 ? 10 : 7; const r = R - 1.5; const dx = x - 15.5, dz = z - 9.5; return dx * dx + dz * dz < r * r; } }),
+  // チューバ 42×57×30：形と色は tubaCell（2026-09-25 作り直し）。pivot = 底（設計座標 x 16 = 以前の 32 幅の絵の中心）
+  tuba: () => makePart(TUBA.W, TUBA.H, 16 + TUBA.XI, TUBA.H, (d) => {
+    for (let y = 0; y < TUBA.H; y++) for (let x = 0; x < TUBA.W; x++) {
+      for (let z = TUBA.D - 1; z >= 0; z--) { const c = tubaCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: TUBA.D, z0: -4 - TUBA.ZI, carve: (x, y, z) => !tubaCell(x, y, z), colorOf: tubaCell, colorBack: true }),
 
   // ---- 打楽器（2倍解像度。太鼓・シンバルは上から見て丸い）----
   // ティンパニ 56×32：皮・フープ・銅の椀・脚・ペダル。pivot = 皮の中央
@@ -1383,25 +1574,26 @@ export const INSTRUMENT = {
     root.userData.size = frame.userData.size;
     return root;
   },
-  // チューブラーベル 60×66（2026-09-19 ユーザー指定）：金属の枠（柱 2 本・上の横木・床の台）から真鍮の管 12 本を吊る。pivot = 底中央。
-  // 管は左が長い（低音）→ 右が短い（高音）で 26px → 16px、上端（キャップ）の高さは揃えて 30px。管 i の中心は列 8+4i（rig x = -11 + 2i）。
-  // 厚みは 1px（奥行き z 3-4 セル）、床の台だけ前後に広げる
-  tubularbells: () => makePart(60, 66, 30, 66, (d) => {
-    d.r(0, 0, 60, 3, C.silver2); d.r(0, 0, 2, 66, C.silver2); d.r(58, 0, 2, 66, C.silver2);   // 上の横木・柱
-    d.r(0, 62, 60, 4, C.silver2); d.r(26, 62, 8, 3, C.black);                                  // 床の台・ダンパーのペダル
-    for (let i = 0; i < 12; i++) {
-      const x = 7 + 4 * i, len = 52 - Math.round(i * 20 / 11);
-      d.r(x, 3, 1, 2, C.black); d.r(x + 1, 3, 1, 2, C.black);                                  // 吊り紐
-      d.r(x, 5, 2, 2, C.silver);                                                               // キャップ（叩く所）
-      d.r(x, 7, 1, len - 2, C.gold); d.r(x + 1, 7, 1, len - 2, C.gold2);                       // 管（右半分を陰に）
+  // チューブラーベル 60×92（2026-09-19 ユーザー指定）：金属の枠から真鍮の管 18 本を 2 列に吊る。形と色は tubularCell（2026-09-25 作り直し）。pivot = 底中央。
+  // 管は左が長い（低音）→ 右が短い（高音）。正面図は立体を客席側から見た色（2D の板用）
+  tubularbells: () => makePart(TUBULAR.W, TUBULAR.H, 30, TUBULAR.H, (d) => {
+    for (let y = 0; y < TUBULAR.H; y++) for (let x = 0; x < TUBULAR.W; x++) {
+      for (let z = TUBULAR.D - 1; z >= 0; z--) { const c = tubularCell(x, y, z); if (c) { d.p(x, y, c); break; } }
     }
-  }, { res: 2, depth: 8, z0: -4,
-       side: (d) => { d.r(3, 0, 2, 62, F); d.r(0, 62, 8, 4, F); } }),
+  }, { res: 2, depth: TUBULAR.D, z0: -4, carve: (x, y, z) => !tubularCell(x, y, z), colorOf: tubularCell, colorBack: true }),
   // マレット類（2倍解像度。頭は球）。長さは実物比（ティンパニ/鍵盤 ≒ 36cm = 20px、大太鼓 ≒ 40cm = 22px、スティック ≒ 40cm = 22px）
   // マレット：pivot = 握り（柄の端から 3px 先）。柄の手前 3px が拳の後ろへ出る。先端までの距離は 10px のまま
   // （2026-09-22 ユーザー指摘：拳からスティックが突き出ているように見える＝握りが柄の端にあった）
   mallet: () => makePart(6, 26, 3, 6, (d) => { d.r(2, 0, 2, 20, C.wood2); d.disc(3, 22, 3, C.ivory); },
     { res: 2, depth: 6, z0: -3, side: (d) => { d.r(2, 0, 2, 20, F); d.disc(3, 22, 3, F); }, top: (d) => { d.disc(3, 3, 3, F); } }),
+  // チューブラーベルのハンマー（2026-09-25 ユーザー指定：マレットではなくハンマーで両手）：柄の先に円柱の頭が直角に付いた T 字。
+  // pivot = 握り（柄の端から 3px 先）。頭の中心は握りから 11px、円柱の軸は部品の z（長さ 6px・直径 3px）で、両端の面（革）で叩く。
+  // 2026-09-25 ユーザー指定で柄と頭を長く（握り→頭の中心 8 → 11px、頭の長さ 4 → 6px）。
+  // 頭の向き（柄の周りの回し）は puppet.js で円柱の軸を管へ向ける。長さを変えたら puppet.js の TUBULAR_ROWS（打点）も計算し直す
+  hammer: () => makePart(6, 31, 3, 6, (d) => { d.r(2, 0, 2, 25, C.wood2); d.r(0, 25, 6, 6, C.ivory); },
+    { res: 2, depth: 12, z0: -6, side: (d) => { d.r(5, 0, 2, 25, F); d.r(0, 25, 12, 6, F); },
+      carve: (x, y, z) => y >= 25 && (x + 0.5 - 3) ** 2 + (y + 0.5 - 28) ** 2 > 9,
+      colorOf: (x, y, z) => (y >= 25 && (z === 0 || z === 11) ? '#b0804a' : null) }),
   // 鍵盤打楽器（シロフォン・マリンバ）用の小さいマレット。頭の直径 2px（ティンパニ等の mallet は 3px）。
   // 音板 1 本の幅が 1px なので、3px の頭だと 2 本ぶんを覆ってしまっていた（2026-09-23 ユーザー指摘）。
   // 実物もティンパニのマレット（頭 5cm 前後）よりシロフォンのマレット（2.5〜3cm ＝ 音板の幅と同程度）の方が小さい
