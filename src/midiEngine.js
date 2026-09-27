@@ -233,6 +233,41 @@ const TIMP_KS = { 24: 'hit', 25: 'roll', 26: 'cresc', 27: 'cresc', 28: 'cresc', 
 // バスドラ（グランカッサ）のキースイッチ（2026-09-25 ユーザー指定）：D#0(27) がロール。ほかの低い音（C#0 等）は通常の打撃に戻す。
 // ラッチ式（最後に押したものが次の切り替えまで有効）。実際の MIDI（FFT_Antipyretic の Gran Cassas_MJ）は C#0 を長く押し、途中で D#0 に替えていた
 const BD_KS = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [24 + i, 24 + i === 27 ? 'roll' : 'hit']));
+// 弦のキースイッチ → 強弱の情報源（2026-09-27 ユーザー指定：Hollywood Strings は奏法ごとに velocity か CC1 かが違う）。
+// 楽器・音源ごとに対応が違うので個別に持つ。'cc' ＝ CC1、'vel' ＝ velocity。キーは MIDI ノート番号（C0 = 24）。
+// 該当するトラックは STRING_KS_OF で選ぶ（今は 1st バイオリンの Hollywood Strings だけ）
+const HS_VN1_KS = {
+  24: 'cc',  // C0  Sus MAX
+  25: 'cc',  // C#0 Sus Marc LITE
+  26: 'cc',  // D0  Leg Slur MAX
+  27: 'vel', // D#0 Staccatissimo RRx9
+  28: 'vel', // E0  Stac On Bow RRx9
+  29: 'vel', // F0  Marc Shrt RRx4
+  30: 'vel', // F#0 Detache
+  31: 'vel', // G0  Bartok Pizz RR
+  32: 'vel', // G#0 Col Legno RRx4
+  33: 'vel', // A0  Pizzicato RRx4
+  34: 'vel', // A#0 Ricochet RR
+  35: 'vel', // B0  Spiccato RRx9
+  36: 'vel', // C1  Stac RRx14
+  37: 'vel', // C#1 Stac Slur
+  38: 'cc',  // D1  Meas Trem TS
+  39: 'vel', // D#1 Repetitions TS
+  40: 'cc',  // E1  Tremolo
+  41: 'cc',  // F1  Trill HT WT MOD
+  42: 'cc',  // F#1 Slur Runs
+  43: 'vel', // G1  Spic Runs
+  44: 'cc',  // G#1 8va Run Up Dn MOD
+  45: 'cc',  // A1  Maj Run Up Dn MOD
+  46: 'cc',  // A#1 Min Run Up Dn MOD
+  47: 'cc',  // B1  WT Run Up Dn MOD
+  48: 'cc',  // C2  Leg BC MAX
+  49: 'cc',  // C#2 Leg Port MAX
+  50: 'cc',  // D2  StacSl Leg BC + Slur + Port MAX
+};
+// 弓が弦から離れる奏法（2026-09-27 ユーザー指定）：B0 Spiccato・A#0 Ricochet・D#0 Staccatissimo・G#0 Col Legno。Spic Runs は速いので離さない
+const HS_VN1_OFF = new Set([35, 34, 27, 32]);
+const STRING_KS_OF = (variant, name) => (variant === 'violin1' && /_HW\b|hollywood/i.test(name) ? HS_VN1_KS : null);
 const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
 
 /** 区間 [t0, t1) の中で CC の値が変わる書き込みがあるか（ロールかショットかの判定） */
@@ -325,6 +360,26 @@ export class MidiEngine {
             notes.forEach((n, i) => { n.index = i; });
           }
         }
+        // 弦のキースイッチ（STRING_KS_OF）：最後に押したものが次の切り替えまで有効（ラッチ）。各音に dyn（'cc' | 'vel'）を付け、
+        // キースイッチの音は弾く音から除く。CC1 の奏法の音には cc1 を持たせ、energy の計算で音ごとに情報源を切り替える
+        const SKS = STRING_KS_OF(variant, name);
+        if (SKS) {
+          const ks = t.notes.filter((n) => SKS[n.midi]).map((n) => ({ time: n.time, dyn: SKS[n.midi], off: HS_VN1_OFF.has(n.midi) })).sort((a, b) => a.time - b.time);
+          if (ks.length) {
+            for (let k = notes.length - 1; k >= 0; k--) if (SKS[notes[k].midi]) notes.splice(k, 1);
+            let p = -1;
+            for (const n of notes) {
+              while (p + 1 < ks.length && ks[p + 1].time <= n.time + KS_EPS) p++;
+              if (p < 0) continue;   // 最初のキースイッチより前は従来どおり
+              n.dyn = ks[p].dyn;
+              // ロング系（CC1 の奏法）は全部スラー扱い（2026-09-27 ユーザー指定）。puppet.js の弓：前の音とつながっていれば返さない
+              if (n.dyn === 'cc') n.slur = true;
+              if (ks[p].off) n.offString = true;   // puppet.js の弓：音の後に弦から跳ね上がる
+              if (n.dyn === 'cc') n.cc1 = cc1;
+            }
+            notes.forEach((n, i) => { n.index = i; });
+          }
+        }
         const dynSource = dynSources[name] || 'auto';
         let dynResolved = dynSource;
         if (dynSource === 'auto') {
@@ -395,7 +450,7 @@ export class MidiEngine {
       const part = (srcs) => {
         const notes = srcs.flatMap((src) => src.notes).map((n) => ({ ...n })).sort((a, b) => a.time - b.time);
         notes.forEach((n, i) => { n.index = i; });
-        return { ...sec, sources: srcs, notes, maxDur: notes.length ? Math.max(...notes.map((n) => n.duration)) : 0 };
+        return { ...sec, section: sec, sources: srcs, notes, maxDur: notes.length ? Math.max(...notes.map((n) => n.duration)) : 0 };   // section：統合したセクション全体（puppet.js の弓のスラー判定で使う）
       };
       sec.soloPart = part(solos);
       sec.tuttiPart = part(sec.sources.filter((src) => !solos.includes(src)));
@@ -455,6 +510,9 @@ export class MidiEngine {
   _precomputeEnergy() {
     const len = Math.ceil(this.duration * ENERGY_RATE) + ENERGY_RATE;
     const global = new Float32Array(len);
+    // 音の強さ：キースイッチで CC1 の奏法と決まった音は、その時刻の CC1 の値（2026-09-27）。それ以外は velocity
+    // CC1 が書かれていないトラックでは velocity（ロング系の音の CC の追従は下の useCC の経路で、トラックの設定どおりに行う）
+    const strengthAt = (n, t) => (n.dyn === 'cc' && n.cc1?.length ? ccValueAt(n.cc1, t) : n.velocity);
     const energyOf = (tr) => {
       const E = new Float32Array(len);
       let e = 0, p = 0; // p: 次に処理するノート index
@@ -468,14 +526,14 @@ export class MidiEngine {
         const t = k / ENERGY_RATE;
         e *= ENERGY_DECAY;
         while (p < notes.length && notes[p].time < t + 1 / ENERGY_RATE) {
-          e = Math.min(1, e + notes[p].velocity * 0.9); // アタックで跳ね上げ
+          e = Math.min(1, e + strengthAt(notes[p], notes[p].time) * 0.9); // アタックで跳ね上げ（CC1 の奏法の音は、その時点の CC1）
           active.push(notes[p]);
           p++;
         }
         active = active.filter((n) => n.end > t);
         let sus = 0;
         if (active.length) { // 持続中は velocity の 40% を床にする
-          sus = Math.max(...active.map((n) => n.velocity)) * 0.4;
+          sus = Math.max(...active.map((n) => strengthAt(n, t))) * 0.4;
           e = Math.max(e, sus);
         }
         // CC 由来の強弱：発音中だけ有効（休符で CC が高くても前傾しない）
@@ -495,6 +553,11 @@ export class MidiEngine {
           // アタックの山だけは少し残して、音の出だしが分かるようにする（2026-09-12 ユーザー指摘：
           // CC が下がっていっても前傾が緩まず、音が止まってから解除されていた）
           d = useCC ? Math.min(1, cc + Math.max(0, e - sus) * 0.35) : e;
+          // 弦のキースイッチで velocity の奏法と決まった音（n.dyn === 'vel'）だけが鳴っている時は、CC を見ずに velocity で決める（2026-09-27）。
+          // ロング系（'cc'）の音はトラックの設定（CC1 / CC11）のまま：CC1 に決め打ちすると、CC11 で強弱を付けた曲（聖剣伝説2_永劫回帰）で
+          // velocity 1 に戻って強さが 0 になり、足元の光が消えた（2026-09-27 ユーザー指摘）
+          const withDyn = active.filter((n) => n.dyn);
+          if (withDyn.length && withDyn.every((n) => n.dyn === 'vel') && withDyn.length === active.length) d = e;
         }
         E[k] = d;
       }

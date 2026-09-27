@@ -1036,7 +1036,6 @@ function settings() {
   const num = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
   return {
     sway: num('sway', 1),
-    dynResponse: num('dynResponse', 1),
     dynSpeed: num('dynSpeed', 1),   // 姿勢が強弱に追いつく速さ（2026-09-15）
     // 天気（スカイドームの欄。2026-09-17 ユーザー指定）
     // 見出しのチェックがオフなら降らせない（種類の「なし」は廃止。2026-09-20 ユーザー指定）
@@ -1348,12 +1347,12 @@ function applyToneMapping(exposure) { renderer.toneMappingExposure = exposure; }
 
 // 弓の向きの共有台帳。キーは「音符の時刻 | 音の長さ」なので、同じパートの中はもちろん、
 // 同じリズムを弾いている弦どうし（ハモっていても）同じ向きになる（2026-09-14 ユーザー指定）
-const bowSync = { dirOf: new Map() };
+const bowSync = { recent: [] };   // 弓の向きを揃える：直近に決めた {time, dur, dir}（puppet.js の _strings）
 
 let conductorCostumeApplied = null;   // 今の指揮者に着せてある衣装（変わったら作り直す）
 function placePuppets() {
   setPartStyle(settings().partStyle);
-  bowSync.dirOf.clear();
+  bowSync.recent.length = 0;
   setStageDepthWrite(settings().partStyle !== 'sprite'); // ボクセルは通常の深度、2D の板は描画順で前後を決める
   for (const p of puppets) scene.remove(p.puppet.root);
   puppets = [];

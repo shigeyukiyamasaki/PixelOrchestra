@@ -213,6 +213,13 @@ const VARIANT_SNARE_STRIKE = { L: { hit: [-3, 25], rest: [-9, 32], head: [-5, 18
 //   head の x は ±4。±1（ほぼ中央）だと左右のバチが打面上でぶつかりそうに見える（2026-09-22 ユーザー指摘）
 const VARIANT_SNARE_STRIKE3 = { L: { hit: [-7.5, 19.5, 15], rest: [-8.5, 23, 14], head: [-4, 16.5, 21] }, R: { hit: [7.5, 19.5, 15], rest: [8.5, 23, 14], head: [4, 16.5, 21] } };
 // サスペンデッドシンバルの円盤の揺れ：freq ＝ 1 秒の往復数、damp ＝ 減衰（振れ幅は e^(−damp/2 × 秒) で小さくなる）、kick ＝ 叩いた時に足す角速度 [rad/s]（velocity 1 で）
+// 弦の弓：2 つの音を「同じ音」とみなすか（向きを揃える・スラーの判定）。統合した別の音源のトラック（ソロ等）は同じ旋律でも
+// 0.1 秒ほどずれて置かれるので、高さが同じなら開始 0.12 秒・長さ 0.15 秒まで許す。高さが違う音（ハモり）は 0.08 秒・0.1 秒（2026-09-27）
+const sameNote = (a, b) => (a.midi === b.midi
+  ? Math.abs(a.time - b.time) <= 0.12 && Math.abs(a.duration - b.duration) <= 0.15
+  : Math.abs(a.time - b.time) <= 0.08 && Math.abs(a.duration - b.duration) <= 0.1);
+// 強弱の反応（前のめり・楽器の角度・膨らみ・打楽器の振りかぶり・指揮の振り幅の倍率）。2026-09-27 ユーザー指定でスライダーを廃止し、それまでの設定値 3 に固定
+const DYN_RESPONSE = 3;
 const CYM_SWING = { freq: 1.6, damp: 1.4, kick: 1.5 };
 const BASSDRUM_TILT_ADD = 10 * Math.PI / 180;   // 太鼓の傾きを足す：打面を天へ 10°（もとの 0.15 rad ≈ 9° と合わせて約 19°）
 const BASSDRUM_YAW = -10 * Math.PI / 180;    // 太鼓の首振り：打面を奏者から外へ 10°（rig 座標で打面の法線 +x を +z 側へ）
@@ -851,8 +858,8 @@ export class Puppet {
     this._slowE = approach(this._slowE ?? energy, energy, 1 / tau, dt);
     // 「強弱の反応」スライダー：前傾・楽器の角度・膨らみなど、強さ（velocity/CC）で動く量の倍率。揺れと足元の光には掛けない
     // 上限は「強弱の反応」スライダーの最大値（3）に合わせる。1.5 で頭打ちだと 1.5 より上げても何も変わらなかった（2026-09-12 修正）
-    const dyn = settings.dynResponse ?? 1;
-    const st = { ...stRaw, energy: clamp(energy * dyn, 0, 3),
+    const dyn = DYN_RESPONSE;
+    const st = { ...stRaw, rawEnergy: clamp(energy, 0, 1), energy: clamp(energy * dyn, 0, 3),   // rawEnergy：倍率を掛けない強さ（弦の弓の速さ）
       posture: clamp(this._slowE * dyn, 0, 3),
       nextEnergy: clamp((stRaw.nextEnergy ?? 0) * dyn, 0, 3) };
 
@@ -861,6 +868,7 @@ export class Puppet {
     this.rig.scale.set(MIRROR, 1, 1);
     const swayAmt = Math.sin(Math.PI * beat.beat + this.phase) * 0.07 * (0.25 + 0.75 * this._slowE) * settings.sway;
     this.spine.rotation.set(0, 0, swayAmt);
+    this._swayAmt = swayAmt;   // 弦のショート系で打ち消す（_strings）
     this.spine.scale.set(1, 1 + 0.012 * Math.sin(t * 1.6 + this.phase), 1);
     this.spine.position.y = SPINE_Y * PX;
     this.headPivot.rotation.z = swayAmt * 0.6;
@@ -1014,6 +1022,9 @@ export class Puppet {
     const { onset, next, age, toNext, active, energy, posture } = st;
     const cfg = this.cfg, bow = cfg.bow, p3 = this.p3;
     const sMin = p3?.sMin ?? bow.sMin, sMax = p3?.sMax ?? bow.sMax;
+    // ロング系の弓の速さ [px/秒]（2026-09-27 ユーザー指定：一般的な目安に合わせる）：全長を使う時間を強さ（倍率を掛けない 0〜1）で
+    // 12 秒 × (1/12)^強さ にする＝弱い音 約 12 秒、強さ 0.5 で約 3.5 秒、一番強い音で約 1 秒（バイオリンの目安：pp 12 秒・mf 3 秒・f 1 秒）
+    const bowSpeed = (sMax - sMin) / (12 * Math.pow(1 / 12, st.rawEnergy ?? 0.5)) * this.scaleVar;
     if (onset && onset.index !== this.lastOnsetIndex) { // 新しいノート：ストロークの方向と長さ
       this.lastOnsetIndex = onset.index;
       const range = sMax - sMin;
@@ -1021,7 +1032,35 @@ export class Puppet {
       // velocity を固定して CC で表情を付けるトラック（1st Vn の CC11 等）では velocity では変化せず、
       // 「強弱の反応」スライダーも velocity には掛からないので効かなかった。energy なら両方に乗る。
       // 弓が長く動けば上体の傾き（sNorm）も自動的に大きくなる
-      const len = clamp(onset.duration * range * 1.3, range * 0.2, range) * (0.55 + 0.45 * clamp(energy, 0, 3)) * this.scaleVar; // 弓 26px に合わせてストロークも長く（2026-09-10）
+      // 上限は弓の全長の 95%（2026-09-27 ユーザー指摘：「強弱の反応」を上げると長さが全長を超え、どちら向きでも端を越えるので
+      // 返せずに端で止まっていた）
+      // 弓は一定の速さで動かし、端で返す（2026-09-27 ユーザー指定：長い音で弓がほとんど動かないように見えた。下の「弓の移動」）。
+      // ここの len は音の頭で向きを決める時の目安だけ：返す向きに len（弓の 30% まで）の余地が無ければ向きを変えない
+      // ショート系（キースイッチで velocity の奏法。キースイッチの無いトラックは 0.3 秒未満の音）は音ごとに弓の 25〜50%（強さで）を、
+      // 音の長さの間に動かす。ロング系は一定の速さ（下の「弓の移動」）
+      this.bowShort = onset.dyn ? onset.dyn === 'vel' : onset.duration < 0.3;
+      const len = this.bowShort ? range * (0.25 + 0.25 * (st.rawEnergy ?? 0.5)) * this.scaleVar : Math.min(range * 0.3, bowSpeed * Math.max(onset.duration, 0.1));
+      // スラー（2026-09-27 ユーザー指定）：スラーの奏法（キースイッチ。onset.slur）で、前の音が終わる前かほぼ同時に始まる音は弓を返さず同じ向きで続ける。
+      // 端まで来て続けられない時は下の判定で返る
+      // 前の音は、状態の音の一覧（st.track.notes）の中での位置から探す。onset.index は統合前のトラックの番号で、この一覧の順番とは一致しない
+      const prevNs = st.track?.notes;
+      let slurOn = false;
+      // 統合したトラック（重ね録り）では同じ音がほぼ同時に 2 つ並び、キースイッチの無い方の音には印が無い。
+      // 0.08 秒以内に印の付いた音が重なっていれば、同じスラーの音として扱う（2026-09-27：先に鳴る印の無い音で弓が返っていた）
+      // 重なりはセクション全体（st.track.section）の音で見る：ソロのパートにはキースイッチの無いソロのトラックの音しか無い（2026-09-27）
+      const oi0 = prevNs ? prevNs.indexOf(onset) : -1;
+      let isSlur = !!onset.slur;
+      if (!isSlur && oi0 >= 0) {
+        for (const pn of st.track.section?.notes ?? prevNs) {
+          if (pn.time > onset.time + 0.12) break;
+          if (pn.slur && sameNote(pn, onset)) { isSlur = true; break; }
+        }
+      }
+      const oi = isSlur ? oi0 : -1;
+      if (oi > 0) for (let k = oi - 1; k >= 0 && k >= oi - 6; k--) {
+        const pn = prevNs[k];
+        if (pn.time < onset.time - 0.01 && pn.end >= onset.time - 0.05) { slurOn = true; break; }
+      }
       // 弓の向きは「同じリズムを弾いている奏者」で揃える（2026-09-14 ユーザー指定）。
       // 実際の演奏でも、弓使いは首席が決めてセクションをまたいで揃えるのが普通で、
       // 同じリズムならハモっていても（音程が違っても）揃える。リズムが別なら自然に分かれる。
@@ -1030,34 +1069,50 @@ export class Puppet {
       // 最初に到達した奏者が決めた向きを、同じリズムの全員で使う
       let dir;
       const sync = this.bowSync;
-      const key = `${Math.round(onset.time / 0.03)}|${Math.round(onset.duration / 0.05)}`;
-      const decided = sync?.dirOf.get(key);
-      if (decided !== undefined) dir = decided;
+      // 同じ音かどうかは、開始時刻が 0.08 秒以内・長さが 0.1 秒以内で見る（2026-09-27 ユーザー指摘：統合した別の音源のトラック（ソロ）は
+      // 同じ音でも 0.05 秒ほどずれて置かれ、以前の 0.03 秒刻みのキーでは別の音と判定されて向きが逆になっていた）。
+      // スラーの音も揃える仕組みを通す（最初に決める奏者が「前と同じ向き」を選び、同じ音の奏者はそれに従う）
+      const near = sync?.recent.find((e) => sameNote({ time: e.time, duration: e.dur, midi: e.midi }, onset));
+      if (near) dir = near.dir;
       else {
         // 反転の基準は「そのリズム集団の前回の向き」。各自の前回の向きを基準にすると、
-        // 音符ごとに最初に決める奏者が変わった時に反転が打ち消し合い、向きが固まる（2026-09-14 実測）
-        dir = -(sync?.lastDir ?? this.bowDir);
+        // 音符ごとに最初に決める奏者が変わった時に反転が打ち消し合い、向きが固まる（2026-09-14 実測）。スラーは自分の今の向きのまま
+        dir = slurOn ? this.bowDir : -(sync?.lastDir ?? this.bowDir);
         const t0 = this.bowPos + dir * len;
         if (t0 > sMax || t0 < sMin) dir = -dir;                 // 端に当たったら折り返す
         if (sync) {
-          sync.dirOf.set(key, dir);
+          sync.recent.push({ time: onset.time, dur: onset.duration, midi: onset.midi, dir });
           sync.lastDir = dir;
-          if (sync.dirOf.size > 64) sync.dirOf.delete(sync.dirOf.keys().next().value);   // 直近だけ覚える
+          if (sync.recent.length > 64) sync.recent.shift();   // 直近だけ覚える
         }
       }
       const target = clamp(this.bowPos + dir * len, sMin, sMax);
       this.bowDir = dir; this.bowFrom = this.bowPos; this.bowTo = target;
       this.bowDur = Math.max(onset.duration, 0.1);
     }
+    // 弓の移動（2026-09-27 ユーザー指定）：音が鳴っている間は一定の速さ bowSpeed で動かし、端まで来たら返す（音の途中のボウイング・チェンジ）。
+    // 以前は音の長さでストロークを割っていたので、長い音ほど遅く、とても長い音では止まって見えた。音が終わったらその位置で止まる
     let s = this.bowPos;
-    if (onset) {
+    if (onset && this.bowShort) {   // ショート系：音の長さの間に bowFrom → bowTo（なめらかに加減速）
       if (age < this.bowDur) {
         const p = clamp(age / this.bowDur, 0, 1);
         const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
         s = this.bowFrom + (this.bowTo - this.bowFrom) * e;
       } else s = this.bowTo;
+    } else if (onset && age < Math.max(onset.duration, 0.1)) {
+      // 動かす量は曲の時刻の進みで決める（2026-09-27 ユーザー指摘：dt は描画の時間で、再生を止めても弓が動き続けた）。
+      // シーク等で時刻が飛んだ時（0.1 秒を超える・巻き戻し）は動かさない
+      const songDt = this._bowT == null ? 0 : t - this._bowT;
+      // 出だしの加速（2026-09-27 ユーザー指定：Hollywood Strings はロング系でも velocity がアタックの鋭さを決める）：
+      // velocity に比例して出だしの速さを最大 3 倍（velocity 127）にし、時定数 0.1 秒でふだんの速さへ戻す
+      const attackK = 1 + 2 * clamp(onset.velocity, 0, 1) * Math.exp(-age / 0.1);
+      s += this.bowDir * bowSpeed * attackK * (songDt > 0 && songDt <= 0.1 ? songDt : 0);
+      if (s > sMax) { s = 2 * sMax - s; this.bowDir = -1; }
+      else if (s < sMin) { s = 2 * sMin - s; this.bowDir = 1; }
+      s = clamp(s, sMin, sMax);
     }
     this.bowPos = s;
+    this._bowT = t;
     let lift = 0; // 弓を弦から離す（休符）／着弦へ向かう（予備動作）
     if (!active.length && age > 0.5) lift = 2.5;
     if (next && !active.length && toNext < 0.25) lift = 2.5 * (toNext / 0.25);
@@ -1066,7 +1121,25 @@ export class Puppet {
     // energy を直接使うと音の頭で跳ぶので rate 6（≒170 ms）で均す。楽器を下ろしている間は掛けない
     const wantPress = active.length ? clamp(energy, 0, 3) * (1 - (this._rest ?? 0)) : 0;
     this._press = approach(this._press ?? 0, wantPress, 6, dt);
-    const nOff = this.lift - 0.3 * this._press; // 弦から離す（+）／弦へ押し込む（−）
+    // 出だしの押しつけ（ロング系。2026-09-27 ユーザー指定）：velocity に応じて一瞬強く弦へ押しつけ、出だしの加速と同じ時定数で戻す
+    const attackPress = onset && !this.bowShort && age >= 0 ? 1.5 * clamp(onset.velocity, 0, 1) * Math.exp(-age / 0.1) : 0;
+    // 弦から跳ね上がる奏法（スピッカート等。onset.offString。統合した重なりの音は印の付いた音と同じ音なら同じ扱い）。2026-09-27 ユーザー指定：
+    // 音の頭で弦に当たり、最初の 15% は擦り、跳ね上がって次の音の頭で弦へ戻る。高さは次の音までの間隔 T で、0.1 秒以下はほぼ 0（ソティエ）、0.5 秒以上で休符と同じ 2.5
+    let bounce = 0;
+    if (onset && this.bowShort) {
+      let off = !!onset.offString;
+      if (!off) for (const pn of st.track?.section?.notes ?? st.track?.notes ?? []) {
+        if (pn.time > onset.time + 0.12) break;
+        if (pn.offString && sameNote(pn, onset)) { off = true; break; }
+      }
+      if (off) {
+        const T = Math.min(next ? next.time - onset.time : onset.duration * 2, 0.8);
+        const H = 2.5 * clamp((T - 0.1) / 0.4, 0, 1), p = clamp((age / T - 0.15) / 0.85, 0, 1);
+        bounce = age < T ? H * Math.sin(Math.PI * p) : 0;
+      }
+    }
+    this._bowBounce = bounce;   // 確認用（跳ね上がりの高さ）
+    const nOff = Math.max(this.lift, bounce) - 0.3 * this._press - 0.3 * attackPress; // 弦から離す（+）／弦へ押し込む（−）
 
     // 接点（駒）と弓の向き・弦から離れる向き（2D は平面、3D は楽器の姿勢から）
     const C = instPoint(this.inst, bow.contact[0], bow.contact[1], p3?.contactZ ?? 0); // 3D では弦のある正面側
@@ -1117,7 +1190,14 @@ export class Puppet {
     // 符号だと音が変わる 1 フレームで上体が反転してワープして見えた（2026-09-12 ユーザー指摘）。
     // bowPos はストローク中を連続的に動くので、この形なら段差が原理的に出ず、上体の揺れが弓と同期する
     const sNorm = clamp((this.bowPos - (sMin + sMax) / 2) / ((sMax - sMin) / 2 || 1), -1, 1);
-    this.spine.rotation.z += MIRROR * 0.06 * sNorm * posture; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
+    // ショート系（キースイッチで velocity の奏法と決まった音。n.dyn === 'vel'）を弾いている間は体を横に揺らさない（2026-09-27 ユーザー指定）：
+    // 弓に合わせた上半身の傾きと、拍の揺れの両方を止める。前のめり（前後）はそのまま。切り替わりは rate 6 でなめらかに
+    const cur = [onset, ...active].filter(Boolean);
+    const shortNow = cur.some((n) => n.dyn === 'vel') && !cur.some((n) => n.dyn === 'cc');
+    this._shortW = approach(this._shortW ?? 0, shortNow ? 1 : 0, 6, dt);
+    const sideK = 1 - this._shortW;
+    this.spine.rotation.z += MIRROR * 0.06 * sNorm * posture * sideK; // 0.03 だと弓の可動域を使い切らないぶん振れ幅が半減したので倍に（2026-09-12 ユーザー指定）
+    this.spine.rotation.z -= (this._swayAmt ?? 0) * this._shortW;
     this.spine.position.y -= 0.4 * this._press * PX; // 弓を押し付けた分だけ腰が沈む（強奏で体重が乗る）
     // 弦：前傾しても顔は指揮者を見る角度に保つ（2026-09-10 ユーザー指定）。あご楽器は首を楽器側へ傾げるだけ、チェロ系はごく浅く下を見る
     this._spineGaze(st, dt, 0.16 * posture, cfg.chin ? 0.0 : 0.06, cfg.chin ? MIRROR * -0.25 : 0);
@@ -1235,11 +1315,11 @@ export class Puppet {
   }
 
   // ---- 打楽器：構え位置→打点。直前に振りかぶり、打った瞬間に打点、戻る。マレットは打面を向く ----
-  _percussion(st, { dt, settings }) {
+  _percussion(st, { t, dt, settings }) {
     const { onset, next, age, toNext, pitchNorm } = st;
     // 振りかぶり・構えの高さ・シンバルの回しは velocity 由来なので、そのままでは「強弱の反応」スライダーが効かない。
     // ここでスライダーを掛ける（上限 2：これ以上構えを高くすると腕が届かなくなる）。2026-09-12 ユーザー指定
-    const vScale = (x) => clamp(x * (settings?.dynResponse ?? 1), 0, 2);
+    const vScale = (x) => clamp(x * DYN_RESPONSE, 0, 2);
     const cfg = this.cfg, p3 = this.p3;
     const strike = p3?.strike || cfg.strike;
     const fixedHand = p3?.fixedHand || cfg.fixedHand;
@@ -1544,12 +1624,17 @@ export class Puppet {
     const swingPart = this.inst?.userData.swing;
     if (swingPart) {
       const S = (this._cymSw ??= { th: 0, om: 0, last: null });
-      if (!(dt >= 0 && dt <= 0.1)) { S.th = 0; S.om = 0; }   // シーク・タブ復帰で時刻が飛んだ時は止める
+      // 進める時間は曲の時刻の進み（2026-09-27 ユーザー指定：描画の時間 dt だと、再生を止めても揺れ続けた）。
+      // シーク・タブ復帰で時刻が飛んだ時（0.1 秒を超える・巻き戻し）は揺れを止める
+      const sdt = S.t == null ? 0 : t - S.t;
+      S.t = t;
+      if (!(sdt >= 0 && sdt <= 0.1)) { S.th = 0; S.om = 0; }
       if (onset && S.last !== onset) {
         S.last = onset;
         if (age < 0.1) S.om += (armOf(onset) === 'L' ? 1 : -1) * CYM_SWING.kick * clamp(onset.velocity, 0, 1);
       }
-      const w0 = 2 * Math.PI * CYM_SWING.freq, n = Math.max(1, Math.ceil(dt / 0.005)), h = dt / n;
+      const stepT = sdt >= 0 && sdt <= 0.1 ? sdt : 0;
+      const w0 = 2 * Math.PI * CYM_SWING.freq, n = Math.max(1, Math.ceil(stepT / 0.005)), h = stepT / n;
       for (let i = 0; i < n; i++) { S.om += (-w0 * w0 * S.th - CYM_SWING.damp * S.om) * h; S.th += S.om * h; }
       S.th = clamp(S.th, -0.35, 0.35);
       swingPart.rotation.z = S.th;
