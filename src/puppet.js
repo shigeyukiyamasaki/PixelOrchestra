@@ -7,7 +7,7 @@
  * 座標系：rig 空間の px（足元中央が原点、x 右・y 上・z 前＝指揮者側）。1px = PX unit。
  * 2D 板モード（flat）では従来の平面の姿勢（z=0・楽器は z 回転のみ）、ボクセルでは 3D 姿勢（p3）を使う。
  */
-import { PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, wristBall, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts, HARP_LEAN_CELLS, tubularTube } from './sprites.js';
+import { TIMP_SET, HORN_M, HORN_TILT, hornLocal, hornP, PX, body, head, upperArm, foreArm, foreArmNoHand, hand, shoulderPad, wristBall, INSTRUMENT, glowDisc, PART_STYLE, torsoSeated, legsStanding, thigh, shin, shoe, legsSeatedSprite, chair, applyWoodVariation, recolorParts, HARP_LEAN_CELLS, tubularTube } from './sprites.js';
 import { makePersona, headFor, hairFor, torsoFor, coatFor, legsStandingFor, skirtSeated, handFor } from './persona.js';
 import { COSTUMES, suitColors } from './costume.js';
 
@@ -259,6 +259,21 @@ const BRIDGE_AT = {
 };
 // 弦の弓を立てる角度の上限（2026-09-27 ユーザー指定。バイオリンの一番低い弦〜一番高い弦で弓の傾きは 30〜40° ほど変わる）
 const BOW_TILT_MAX = 30 * Math.PI / 180;
+// 打楽器の休みの「気をつけ」の手の位置（rig 座標 px）：肩（±5.5, 25.5）の真下で腰の横、少し前（2026-09-27）
+const PERC_ATTENTION = { L: [-6.8, 9.5, 1], R: [6.8, 9.5, 1] };
+// 金管の息継ぎで肩を上げる量 [px]（息継ぎの深さ 1 あたり）
+const BRASS_SHOULDER_LIFT = 0.8;
+// ティンパニ 3 台の打点（rig 座標 px。sprites.js の TIMP_SET から）：u ＝ 奏者から太鼓の中心への向き（水平）、v ＝ それと直角（奏者の右が +）。
+// 頭は打面の中心から奏者側へ半径の 35%・左右の手で ±3.5、手はそこから奏者側へ 8、構えはさらに 3 手前
+// ホルンを口を通る縦の軸で回し、レバー側（奏者の左）を客席へ出す角度。左腕が前へ押し出され、ベルは右の腰へ下がる（2026-09-27 ユーザー指定）。
+// rot3 は 'YXZ'：巻き管の傾き（x）のあとにこの向き（y）を掛ける
+const HORN_FWD = 25 * Math.PI / 180;
+const TIMP_STRIKES = TIMP_SET.map(({ c, k }) => {
+  const r = 14 * k, l = Math.hypot(c[0], c[1]), u = [c[0] / l, c[1] / l], v = [u[1], -u[0]];
+  const pt = (along, side, y) => { const q = [c[0] - u[0] * along + v[0] * side, c[1] - u[1] * along + v[1] * side]; return [q[0], y, q[1]]; };
+  const one = (sgn) => ({ head: pt(0.35 * r, 3.5 * sgn, 15.5), hit: pt(0.35 * r + 8, 5 * sgn, 18.5), rest: pt(0.35 * r + 11, 7 * sgn, 22) });
+  return { L: one(-1), R: one(1) };
+});
 const CYM_SWING = { freq: 1.6, damp: 1.4, kick: 1.5 };
 const BASSDRUM_TILT_ADD = 10 * Math.PI / 180;   // 太鼓の傾きを足す：打面を天へ 10°（もとの 0.15 rad ≈ 9° と合わせて約 19°）
 const BASSDRUM_YAW = -10 * Math.PI / 180;    // 太鼓の首振り：打面を奏者から外へ 10°（rig 座標で打面の法線 +x を +z 側へ）
@@ -311,9 +326,12 @@ const VARIANT = {
   trumpet:    { inst: { pos: [1, 32.5, 4], rot: -0.15 }, hands: { L: [6, -1], R: [8, 3] }, kind: 'bell', handDirs: { L: [0, 0, -1], R: [0.7, 0.7, 0] }, gazeDown: 0.0, pole: { R: [0.2, 0.1, 1] },
                 p3: { pos: [0.5, 32.5, 3], quat: FWD, hands: { L: [6, -1, 1.5], R: [8, 3, -1.5] } },
                 rest: { pos: [-8, 17.5, 10], rot3: [0, 0, 0] } },   // 休みは太ももの上に横に寝かせる（クラリネットと同じ。2026-09-25 ユーザー指定）
-  horn:       { inst: { pos: [2, 24, 4], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn', handDirs: { L: [0, -1, 0], R: [1, 0, 0] }, gazeDown: 0.05,
-                p3: { pos: [3, 24, 4], rot3: [0, 0.8, 0], hands: { L: [-3, 2, 1], R: [5, -4, -1] } },
-                rest: { pos: [0, 17, 7], rot3: [Math.PI / 2, 0, 0] } },   // 休みは巻きの面を倒して太ももの上に平らに置く（2026-09-25 ユーザー指定。以前は斜めに膝の前）
+  // ホルン（2026-09-27 ユーザー提供の奏者の写真に合わせる）：巻き管は胸の前でほぼ前を向け（少し上へ 20°）、ベルは右の太ももの上。
+  // 形は sprites.js の hornCell（原点＝口 HORN_M）。楽器は rot3 で 30° 傾ける。手は rig の点を hornLocal で楽器ローカルへ：
+  // 左手＝レバーの途中 rig (-6, 25.6, 9.55)。指はレバーに沿ってバルブへ向け（handDirs L [1, 0, 0]）、手首はレバーの先の外（2026-09-27 ユーザー指定：指がバルブに対して 90° 曲がっていた）、右手＝ベルの口の内側（巻き管の面の座標 hornP(-1.55, -1.15)）
+  horn:       { inst: { pos: [2, 24, 4], rot: 0 }, hands: { L: [-3, 2], R: [5, -4] }, kind: 'horn', handDirs: { L: [1, 0, 0], R: [1, 0, 0] }, gazeDown: 0.05,
+                p3: { pos: HORN_M, rot3: [-HORN_TILT, HORN_FWD, 0, 'YXZ'], hands: { L: hornLocal([-6, 25.6, 9.55]), R: hornLocal(hornP(-1.55, -1.15, 0)) } },
+                rest: { pos: [0.5, 29.5, 4], rot3: [-HORN_TILT, HORN_FWD, 0, 'YXZ'] } },   // 休みは少し下ろす（ベルはもともと太ももの上）   // 休みは巻き管を水平のまま太ももの上へ   // 休みは巻きの面を倒して太ももの上に平らに置く（2026-09-25 ユーザー指定。以前は斜めに膝の前）
   // トロンボーン：左手はベル部とスライド部をつなぐ支柱（マウスピース寄り・左）、右手は外管の支柱（スライドと一緒に動く）
   trombone:   { inst: { pos: [1, 32.5, 4], rot: -0.1 }, hands: { L: [3, 3], R: [5, 0] }, kind: 'bell', slide: true, handDirs: { L: [0, 0, -1], R: [0, 0, 1] }, gazeDown: 0.0,
                 // 肘は真下＋わずかに外（内向きすぎると脇が閉じすぎる）。左右で腕の曲がり方が違うので効き方も違い、値は非対称になる。
@@ -332,10 +350,10 @@ const VARIANT = {
                 rest: { pos: [-5, 2, 10], rot3: [0.25, -0.3, 0] } },
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   // 打楽器の hit/rest は手の先端（マレットの握り）。手首はその 4px 手前なので、握りを z 10〜12 に置いて手首を体の前 6〜8px に出す（2026-09-10）
-  timpani:    { velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
+  timpani:    { drums: TIMP_STRIKES, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
-                p3: { pos: [0, 15, 14], strike: { L: { hit: [-7, 18.5, 17], rest: [-9, 22, 14], head: [-6, 15.5, 25] }, R: { hit: [7, 18.5, 17], rest: [9, 22, 14], head: [6, 15.5, 25] } } } },   // 手は打面（15.7）の上へ（2026-09-22） // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
+                p3: { pos: [0, 15, 14], strike: { L: { hit: [-5, 18.5, 17], rest: [-7, 22, 14], head: [-4, 15.5, 25] }, R: { hit: [5, 18.5, 17], rest: [7, 22, 14], head: [4, 15.5, 25] } } } },   // 左右の打点を 2px ずつ中央へ（2026-09-27 ユーザー指定：広がりすぎ）   // 手は打面（15.7）の上へ（2026-09-22） // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
   // グランカッサ：打面は横向き（左右を向く）で、上部を奏者から遠い側へ 17° 傾ける（手前の打面が奏者の方を向く。実際の据え置き台）。
   // 奏者のすぐ左前に置き、右手はマレットを左向きに水平に構えて胸の前で横に振る（マレットの頭が手前の打面に当たる）。
   // 視線は左の打面へ（2026-09-10 ユーザー指定：左に配置・右手で打つ。傾きの向きと貫通を修正）
@@ -768,7 +786,7 @@ export class Puppet {
     const tz = this.flat ? 3 : (target[2] ?? 0);
     if (rate === Infinity) { cur[0] = target[0]; cur[1] = target[1]; cur[2] = tz; }
     else { cur[0] = approach(cur[0], target[0], rate, dt); cur[1] = approach(cur[1], target[1], rate, dt); cur[2] = approach(cur[2], tz, rate, dt); }
-    const S0 = [SHOULDER[side][0], SHOULDER[side][1], this.flat ? 3 : 0];
+    const S0 = [SHOULDER[side][0], SHOULDER[side][1] + (this._shoulderLift ?? 0), this.flat ? 3 : 0];   // _shoulderLift：金管の息継ぎで肩を上げる
     let goal = cur, fore = ARM_FORE;
     if (this.hasWrist) {
       fore = FORE_NOHAND;
@@ -971,7 +989,9 @@ export class Puppet {
 
   _restPose(st, dt, t) {
     const cfg = this.cfg, rest = cfg.rest;
-    if (!rest || this.flat) { this._rest = 0; return; }
+    // 打楽器は楽器を動かさないが、休みの度合い（_rest）は計算して、手を気をつけの位置へ下ろすのに使う（2026-09-27 ユーザー指定。_percussion）
+    const percRest = this.motion === 'percussion';
+    if ((!rest && !percRest) || this.flat) { this._rest = 0; return; }
     const first = this._rest == null; // 最初のフレーム：出だしから出番が遠いなら、構えずに下ろした状態で始める
     const { onset, next, active, toNext } = st;
     const gap = next ? (onset ? next.time - onset.end : Infinity) : Infinity; // この休みの長さ
@@ -986,7 +1006,7 @@ export class Puppet {
     this._rest = first ? want : approach(this._rest, want, 2.2, dt); // 出だしは補間せず即その姿勢
     const r = this._rest;
     const inst = this.inst;
-    if (!inst || !rest.pos) return;
+    if (!inst || !rest?.pos) return;
     const up = this.p3?.pos || cfg.inst.pos;
     inst.position.set(
       (up[0] + (rest.pos[0] - up[0]) * r) * PX,
@@ -1338,6 +1358,13 @@ export class Puppet {
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
     this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack) * PX;
     this.spine.scale.x = 1 + 0.05 * this._breath + 0.05 * posture;
+    // 金管（2026-09-27 ユーザー指定：弦ほど横に揺れない）：拍の横揺れを打ち消して前後の揺れ（横の 6 割）に置き換え、
+    // 息継ぎで両肩を上げる（BRASS_SHOULDER_LIFT × 息継ぎの深さ。setHand の肩の位置に足す）
+    if (this.motion === 'brass') {
+      this.spine.rotation.z -= this._swayAmt ?? 0;
+      this.spine.rotation.x += 0.6 * (this._swayAmt ?? 0);   // 拍ごとに前・後ろへ
+      this._shoulderLift = BRASS_SHOULDER_LIFT * clamp(this._breath, 0, 1.5);
+    }
 
     // 楽器の角度（種類別）。回転はスプライト面内（ローカル z 軸）。3D 姿勢でもローカル z 回転で「ベルが上がる」になる
     let lift = 0;
@@ -1483,6 +1510,11 @@ export class Puppet {
     // heldOnRoll：その手の持ち物はロールの間だけ見せる（グランカッサの左手のマレット。2026-09-25）
     if (cfg.heldOnRoll && this.held[cfg.heldOnRoll]) this.held[cfg.heldOnRoll].visible = !!roll;
     const rollStrike = p3?.rollStrike || cfg.rollStrike;
+    // 休み（_restPose の _rest）では気をつけの姿勢（2026-09-27 ユーザー指定：休んでもマレットを構えたままだった）：
+    // 手は肩の真下・腰の横（PERC_ATTENTION）、持っている物は真下へ。構えとの間は _rest でなめらかに
+    const restW = this._rest ?? 0;
+    const attHand = (side, p) => (restW > 0 && p ? [0, 1, 2].map((i) => lerp(p[i], PERC_ATTENTION[side][i], restW)) : p);
+    const attAim = (a) => { if (!a) return a; const v = v3([lerp(a[0], 0, restW), lerp(a[1], -1, restW), lerp(a[2], 0.15, restW)]).normalize(); return [v.x, v.y, v.z]; };
     // minReach は待ちの構えの時だけ効かせる（2026-09-27 ユーザー指定：初期状態の構えで肘を曲げるのがおかしかっただけで、振りかぶりで曲げるのはよい）。
     // 演奏中（直前の音から 1.2 秒以内か、次の音まで 0.8 秒以内）は外し、管から手を引けるようにする。効き具合 0〜1 をなめらかに切り替える
     if (cfg.minReach) {
@@ -1491,7 +1523,7 @@ export class Puppet {
     }
     for (const side of ['L', 'R']) {
       let sp = strike?.[side] ?? (roll ? rollStrike?.[side] : null);   // rollStrike：ロールの時だけ叩く手（ふだんは fixedHand）
-      if (!sp) { if (fixedHand?.[side]) this.setHand(side, U(fixedHand[side]), dt, 10); continue; }
+      if (!sp) { if (fixedHand?.[side]) this.setHand(side, U(attHand(side, fixedHand[side])), dt, 10); continue; }
       let s = 0, ant = 0, vel = 0.5, vRaw = next ? next.velocity : 0.5, down = false, pn = pitchNorm, swUp = 0, swF = null, swAge = null, swFrom = 0, swChain = false, swPrevAge = null;
       const sw = cfg.swing;   // swing：ストロークの時間（チューブラーベル。無ければ従来の速い振り）
       // 打った後 a 秒の手の位置（1 ＝ 打点、0 ＝ 構え）。振りかぶり（smoothstep）の逆
@@ -1538,11 +1570,13 @@ export class Puppet {
           const antD = (1 - dS / 0.25) * 0.5 * vScale(next.velocity) * windK;   // 振り下ろし始めの振りかぶり
           const f = 1 - toNext / dS, fE = f * f;
           s = Math.max(s, fE); ant = antD * (1 - fE); down = true;
-        } if (spread) pn = normOf(next); }
+        } if (spread || cfg.drums) pn = normOf(next); }
       if (roll) { // 左右は半周期ずらす。打つ瞬間だけ鋭く s → 1（cos の 4 乗）
         s = Math.pow(Math.max(0, Math.cos(2 * Math.PI * (roll.ph + (side === 'L' ? 0 : 0.5)))), 4);
         ant = 0; vel = onset ? vScale(onset.velocity) : vel; vRaw = onset ? onset.velocity : vRaw;
       }
+      // drums（ティンパニ 3 台。2026-09-27）：音域を 3 つに分け、低い音は左・中は正面・高い音は右の太鼓の打点を使う
+      if (cfg.drums && strike?.[side]) sp = { ...sp, ...cfg.drums[Math.min(2, Math.floor(clamp(pn, 0, 0.999) * 3))][side] };
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       // local：打点を楽器ローカル座標（px）で持ち、instPoint で rig へ直す（チューブラーベル。2026-09-25：楽器を斜めに置いたので、
       // 音程による横の移動 dx も楽器の x ＝管の並びに沿う）。それ以外は従来どおり rig 座標
@@ -1721,14 +1755,15 @@ export class Puppet {
             wristT = [target[0] - nHit.x * HAND_GRIP, target[1] - nHit.y * HAND_GRIP, target[2] - nHit.z * HAND_GRIP];
           }
         }
-        this.setHand(side, U(wristT || target), dt, (s > 0.5 || down) ? Infinity : (sw ? 45 : 22), UD(aim), UD(cfg.pole?.[side]) ?? null, cfg.handUp?.[side] ?? STICK_UP[side], face, cfg.wristMax ?? STICK_WRIST_MAX, !!wristT);   // pole：肘の向き（rig 座標。無ければ既定の横外）
+        if (restW > 0) aim = attAim(aim);
+        this.setHand(side, U(attHand(side, wristT || target)), dt, (s > 0.5 || down) ? Infinity : (sw ? 45 : 22), UD(aim), UD(cfg.pole?.[side]) ?? null, cfg.handUp?.[side] ?? STICK_UP[side], face, cfg.wristMax ?? STICK_WRIST_MAX, !!wristT);   // pole：肘の向き（rig 座標。無ければ既定の横外）
         if (aim) this.aimHeldDir(side, UD(aim), 'ny', up);
       } else {
         // 合わせシンバルなど、棒以外を持つ手は従来どおり（甲は真上・手は持ち物の向きに寄る）。
         // 棒用の扱いを当てたら手が崩れた（2026-09-22 ユーザー指摘）
         let hd = null;
         if (aim) { const a = v3(aim).normalize(); const w = 0.55 - 0.35 * s; hd = [a.x, a.y * (1 - w) + w * -0.2, a.z]; }
-        this.setHand(side, U(target), dt, (s > 0.5 || down) ? Infinity : 22, UD(hd), null, PERC_UP);
+        this.setHand(side, U(attHand(side, target)), dt, (s > 0.5 || down) ? Infinity : 22, UD(hd && restW > 0 ? attAim(hd) : hd), null, PERC_UP);
         if (aim) this.aimHeldDir(side, UD(aim), 'ny', PERC_UP);
       }
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);

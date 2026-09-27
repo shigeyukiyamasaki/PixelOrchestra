@@ -475,7 +475,7 @@ export function bodyHiRes(accent = '#c03030') {
  */
 // 任意の CSS 色（hsl() 等）を #rrggbb に正規化（背面色の置換表のキーに使う）
 const _norm = document.createElement('canvas').getContext('2d');
-function toHex(color) { _norm.fillStyle = color; return _norm.fillStyle; }
+export function toHex(color) { _norm.fillStyle = color; return _norm.fillStyle; }
 
 export function body(accent = '#c03030') {
   // 背面：シャツ・蝶ネクタイは表だけ（後ろから見たら上着の色）
@@ -1276,6 +1276,187 @@ function bassdrumBody() {
        carve: (x, y, z) => (y >= 52 && x >= 22 && x <= 29 ? z < 6 || z > 9 : Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1)) });
 }
 
+// ---- ティンパニの立体（2026-09-27 ユーザー指定：宙に浮いていた。脚が床に届かず 2.4px 浮き、椀も段々の箱だった）----
+// 実物どおり：皮・フープ・チューニングねじ 8 本、ねじから胴に沿って下りる締め棒、丸いお椀形の銅の胴（光の向きで 3 階調）、
+// 胴の底から柱、床近くの輪から 3 本の脚と車輪、奏者側の床にペダル。
+// 座標は res:2 のセル：x・z 0..55（中心 27.5）、y 0..38（0 = 皮、床が 39）。z が小さい側が奏者（楽器は奏者の前に置く）
+const TIMP = { W: 56, H: 39, D: 56 };
+// 3 台の置き方（奏者の rig 座標 px）：c ＝ 打面の中心 [x, z]、k ＝ 横の拡大（直径 28px × k）。低い（大きい）太鼓が奏者の左（rig −x）、
+// 高い（小さい）太鼓が右（アメリカ式）。puppet.js の打点（TIMP_STRIKES）もこれから作る
+export const TIMP_SET = [
+  { c: [-19.5, 12], k: 0.74 },   // 低（約 32 インチ）
+  { c: [0, 21], k: 0.66 },       // 中（約 29 インチ）
+  { c: [18, 13], k: 0.58 },      // 高（約 26 インチ）
+];
+function timpaniDrum() {
+  return makePart(TIMP.W, TIMP.H, 28, 0, (d) => {
+    for (let y = 0; y < TIMP.H; y++) for (let x = 0; x < TIMP.W; x++) {
+      for (let z = 0; z < TIMP.D; z++) { const c = timpaniCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: TIMP.D, z0: 0, carve: (x, y, z) => !timpaniCell(x, y, z), colorOf: timpaniCell, colorBack: true });
+}
+const TIMP_C = 27.5;
+const timpBowlR = (y) => (y < 3 || y > 25 ? -1 : 26.2 * Math.sqrt(Math.max(0, 1 - ((y - 3) / 23.5) ** 2)));   // 椀の外径（上端 26、下へ丸くすぼまる）
+const TIMP_LIGHT = (() => { const v = [0.35, 0.6, -0.72], l = Math.hypot(...v); return v.map((c) => c / l); })();   // 上・奏者の反対側（客席）から
+function timpaniCell(x, y, z) {
+  const dx = x + 0.5 - TIMP_C, dz = z + 0.5 - TIMP_C, r = Math.hypot(dx, dz);
+  if (y <= 1) return r <= 24 ? (y === 0 ? C.head : '#e4dcc8') : r <= 26 && y === 1 ? C.silver : null;   // 皮とフープの上端
+  if (y <= 3) {                                                                                         // フープ（縁の輪）
+    if (r <= 26.5) return y === 2 ? C.silver : C.silver2;
+    if (r <= 27.8 && lugAngle(dx, dz, 8, 1.4)) return C.silver2;                                        // ねじの頭
+    return null;
+  }
+  const R = timpBowlR(y);
+  if (R > 0 && r <= R) {                                                                                // 銅の椀（外側だけ残す＝中は空でよい）
+    const n = [dx / (r || 1) * (R / 26.2), Math.max(0.05, (y - 3) / 23.5), dz / (r || 1) * (R / 26.2)];
+    const nl = Math.hypot(...n), lit = (n[0] * TIMP_LIGHT[0] - n[1] * TIMP_LIGHT[1] + n[2] * TIMP_LIGHT[2]) / nl;
+    if (y <= 4 && r > R - 1.2) return C.copper2;                                                         // 椀の上の縁
+    return lit > 0.45 ? '#d08c50' : lit > -0.2 ? C.copper : C.copper2;
+  }
+  if (y <= 21 && R > 0 && r <= R + 1 && lugAngle(dx, dz, 8, 0.9)) return C.silver2;                     // 締め棒（ねじから胴に沿って下へ）
+  if (y >= 24 && y <= 30 && r <= 2) return C.silver2;                                                   // 柱
+  if (y >= 30 && y <= 31 && r >= 17 && r <= 19) return C.silver;                                        // 土台の輪
+  // 脚 3 本（輪から外へ開いて床へ）。角度は奏者側を避けて 90°・210°・330°（ペダルを奏者側の真ん中に）
+  const legAt = (a) => { const t = (y - 31) / 7, rr = 18 + 5 * t, lx = Math.cos(a) * rr, lz = Math.sin(a) * rr; return Math.hypot(dx - lx, dz - lz) <= 1.3; };
+  if (y >= 31 && y <= 36) for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) if (legAt(a)) return C.silver2;
+  if (y >= 36) for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) {                       // 車輪
+    const lx = Math.cos(a) * 23, lz = Math.sin(a) * 23;
+    if (Math.hypot(dx - lx, dz - lz) <= 1.8) return C.black;
+  }
+  if (y >= 28 && y <= 31 && Math.abs(dx) <= 1 && dz <= -2 && dz >= -18) return C.silver2;               // ペダルの棒（柱から奏者側へ）
+  if (y >= 36 && Math.abs(dx) <= 3.5 && dz >= -27 && dz <= -18) return y === 36 ? '#2b2b33' : C.black;  // ペダル（奏者側の床）
+  return null;
+}
+
+// ---- ホルンの立体（2026-09-27 ユーザー指定：見た目と構えを改良。巻き管の平らな面を天へ、腕を少し前へ上げる）----
+// 管を「太さのある線分の連なり」で表す（チューバと同じ）。座標は奏者の rig 座標 [px] で書き、口（マウスピースの先）HORN_M を原点、
+// 楽器の拡大（金管 1.25）で割って楽器のローカルにする。puppet.js の horn の手の位置（左手＝レバー、右手＝ベルの中）もこの座標から
+export const HORN_M = [0.5, 32.5, 3];
+export const HORN_SCALE = 1.25;
+// 巻き管の面の傾き（前を向き、上へ 30°。口が巻き管の面の延長に載るように 20° から増やした。2026-09-27）。ボクセルは傾けずに平らな面で作り、楽器ごと rot3 [-HORN_TILT, 0, 0] で傾ける
+// （斜めの面を格子に直接置くと巻き管が段々になった。2026-09-27）。形の点は傾いた姿勢の rig 座標で書き、hornLocal で起こしてローカルにする
+export const HORN_TILT = 30 * Math.PI / 180;
+export function hornLocal(p) {
+  const x = p[0] - HORN_M[0], y = p[1] - HORN_M[1], z = p[2] - HORN_M[2], c = Math.cos(HORN_TILT), s = Math.sin(HORN_TILT);
+  return [x / HORN_SCALE, (y * c - z * s) / HORN_SCALE, (y * s + z * c) / HORN_SCALE];
+}
+const HORN_SEGS = [];
+function hornPath(pts, kind, open = false) {
+  let dist = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = hornLocal(pts[i]), b = hornLocal(pts[i + 1]), len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    HORN_SEGS.push({ a, b, ra: pts[i][3] / HORN_SCALE, rb: pts[i + 1][3] / HORN_SCALE, kind, da: dist, db: dist + len, open: open && i === 0 });
+    dist += len;
+  }
+}
+// ホルンの構えと形（2026-09-27 ユーザー提供の奏者の写真に合わせて作り直し）：巻き管はほぼ前を向き（面の法線は前・少し上 20°）、胸の前に立てる。
+// マウスパイプは巻き管の上の縁から口へ、ベルは下の縁から奏者の右下へ出て右の太ももの上で開く（右手を中へ）。
+// 左手は巻き管の奏者の左の外でレバーを押さえる。写真の座標（巻き管の中心から、半径を 1 とした 右＝奏者の左・上）を面の上の点に直して置く
+const HORN_R = 6;
+const HORN_X = [-1, 0, 0], HORN_Y = [0, Math.cos(HORN_TILT), -Math.sin(HORN_TILT)], HORN_N = [0, Math.sin(HORN_TILT), Math.cos(HORN_TILT)];
+// 巻き管の中心：[-1.5, 24.5, 9.5] を面の法線に沿って動かし、口 HORN_M が巻き管の面の上に来るようにする（マウスパイプを面の延長で出すため。2026-09-27 ユーザー指定）
+const HORN_CC = (() => { const c = [-1.5, 24.5, 9.5], d = [0, 1, 2].reduce((a, i) => a + (HORN_M[i] - c[i]) * HORN_N[i], 0); return c.map((v, i) => v + d * HORN_N[i]); })();
+// 写真の座標 (u, v)（右＝奏者の左・上、半径 1）と面からの浮き w [px] → rig の点
+export const hornP = (u, v, w = 0, r = 0.45) => [0, 1, 2].map((i) => HORN_CC[i] + HORN_R * (u * HORN_X[i] + v * HORN_Y[i]) + w * HORN_N[i]).concat([r]);
+// ベルの半径 [rig px]：口からの距離 d で。トロンボーンのベル（口から 0・1・2・3・6・10px で半径 6・5・4・3・2・1）と同じ比率を、口の半径 5 に合わせたもの。
+// 細い管がゆっくり太くなり、口の直前で急に開く（2026-09-27 ユーザー指定：トロンボーンを参考に）
+// 口の半径 7.5＝トロンボーン（6）の 1.25 倍（実物もホルン約 31cm ＞ トロンボーン約 22cm）。首は 12px 分（14 では長く、10 では短すぎた。2026-09-27 ユーザー指定）
+const HORN_BELL_PROFILE = [[0, 7.5], [1, 6.1], [2, 4.8], [3, 3.6], [5.5, 2.2], [8.5, 1.05], [12, 0.45]];
+const HORN_BELL_LEN = 12;
+function hornBellR(d) {
+  const P = HORN_BELL_PROFILE;
+  if (d <= P[0][0]) return P[0][1];
+  for (let i = 1; i < P.length; i++) if (d <= P[i][0]) { const t = (d - P[i - 1][0]) / (P[i][0] - P[i - 1][0]); return P[i - 1][1] + (P[i][1] - P[i - 1][1]) * t; }
+  return P[P.length - 1][1];
+}
+{
+  const ring = (cu, cv, R, w, r, a0 = 0, a1 = 2 * Math.PI, n = 32) => { const pts = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; pts.push(hornP(cu + R * Math.cos(a), cv + R * Math.sin(a), w, r)); } hornPath(pts, 'gold'); };
+  ring(0, 0, 1, 0, 0.45);                          // 外側の巻き管
+  ring(0, 0, 0.86, 0, 0.42, 0.4, 5.6);             // 内側の巻き管（巻き管・抜き差し管は全部同じ面 w 0。手前に出るのはバルブとレバーだけ）
+  ring(-1.02, -0.08, 0.2, 0, 0.38);                // 奏者の右の縁の小さな輪
+  // 抜き差し管（巻き管の内側の U 字と、下の 8 の字）
+  ring(-0.25, 0.28, 0.2, 0, 0.36, Math.PI / 2, 3 * Math.PI / 2, 12);
+  hornPath([hornP(-0.25, 0.48, 0, 0.36), hornP(0.1, 0.48, 0, 0.36)], 'gold'); hornPath([hornP(-0.25, 0.08, 0, 0.36), hornP(0.1, 0.08, 0, 0.36)], 'gold');
+  ring(-0.35, -0.12, 0.17, 0, 0.34, Math.PI / 2, 3 * Math.PI / 2, 10);
+  hornPath([hornP(-0.35, 0.05, 0, 0.34), hornP(0.15, 0.05, 0, 0.34)], 'gold'); hornPath([hornP(-0.35, -0.29, 0, 0.34), hornP(0.15, -0.29, 0, 0.34)], 'gold');
+  ring(-0.28, -0.6, 0.22, 0, 0.36); ring(0.16, -0.62, 0.22, 0, 0.36);        // 下の 8 の字
+  // ロータリーバルブ 4 つ（蓋は前＝面の法線の向き）：奏者の左寄りに斜めに並ぶ
+  const V = [[0.0, 0.42], [0.05, 0.2], [0.15, -0.14], [0.24, -0.34]];
+  for (const [u, v] of V) {
+    hornPath([hornP(u, v, -0.4, 0.85), hornP(u, v, 1.4, 0.85)], 'valve');
+    hornPath([hornP(u, v, 1.4, 0.7), hornP(u, v, 1.75, 0.7)], 'silver');
+  }
+  hornPath([hornP(0.0, 0.42, 1.2, 0.3), hornP(0.24, -0.34, 1.2, 0.3)], 'silver');   // バルブをつなぐ棒
+  // レバー：バルブの前から奏者の左の外（左手の指）へ
+  [[0.05, 0.2, 0.34], [0.15, -0.14, 0.24], [0.24, -0.34, 0.14]].forEach(([u, v, ve]) => {
+    hornPath([hornP(u, v, 2.2, 0.2), hornP(1.05, ve, 2.2, 0.2)], 'silver');
+    hornPath([hornP(1.05, ve, 2.2, 0.4), hornP(1.15, ve + 0.02, 2.2, 0.4)], 'silver');
+  });
+  // マウスパイプ：巻き管の上の縁から、巻き管と同じ面の中を口へ（口元は銀のマウスピース）。口の面上の座標 (mu, mv) は HORN_M から逆算
+  const dm = [0, 1, 2].map((i) => HORN_M[i] - HORN_CC[i]);
+  const mu = [0, 1, 2].reduce((a, i) => a + dm[i] * HORN_X[i], 0) / HORN_R, mv = [0, 1, 2].reduce((a, i) => a + dm[i] * HORN_Y[i], 0) / HORN_R;
+  const ju = 0.3, jv = 0.95, lerp = (t, r) => hornP(ju + (mu - ju) * t, jv + (mv - jv) * t, 0, r);
+  hornPath([lerp(0, 0.42), lerp(0.5, 0.4), lerp(0.88, 0.4)], 'gold');
+  hornPath([lerp(0.88, 0.45), lerp(1, 0.62)], 'silver');
+  // ベル：口（開いた縁）を先頭にした経路。巻き管の下の縁から、巻き管に接する向き（奏者の右・わずかに下）へ巻き管と同じ面の中を伸びて開く
+  // （2026-09-27 ユーザー指定：ぐるぐる巻きの延長で広がるように。以前は面の外の奏者側へ曲がっていた）
+  // 口から 3px（大きく開く所）はボクセルの列と平行にまっすぐ。傾くと縁の円が隣の列に分かれ、途中で切れて見えた（2026-09-27 ユーザー指摘）
+  const axis = [[-1.68, -1.15], [-1.18, -1.15], [-0.75, -1.1], [-0.35, -1.03], [0, -1]].map(([u, v]) => hornP(u, v, 0).slice(0, 3));
+  let total = 0;
+  for (let k = 0; k + 1 < axis.length; k++) total += Math.hypot(...[0, 1, 2].map((i) => axis[k + 1][i] - axis[k][i]));
+  const bellR = (d) => hornBellR(d * HORN_BELL_LEN / total);   // 経路の長さに合わせてトロンボーン型の形を伸縮。付け根が巻き管と同じ細さになる
+  const fine = [];
+  let acc = 0;
+  for (let k = 0; k + 1 < axis.length; k++) {
+    const a = axis[k], b = axis[k + 1], segL = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), n = Math.max(1, Math.ceil(segL / 0.5));
+    for (let i = 0; i < n; i++) { const t = i / n; fine.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, bellR(acc + segL * t)]); }
+    acc += segL;
+  }
+  fine.push([...axis[axis.length - 1], bellR(acc)]);
+  hornPath(fine, 'bell', true);
+}
+// セルの格子：全部の管を囲む箱（res:2 のセル）
+const HORN_G = (() => {
+  let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+  for (const sg of HORN_SEGS) for (const [p, r] of [[sg.a, sg.ra], [sg.b, sg.rb]]) for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], p[i] - r); mx[i] = Math.max(mx[i], p[i] + r); }
+  const x0 = Math.floor(mn[0] * 2) - 1, x1 = Math.ceil(mx[0] * 2) + 1, y0 = Math.floor(-mx[1] * 2) - 1, y1 = Math.ceil(-mn[1] * 2) + 1, z0 = Math.floor(mn[2] * 2) - 1, z1 = Math.ceil(mx[2] * 2) + 1;
+  return { W: x1 - x0, H: y1 - y0, D: z1 - z0, px: -x0, py: -y0, z0: z0, cx0: x0, cy0: y0, cz0: z0 };
+})();
+let HORN_GRID = null;
+function hornCell(x, y, z) {
+  if (!HORN_GRID) {
+    HORN_GRID = new Array(HORN_G.W * HORN_G.H * HORN_G.D).fill(null);
+    for (let k = 0; k < HORN_G.D; k++) for (let j = 0; j < HORN_G.H; j++) for (let i = 0; i < HORN_G.W; i++) {
+      // セルの中心を楽器のローカル px に（x → (i − px + 0.5)/2、y は上が + なので (py − j − 0.5)/2、z → (k + z0 + 0.5)/2）
+      HORN_GRID[(k * HORN_G.H + j) * HORN_G.W + i] = hornColor((i - HORN_G.px + 0.5) / 2, (HORN_G.py - j - 0.5) / 2, (k + HORN_G.z0 + 0.5) / 2);
+    }
+  }
+  if (x < 0 || y < 0 || z < 0 || x >= HORN_G.W || y >= HORN_G.H || z >= HORN_G.D) return null;
+  return HORN_GRID[(z * HORN_G.H + y) * HORN_G.W + x];
+}
+function hornColor(px, py, pz) {
+  let best = null, bestM = 0, bq = null, bd = 0, br = 0, bAlong = 0;
+  for (const s of HORN_SEGS) {
+    const [ax, ay, az] = s.a, dx = s.b[0] - ax, dy = s.b[1] - ay, dz = s.b[2] - az, L2 = dx * dx + dy * dy + dz * dz;
+    let t = L2 ? ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / L2 : 0;
+    if (s.open && t < 0) continue;
+    // ベルは端を丸めない（円錐台の連なり。2026-09-27 ユーザー指摘：太い側の端の球が後ろへはみ出し、ベルが球に見えた）。一番細い最後の端だけ丸める
+    // ただし経路が曲がると、隣の円錐台の範囲との間の外側にくさび形のすき間ができ、口の近くの縁の円周が途中で切れた（2026-09-27 ユーザー指摘）。
+    // 隣と 0.6（短い円錐台の長さの 6 割＝約 0.3px）だけ重ねて埋める。口の開いた側（先頭の t < 0）は上の open で除いてある
+    if (s.kind === 'bell' && (t < -0.6 || (t > 1.6 && s.rb > 0.9))) continue;
+    t = Math.max(0, Math.min(1, t));
+    const qx = ax + dx * t, qy = ay + dy * t, qz = az + dz * t, d = Math.hypot(px - qx, py - qy, pz - qz), r = s.ra + (s.rb - s.ra) * t;
+    if (r - d > bestM) { bestM = r - d; best = s; bq = [qx, qy, qz]; bd = d; br = r; bAlong = s.da + (s.db - s.da) * t; }
+  }
+  if (!best) return null;
+  if (best.kind === 'bell' && bAlong < 2.6) {   // ベルの口は中空（肉厚 0.9px。0.5px ではボクセルに穴が開いた）。奥で塞ぐ
+    if (bd < br - 0.9) return bAlong >= 2.1 ? C.gold : null;
+    if (bAlong < 0.3) return '#f3d27a';
+  }
+  // 陰影は色で付けない（面の向きで濃淡を塗り分けていたのをやめた。影は 3D 空間の照明で出す。2026-09-27 ユーザー指定）
+  return best.kind === 'silver' ? C.silver : C.gold;
+}
+
 export const INSTRUMENT = {
   // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
   // 胴：ネック＋渦巻き ≒ 6：4（実物の比率）。駒は x=10（基本座標 -2）
@@ -1399,7 +1580,7 @@ export const INSTRUMENT = {
     d.r(3, 5, 22, 2, C.gold);                                              // リードパイプ
     d.r(8, 8, 2, 2, C.gold); d.r(8, 9, 16, 2, C.gold); d.r(22, 8, 2, 2, C.gold); // 下の U 管
     for (let i = 0; i < 3; i++) { d.r(12 + i * 3, 1, 2, 9, C.gold2); d.r(12 + i * 3, 0, 2, 1, C.silver); } // ピストン
-    d.r(25, 4, 3, 4, C.gold); d.r(28, 3, 2, 6, C.gold); d.r(30, 1, 2, 10, C.gold); d.r(32, 0, 3, 12, C.gold); d.r(35, 0, 1, 12, C.gold2); // ベル
+    d.r(25, 4, 3, 4, C.gold); d.r(28, 3, 2, 6, C.gold); d.r(30, 1, 2, 10, C.gold); d.r(32, 0, 3, 12, C.gold); d.r(35, 0, 1, 12, '#f3d27a'); // ベル（縁はホルンと同じ明るい金。2026-09-27 ユーザー指定）
     d.r(26, 4, 8, 2, '#f3d27a');                                            // ハイライト（1px の帯。線でなく面で。2026-09-11）
   }, { res: 2, depth: 12, z0: -6,
        side: (d) => { d.disc(6, 6, 6, F); d.r(5, 4, 2, 4, F); },                                  // 断面は円（ベルが丸く見える）
@@ -1408,16 +1589,12 @@ export const INSTRUMENT = {
        carve: (x, y, z) => { if (x < 26) return false; const R = x >= 32 ? 6 : x >= 30 ? 5 : x >= 28 ? 3 : 2; const r = R - 1.2; const dy = y - 5.5, dz = z - 5.5; return dy * dy + dz * dz < r * r; } }),
   // ---- 金管（2倍解像度。ベルは円断面＋中空）----
   // ホルン 28×28：巻いた主管・ロータリー 3 つ・マウスパイプ・右下に広がるベル（右手を入れる）
-  horn: () => makePart(28, 28, 14, 14, (d) => {
-    d.ring(11, 14, 10, C.gold); d.ring(11, 14, 9, C.gold); d.ring(11, 14, 6, C.gold2);      // 主管の巻き・内側の管
-    d.r(6, 10, 9, 6, C.gold2); d.r(6, 9, 2, 2, C.silver); d.r(9, 9, 2, 2, C.silver); d.r(12, 9, 2, 2, C.silver); // ロータリーとレバー
-    d.r(0, 12, 8, 2, C.gold); d.r(0, 12, 2, 2, C.silver);                                   // マウスパイプ・マウスピース
-    d.r(16, 16, 4, 6, C.gold); d.r(20, 14, 3, 10, C.gold); d.r(23, 12, 3, 14, C.gold); d.r(26, 10, 2, 18, C.gold2); // ベル
-    d.r(17, 17, 8, 2, '#f3d27a');                                                          // ハイライト（1px の帯）
-  }, { res: 2, depth: 16, z0: -4,
-       side: (d) => { d.r(6, 4, 4, 22, F); d.disc(8, 19, 8, F); },
-       top: (d) => { d.r(0, 6, 20, 4, F); d.r(16, 5, 4, 6, F); d.r(20, 3, 3, 10, F); d.r(23, 1, 3, 14, F); d.r(26, 0, 2, 16, F); },
-       carve: (x, y, z) => { if (x < 20) return false; const R = x >= 26 ? 9 : x >= 23 ? 7 : 5; const r = R - 1.5; const dy = y - 19, dz = z - 7.5; return dy * dy + dz * dz < r * r; } }),
+  // ホルン：形と色は hornCell（2026-09-27 作り直し）。原点＝マウスピースの先（奏者の口）。巻き管は水平（平らな面が天）
+  horn: () => makePart(HORN_G.W, HORN_G.H, HORN_G.px, HORN_G.py, (d) => {
+    for (let y = 0; y < HORN_G.H; y++) for (let x = 0; x < HORN_G.W; x++) {
+      for (let z = HORN_G.D - 1; z >= 0; z--) { const c = hornCell(x, y, z); if (c) { d.p(x, y, c); break; } }
+    }
+  }, { res: 2, depth: HORN_G.D, z0: HORN_G.z0, carve: (x, y, z) => !hornCell(x, y, z), colorOf: hornCell, colorBack: true }),
   // トロンボーン：本物の構造どおり 3 パーツ（2026-09-10 ユーザー指摘を反映：管は左肩の上を通って後方まで伸び、そこで U ターンしてベルへ。ベルは口の高さ）。
   //   スライド部（本体）：マウスピース → 上の内管 → 先端 → 下の内管（戻り）。pivot = マウスピース、rows 12-19
   //   ベル部：下の内管の端から横管で左へ 7.5px（頭の横）→ ネックパイプが後方（左肩の上）へ → 後端で U ターンして上へ → ベル管が前へ → ベル。
@@ -1450,7 +1627,7 @@ export const INSTRUMENT = {
       d.r(0, 11, BW, 6, C.gold);                                                              // 後端の U 字：四角く描いて carve で円弧に削る
       // ベル（rows 6-17）。半径は 1→2→3→4→5→6 と 1px ずつ。段の「幅」（管の軸方向）は管に近い順に 6, 4, 3, 1, 1, 1 px（2026-09-12 ユーザー指定）。
       // 根元をゆっくり・先端を急に開く形。一番広がった部分は濃い色のフチ（明るい色の帯は無し）
-      d.r(BW + 32 - BB, 11, 6, 2, C.gold); d.r(BW + 38 - BB, 10, 4, 4, C.gold); d.r(BW + 42 - BB, 9, 3, 6, C.gold); d.r(BW + 45 - BB, 8, 1, 8, C.gold); d.r(BW + 46 - BB, 7, 1, 10, C.gold); d.r(BW + 47 - BB, 6, 1, 12, C.gold2);
+      d.r(BW + 32 - BB, 11, 6, 2, C.gold); d.r(BW + 38 - BB, 10, 4, 4, C.gold); d.r(BW + 42 - BB, 9, 3, 6, C.gold); d.r(BW + 45 - BB, 8, 1, 8, C.gold); d.r(BW + 46 - BB, 7, 1, 10, C.gold); d.r(BW + 47 - BB, 6, 1, 12, '#f3d27a');
     }, { res: 2, depth: 24, z0: -18,
          // 側面マスクは使わない（形は正面図・上面図・carve で決める）。
          // 以前は d.disc(18, 11, 6) で朝顔を丸くしていたが、ドットの中心と朝顔の中心（y 11.5 / z 17.5）が
@@ -1516,20 +1693,21 @@ export const INSTRUMENT = {
 
   // ---- 打楽器（2倍解像度。太鼓・シンバルは上から見て丸い）----
   // ティンパニ 56×32：皮・フープ・銅の椀・脚・ペダル。pivot = 皮の中央
-  timpani: () => makePart(56, 32, 28, 0, (d) => {
-    d.r(0, 5, 56, 8, C.silver2);                                                            // チューニングねじの下地（carve で 8 本だけ残す。2026-09-11）
-    d.r(4, 0, 48, 4, C.head); d.r(2, 4, 52, 2, C.silver);                                   // 皮・フープ
-    d.r(2, 6, 52, 8, C.copper); d.r(5, 14, 46, 6, C.copper); d.r(10, 20, 36, 4, C.copper2); d.r(18, 24, 20, 3, C.copper2); // 椀
-    d.r(8, 8, 3, 10, '#d08c50');                                                            // 艶
-    d.r(10, 26, 3, 6, C.silver2); d.r(43, 26, 3, 6, C.silver2); d.r(26, 27, 4, 5, C.silver2); // 脚
-    d.r(24, 30, 8, 2, C.black);                                                             // ペダル
-  }, { res: 2, depth: 56, z0: 0,
-       side: (d) => { d.r(4, 0, 48, 4, F); d.r(2, 4, 52, 2, F); d.r(0, 5, 56, 8, F); d.r(2, 6, 52, 8, F); d.r(5, 14, 46, 6, F); d.r(10, 20, 36, 4, F); d.r(18, 24, 20, 3, F); d.r(10, 26, 3, 6, F); d.r(43, 26, 3, 6, F); d.r(26, 27, 4, 5, F); },
-       top: (d) => { d.disc(28, 28, 27, F); },
-       // 行ごとの半径で真円に削る（皮 24・フープ 26・椀 26→23→18→10。3 面の交差だけだと角の丸い四角になる）。
-       // 椀の外（R 26〜27.5、rows 5-12）はチューニングねじ 8 本の位置だけ残す（1px 張り出す粗い部品。2026-09-11）
-       carve: (x, y, z) => { if (y >= 26) return false; const r = Math.hypot(x - 27.5, z - 27.5); if (y >= 5 && y < 13 && r > 26.5) return !(r <= 27.6 && lugAngle(x - 27.5, z - 27.5, 8, 1.4)); const R = y < 4 ? 24 : y < 14 ? 26 : y < 20 ? 23 : y < 24 ? 18 : 10; return r > R + 0.5; },
-       colorOf: (x, y, z) => (y >= 5 && y < 13 && Math.hypot(x - 27.5, z - 27.5) > 26.5 ? C.silver2 : null) }),
+  // ティンパニ 56×39×56：形と色は timpaniCell（2026-09-27 作り直し）。pivot = 皮の中央（打点はこの点が基準なので変えていない）。
+  // 高さ 39 セルは皮から床まで（楽器の拡大 0.78 × 19.5px ≒ 置く高さ 15px）
+  timpani: () => {
+    // 3 台（2026-09-27 ユーザー指定：本物のように）。TIMP_SET の中心・横の縮尺で、1 台の形（timpaniDrum）を並べる。
+    // 楽器の原点・向きは 1 台だった時と同じ（奏者の rig の (0, 15, 14)、拡大 0.78）。高さは縮めない（打面の高さ・床は同じ）
+    const root = new THREE.Group();
+    for (const dr of TIMP_SET) {
+      const m = timpaniDrum(), kx = dr.k / 0.78;
+      m.scale.set(kx, 1, kx);
+      m.position.set((dr.c[0] - 0) / 0.78 * PX, 0, ((dr.c[1] - 14) / 0.78 - 14 * kx) * PX);
+      root.add(m);
+    }
+    root.userData.size = root.children[0].userData.size;
+    return root;
+  },
   // スネア 32×20：皮・フープ・クロームの胴とラグ・脚
   // スネア 32×34：胴＋**スタンド**（支柱＋十字の脚）。pivot = 皮の中央上。h 34 で床（inst.pos y 17 の 17px 下）まで届く
   // 以前は行 17-19 に 1.5px の突起があるだけで、太鼓が床から 6.7px 浮いていた（2026-09-22 ユーザー指摘）

@@ -573,7 +573,7 @@ export function setVoxelOverrides(map) {
   }
 }
 // 編集画面でいじれる楽器（キー = INSTRUMENT のキー。保存先は assets/voxel/<キー>.json）。2026-09-24 ユーザー指定
-const INSTRUMENT_PARTS = ['harp', 'piano', 'tubularbells'];
+const INSTRUMENT_PARTS = ['harp', 'piano', 'tubularbells', 'horn'];   // ホルンは 2026-09-27 追加（ユーザー指定：ボクセルで直接触りたい）
 // ハープの弦の色（harp.json の銀と、赤の C の弦）。弦以外にこの色は使っていない（2026-09-27 確認）。記号は編集で変わるので色の値で見る
 const HARP_STRING_COLORS = ['#d5dbe2', '#e05050'];   // チューブラーベルは 2026-09-25 追加
 export function hasVoxelOverride(key) { return !!VOXELS[key]; }
@@ -602,6 +602,8 @@ export const PARTS = {
   piano:       { label: '楽器：ピアノ', make: () => INSTRUMENT_BASE.piano() },
   // 管の位置（打点）は sprites.js の tubularTube が手続き的な形の値を返すので、編集で管を動かすとハンマーとずれる
   tubularbells: { label: '楽器：チューブラーベル', make: () => INSTRUMENT_BASE.tubularbells() },
+  // 手の位置（左手＝レバー、右手＝ベルの中）と口の位置は puppet.js が手続き的な形の座標で持つので、編集でレバー・ベル・マウスピースを動かすと手とずれる
+  horn:        { label: '楽器：ホルン', make: () => INSTRUMENT_BASE.horn() },
 };
 
 /** 部位を作る。編集済みのボクセルがあればそちらを使う */

@@ -6,7 +6,7 @@
  * 顔・髪（2 倍解像度）、上半身（燕尾服 / ドレス）、脚（ズボン / ロングスカート）、手（肌色）を描く。
  * 同じ MIDI なら座席の seed が同じなので、毎回同じ顔ぶれになる。
  */
-import { makePart, C, roundColumn, PX, headNeckStub, headNeckStubSide } from './sprites.js';
+import { makePart, C, roundColumn, PX, headNeckStub, headNeckStubSide, toHex } from './sprites.js';
 
 const F = '#000';
 
@@ -203,7 +203,8 @@ export function torsoFor(p, accent = '#c03030') {
     }
   };
   const side = (d) => { d.r(4, 10, 6, 6, F); d.r(0, 16, 12, 12, F); d.r(2, 28, 8, 14, F); };
-  const back = { [C.shirt]: C.coat, [accent.toLowerCase()]: C.coat, '#3a1a1a': C.coat, [C.coat2]: C.coat2 };
+  // 置換表のキーは #rrggbb（トラック色は hsl(...) なので正規化する。2026-09-27 ユーザー指摘：hsl のままでは一致せず、背中にトラック色が出ていた）
+  const back = { [C.shirt]: C.coat, [toHex(accent)]: C.coat, '#3a1a1a': C.coat, [C.coat2]: C.coat2 };
   // 布の塊感：上着の部分だけ 2px 単位でわずかに暗い区画を混ぜる（髪の二色と同じ考え方。2026-09-11）
   const isCloth = (x, y) => y >= 16 && x >= 6 && x <= 25 && !(p.gender === 'm' && x >= 12 && x <= 19 && y <= 31) && !(p.gender === 'f' && ((x >= 13 && x <= 18 && y <= 21) || (y >= 32 && y <= 34) || (x >= 14 && x <= 17 && y >= 22 && y <= 24)));
   const colorOf = (x, y, z) => (isCloth(x, y) && clothHash(p.seed, x, y, z) < 0.25 ? CLOTH_DARK : null);
