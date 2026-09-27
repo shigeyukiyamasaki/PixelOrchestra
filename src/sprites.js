@@ -258,6 +258,53 @@ export function bakePart(w, h, pivotX, pivotY, draw, opts = {}) {
 
 /** 編集済みボクセルデータ → メッシュ（makePart の代わり。accent はキャッシュのキー）。
  *  編集画面のように毎回作り直す場合は cache:false（キャッシュが際限なく増えるため） */
+/**
+ * 弦を細い部品にしたボクセルの楽器（2026-09-27 ユーザー指定：ハープの弦をボクセルでなく細く）。
+ * colors（#rrggbb）の色の縦の列（1 セル幅）を弦とみなしてボクセルから取り除き、同じ位置に細い円柱（太さ 0.1px）を立てる。
+ * 円柱は Phong の材質にして、金属の処理（applyMetal）で頂点色の材質に置き換えられないようにする
+ */
+export function voxelPartThinStrings(data, accent, colors, opts = {}) {
+  const hexes = new Set(colors.map((c) => c.toLowerCase()));
+  const cols = new Set(Object.keys(data.palette).filter((k) => hexes.has(String(data.palette[k]).toLowerCase()))), strings = [];
+  const layers = data.layers.map((zl, z) => zl.map((row) => row.split('')));
+  for (let z = 0; z < data.depth; z++) for (let x = 0; x < data.w; x++) {
+    for (let y = 0; y < data.h; y++) {
+      const c = layers[z][y][x];
+      if (!cols.has(c)) continue;
+      let y1 = y;
+      while (y1 + 1 < data.h && layers[z][y1 + 1][x] === c) y1++;
+      strings.push({ x, y0: y, y1, z, color: data.palette[c] });
+      for (let k = y; k <= y1; k++) layers[z][k][x] = '.';
+      y = y1;
+    }
+  }
+  // opts.interleave：隣り合う弦の間に 1 本ずつ足す（上端・下端は両隣の中間）。opts.colorOf(i, n)：低い方から i 本目の色（無ければ元の色）
+  strings.sort((a, b) => a.x - b.x || a.z - b.z);
+  if (opts.interleave) {
+    const add = [];
+    for (let i = 0; i + 1 < strings.length; i++) {
+      const a = strings[i], b = strings[i + 1];
+      if (a.z !== b.z) continue;
+      add.push({ x: (a.x + b.x) / 2, y0: (a.y0 + b.y0) / 2, y1: (a.y1 + b.y1) / 2, z: a.z, color: a.color });
+    }
+    strings.push(...add);
+    strings.sort((a, b) => a.x - b.x);
+  }
+  if (opts.colorOf) strings.forEach((st, i) => { st.color = opts.colorOf(i, strings.length) ?? st.color; });
+  const body = voxelPart({ ...data, layers: layers.map((zl) => zl.map((r) => r.join(''))) }, accent + '|thin');
+  const root = new THREE.Group();
+  root.add(body);
+  const cell = PX / (data.res ?? 1), r = 0.05 * PX;
+  for (const st of strings) {
+    const len = (st.y1 - st.y0 + 1) * cell;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 4), new THREE.MeshPhongMaterial({ color: st.color, shininess: 30 }));
+    m.position.set((st.x + 0.5 - data.pivotX) * cell, (data.pivotY - st.y0) * cell - len / 2, (st.z + 0.5 + (data.z0 ?? 0)) * cell);
+    root.add(m);
+  }
+  root.userData.size = body.userData.size;
+  return root;
+}
+
 export function voxelPart(data, accent = 'voxel', { cache = true } = {}) {
   const { w, h, depth, z0, pivotX, pivotY, palette, back, layers } = data;
   const cell = PX / (data.res ?? 1);

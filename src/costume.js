@@ -10,7 +10,7 @@
  *   - 正面図は 2 倍解像度（res:2）のセル、pivot は頭＝首の付け根中央 / 胴＝腰の中央 / 脚＝足元中央
  *   - 立体パーツ（兜・肩当て）は res:1 の 1px 粒。carve は「体積関数 keep」で形を決め、colorOf で部位の色を塗る
  */
-import { makePart, C, roundColumn, voxelPart, headNeckStub, headNeckStubSide, INSTRUMENT_BASE, setInstrumentOverride } from './sprites.js';
+import { makePart, C, roundColumn, voxelPart, voxelPartThinStrings, headNeckStub, headNeckStubSide, INSTRUMENT_BASE, setInstrumentOverride } from './sprites.js';
 import { RANDI3 } from './randi3Data.js';
 
 /**
@@ -565,11 +565,17 @@ export function setVoxelOverrides(map) {
   // 楽器の部位（INSTRUMENT_PARTS）は sprites.js の INSTRUMENT へ差し込む（奏者が楽器を作る時に使われる）
   for (const k of INSTRUMENT_PARTS) {
     const v = VOXELS[k];
-    setInstrumentOverride(k, v ? () => voxelPart(v, k + '|' + (v.rev || 0)) : null);
+    // ハープは弦（銀・赤の縦の列）を細い部品にする（2026-09-27 ユーザー指定）
+    // 本数は倍（間に 1 本ずつ足す）、赤は実物どおり C の弦＝一番低い弦から 7 本ごと（ハープは 1 オクターブ 7 本。2026-09-27 ユーザー指定）
+    const harpOpts = { interleave: true, colorOf: (i) => (i % 7 === 0 ? '#e05050' : '#d5dbe2') };
+    const make = k === 'harp' ? () => voxelPartThinStrings(v, k + '|' + (v.rev || 0), HARP_STRING_COLORS, harpOpts) : () => voxelPart(v, k + '|' + (v.rev || 0));
+    setInstrumentOverride(k, v ? make : null);
   }
 }
 // 編集画面でいじれる楽器（キー = INSTRUMENT のキー。保存先は assets/voxel/<キー>.json）。2026-09-24 ユーザー指定
-const INSTRUMENT_PARTS = ['harp', 'piano', 'tubularbells'];   // チューブラーベルは 2026-09-25 追加
+const INSTRUMENT_PARTS = ['harp', 'piano', 'tubularbells'];
+// ハープの弦の色（harp.json の銀と、赤の C の弦）。弦以外にこの色は使っていない（2026-09-27 確認）。記号は編集で変わるので色の値で見る
+const HARP_STRING_COLORS = ['#d5dbe2', '#e05050'];   // チューブラーベルは 2026-09-25 追加
 export function hasVoxelOverride(key) { return !!VOXELS[key]; }
 
 /** 編集できる部位の一覧（編集画面のプルダウン）。make は手続き的に作る元の形 */

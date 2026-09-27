@@ -235,7 +235,7 @@ const TIMP_KS = { 24: 'hit', 25: 'roll', 26: 'cresc', 27: 'cresc', 28: 'cresc', 
 const BD_KS = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [24 + i, 24 + i === 27 ? 'roll' : 'hit']));
 // 弦のキースイッチ → 強弱の情報源（2026-09-27 ユーザー指定：Hollywood Strings は奏法ごとに velocity か CC1 かが違う）。
 // 楽器・音源ごとに対応が違うので個別に持つ。'cc' ＝ CC1、'vel' ＝ velocity。キーは MIDI ノート番号（C0 = 24）。
-// 該当するトラックは STRING_KS_OF で選ぶ（今は 1st バイオリンの Hollywood Strings だけ）
+// 該当するトラックは STRING_KS_OF で選ぶ（Hollywood Strings の 1st・2nd バイオリン・ヴィオラ・チェロ・コントラバス）
 const HS_VN1_KS = {
   24: 'cc',  // C0  Sus MAX
   25: 'cc',  // C#0 Sus Marc LITE
@@ -267,7 +267,111 @@ const HS_VN1_KS = {
 };
 // 弓が弦から離れる奏法（2026-09-27 ユーザー指定）：B0 Spiccato・A#0 Ricochet・D#0 Staccatissimo・G#0 Col Legno。Spic Runs は速いので離さない
 const HS_VN1_OFF = new Set([35, 34, 27, 32]);
-const STRING_KS_OF = (variant, name) => (variant === 'violin1' && /_HW\b|hollywood/i.test(name) ? HS_VN1_KS : null);
+// 2nd バイオリン（2026-09-27 ユーザー提供）。1st と並びが違う。Marc Lng・Flautando・Harmonics は音を保つのでロング系（CC1）
+const HS_VN2_KS = {
+  24: 'cc',  // C0  Sus MAX
+  25: 'cc',  // C#0 Sus Marc LITE
+  26: 'cc',  // D0  Leg Slur MAX
+  27: 'vel', // D#0 Stac On Bow RRx9
+  28: 'vel', // E0  Marc Shrt RRx4
+  29: 'cc',  // F0  Marc Lng RRx4
+  30: 'vel', // F#0 Detache
+  31: 'cc',  // G0  Flautando
+  32: 'cc',  // G#0 Harmonics
+  33: 'vel', // A0  Col Legno RR
+  34: 'vel', // A#0 Pizz RRx4
+  35: 'vel', // B0  Ricochet RR
+  36: 'vel', // C1  Spiccato RRx9
+  37: 'vel', // C#1 Stac RRx9
+  38: 'vel', // D1  Stac Slur RRx6
+  39: 'cc',  // D#1 Meas Trem TS
+  40: 'vel', // E1  Repetitions TS
+  41: 'cc',  // F1  Tremolo
+  42: 'cc',  // F#1 Trill HT WT MOD
+  43: 'cc',  // G1  Slur Runs
+  44: 'vel', // G#1 Spic Runs
+  45: 'cc',  // A1  Leg BC MAX
+  46: 'cc',  // A#1 Leg Port MAX
+  47: 'cc',  // B1  StacSl Leg BC + Slur + Port MAX
+};
+const HS_VN2_OFF = new Set([33, 35, 36]);   // Col Legno・Ricochet・Spiccato
+// ヴィオラ（2026-09-27 ユーザー提供）。Sul Pont は音を保つのでロング系（CC1）
+const HS_VA_KS = {
+  24: 'cc',  // C0  Sus MAX
+  25: 'cc',  // C#0 Sus Marc LITE
+  26: 'cc',  // D0  Leg Slur MAX
+  27: 'vel', // D#0 Staccatissimo RRx16
+  28: 'vel', // E0  Stac On Bow RRx9
+  29: 'vel', // F0  Marc Shrt RRx4
+  30: 'vel', // F#0 Detache
+  31: 'cc',  // G0  Sul Pont
+  32: 'vel', // G#0 Bartok Pizz RR
+  33: 'vel', // A0  Col Legno RR
+  34: 'vel', // A#0 Pizz RRx4
+  35: 'vel', // B0  Ricochet RR
+  36: 'vel', // C1  Spiccato RRx9
+  37: 'vel', // C#1 Stac RRx9
+  38: 'cc',  // D1  Meas Trem TS
+  39: 'vel', // D#1 Repetitions TS
+  40: 'cc',  // E1  Tremolo
+  41: 'cc',  // F1  Trill HT WT MOD
+  42: 'cc',  // F#1 Leg BC MAX
+  43: 'cc',  // G1  Leg Port MAX
+  44: 'cc',  // G#1 Stac Leg BC + Slur + Port MAX
+};
+const HS_VA_OFF = new Set([27, 33, 35, 36]);   // Staccatissimo・Col Legno・Ricochet・Spiccato
+// チェロ（2026-09-27 ユーザー提供）。キースイッチが C0〜B0 と G#4〜F#5（80〜90）の 2 か所に分かれる。G#4 以上の音はすべてキースイッチ扱い
+const HS_VC_KS = {
+  24: 'cc',  // C0  Sus MAX
+  25: 'cc',  // C#0 Sus Marc LITE
+  26: 'cc',  // D0  Leg Slur MAX
+  27: 'vel', // D#0 Staccatissimo RRx16
+  28: 'vel', // E0  Stac On Bow RRx9
+  29: 'vel', // F0  Marc Shrt RRx4
+  30: 'vel', // F#0 Detache
+  31: 'vel', // G0  Bartok Pizz RR
+  32: 'vel', // G#0 Col Legno RRx4
+  33: 'vel', // A0  Pizzicato RRx4
+  34: 'vel', // A#0 Ricochet RR
+  35: 'vel', // B0  Spiccato RRx9
+  80: 'vel', // G#4 Stac RRx9
+  81: 'cc',  // A4  Meas Trem TS
+  82: 'vel', // A#4 Repetitions TS
+  83: 'cc',  // B4  Tremolo
+  84: 'cc',  // C5  Trill HT WT MOD
+  85: 'cc',  // C#5 8va Run Up Dn MOD
+  86: 'cc',  // D5  Maj Run Up Dn MOD
+  87: 'cc',  // D#5 Min Run Up Dn MOD
+  88: 'cc',  // E5  Leg BC MAX
+  89: 'cc',  // F5  Leg Port MAX
+  90: 'cc',  // F#5 Stac Leg BC + Slur + Port MAX
+};
+const HS_VC_OFF = new Set([27, 32, 34, 35]);   // Staccatissimo・Col Legno・Ricochet・Spiccato
+// コントラバス（2026-09-27 ユーザー提供）。キースイッチは C4〜F5（72〜89）で、弾く音域より上。Marc Lng はロング系（CC1）
+const HS_CB_KS = {
+  72: 'cc',  // C4  Sus MAX
+  73: 'cc',  // C#4 Marc Sus LITE
+  74: 'cc',  // D4  Leg Slur MAX
+  75: 'vel', // D#4 Staccatissimo RRx9
+  76: 'vel', // E4  Stac On Bow RRx9
+  77: 'vel', // F4  Marc Shrt RRx4
+  78: 'cc',  // F#4 Marc Lng RRx4
+  79: 'vel', // G4  Detache
+  80: 'vel', // G#4 Bartok Pizz RR
+  81: 'vel', // A4  Col Legno RRx4
+  82: 'vel', // A#4 Pizz RRx4
+  83: 'vel', // B4  Ricochet RR
+  84: 'vel', // C5  Spiccato RRx9
+  85: 'vel', // C#5 Staccato RRx9
+  86: 'cc',  // D5  Meas Trem TS
+  87: 'vel', // D#5 Repetitions TS
+  88: 'cc',  // E5  Tremolo
+  89: 'cc',  // F5  Trill HT
+};
+const HS_CB_OFF = new Set([75, 81, 83, 84]);   // Staccatissimo・Col Legno・Ricochet・Spiccato
+// 楽器ごとの { dyn：キースイッチ → 'cc' | 'vel', off：弦から跳ね上がる奏法のキースイッチ }
+const STRING_KS = { contrabass: { dyn: HS_CB_KS, off: HS_CB_OFF }, cello: { dyn: HS_VC_KS, off: HS_VC_OFF }, violin1: { dyn: HS_VN1_KS, off: HS_VN1_OFF }, violin2: { dyn: HS_VN2_KS, off: HS_VN2_OFF }, viola: { dyn: HS_VA_KS, off: HS_VA_OFF } };
+const STRING_KS_OF = (variant, name) => (STRING_KS[variant] && /_HW\b|hollywood/i.test(name) ? STRING_KS[variant] : null);
 const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
 
 /** 区間 [t0, t1) の中で CC の値が変わる書き込みがあるか（ロールかショットかの判定） */
@@ -362,9 +466,9 @@ export class MidiEngine {
         }
         // 弦のキースイッチ（STRING_KS_OF）：最後に押したものが次の切り替えまで有効（ラッチ）。各音に dyn（'cc' | 'vel'）を付け、
         // キースイッチの音は弾く音から除く。CC1 の奏法の音には cc1 を持たせ、energy の計算で音ごとに情報源を切り替える
-        const SKS = STRING_KS_OF(variant, name);
+        const SKSET = STRING_KS_OF(variant, name), SKS = SKSET?.dyn;
         if (SKS) {
-          const ks = t.notes.filter((n) => SKS[n.midi]).map((n) => ({ time: n.time, dyn: SKS[n.midi], off: HS_VN1_OFF.has(n.midi) })).sort((a, b) => a.time - b.time);
+          const ks = t.notes.filter((n) => SKS[n.midi]).map((n) => ({ time: n.time, dyn: SKS[n.midi], off: SKSET.off.has(n.midi) })).sort((a, b) => a.time - b.time);
           if (ks.length) {
             for (let k = notes.length - 1; k >= 0; k--) if (SKS[notes[k].midi]) notes.splice(k, 1);
             let p = -1;

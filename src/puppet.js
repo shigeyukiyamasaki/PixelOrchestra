@@ -220,6 +220,45 @@ const sameNote = (a, b) => (a.midi === b.midi
   : Math.abs(a.time - b.time) <= 0.08 && Math.abs(a.duration - b.duration) <= 0.1);
 // 強弱の反応（前のめり・楽器の角度・膨らみ・打楽器の振りかぶり・指揮の振り幅の倍率）。2026-09-27 ユーザー指定でスライダーを廃止し、それまでの設定値 3 に固定
 const DYN_RESPONSE = 3;
+// 駒の高さ [px]：弦（弓との接点）を胴からこれだけ持ち上げる（2026-09-27 ユーザー指定）
+const BRIDGE_H = 1.5;
+// 弦を押さえる左手を弦から浮かせる量 [px]（手の厚みで指が弦・指板に埋もれないように）
+const LH_LIFT = 0.6;
+// 駒の見た目の高さ [px]（表板から）。弓はこれより少し高い所を擦る（傾けても胴に埋もれないため。2026-09-27 ユーザー判断）
+const BRIDGE_VIS_H = 1;
+// 弦楽器ごとの胴の形（画面で測った値。2026-09-27）：edge ＝ 接点から弓の手元側へ胴が続く長さ、gap ＝ 接点と胴の表面のすき間 [px]
+const BOW_BODY = {
+  violin1: { edge: 5, gap: 0.8 }, violin2: { edge: 5, gap: 0.8 }, violin: { edge: 5, gap: 0.8 },
+  viola: { edge: 3.5, gap: 1.1 }, cello: { edge: 3.5, gap: 1.4 }, contrabass: { edge: 4, gap: 1.2 },
+};
+// 絵に描いた駒の位置（楽器のローカル座標 [px]。sprites.js の res:2 のセルを pivot 基準で直した値）：c ＝ 中心 [x, y]、w ＝ 弦を横切る幅、
+// along ＝ 弦の方向（バイオリン・ヴィオラは横 x、チェロ・コントラバスは縦 y）、plate ＝ 表板の面の z
+// 弦を張る点（楽器のローカル座標 [px]）：a ＝ 弦の方向の位置、z ＝ 高さ、w ＝ 4 本の広がり。tail ＝ テールピースの端、nut ＝ 指板の先。
+// 駒の上端は BRIDGE_AT（幅の 8 割に広げる）。sprites.js の絵のセル（res:2）を pivot 基準で直した値
+// 駒の下の黒い部分の範囲（楽器のローカル座標 [px]。sprites.js の黒いセルを pivot 基準で直した値）と、その高さ
+const TAIL_H = 0.5;
+const TAIL_AT = {
+  violin1: { x0: -6, x1: -3, y0: -0.5, y1: 0.5 }, violin2: { x0: -6, x1: -3, y0: -0.5, y1: 0.5 }, violin: { x0: -6, x1: -3, y0: -0.5, y1: 0.5 },
+  viola: { x0: -7, x1: -3, y0: -0.5, y1: 0.5 },
+  cello: { x0: -0.5, x1: 0.5, y0: 5.5, y1: 12 },
+  contrabass: { x0: -0.5, x1: 1, y0: 4, y1: 12.5 },
+};
+const STRINGS_AT = {
+  violin1: { tail: { a: -3, z: 1.4, w: 0.8 }, nut: { a: 5.5, z: 1.8, w: 0.8 } },
+  violin2: { tail: { a: -3, z: 1.4, w: 0.8 }, nut: { a: 5.5, z: 1.8, w: 0.8 } },
+  violin: { tail: { a: -3, z: 1.4, w: 0.8 }, nut: { a: 5.5, z: 1.8, w: 0.8 } },
+  viola: { tail: { a: -3, z: 1.65, w: 0.8 }, nut: { a: 6, z: 2, w: 0.8 } },
+  cello: { tail: { a: 12, z: 4.1, w: 0.8 }, nut: { a: 28.5, z: 4.75, w: 0.8 } },   // tail：駒の下の黒い部分の上端（row 36）から（2026-09-27 ユーザー指摘）
+  contrabass: { tail: { a: 12.5, z: 4.6, w: 1.2 }, nut: { a: 34, z: 5.25, w: 1.2 } },   // tail：駒の下の黒い部分の上端（row 47）から（同上）
+};
+const BRIDGE_AT = {
+  violin1: { c: [-1.75, 0], w: 2, along: 'x', plate: 1 }, violin2: { c: [-1.75, 0], w: 2, along: 'x', plate: 1 }, violin: { c: [-1.75, 0], w: 2, along: 'x', plate: 1 },
+  viola: { c: [-1.75, 0], w: 2, along: 'x', plate: 1.25 },
+  cello: { c: [0, 13.25], w: 3, along: 'y', plate: 4 },
+  contrabass: { c: [0, 14.75], w: 4, along: 'y', plate: 4.5 },
+};
+// 弦の弓を立てる角度の上限（2026-09-27 ユーザー指定。バイオリンの一番低い弦〜一番高い弦で弓の傾きは 30〜40° ほど変わる）
+const BOW_TILT_MAX = 30 * Math.PI / 180;
 const CYM_SWING = { freq: 1.6, damp: 1.4, kick: 1.5 };
 const BASSDRUM_TILT_ADD = 10 * Math.PI / 180;   // 太鼓の傾きを足す：打面を天へ 10°（もとの 0.15 rad ≈ 9° と合わせて約 19°）
 const BASSDRUM_YAW = -10 * Math.PI / 180;    // 太鼓の首振り：打面を奏者から外へ 10°（rig 座標で打面の法線 +x を +z 側へ）
@@ -1018,6 +1057,51 @@ export class Puppet {
 
   // ---- 弦：弓の接点を固定し、手元が弓の上を滑る。ノートごとに上げ弓/下げ弓を交互、前のストロークの終点から続ける。
   //      休符では弓を弦から離し、次の音の直前に着弦する ----
+  /** 駒の立体（2026-09-27 ユーザー指定：絵の駒は表板と同じ面に塗っただけで高さが無い）：絵の駒の位置に、表板から BRIDGE_VIS_H だけ立ち上げる。
+   *  楽器の子にするので、下ろす姿勢でも付いてくる。寸法は楽器のローカル座標 [px]（BRIDGE_AT） */
+  _bridgeBuild() {
+    const b = BRIDGE_AT[this.variant];
+    if (!b || !this.inst || this._bridge) return;
+    // 見た目の高さは表板から 1px（2026-09-27 ユーザー指定：高すぎ）。弓の高さ（接点 + BRIDGE_H）と傾きの計算はそれとは別に持つ
+    const h = BRIDGE_VIS_H;
+    const size = b.along === 'x' ? [0.5, b.w, h] : [b.w, 0.5, h];   // 弦の方向に薄く、弦を横切る向きに幅
+    // 色は絵の駒と同じ（sprites.js の C.ivory）
+    const m = new THREE.Mesh(new THREE.BoxGeometry(size[0] * PX, size[1] * PX, size[2] * PX), new THREE.MeshLambertMaterial({ color: '#f6f1dc' }));
+    m.position.set(b.c[0] * PX, b.c[1] * PX, (b.plate + h / 2) * PX);
+    m.castShadow = true;
+    this.inst.add(m);
+    this._bridge = m;
+    // 駒の下の黒い部分（駒の下の弦・テールピース）に高さを付ける（2026-09-27 ユーザー指定）：絵の黒い部分と同じ範囲に TAIL_H の板
+    const T = TAIL_AT[this.variant];
+    if (T) {
+      const tb = new THREE.Mesh(new THREE.BoxGeometry((T.x1 - T.x0) * PX, (T.y1 - T.y0) * PX, TAIL_H * PX), new THREE.MeshLambertMaterial({ color: '#101016' }));
+      tb.position.set((T.x0 + T.x1) / 2 * PX, (T.y0 + T.y1) / 2 * PX, (b.plate + TAIL_H / 2) * PX);
+      this.inst.add(tb);
+    }
+    // 弦（2026-09-27 ユーザー指定：ボクセルを無視して細く）。テールピースの端 → 駒の上端 → 指板の先（ナット）を 4 本。
+    // 位置は楽器のローカル座標 [px]（STRINGS_AT。弦の方向の位置 a と表板からの高さ z、弦を横切る向きの広がり w）
+    const S = STRINGS_AT[this.variant];
+    if (S) {
+      const mat = new THREE.MeshLambertMaterial({ color: '#d9d9de' });
+      const pt = (q, frac) => {   // q = { a, z, w }、frac = −0.5〜0.5（何本目か）
+        const lat = frac * q.w, v = b.along === 'x' ? [q.a, b.c[1] + lat, q.z] : [b.c[0] + lat, q.a, q.z];
+        return new THREE.Vector3(v[0] * PX, v[1] * PX, v[2] * PX);
+      };
+      const topZ = b.plate + BRIDGE_VIS_H;
+      for (let i = 0; i < 4; i++) {
+        const frac = i / 3 - 0.5;
+        // 黒い板の上 → 駒の上端 → ナット
+        const pts = [pt({ ...S.tail, z: b.plate + TAIL_H }, frac), pt({ a: b.along === 'x' ? b.c[0] : b.c[1], z: topZ, w: b.w * 0.8 }, frac), pt(S.nut, frac)];
+        for (let k = 0; k < 2; k++) {
+          const p0 = pts[k], p1 = pts[k + 1], len = p0.distanceTo(p1);
+          const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * PX, 0.05 * PX, len, 4), mat);
+          cyl.position.copy(p0).add(p1).multiplyScalar(0.5);
+          cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+          this.inst.add(cyl);
+        }
+      }
+    }
+  }
   _strings(st, { t, dt }) {
     const { onset, next, age, toNext, active, energy, posture } = st;
     const cfg = this.cfg, bow = cfg.bow, p3 = this.p3;
@@ -1061,6 +1145,7 @@ export class Puppet {
         const pn = prevNs[k];
         if (pn.time < onset.time - 0.01 && pn.end >= onset.time - 0.05) { slurOn = true; break; }
       }
+      this._slurNow = slurOn;   // 弓の傾き：スラーの途中では角度を選び直さない
       // 弓の向きは「同じリズムを弾いている奏者」で揃える（2026-09-14 ユーザー指定）。
       // 実際の演奏でも、弓使いは首席が決めてセクションをまたいで揃えるのが普通で、
       // 同じリズムならハモっていても（音程が違っても）揃える。リズムが別なら自然に分かれる。
@@ -1146,14 +1231,42 @@ export class Puppet {
     let d, n;
     if (p3) { d = p3.bowDir; n = p3.liftDir; }
     else { const a = bow.world; d = [Math.cos(a), Math.sin(a), 0]; n = [Math.sin(a), -Math.cos(a), 0]; }
-    const handR = [C[0] - d[0] * s + n[0] * nOff, C[1] - d[1] * s + n[1] * nOff, C[2] - d[2] * s + n[2] * nOff];
+    // 弓の傾き（2026-09-27 ユーザー指定：実際の演奏では弓が弦に角度をつけて当たる）：弦の方向を軸に、弓の先を上（rig の +y）へ
+    // BOW_TILT_MAX まで立てる。今までの向き（0°）が一番寝かせた状態。弓を返す時（スラーを除く）に 0.5 秒以上たっていれば、
+    // 奏者と音の時刻から決まる乱数で次の角度を選び、なめらかに移る。左手（指板）の向きは d, n のまま
+    if (onset && onset !== this._tiltOnset && !this._slurNow && t - (this._tiltAt ?? -9) >= 0.5) {
+      this._tiltOnset = onset; this._tiltAt = t;
+      const h = Math.sin((onset.time * 12.9898 + this.seed * 78.233) * 43758.5453);
+      this._tiltTarget = (h - Math.floor(h)) * BOW_TILT_MAX;
+    }
+    this._tilt = approach(this._tilt ?? 0, this._tiltTarget ?? 0, 6, dt);
+    // 駒（2026-09-27 ユーザー指定：傾けた弓が胴に埋もれた）：接点を胴から BRIDGE_H だけ持ち上げ（弦は駒の上に張られている）、
+    // 持ち上げた接点を中心に傾ける。傾きは、弓の手元側のうち胴の上にある部分（接点から bodyEdge まで）が胴の表面より下がらない角度まで抑える
+    const bg = BOW_BODY[this.variant];
+    const Cb = bg ? [C[0] + n[0] * BRIDGE_H, C[1] + n[1] * BRIDGE_H, C[2] + n[2] * BRIDGE_H] : C;
+    let tiltNow = this._tilt;
+    if (bg) {
+      const u = Math.max(0.5, Math.min(s + 1, bg.edge));   // 胴の上にある手元側の長さ（手が近ければそこまで）
+      tiltNow = Math.min(tiltNow, Math.asin(clamp((bg.gap + BRIDGE_H + Math.min(0, nOff) - 0.3) / u, 0, 1)));   // 弓を弦へ押しつけている分（nOff < 0）も差し引く
+      this._bridgeBuild();
+    }
+    let dB = d, nB = n;
+    if (tiltNow > 1e-4) {
+      const vd = v3(d), vn = v3(n), ax = vd.clone().cross(vn).normalize();
+      if (ax.clone().cross(vd).y < 0) ax.negate();   // 回すと弓の先（+d）が上がる向き
+      const q = new THREE.Quaternion().setFromAxisAngle(ax, tiltNow);
+      const d2 = vd.applyQuaternion(q), n2 = vn.applyQuaternion(q);
+      dB = [d2.x, d2.y, d2.z]; nB = [n2.x, n2.y, n2.z];
+    }
+    this._tiltNow = tiltNow;
+    const handR = [Cb[0] - dB[0] * s + nB[0] * nOff, Cb[1] - dB[1] * s + nB[1] * nOff, Cb[2] - dB[2] * s + nB[2] * nOff];
     // 手首あり：右手は前腕と一直線で、弓は手に対して直角に握る（実際の持ち方。2026-09-11 ユーザー確定 A）。
     // 手の向き＝前フレームの前腕の向き（肘→手首）から弓の方向 d の成分を除いたもの（弓と常に直角、前腕の延長に沿う。1 フレーム遅れで収束）。甲は弦の面の法線側（手のひらが弓に被さる）
     let rightHandDir = null;
     if (this.hasWrist) {
       const a = new THREE.Vector3(0, -1, 0).applyQuaternion(this.foreQ.R);
-      a.addScaledVector(v3(d), -a.dot(v3(d)));
-      if (a.lengthSq() < 1e-4) a.set(-n[0], -n[1], -n[2]);
+      a.addScaledVector(v3(dB), -a.dot(v3(dB)));
+      if (a.lengthSq() < 1e-4) a.set(-nB[0], -nB[1], -nB[2]);
       a.normalize();
       // 前フレームの前腕 → 手の向き → 手首の位置 → IK → 前腕、の循環なので、肘の向き（pole）によっては
       // 2 つの解を毎フレーム行き来して腕がチラつく（コントラバスで肘を前に出した時。2026-09-16 ユーザー指摘）。
@@ -1162,15 +1275,17 @@ export class Puppet {
       else { this._rhDir.lerp(a, 1 - Math.exp(-20 * dt)); if (this._rhDir.lengthSq() < 1e-6) this._rhDir.copy(a); this._rhDir.normalize(); }
       rightHandDir = [this._rhDir.x, this._rhDir.y, this._rhDir.z];
     }
-    this.setHand('R', this._restHand(handR, cfg.rest?.bowHand), dt, Infinity, rightHandDir, cfg.pole?.R, this.hasWrist ? n : null); // pole：肘の向き（コントラバスは肘を外・上に出して前腕を弓と直角に）
+    this.setHand('R', this._restHand(handR, cfg.rest?.bowHand), dt, Infinity, rightHandDir, cfg.pole?.R, this.hasWrist ? nB : null); // pole：肘の向き（コントラバスは肘を外・上に出して前腕を弓と直角に）
     // 下ろしている間の弓の向き。既定は下へ垂らす。
     // あご楽器は太ももに沿わせて置く（cfg.rest.bowAim。2026-09-13 ユーザー指定）
     const rr = this._rest ?? 0;
     const rd = cfg.rest?.bowAim || [0.25, -1.0, 0];
-    this.aimHeldDir('R', rr > 0 ? [d[0] * (1 - rr) + rd[0] * rr, d[1] * (1 - rr) + rd[1] * rr, d[2] * (1 - rr) + rd[2] * rr] : d, 'x');
+    this.aimHeldDir('R', rr > 0 ? [dB[0] * (1 - rr) + rd[0] * rr, dB[1] * (1 - rr) + rd[1] * rr, dB[2] * (1 - rr) + rd[2] * rr] : dB, 'x');
 
     // 左手：指板の位置。長い音ではビブラート（弦に沿って 5.5Hz）
-    const L = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
+    const L0 = instPoint(this.inst, cfg.leftHand[0], cfg.leftHand[1], p3?.leftHandZ ?? 0);
+    // 弦から LH_LIFT だけ浮かせる（2026-09-27 ユーザー指定：左手の指が弦・指板に埋もれていた。左手の高さは弦とほぼ同じだった）
+    const L = [L0[0] + n[0] * LH_LIFT, L0[1] + n[1] * LH_LIFT, L0[2] + n[2] * LH_LIFT];
     const vibAxis = p3?.vib || cfg.vib || n;
     // ビブラート。setHand の追従（rate）が 5.5Hz を半分まで削るので、振幅と追従の両方を上げる（2026-09-12 ユーザー指定）
     const vib = active.length && onset && onset.duration > 0.2 ? 0.8 * Math.sin(2 * Math.PI * 5.5 * t + this.phase) : 0;
