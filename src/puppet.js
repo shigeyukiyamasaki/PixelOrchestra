@@ -28,6 +28,12 @@ const SHOULDER_MAX = 0.75; // rad ≈ 43°
 // 楽器の大きさ（体との比率）。弦・木管・金管は実物に近い比率まで大きく（2026-09-10 ユーザー指定）。
 // 打楽器・鍵盤・ハープは配置と手の座標がリグ基準なのでそのまま
 const INST_SCALE = { strings: 1.25, woodwind: 1.25, brass: 1.25 };
+// トラック名で見た目を分けるバスドラ（2026-09-27 ユーザー指定）：大きさの違う 2 台を重ねる曲で、グランカッサを大きく、バスドラを小さく・赤い胴に。
+// height ＝ 奏者の身長（楽器ごと相似に大きさが変わる。差は約 10%：2.5% では角度・色で逆に見えた。2026-09-27 ユーザー指定）、recolor ＝ 楽器の色の置き換え（胴の木 → 赤、ラグの金 → 銀）。上から順に最初に一致したもの
+const BASSDRUM_STYLES = [
+  { re: /gran\s*cass/i, height: 1.05 },
+  { re: /bass\s*drum/i, height: 0.95, recolor: { '#5a2e14': '#a8202c', '#a7791c': '#d5dbe2' } },
+];
 const WOOD_INSTRUMENTS = new Set(['violin1', 'violin2', 'viola', 'cello', 'contrabass', 'marimba', 'xylophone', 'oboe', 'clarinet', 'bassoon', 'harp']); // 木目の個体差を付ける楽器
 // 楽器ごとの倍率（ファミリーの既定を上書き）。基準は「実物の 1.25 倍」（2026-09-11 ユーザー確定。1px ≈ 4cm、指揮者 42.5px = 170cm で実測して揃えた）：
 //   弦：バイオリン/ヴィオラは 1.25 のまま、チェロ 1.25（絵の胴が横に太いので 1.4 だと大きく見える。2026-09-11）、コントラバス 1.3（実物 185cm。1.5 だと胴が体を隠すので幅基準で妥協）。木管：フルート 1.05・ピッコロ/オーボエ 1.0・クラリネット 1.05・ファゴット 1.25 のまま
@@ -206,7 +212,10 @@ const VARIANT_SNARE_STRIKE = { L: { hit: [-3, 25], rest: [-9, 32], head: [-5, 18
 // z 15 にすると距離 16.3px・肘 98° になり、自然に構えられる
 //   head の x は ±4。±1（ほぼ中央）だと左右のバチが打面上でぶつかりそうに見える（2026-09-22 ユーザー指摘）
 const VARIANT_SNARE_STRIKE3 = { L: { hit: [-7.5, 19.5, 15], rest: [-8.5, 23, 14], head: [-4, 16.5, 21] }, R: { hit: [7.5, 19.5, 15], rest: [8.5, 23, 14], head: [4, 16.5, 21] } };
-const BASSDRUM_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
+// サスペンデッドシンバルの円盤の揺れ：freq ＝ 1 秒の往復数、damp ＝ 減衰（振れ幅は e^(−damp/2 × 秒) で小さくなる）、kick ＝ 叩いた時に足す角速度 [rad/s]（velocity 1 で）
+const CYM_SWING = { freq: 1.6, damp: 1.4, kick: 1.5 };
+const BASSDRUM_LEVEL_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));   // 傾きを除いた向き（足を床と水平に置く。levelQ）
+const BASSDRUM_Q = BASSDRUM_LEVEL_Q.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
 
 const VARIANT = {
   // contactZ = 駒の上の弦の高さ、leftHandZ = 指板の表面＋弦（楽器ローカル px、表板の厚みは絵の depth から）。指先はここに置く
@@ -273,7 +282,7 @@ const VARIANT = {
                 rest: { pos: [-5, 2, 10], rot3: [0.25, -0.3, 0] } },
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   // 打楽器の hit/rest は手の先端（マレットの握り）。手首はその 4px 手前なので、握りを z 10〜12 に置いて手首を体の前 6〜8px に出す（2026-09-10）
-  timpani:    { floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
+  timpani:    { velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
                 p3: { pos: [0, 15, 14], strike: { L: { hit: [-7, 18.5, 17], rest: [-9, 22, 14], head: [-6, 15.5, 25] }, R: { hit: [7, 18.5, 17], rest: [9, 22, 14], head: [6, 15.5, 25] } } } },   // 手は打面（15.7）の上へ（2026-09-22） // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
@@ -283,31 +292,31 @@ const VARIANT = {
   // ロールはキースイッチ D#0 で（2026-09-25 ユーザー指定。midiEngine の BD_KS）。ロールの時だけ左手にもマレットを持って両手で交互に叩く
   // （rollStrike。左手のマレットはロールの間だけ見せる）。それ以外は右手 1 本で、左手は打面の上縁に添える。
   // ロールの間は上半身を楽器の方へ 0.8 rad（約 46°）ひねり、首は指揮者へ向けたまま（rollTwist）
-  bassdrum:   { floorStand: true, inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet', L: 'bigmallet' }, heldOnRoll: 'L', rollTwist: -0.8, singleArm: 'R', gazeYaw: MIRROR * -0.5, roll: { byArt: true, rate: 6, from: 0.12 },
+  bassdrum:   { velSwing: 1.5, windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [-4, 0, 4], rot: 0 }, held: { R: 'bigmallet', L: 'bigmallet' }, heldOnRoll: 'L', rollTwist: -0.8, singleArm: 'R', gazeYaw: MIRROR * -0.5, roll: { byArt: true, rate: 6, from: 0.12 },
                 strike: { R: { hit: [4, 22], rest: [13, 28], head: [-2, 15] } }, fixedHand: { L: [-12, 22] },
                 // 手前の打面は x≈-8（下）〜-10.5（高さ 20）。hit = 手（左腰の前）、head = マレットの頭の中心（半径 2.5 なので打面の 2.5px 手前）。
                 // 柄（11px）は打面と平行に前上がりで、横に振って頭の側面で打つ
-                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10], restAim: [0, 0.15, 1], wind: 1.4 } }, fixedHand: { L: [-9, 20, 10] },
+                p3: { pos: [-8, 0, 7], quat: BASSDRUM_Q, levelQ: BASSDRUM_LEVEL_Q, strike: { R: { hit: [-4, 17, 7], rest: [5, 19, 8], head: [-8, 24, 10], restAim: [0, 0.15, 1], wind: 1.4 } }, fixedHand: { L: [-9, 20, 10] },
                       // ロールの左手：右手と対になるよう胸の前の高さで持ち、頭は右手と同じ高さで打面の上に横へ並べる（z 10 と 5.5。頭の半径 2.5 で重ならない）。
                       // 振りかぶり（構え）は右手と同じく打面から離れる向き。以前は手が腰の高さ（y 15）で腕が垂れ、叩き方がおかしかった（2026-09-25 ユーザー指摘）
                       rollStrike: { L: { hit: [-4.5, 17, 3.5], rest: [2, 19, 4.5], head: [-8.5, 24, 5.5], restAim: [0, 0.15, 1], wind: 1.4 } } } }, // 構え：マレットは真前（打面を向かない）。振りかぶりで手も右へ大きく（wind 1.4）、打つ瞬間に打面へ // 柄は打面と平行に立てて持ち（頭が上）、横に振る。手首は体の前 6px。左手は打面の上縁に添える
-  snare:      { floorStand: true, inst: { pos: [0, 17, 14], rot: 0 }, held: { L: 'stick', R: 'stick' },
+  snare:      { velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 17, 14], rot: 0 }, held: { L: 'stick', R: 'stick' },
                 strike: VARIANT_SNARE_STRIKE,
                 // hit = 手（腰の前）、head = 先端（皮の中央寄り）。スティック（11px）は皮とほぼ平行（約 15° 下向き）
                 p3: { pos: [0, 17, 14], strike: VARIANT_SNARE_STRIKE3 } }, // 握りは肩幅より外（肘を張る）、先端は打面の中央（z 16）に集まる。手首 ≒ z 6・肘より下
-  cymbal:     { held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, bothArms: true, flourish: true, // 円盤の面（ローカル -y）を内側（±x）へ向ける。両手同時に中央で合わせ、強い音では腕を大きく回す（2026-09-11）
+  cymbal:     { velSwing: 1.3, windFrom: 64, downSec: [0.08, 0], held: { L: 'cymbal', R: 'cymbal' }, heldAngle: { L: 0, R: Math.PI }, bothArms: true, flourish: true, // 円盤の面（ローカル -y）を内側（±x）へ向ける。両手同時に中央で合わせ、強い音では腕を大きく回す（2026-09-11）
                 strike: { L: { hit: [-2, 30], rest: [-12, 26] }, R: { hit: [2, 30], rest: [12, 26] } },
                 p3: { strike: { L: { hit: [-2, 25, 15], rest: [-9, 19, 13] }, R: { hit: [2, 25, 15], rest: [9, 19, 13] } } } }, // 合わせるのは肩の高さ（顔を挟まない）、構え・振りかぶりはその下（2026-09-12 ユーザー指定：実際は低い位置から高い位置で合わせる）
   // ハイハット（2026-09-19 ユーザー指定：スネアのように両手にスティックを持って叩く）。置き場所・大きさはスネアと同じで、上のシンバルの表が y 17。
   // 腕の形（握り・構え・スティックの向き）はスネアとまったく同じ（2026-09-19 ユーザー指定）。上のシンバルの表（y 17）はスネアの皮と同じ高さで、
   // 握り（x ±7.5, z 9）は上から見てシンバルの円（半径 8）の外なので貫通しない。先端はスネアと同じく中心（カップ）に当たる
-  hihat:      { floorStand: true, inst: { pos: [0, 16.5, 14], rot: 0 }, held: { L: 'stick', R: 'stick' },   // 打面をスネアに揃える（2026-09-22）
+  hihat:      { velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 16.5, 14], rot: 0 }, held: { L: 'stick', R: 'stick' },   // 打面をスネアに揃える（2026-09-22）
                 strike: VARIANT_SNARE_STRIKE,
                 p3: { pos: [0, 16.5, 14], strike: VARIANT_SNARE_STRIKE3 } },
   // サスペンデッドシンバル（2026-09-19 ユーザー指定）：置き場所・高さはスネアと同じ（表 y 17）、腕の形（握り・構え）もスネアと同じ。持つのはロール用のマレット。
   // 先端はスネアのように中央へ集めず、左右の縁寄り（中心 (0, 17) から横に約 6px）へ向ける。握り（x ±7.5, z 9）はシンバルの円（中心 z 17・半径 9）の外。
   // roll：0.5 秒以上の音はロール（左右交互）。振り上げの高さは音の始めほど小さく、終わりに向けて構えの高さまで大きくする（クレッシェンド込みの音源に合わせる）
-  suscymbal:  { floorStand: true, inst: { pos: [0, 16.5, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { minDur: 0.5, rate: 6, from: 0.12 },   // 同上
+  suscymbal:  { velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 16.5, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { minDur: 0.5, rate: 6, from: 0.12 },   // 同上
                 strike: VARIANT_SNARE_STRIKE,
                 p3: { pos: [0, 16.5, 14], strike: { L: { ...VARIANT_SNARE_STRIKE3.L, head: [-6.5, 16.5, 21] }, R: { ...VARIANT_SNARE_STRIKE3.R, head: [6.5, 16.5, 21] } } } },
   // 銅鑼（2026-09-19 ユーザー指定。ユーザー提供の写真どおり）：奏者は体ごと左へ 90° 回って銅鑼に向き、顔だけ首をひねって指揮者へ向け続ける（bodyYaw / headYaw）。
@@ -321,7 +330,7 @@ const VARIANT = {
   // さらに肘を曲げるため、銅鑼ごと 3px 奏者へ寄せた（z 28 → 25。手・打点も同じだけ。肩から握りまで約 18.5px）：マレットの頭（半径 2.5）の中心が面の 2.5 手前（x -4）。握りから頭の中心まで 8.5px（マレットの長さ）。
   // 手前の柱（z 12）と床の足は奏者の足より前。構えのマレットは面と平行・水平（前へ向ける）。
   // 左手は手前の柱（x -7・z 9〜10）を肩より少し上で握る（2026-09-23 ユーザー指定。以前は円盤の縁に添えていて、銅鑼を触っているように見えた）
-  gong:       { inst: { pos: [-7, 0, 25], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', bodyYaw: Math.PI / 2, headYaw: GONG_HEAD_YAW,
+  gong:       { velSwing: 1.3, windFrom: 64, downSec: [0.08, 0], inst: { pos: [-7, 0, 25], rot: 0 }, held: { R: 'bigmallet' }, singleArm: 'R', bodyYaw: Math.PI / 2, headYaw: GONG_HEAD_YAW,
                 strike: { R: { hit: [-1.5, 23], rest: [3, 22], head: [-4, 24] } }, fixedHand: { L: [-6, 31.8] },
                 p3: { quat: GONG_Q, strike: { R: { hit: [-1.5, 17, 14.9], rest: [11, 19, 16], head: [-4, 18, 23.2], restAim: [0, 0.1, 1], wind: 1.6, arc: true } }, fixedHand: { L: [-7, 30, 9.5] } } },
                 // 構えは打点から肩を中心に客席側へ約 35°・少し上へ回した所（肩からの距離は打点とほぼ同じ 20〜21px）。振りかぶりはさらに外・上へ回り、肩から腕全体で振り下ろす
@@ -358,20 +367,20 @@ const VARIANT = {
                 // ハンマーを長くした（握り→頭 11px）ので、この距離でも 18 本すべてに腕が届く（手首→握りが常に 2.0px で、ハンマーが手から浮かない）
                 p3: { pos: [19.76, 0, 8.75], rot3: [0, TUBULAR_YAW, 0],
                       strike: { L: { local: true, rows: TUBULAR_ROWS }, R: { local: true, rows: TUBULAR_ROWS } } } },
-  xylophone:  { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: 0.06, pitchSpread: 9,
+  xylophone:  { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], pitchSpread: 9,
                 strike: { L: { hit: [-3, 18], rest: [-7, 25], head: [-3, 11] }, R: { hit: [3, 18], rest: [7, 25], head: [3, 11] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 14.5, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 14.5, 21.5] } } } },   // 打面 16px に合わせて -4（2026-09-22） // 握り z 8（手首 ≒ 5）
   // グロッケン（2026-09-23）：シロフォンと同じ構え・叩き方。楽器が小さいので打点（head の z）は短い音板にも乗る 21。
   // 音程の幅（pitchSpread）は 5：マレットの頭の x は ±3 ± pitchSpread なので -8〜8 に収まる（音板は x -9〜8。7 だと両端で 1〜2px はみ出した）
-  glocken:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: 0.06, pitchSpread: 5,
+  glocken:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], pitchSpread: 5,
                 strike: { L: { hit: [-3, 18], rest: [-7, 25], head: [-3, 11] }, R: { hit: [3, 18], rest: [7, 25], head: [3, 11] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 14.5, 21] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 14.5, 21] } } } },   // head z 19.5 → 21（同上）
-  marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: 0.06, pitchSpread: 13,
+  marimba:    { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], pitchSpread: 13,
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 23.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 23.5] } } } },   // head z 22 → 23.5：低音の音板を伸ばして高音側の音板も奥へ下がった（2026-09-23）   // 打面 16px に合わせて -7（2026-09-22）
   // ビブラフォン（2026-09-23）：マリンバと同じ構え・叩き方。打点（head の z）は一番短い音板（奥行き z 12〜23 セル）にも乗る 21.5。
   // 音程の幅は 8：マレットの頭の x は ±3 ± 8 ＝ -11〜11（音板は x -12〜11）
-  vibraphone: { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: 0.06, pitchSpread: 8,
+  vibraphone: { floorStand: true, inst: { pos: [0, 0, 14], rot: 0 }, held: { L: 'keymallet', R: 'keymallet' }, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], pitchSpread: 8,
                 strike: { L: { hit: [-3, 14], rest: [-7, 21], head: [-3, 7] }, R: { hit: [3, 14], rest: [7, 21], head: [3, 7] } },
                 p3: { pos: [0, 0, 14], strike: { L: { hit: [-5, 18, 14], rest: [-6, 20, 14], head: [-3, 15, 21.5] }, R: { hit: [5, 18, 14], rest: [6, 20, 14], head: [3, 15, 21.5] } } } },
   // 鍵盤：keys = 手を置く高さ、spread = 音程で左右に動く幅、gap = 両手の間隔。p3 では鍵盤を奏者側に向け、手は前へ
@@ -404,7 +413,7 @@ VARIANT.violin = VARIANT.violin1;  // 旧データ（楽器の割当が 'violin'
 
 export class Puppet {
   /**
-   * @param {object} o { family, variant, color, seed, isConductor }
+   * @param {object} o { family, variant, color, seed, isConductor, trackName }
    */
   constructor(o) {
     this.family = o.isConductor ? 'conductor' : o.family;
@@ -477,7 +486,9 @@ export class Puppet {
       this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
       this.rig.add((K?.legs || legsStandingFor)(P));
     }
-    if (!this.flat) this.group.scale.setScalar(P.height * (PLAYER_TALL[this.variant] ?? 1)); // 身長の個体差（楽器・腕ごと相似）＋楽器別の身長倍率
+    this.drumStyle = this.variant === 'bassdrum' ? BASSDRUM_STYLES.find((st) => st.re.test(o.trackName || '')) : null;
+    const height = this.drumStyle?.height ?? P.height;   // バスドラはトラック名で身長を決める（BASSDRUM_STYLES）
+    if (!this.flat) this.group.scale.setScalar(height * (PLAYER_TALL[this.variant] ?? 1)); // 身長の個体差（楽器・腕ごと相似）＋楽器別の身長倍率
 
     // 服の塗り替えは**頭を付ける前**に。頭・髪は衣装が自前の色で描くので塗ってはいけない
     // （顔に出した素肌まで neck の色で塗り替えてしまう。2026-09-21）
@@ -527,6 +538,7 @@ export class Puppet {
     // 楽器（体に取り付け）
     if (this.cfg.inst && INSTRUMENT[this.variant]) {
       const m = INSTRUMENT[this.variant]();
+      if (this.drumStyle?.recolor) recolorParts(m, this.drumStyle.recolor);   // バスドラの色（BASSDRUM_STYLES）
       if (!this.flat && WOOD_INSTRUMENTS.has(this.variant)) applyWoodVariation(m, this.seed); // ニスの個体差＋木目の区画（2026-09-11）
       const pos = (this.p3 && this.p3.pos) || this.cfg.inst.pos;
       m.position.set(pos[0] * PX, pos[1] * PX, pos[2] * PX);
@@ -542,6 +554,9 @@ export class Puppet {
       }
       const sc = (INST_SCALE_VARIANT[this.variant] ?? INST_SCALE[this.family] ?? 1) / (PLAYER_TALL[this.variant] ?? 1); // 奏者を大きくする分、楽器は相殺して同じ大きさに
       m.scale.set(this.cfg.inst.mirror ? -sc : sc, sc, sc);
+      // levelQ（グランカッサ。2026-09-27 ユーザー指定）：楽器ごと傾けて置いても、床に置く足（userData.foot）だけは傾きを打ち消して床と水平にする。
+      // 足の原点は楽器の原点（底の中央）と同じなので、その点を軸に回すだけでよい
+      if (m.userData.foot && this.p3?.levelQ) m.userData.foot.quaternion.copy(m.quaternion).invert().multiply(this.p3.levelQ);
       m.userData.baseQ = m.quaternion.clone();
       m.userData.restPos = m.position.clone(); m.userData.restQ = m.quaternion.clone();   // 構えの位置・向き（_harpLean の基準）
       this.inst = m;
@@ -1226,11 +1241,13 @@ export class Puppet {
     for (const side of ['L', 'R']) {
       let sp = strike?.[side] ?? (roll ? rollStrike?.[side] : null);   // rollStrike：ロールの時だけ叩く手（ふだんは fixedHand）
       if (!sp) { if (fixedHand?.[side]) this.setHand(side, U(fixedHand[side]), dt, 10); continue; }
-      let s = 0, ant = 0, vel = 0.5, vRaw = 0.5, down = false, pn = pitchNorm, swUp = 0, swF = null, swAge = null, swFrom = 0, swChain = false, swPrevAge = null;
+      let s = 0, ant = 0, vel = 0.5, vRaw = next ? next.velocity : 0.5, down = false, pn = pitchNorm, swUp = 0, swF = null, swAge = null, swFrom = 0, swChain = false, swPrevAge = null;
       const sw = cfg.swing;   // swing：ストロークの時間（チューブラーベル。無ければ従来の速い振り）
       // 打った後 a 秒の手の位置（1 ＝ 打点、0 ＝ 構え）。振りかぶり（smoothstep）の逆
       const swPostS = (a) => { const v = clamp((a - (sw.hold || 0) - sw.down) / sw.wind, 0, 1); return 1 - v * v * (3 - 2 * v); };
-      if (onset && (both || armOf(onset) === side)) { vel = vScale(onset.velocity); vRaw = onset.velocity; s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * (sw ? sw.back : 14)); }
+      if (onset && (both || armOf(onset) === side)) { vel = vScale(onset.velocity); vRaw = onset.velocity;
+        // 同じ手が次も叩くなら、叩き終えたら次の音の強さで構え直す（2026-09-27：強い音の直後の弱い音が、強い音の構えのまま振り下ろしていた）
+        if (next && (both || armOf(next) === side)) vRaw = next.velocity;  s = age < 0.03 ? 1 : Math.exp(-(age - 0.03) * (sw ? sw.back : 14)); }
       if (sw) {
         // 打つ wind + down 秒前から動き出す（2026-09-25 ユーザー指定：ストロークが速すぎ）。最初の wind 秒で振りかぶり、
         // 残りの down 秒で打点へ振り下ろす（だんだん速く＝2 乗）。従来は 0.25 秒前から振りかぶり、打つ瞬間に 1 フレームで打点へ飛んでいた
@@ -1250,7 +1267,7 @@ export class Puppet {
           swUp = upE; swF = fE; swFrom = swChain ? deg2rad(sw.rebound) : 0;
           // 前の打撃の戻り（s の減衰）は振りかぶりが進むほど消す（続けて叩く時は手を打点に残すので 1 のまま）
           s = swChain ? 1 : Math.max(fE, (prevSame ? swPostS(age) : s) * (1 - upE));   // 戻りの途中の手の位置からつなぐ
-          vel = Math.max(vel, vScale(next.velocity)); vRaw = Math.max(vRaw, next.velocity);
+          vel = Math.max(vel, vScale(next.velocity)); vRaw = next.velocity;
         }
         if (swF == null && prevSame) {   // 打った後（次の振りかぶりが始まるまで）
           swAge = age;
@@ -1258,15 +1275,17 @@ export class Puppet {
           // そのあと振りかぶりを逆にたどって（wind 秒）構えへ戻る。s は手の位置（1 ＝ 打点、0 ＝ 構え）
           s = swChain ? 1 : swPostS(age);
         }
-      } else if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * vScale(next.velocity); vel = Math.max(vel, vScale(next.velocity)); vRaw = Math.max(vRaw, next.velocity);
+      } else if (next && (both || armOf(next) === side) && toNext < 0.25) { ant = (1 - toNext / 0.25) * 0.5 * vScale(next.velocity); vel = Math.max(vel, vScale(next.velocity)); vRaw = next.velocity;
         // windFrom（鍵盤打楽器。2026-09-27 ユーザー指定）：velocity がこれ未満の音は振りかぶらない。これ以上は 0 から 127 で元の大きさへ比例
         const windK = cfg.windFrom != null ? clamp((next.velocity * 127 - cfg.windFrom) / (127 - cfg.windFrom), 0, 1) : 1;
         ant *= windK;
         // downSec（鍵盤打楽器。2026-09-27 ユーザー指定）：打つ downSec 秒前から、振りかぶった位置（振りかぶらない音は構え）から打点へ振り下ろす。
         // 時間は一律なので、振りかぶりの大きい強い音ほど速い。進み具合は 2 乗（打つ瞬間が一番速い）。以前は打つ瞬間に 1 コマで打点へ移っていた
-        if (cfg.downSec && toNext < cfg.downSec) {
-          const antD = (1 - cfg.downSec / 0.25) * 0.5 * vScale(next.velocity) * windK;   // 振り下ろし始めの振りかぶり
-          const f = 1 - toNext / cfg.downSec, fE = f * f;
+        // [弱い音の時間, 強い音の時間]（2026-09-27 ユーザー指定：0.08 秒〜0 秒。最大の強さでは 0 秒＝打つ瞬間に打点へ）。velocity で直線的に振り分ける
+        const dS = Array.isArray(cfg.downSec) ? lerp(cfg.downSec[0], cfg.downSec[1], clamp(next.velocity, 0, 1)) : (cfg.downSec || 0);
+        if (dS > 0 && toNext < dS) {
+          const antD = (1 - dS / 0.25) * 0.5 * vScale(next.velocity) * windK;   // 振り下ろし始めの振りかぶり
+          const f = 1 - toNext / dS, fE = f * f;
           s = Math.max(s, fE); ant = antD * (1 - fE); down = true;
         } if (spread) pn = normOf(next); }
       if (roll) { // 左右は半周期ずらす。打つ瞬間だけ鋭く s → 1（cos の 4 乗）
@@ -1305,10 +1324,16 @@ export class Puppet {
       // velRest [下限, 上限]（鍵盤打楽器。2026-09-27 ユーザー指定：強弱の差を最大に）：構えの高さを「打点 + 下限」〜「上限（肩の少し下）」の間で velocity に比例させる。
       // 下限 0 ＝ 弱い音ほど手がほとんど上がらない。以前は構え 20〜22（差 2px）。
       // 「強弱の反応」の倍率は掛けない素の velocity（vRaw）で振り分ける：倍率 3 では velocity 43 以上が全部上限に張り付き、差が消えていた
+      // vRaw の初期値は次の音の velocity（2026-09-27）：以前は 0.5 から始めて次の音と大きい方を取っていたので、反対の手が直前に叩いた時は弱い音も 0.5 に揃っていた
       const restY = cfg.velRest ? sp.hit[1] + lerp(cfg.velRest[0], cfg.velRest[1] - sp.hit[1], clamp(vRaw, 0, 1)) : sp.rest[1] + 2 * vel;
       const rest = loc([sp.rest[0] + dx, restY, sp.rest[2] || 0]);
       const hit = loc([sp.hit[0] + dx, sp.hit[1], sp.hit[2] || 0]);
       // restPull（チューブラーベル。2026-09-25 ユーザー指摘：左腕が右に寄りすぎ）：構えの手の左右位置だけ、自分の肩の前へこの割合だけ寄せる（打点は変えない）
+      // velSwing（横に振る・両手で合わせる打楽器。2026-09-27 ユーザー指定）：打点から構えまでの距離を velocity に比例させる（0 で動かない、127 で元の距離のこの倍）
+      if (cfg.velSwing) {
+        const r0 = loc([sp.rest[0] + dx, sp.rest[1], sp.rest[2] || 0]), k = cfg.velSwing * clamp(vRaw, 0, 1);
+        for (let i = 0; i < 3; i++) rest[i] = hit[i] + (r0[i] - hit[i]) * k;
+      }
       if (cfg.restPull) rest[0] += (SHOULDER[side][0] - rest[0]) * cfg.restPull;
       if (cfg.restMaxHit) rest[1] = Math.min(rest[1], hit[1]);   // restMaxHit（チューブラーベル。2026-09-25 ユーザー指定：打点より高くするな）
       if (roll) { const a = roll.a; for (let i = 0; i < 3; i++) rest[i] = hit[i] + (rest[i] - hit[i]) * a; } // 振り上げの高さ＝構えと打点の間を a の割合
@@ -1443,6 +1468,21 @@ export class Puppet {
       this._strikeMax = Math.max(this._strikeMax ?? 0, s);
     }
     const sNow = this._strikeMax ?? 0; this._strikeMax = 0; this._strikePrev = sNow;
+    // サスペンデッドシンバルの円盤の揺れ（2026-09-27 ユーザー指定：叩いた後に左右へ）。ばね（1 秒に約 1.6 往復・1.5 秒ほどで収まる）で、
+    // 叩くたびに勢いを足す（続けて叩いても途切れない）。大きさは velocity に比例（最大で約 9°）。左手で叩けば一方へ、右手なら反対へ傾き始める
+    const swingPart = this.inst?.userData.swing;
+    if (swingPart) {
+      const S = (this._cymSw ??= { th: 0, om: 0, last: null });
+      if (!(dt >= 0 && dt <= 0.1)) { S.th = 0; S.om = 0; }   // シーク・タブ復帰で時刻が飛んだ時は止める
+      if (onset && S.last !== onset) {
+        S.last = onset;
+        if (age < 0.1) S.om += (armOf(onset) === 'L' ? 1 : -1) * CYM_SWING.kick * clamp(onset.velocity, 0, 1);
+      }
+      const w0 = 2 * Math.PI * CYM_SWING.freq, n = Math.max(1, Math.ceil(dt / 0.005)), h = dt / n;
+      for (let i = 0; i < n; i++) { S.om += (-w0 * w0 * S.th - CYM_SWING.damp * S.om) * h; S.th += S.om * h; }
+      S.th = clamp(S.th, -0.35, 0.35);
+      swingPart.rotation.z = S.th;
+    }
     if (!fixed) this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * sNow, 0.25, cfg.gazeYaw ?? 0); // 打つ時に少し前へ、視線は打面
     this.headPivot.rotation.z += -0.06 * st.posture;
   }

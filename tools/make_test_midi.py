@@ -5,7 +5,7 @@ Usage:
   python3 tools/make_test_midi.py                 # samples/test_orchestra.mid を生成
   python3 tools/make_test_midi.py out.mid         # 出力先を指定
   python3 tools/make_test_midi.py out.mid 110     # テンポ指定
-最終更新: 2026-09-25 / v0.4（チューブラーベルを毎小節 4 音に） / 生成元: PixelOrchestra
+最終更新: 2026-09-27 / v0.5（銅鑼・サスペンデッドシンバルを多く） / 生成元: PixelOrchestra
 """
 import sys, os, struct, random
 
@@ -36,6 +36,8 @@ DYN_PHASE = {'vn1': 0, 'vn2': 1, 'va': 2, 'vc': 3, 'cb': 4, 'picc': 5, 'fl': 6, 
              'timp': 0, 'gc': 2, 'snare': 4, 'cym': 6, 'xylo': 1, 'mar': 3, 'cel': 5, 'pf': 7, 'hp': 2,
              'hh': 5, 'gong': 3, 'tub': 6, 'susp': 1, 'glock': 4, 'vib': 6}
 BARS = len(PROG)
+# 動きの確認用の強さの並び（弱〜強を満遍なく。銅鑼・サスペンデッドシンバル。2026-09-27）
+VEL_SWEEP = [25, 45, 64, 85, 105, 127]
 BEAT = PPQ
 FINAL = BARS - 1  # 最終小節：全員で全音符
 
@@ -136,10 +138,16 @@ def notes_for(part):
                 for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 2 - 20, root + chord[i % 3] + (12 if i % 2 else 0), v(80)))
         elif part == 'hh':    # ハイハット：8分の刻み（2026-09-22 ユーザー指定：登録済みの楽器を全部出す）
             for i in range(8): ev.append((b0 + i * BEAT // 2, BEAT // 8, 42, v(60 if i % 2 else 78)))
-        elif part == 'gong':  # 銅鑼：4 小節に 1 回、小節頭に一発
-            if bar % 4 == 0: ev.append((b0, 3 * BEAT, 52, v(120)))
-        elif part == 'susp':  # サスペンデッドシンバル：2 小節に 1 回、長い音（ロールになる）
-            if bar % 2 == 1: ev.append((b0 + 2 * BEAT, 2 * BEAT, 51, v(95)))
+        elif part == 'gong':  # 銅鑼：毎小節 1・3 拍目に一発（2026-09-27 ユーザー指定：動きの確認用に多く。曲の体裁は考えない）
+            # 強さは VEL_SWEEP を順に使う（弱〜強を満遍なく）。乱数は以前と同じ小節で同じ回数だけ消費する：変えると後ろのパートの強さがずれる
+            if bar % 4 == 0: v(120)
+            for i in (0, 2): ev.append((b0 + i * BEAT, 2 * BEAT - 40, 52, VEL_SWEEP[(bar * 2 + i // 2) % len(VEL_SWEEP)]))
+        elif part == 'susp':  # サスペンデッドシンバル：短い一打（4 分音符）を多く＋奇数小節の後半は長い音（ロール）（2026-09-27 ユーザー指定）
+            if bar % 2 == 1:
+                for i in (0, 1): ev.append((b0 + i * BEAT, BEAT // 2, 51, VEL_SWEEP[(bar * 4 + i) % len(VEL_SWEEP)]))
+                ev.append((b0 + 2 * BEAT, 2 * BEAT, 51, v(95)))   # 0.5 秒以上＝ロール
+            else:
+                for i in range(4): ev.append((b0 + i * BEAT, BEAT // 2, 51, VEL_SWEEP[(bar * 4 + i) % len(VEL_SWEEP)]))
         elif part == 'tub':   # チューブラーベル：4 分音符で 4 音（2026-09-25 ユーザー指定：もっと叩かせる。以前は 2 小節に 1 音）
             # 和音の音（手前の列）に半音の経過音（奥の列）を混ぜる。偶数小節は上がり、奇数小節は下がる。
             # 強さは乱数を使わない。ただし以前と同じ回数だけ乱数を消費する（偶数小節に 1 回）：

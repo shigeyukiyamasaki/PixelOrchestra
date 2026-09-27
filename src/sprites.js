@@ -1213,6 +1213,19 @@ function harpCell(x, y, z) {
   return null;
 }
 
+// グランカッサの柱から上（柱・胴・皮・フープ・ラグ）。足は INSTRUMENT.bassdrum が別の部品で付ける（2026-09-27）
+function bassdrumBody() {
+  return makePart(52, 60, 26, 60, (d) => {
+    d.r(22, 48, 8, 10, C.silver2);                                                          // スタンドの柱（足は別の部品）
+    d.disc(26, 26, 25, C.wood2);                                                            // 胴
+    d.disc(26, 26, 21, C.head); d.ring(26, 26, 12, '#e4dcc8');                              // 皮
+    d.ring(26, 26, 22, C.silver); d.ring(26, 26, 23, C.silver);                             // フープ
+    for (let a = 0; a < 10; a++) { const x = 26 + Math.round(25 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(25 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 3, 3, C.gold2); } // ラグ（胴の縁から 1 セル外へ張り出す）
+  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); },
+       // 皮（R ≤ 21）は前後とも 2 セル奥へ引っ込め、フープ（R 22-23）が張り出して見える（2026-09-11）
+       carve: (x, y, z) => Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1) });
+}
+
 export const INSTRUMENT = {
   // バイオリン 28×16（2倍解像度）。下部・くびれ・上部のふくらみ、駒（x=10）、指板、渦巻き、あご当て。厚みは薄く中央だけ盛る
   // 胴：ネック＋渦巻き ≒ 6：4（実物の比率）。駒は x=10（基本座標 -2）
@@ -1525,11 +1538,10 @@ export const INSTRUMENT = {
        colorOf: (x, y, z) => (y >= 34 && Math.abs(x - 15.5) <= 3.5 && z - 15.5 < -2 ? C.black : null) }),
   // サスペンデッドシンバル 36×36（2026-09-19 ユーザー指定）：スタンドに 1 枚。ハイハットから下のシンバルとペダルを除いた作り。pivot = カップの頂点（中央）。
   // 直径 18px（ハイハットより一回り大きい）、中心は z 18 セル（9px）。表は行 2（pivot の 1px 下）。脚は下 6 行で広がる 3 本
-  suscymbal: () => makePart(36, 36, 18, 0, (d) => {
-    d.r(0, 0, 36, 2, C.gold); d.r(0, 2, 36, 1, C.gold); d.r(0, 3, 36, 1, C.gold);            // カップ・表・縁（2026-09-23 ユーザー指定で明るい金に統一。濃い金との 2 トーンは廃止）
-    d.r(0, 4, 36, 2, C.black);                                                               // フェルトと蝶ねじ
-    d.r(0, 6, 36, 30, C.silver2);                                                            // スタンド・脚
-  }, { res: 2, depth: 36, z0: 0, top: (d) => { d.disc(18, 18, 17, F); },
+  // 円盤（カップ・表。上から 4 行）とスタンドを別の部品にし、円盤は叩いた後に左右へ揺らす（2026-09-27 ユーザー指定）。
+  // 円盤はフェルトに乗る点（円盤の底の中央）を軸に回す入れ物（userData.swing）に入れる。揺れは puppet.js の _cymbalSwing
+  suscymbal: () => {
+    const opts = { res: 2, depth: 36, z0: 0, top: (d) => { d.disc(18, 18, 17, F); },
        carve: (x, y, z) => {
          const dx = x - 17.5, dz = z - 17.5, r = Math.hypot(dx, dz);
          if (y <= 1) return r > (y === 0 ? 2.5 : 4.5);                                      // カップ
@@ -1542,7 +1554,23 @@ export const INSTRUMENT = {
          const R = 1.5 + 7.5 * (y - 30) / 5;                                                 // 脚：付け根から床へ広がる
          if (r <= 1.6 && y < 32) return false;
          return ![[-0.87, 0.5], [0.87, 0.5], [0, -1]].some(([ux, uz]) => Math.hypot(dx - ux * R, dz - uz * R) <= 0.9);
-       } }),
+       } };
+    const stand = makePart(36, 36, 18, 0, (d) => {
+      d.r(0, 4, 36, 2, C.black);                                                               // フェルトと蝶ねじ
+      d.r(0, 6, 36, 30, C.silver2);                                                            // スタンド・脚
+    }, opts);
+    const plate = makePart(36, 36, 18, 0, (d) => {
+      d.r(0, 0, 36, 2, C.gold); d.r(0, 2, 36, 1, C.gold); d.r(0, 3, 36, 1, C.gold);            // カップ・表・縁（2026-09-23 ユーザー指定で明るい金に統一）
+    }, opts);
+    const swing = new THREE.Group();
+    swing.position.y = -4 * VOX; plate.position.y = 4 * VOX;   // 回転の軸＝円盤の底（上から 4 行目）の中央
+    swing.add(plate);
+    const root = new THREE.Group();
+    root.add(stand, swing);
+    root.userData.size = stand.userData.size;
+    root.userData.swing = swing;
+    return root;
+  },
   // 銅鑼（タムタム）64×90（2026-09-19 ユーザー指定）：木の枠（柱 2 本・横木・足）から紐で吊った円盤。pivot = 底中央。
   // 円盤は直径 27px・中心の高さ 24px、厚み 1px で、正面（+z）が面。枠の柱・横木・円盤は奥行きの中央（z 11-12 セル）の 1px、足だけ前後いっぱいに伸ばす
   // 枠と「吊られた部分（紐＋円盤）」は別の部品（2026-09-19 ユーザー指定：打つと円盤と紐が揺れる）。
@@ -1663,15 +1691,17 @@ export const INSTRUMENT = {
        side: (d) => { d.r(0, 2, 26, 32, F); },   // 形は carve で削り出す
        top: (d) => { d.r(0, 0, 56, 26, F); }, carve: VIBES_BARS }),
   // グランカッサ 52×60：正面向きの大太鼓（白い皮・木の胴・フープ・ラグ・スタンド）。pivot = 底中央
-  bassdrum: () => makePart(52, 60, 26, 60, (d) => {
-    d.r(22, 48, 8, 12, C.silver2); d.r(8, 56, 36, 4, C.silver2);                            // スタンド
-    d.disc(26, 26, 25, C.wood2);                                                            // 胴
-    d.disc(26, 26, 21, C.head); d.ring(26, 26, 12, '#e4dcc8');                              // 皮
-    d.ring(26, 26, 22, C.silver); d.ring(26, 26, 23, C.silver);                             // フープ
-    for (let a = 0; a < 10; a++) { const x = 26 + Math.round(25 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(25 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 3, 3, C.gold2); } // ラグ（胴の縁から 1 セル外へ張り出す）
-  }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); },
-       // 皮（R ≤ 21）は前後とも 2 セル奥へ引っ込め、フープ（R 22-23）が張り出して見える（2026-09-11）
-       carve: (x, y, z) => Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1) }),
+  // 足（床に置く横棒）は別の部品にして、puppet.js が楽器の傾きを打ち消して床と水平に置く（userData.foot。2026-09-27 ユーザー指定：
+  // 傾けて置くと足の片方が床に埋もれていた）。柱から上（柱・胴）は今までどおり傾く
+  bassdrum: () => {
+    const root = new THREE.Group();
+    const foot = makePart(52, 60, 26, 60, (d) => { d.r(8, 56, 36, 4, C.silver2); }, { res: 2, depth: 16, z0: 0 });
+    const body = bassdrumBody();
+    root.add(body, foot);
+    root.userData.size = body.userData.size;
+    root.userData.foot = foot;
+    return root;
+  },
 
   // ---- 鍵盤・ハープ（2倍解像度）----
   // チェレスタ 52×60：小さなアップライト型。上部パネル・鍵盤（手前に張り出す）・脚・ペダル。pivot = 底中央

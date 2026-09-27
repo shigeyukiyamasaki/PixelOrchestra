@@ -61,6 +61,9 @@ function sizeOf(track) {
 // 打楽器：ティンパニは常に向かって一番左（2026-09-19 ユーザー指定）。一覧にない楽器は従来どおり平均音程の高い順でその右に並ぶ
 // 打楽器の列：ティンパニが一番左、その右に鍵盤打楽器を グロッケン → シロフォン → ビブラフォン → マリンバ で固定（2026-09-23 ユーザー指定）。
 // 残りの打楽器はその右に平均音程の高い順
+// 同じ楽器が複数トラックある時の左右の並び（小さいほど客席から見て左）。2026-09-27 ユーザー指定：グランカッサ（大きい方）を右、バスドラを左に。
+// 音高順（高音が左）ではグランカッサ（音 48）がバスドラ（音 36）より左に来ていた
+const SAME_VARIANT_RANK = { bassdrum: (tr) => (/gran\s*cass/i.test(tr.name || '') ? 1 : 0) };
 const VARIANT_ORDER = { brass: ['horn', 'trumpet', 'trombone', 'tuba'], strings: ['violin1', 'violin2', 'viola', 'cello'], percussion: ['timpani', 'glocken', 'xylophone', 'vibraphone', 'marimba'], keyboard: ['harp', 'celesta', 'piano', 'tubularbells'] }; // 鍵盤群：ハープが外側（左）、チェレスタが木管寄り（2026-09-23 ユーザー指定） // 弦は 1st → 2nd → ヴィオラ → チェロ（2026-09-12）
 
 // トラックがどの列に座るか（ファミリーと別扱いの楽器はここで振り分ける）
@@ -1870,11 +1873,21 @@ export function layoutSeats(tracks, footprintOf = null) {
     if (!row) continue;
     // 高音を左（-x）、低音を右（+x）。楽器順が固定されたファミリーはその順
     const order = VARIANT_ORDER[fam];
+    // SAME_VARIANT_RANK の楽器は、ほかの楽器と比べる時は同じ楽器の中で一番高い平均音高を使い、まとまって並ぶようにする。
+    // 楽器ごとに違う物差しで比べると順番が一周して（グランカッサ 48 ＞ スネア 38 ＞ バスドラ 36 ＞ グランカッサ）並べ替えが定まらなかった
+    const groupPitch = new Map();
+    for (const tr of byFam[fam]) if (SAME_VARIANT_RANK[tr.variant]) groupPitch.set(tr.variant, Math.max(groupPitch.get(tr.variant) ?? -Infinity, tr.meanPitch));
+    const pitchKey = (tr) => groupPitch.get(tr.variant) ?? tr.meanPitch;
     const list = byFam[fam].slice().sort((a, b) => {
       if (order) {
         const ia = order.indexOf(a.variant), ib = order.indexOf(b.variant);
         if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       }
+      const dp = pitchKey(b) - pitchKey(a);
+      if (dp) return dp;
+      // 同じ楽器どうしをトラック名で並べる（SAME_VARIANT_RANK。小さいほど左）。無ければ音高順
+      const rk = a.variant === b.variant && SAME_VARIANT_RANK[a.variant];
+      if (rk) { const d = rk(a) - rk(b); if (d) return d; }
       return b.meanPitch - a.meanPitch;
     });
 
