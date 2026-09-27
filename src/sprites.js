@@ -1214,16 +1214,19 @@ function harpCell(x, y, z) {
 }
 
 // グランカッサの柱から上（柱・胴・皮・フープ・ラグ）。足は INSTRUMENT.bassdrum が別の部品で付ける（2026-09-27）
+// BD_RAISE：太鼓を高くする量 [セル]（2026-09-27 ユーザー指定：打点が打面の中心より上だった）。絵を下へ伸ばし、原点（床）はそのまま＝胴と打面だけ上がり、柱が伸びる
+const BD_RAISE = 6;
 function bassdrumBody() {
-  return makePart(52, 60, 26, 60, (d) => {
-    d.r(22, 48, 8, 10, C.silver2);                                                          // スタンドの柱（足は別の部品）
+  return makePart(52, 60 + BD_RAISE, 26, 60 + BD_RAISE, (d) => {
+    d.r(22, 48, 8, 8 + BD_RAISE, C.silver2);                                                // スタンドの柱（足は別の部品。下端は足の上面）
     d.disc(26, 26, 25, C.wood2);                                                            // 胴
     d.disc(26, 26, 21, C.head); d.ring(26, 26, 12, '#e4dcc8');                              // 皮
     d.ring(26, 26, 22, C.silver); d.ring(26, 26, 23, C.silver);                             // フープ
     for (let a = 0; a < 10; a++) { const x = 26 + Math.round(25 * Math.cos(a * Math.PI / 5)), y = 26 + Math.round(25 * Math.sin(a * Math.PI / 5)); d.r(x - 1, y - 1, 3, 3, C.gold2); } // ラグ（胴の縁から 1 セル外へ張り出す）
   }, { res: 2, depth: 16, z0: 0, side: (d) => { d.r(0, 0, 16, 52, F); d.r(6, 48, 4, 12, F); d.r(2, 56, 12, 4, F); },
        // 皮（R ≤ 21）は前後とも 2 セル奥へ引っ込め、フープ（R 22-23）が張り出して見える（2026-09-11）
-       carve: (x, y, z) => Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1) });
+       // 柱は奥行きの中央 4 セルだけの棒にする（2026-09-27：太鼓を 19° 傾けた時、奥行きいっぱいの柱の奥の端が床に潜った）。胴と重なる行 51 までは削らない
+       carve: (x, y, z) => (y >= 52 && x >= 22 && x <= 29 ? z < 6 || z > 9 : Math.hypot(x - 26, y - 26) <= 21.5 && (z >= 14 || z <= 1)) });
 }
 
 export const INSTRUMENT = {
