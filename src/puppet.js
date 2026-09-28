@@ -60,6 +60,8 @@ const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真�
 // そのままだと手首で 90° 折れ、拳が前腕の端からぶら下がって「手首が外れた」ように見えた（2026-09-23 ユーザー指摘）。
 // 真下の方へ曲げるのはこの角度まで。人の手首が無理なく曲がる範囲
 const STICK_WRIST_MAX = deg2rad(40);
+// 木管の上への跳躍（1 オクターブ以上）で一瞬体を伸ばす高さ [px] と、伸び始める早さ [秒]。音の頭で一番高く、すぐ戻る（保たない。2026-09-28 ユーザー指定）
+const WW_RISE = 2.5, WW_RISE_LEAD = 0.25;   // 木管の上への跳躍（1 オクターブ以上）で腰を浮かす高さ [px] と保つ時間 [秒]
 const BOW_SHORT_SEC = 0.3;   // 弦のショート系で 1 音の弓を動かす時間 [秒]（ノートの長さは使わない。0.1 → 0.2 → 0.3。2026-09-28 ユーザー指定）
 const GERMAN_AIM_MAX = deg2rad(55);   // ジャーマン（ティンパニ）のマレットの仰角の上限（振りかぶり）
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
@@ -1393,7 +1395,20 @@ export class Puppet {
     if (next && !active.length && toNext < 0.35) breath = (1 - toNext / 0.35) * (0.7 + 0.7 * clamp(st.nextEnergy ?? 0.43, 0, 3)); // 標準的な強さ（0.43）で従来と同じ深さ、強い音の前はより深く
     this._breath = approach(this._breath, breath, 12, dt);
     const attack = onset ? Math.exp(-age * 9) * onset.velocity : 0;
-    this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack) * PX;
+    // 木管の跳躍（2026-09-28 ユーザー指定）：直前の音から 1 オクターブ以上（12 半音以上）上がる音で、一瞬体を伸ばす（腰を浮かす）。下降ではしない。
+    // 音の WW_RISE_LEAD 秒前から WW_RISE px へ伸び、音の頭で一番高くなって、そのまますぐ戻る
+    // 次の音が跳躍なら WW_RISE_LEAD 秒前から上がり始める（音の頭で上がり切る。2026-09-28 ユーザー指定：浮くタイミングを早めに）
+    let riseWant = 0;
+    if (this.motion === 'woodwind') {
+      const ns = st.track?.notes;
+      const leap = (n) => { const i = ns ? ns.indexOf(n) : -1; return i > 0 && n.midi - ns[i - 1].midi >= 12; };
+      const lc = (this._leapCache ??= new WeakMap());
+      const isLeap = (n) => { if (!lc.has(n)) lc.set(n, leap(n)); return lc.get(n); };
+      if (next && toNext < WW_RISE_LEAD && isLeap(next)) riseWant = 1;   // 跳躍の音の頭まで伸び、鳴ったらすぐ戻る
+    }
+    // 座り直しは次の音の有無に関わらず速く（係数 12。以前は 4 でゆっくり、跳躍の直後の下降の音でも浮いたままに見えた。2026-09-28 ユーザー指定）
+    this._rise = approach(this._rise ?? 0, riseWant, riseWant > (this._rise ?? 0) ? 16 : 12, dt);
+    this.spine.position.y = (SPINE_Y + 0.5 * this._breath - 0.9 * attack + WW_RISE * this._rise) * PX;
     this.spine.scale.x = 1 + 0.05 * this._breath + 0.05 * posture;
     // 金管（2026-09-27 ユーザー指定：弦ほど横に揺れない）：拍の横揺れを打ち消して前後の揺れ（横の 6 割）に置き換え、
     // 息継ぎで両肩を上げる（BRASS_SHOULDER_LIFT × 息継ぎの深さ。setHand の肩の位置に足す）
