@@ -60,6 +60,7 @@ const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真�
 // そのままだと手首で 90° 折れ、拳が前腕の端からぶら下がって「手首が外れた」ように見えた（2026-09-23 ユーザー指摘）。
 // 真下の方へ曲げるのはこの角度まで。人の手首が無理なく曲がる範囲
 const STICK_WRIST_MAX = deg2rad(40);
+const BOW_SHORT_SEC = 0.3;   // 弦のショート系で 1 音の弓を動かす時間 [秒]（ノートの長さは使わない。0.1 → 0.2 → 0.3。2026-09-28 ユーザー指定）
 const GERMAN_AIM_MAX = deg2rad(55);   // ジャーマン（ティンパニ）のマレットの仰角の上限（振りかぶり）
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
 const GRIP_ITEMS = new Set(['stick', 'mallet', 'keymallet', 'bigmallet', 'hammer']);
@@ -1176,7 +1177,7 @@ export class Puppet {
       // 弓は一定の速さで動かし、端で返す（2026-09-27 ユーザー指定：長い音で弓がほとんど動かないように見えた。下の「弓の移動」）。
       // ここの len は音の頭で向きを決める時の目安だけ：返す向きに len（弓の 30% まで）の余地が無ければ向きを変えない
       // ショート系（キースイッチで velocity の奏法。キースイッチの無いトラックは 0.3 秒未満の音）は音ごとに弓の 25〜50%（強さで）を、
-      // 音の長さの間に動かす。ロング系は一定の速さ（下の「弓の移動」）
+      // BOW_SHORT_SEC（0.3 秒）で動かす。ロング系は一定の速さ（下の「弓の移動」）
       this.bowShort = onset.dyn ? onset.dyn === 'vel' : onset.duration < 0.3;
       const len = this.bowShort ? range * (0.25 + 0.25 * (st.rawEnergy ?? 0.5)) * this.scaleVar : Math.min(range * 0.3, bowSpeed * Math.max(onset.duration, 0.1));
       // スラー（2026-09-27 ユーザー指定）：スラーの奏法（キースイッチ。onset.slur）で、前の音が終わる前かほぼ同時に始まる音は弓を返さず同じ向きで続ける。
@@ -1228,15 +1229,16 @@ export class Puppet {
       }
       const target = clamp(this.bowPos + dir * len, sMin, sMax);
       this.bowDir = dir; this.bowFrom = this.bowPos; this.bowTo = target;
-      this.bowDur = Math.max(onset.duration, 0.1);
+      // ショート系はノートの長さを見ず、いつも BOW_SHORT_SEC で動かす（2026-09-28 ユーザー指定：打ち込みの都合でノートが長くても音は短い）
+      this.bowDur = this.bowShort ? BOW_SHORT_SEC : Math.max(onset.duration, 0.1);
     }
     // 弓の移動（2026-09-27 ユーザー指定）：音が鳴っている間は一定の速さ bowSpeed で動かし、端まで来たら返す（音の途中のボウイング・チェンジ）。
     // 以前は音の長さでストロークを割っていたので、長い音ほど遅く、とても長い音では止まって見えた。音が終わったらその位置で止まる
     let s = this.bowPos;
-    if (onset && this.bowShort) {   // ショート系：音の長さの間に bowFrom → bowTo（なめらかに加減速）
+    if (onset && this.bowShort) {   // ショート系：BOW_SHORT_SEC の間に bowFrom → bowTo。音の頭が一番速く、減速して止まる（2026-09-28 ユーザー指定。以前は加減速）
       if (age < this.bowDur) {
         const p = clamp(age / this.bowDur, 0, 1);
-        const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        const e = 1 - Math.pow(1 - p, 4);   // 4 乗：音の頭は平均の 4 倍の速さ（2 乗・3 乗では初速と減速の差が小さかった。2026-09-28 ユーザー指定）
         s = this.bowFrom + (this.bowTo - this.bowFrom) * e;
       } else s = this.bowTo;
     } else if (onset && age < Math.max(onset.duration, 0.1)) {
