@@ -370,7 +370,8 @@ const HS_CB_KS = {
 };
 const HS_CB_OFF = new Set([75, 81, 83, 84]);   // Staccatissimo・Col Legno・Ricochet・Spiccato
 // 楽器ごとの { dyn：キースイッチ → 'cc' | 'vel', off：弦から跳ね上がる奏法のキースイッチ }
-const STRING_KS = { contrabass: { dyn: HS_CB_KS, off: HS_CB_OFF }, cello: { dyn: HS_VC_KS, off: HS_VC_OFF }, violin1: { dyn: HS_VN1_KS, off: HS_VN1_OFF }, violin2: { dyn: HS_VN2_KS, off: HS_VN2_OFF }, viola: { dyn: HS_VA_KS, off: HS_VA_OFF } };
+// マルカート（Marc Shrt）：ショート系でも弓を弦に乗せたままにする奏法（2026-09-28 ユーザー指定。それ以外のショートは動かし終えたら弦から離す）
+const STRING_KS = { contrabass: { dyn: HS_CB_KS, off: HS_CB_OFF, marc: new Set([77]) }, cello: { dyn: HS_VC_KS, off: HS_VC_OFF, marc: new Set([29]) }, violin1: { dyn: HS_VN1_KS, off: HS_VN1_OFF, marc: new Set([29]) }, violin2: { dyn: HS_VN2_KS, off: HS_VN2_OFF, marc: new Set([28]) }, viola: { dyn: HS_VA_KS, off: HS_VA_OFF, marc: new Set([29]) } };
 const STRING_KS_OF = (variant, name) => (STRING_KS[variant] && /_HW\b|hollywood/i.test(name) ? STRING_KS[variant] : null);
 const KS_EPS = 0.02;   // キースイッチが音と同時（わずかに後）に置かれていても効くように [秒]
 
@@ -468,7 +469,7 @@ export class MidiEngine {
         // キースイッチの音は弾く音から除く。CC1 の奏法の音には cc1 を持たせ、energy の計算で音ごとに情報源を切り替える
         const SKSET = STRING_KS_OF(variant, name), SKS = SKSET?.dyn;
         if (SKS) {
-          const ks = t.notes.filter((n) => SKS[n.midi]).map((n) => ({ time: n.time, dyn: SKS[n.midi], off: SKSET.off.has(n.midi) })).sort((a, b) => a.time - b.time);
+          const ks = t.notes.filter((n) => SKS[n.midi]).map((n) => ({ time: n.time, dyn: SKS[n.midi], off: SKSET.off.has(n.midi), marc: !!SKSET.marc?.has(n.midi) })).sort((a, b) => a.time - b.time);
           if (ks.length) {
             for (let k = notes.length - 1; k >= 0; k--) if (SKS[notes[k].midi]) notes.splice(k, 1);
             let p = -1;
@@ -479,6 +480,7 @@ export class MidiEngine {
               // ロング系（CC1 の奏法）は全部スラー扱い（2026-09-27 ユーザー指定）。puppet.js の弓：前の音とつながっていれば返さない
               if (n.dyn === 'cc') n.slur = true;
               if (ks[p].off) n.offString = true;   // puppet.js の弓：音の後に弦から跳ね上がる
+              if (ks[p].marc) n.marc = true;       // puppet.js の弓：ショートでも弦に乗せたまま
               if (n.dyn === 'cc') n.cc1 = cc1;
             }
             notes.forEach((n, i) => { n.index = i; });

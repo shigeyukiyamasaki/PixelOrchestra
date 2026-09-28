@@ -62,7 +62,7 @@ const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真�
 const STICK_WRIST_MAX = deg2rad(40);
 // 木管の上への跳躍（1 オクターブ以上）で一瞬体を伸ばす高さ [px] と、伸び始める早さ [秒]。音の頭で一番高く、すぐ戻る（保たない。2026-09-28 ユーザー指定）
 const WW_RISE = 2.5, WW_RISE_LEAD = 0.25;   // 木管の上への跳躍（1 オクターブ以上）で腰を浮かす高さ [px] と保つ時間 [秒]
-const BOW_SHORT_SEC = 0.3;   // 弦のショート系で 1 音の弓を動かす時間 [秒]（ノートの長さは使わない。0.1 → 0.2 → 0.3。2026-09-28 ユーザー指定）
+const BOW_SHORT_SEC = 0.3, BOW_SHORT_EASE = 4;   // スライダーの既定値（奏者パネル）   // 弦のショート系で 1 音の弓を動かす時間 [秒]（ノートの長さは使わない。0.1 → 0.2 → 0.3。2026-09-28 ユーザー指定）
 const GERMAN_AIM_MAX = deg2rad(55);   // ジャーマン（ティンパニ）のマレットの仰角の上限（振りかぶり）
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
 const GRIP_ITEMS = new Set(['stick', 'mallet', 'keymallet', 'bigmallet', 'hammer']);
@@ -1160,7 +1160,7 @@ export class Puppet {
       }
     }
   }
-  _strings(st, { t, dt }) {
+  _strings(st, { t, dt, settings }) {
     const { onset, next, age, toNext, active, energy, posture } = st;
     const cfg = this.cfg, bow = cfg.bow, p3 = this.p3;
     const sMin = p3?.sMin ?? bow.sMin, sMax = p3?.sMax ?? bow.sMax;
@@ -1232,7 +1232,7 @@ export class Puppet {
       const target = clamp(this.bowPos + dir * len, sMin, sMax);
       this.bowDir = dir; this.bowFrom = this.bowPos; this.bowTo = target;
       // ショート系はノートの長さを見ず、いつも BOW_SHORT_SEC で動かす（2026-09-28 ユーザー指定：打ち込みの都合でノートが長くても音は短い）
-      this.bowDur = this.bowShort ? BOW_SHORT_SEC : Math.max(onset.duration, 0.1);
+      this.bowDur = this.bowShort ? (settings?.bowShortSec ?? BOW_SHORT_SEC) : Math.max(onset.duration, 0.1);   // 「ショートの長さ」スライダー
     }
     // 弓の移動（2026-09-27 ユーザー指定）：音が鳴っている間は一定の速さ bowSpeed で動かし、端まで来たら返す（音の途中のボウイング・チェンジ）。
     // 以前は音の長さでストロークを割っていたので、長い音ほど遅く、とても長い音では止まって見えた。音が終わったらその位置で止まる
@@ -1240,7 +1240,8 @@ export class Puppet {
     if (onset && this.bowShort) {   // ショート系：BOW_SHORT_SEC の間に bowFrom → bowTo。音の頭が一番速く、減速して止まる（2026-09-28 ユーザー指定。以前は加減速）
       if (age < this.bowDur) {
         const p = clamp(age / this.bowDur, 0, 1);
-        const e = 1 - Math.pow(1 - p, 4);   // 4 乗：音の頭は平均の 4 倍の速さ（2 乗・3 乗では初速と減速の差が小さかった。2026-09-28 ユーザー指定）
+        // n 乗：音の頭は平均の n 倍の速さ（「ショートの初速」スライダー。既定 4：2 乗・3 乗では初速と減速の差が小さかった。2026-09-28 ユーザー指定）
+        const e = 1 - Math.pow(1 - p, settings?.bowShortEase ?? BOW_SHORT_EASE);
         s = this.bowFrom + (this.bowTo - this.bowFrom) * e;
       } else s = this.bowTo;
     } else if (onset && age < Math.max(onset.duration, 0.1)) {
@@ -1280,6 +1281,19 @@ export class Puppet {
         const T = Math.min(next ? next.time - onset.time : onset.duration * 2, 0.8);
         const H = 2.5 * clamp((T - 0.1) / 0.4, 0, 1), p = clamp((age / T - 0.15) / 0.85, 0, 1);
         bounce = age < T ? H * Math.sin(Math.PI * p) : 0;
+      } else {
+        // マルカート以外のショート（2026-09-28 ユーザー指定：弓が弦に乗っている時間が長かった）：弓を動かし終えたら（bowDur）弦から離し、
+        // 次の音の頭で弦へ戻る。高さは跳ね上がる奏法と同じく次の音までの間隔で決める
+        let marc = !!onset.marc;
+        if (!marc) for (const pn of st.track?.section?.notes ?? st.track?.notes ?? []) {
+          if (pn.time > onset.time + 0.12) break;
+          if (pn.marc && sameNote(pn, onset)) { marc = true; break; }
+        }
+        if (!marc) {
+          const T = Math.min(next ? next.time - onset.time : 0.8, 0.8), D = Math.min(this.bowDur, T);
+          const H = 2.5 * clamp((T - 0.1) / 0.4, 0, 1), q = T > D ? clamp((age - D) / (T - D), 0, 1) : 0;
+          bounce = age >= D && age < T ? H * Math.sin(Math.PI * q) : 0;
+        }
       }
     }
     this._bowBounce = bounce;   // 確認用（跳ね上がりの高さ）

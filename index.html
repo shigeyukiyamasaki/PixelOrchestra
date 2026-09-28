@@ -62,6 +62,9 @@
       <label class="ctl" title="姿勢（前傾・膨らみ・頭の角度・体の傾き）が強弱に追いつく速さ。1 で拍の半分くらいの時間で追いつく。小さいほどゆっくり乗り、スローテンポで 1 音ごとにピクつかない。音の頭の小さな反応（うなずき・弓圧）には効かない"><span>反応の速さ <b data-value-for="dynSpeed">1</b></span><input type="range" id="dynSpeed" min="0.2" max="3" step="0.1" value="1"></label>
       <label class="ctl" title="拍に同期した体の左右の揺れの大きさ（2 拍で 1 往復・奏者ごとに位相が違う）。指揮者の振りの大きさにも少し効く"><span>体の揺れ <b data-value-for="sway">1</b></span><input type="range" id="sway" min="0" max="2" step="0.1" value="1"></label>
       <label class="ctl" title="音を出した瞬間に楽器が明るく光る強さ。0 で光らない。1 が従来の強さ"><span>楽器のフラッシュ <b data-value-for="instFlash">1</b></span><input type="range" id="instFlash" min="0" max="3" step="0.1" value="1"></label>
+      <!-- 弦のショート系の弓（2026-09-28 ユーザー指定）：1 音で弓を動かす時間と、減速の強さ（音の頭の速さ＝平均の何倍か） -->
+      <label class="ctl" title="弦のショート系（スタッカート・スピッカート等）で、1 音の弓を動かす時間 [秒]。MIDI ノートの長さは使わない"><span>ショートの長さ <b data-value-for="bowShortSec">0.3</b></span><input type="range" id="bowShortSec" min="0.05" max="1" step="0.05" value="0.3"></label>
+      <label class="ctl" title="弦のショート系の弓の減速の強さ。音の頭の速さが平均の何倍か（1 で一定の速さ、大きいほど初速が速く急に止まる）"><span>ショートの初速 <b data-value-for="bowShortEase">4</b></span><input type="range" id="bowShortEase" min="1" max="8" step="0.5" value="4"></label>
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
     </div>
