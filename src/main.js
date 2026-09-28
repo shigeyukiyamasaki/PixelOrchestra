@@ -34,6 +34,7 @@ const PITCH_FILTER_KEY = 'midiOrchestra_pitchFilters';
 const DYN_SOURCE_KEY = 'pixelOrchestra.dynSources.v1'; // トラック名 → 強弱の情報源
 const MERGE_KEY = 'pixelOrchestra.mergeInto.v1';      // トラック名 → 統合先（'auto' | 'none' | トラック名）
 const COSTUME_KEY = 'pixelOrchestra.costumes.v1';     // トラック名 → 衣装のキー（そのセクションの首席 1 人だけが着る。2026-09-22 ユーザー指定）
+const SINGLE_KEY = 'pixelOrchestra.singlePlayer.v1';       // トラック名 → true：そのセクションの奏者を見た目上 1 人にする（2026-09-28 ユーザー指定）
 const CONDUCTOR_COSTUME_KEY = 'pixelOrchestra.conductorCostume.v1'; // 指揮者に着せる衣装のキー（2026-09-22 ユーザー指定）
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
 const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
@@ -48,7 +49,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -1146,6 +1147,14 @@ function saveConductorCostume(key) {
   } catch (e) { console.warn('指揮者の衣装保存失敗:', e); }
 }
 
+function loadSingles() {
+  try { return JSON.parse(LS.getItem(SINGLE_KEY) || '{}'); } catch { return {}; }
+}
+function saveSingle(trackName, on) {
+  const all = loadSingles();
+  if (on) all[trackName] = true; else delete all[trackName];
+  try { LS.setItem(SINGLE_KEY, JSON.stringify(all)); pushSettings(); } catch (e) { console.warn('「1 人」の保存失敗:', e); }
+}
 function saveCostume(trackName, key) {
   const all = loadCostumes();
   if (!key) delete all[trackName]; else all[trackName] = key;
@@ -1361,6 +1370,8 @@ function placePuppets() {
   if (conductor && (conductor.style !== settings().partStyle || conductorCostumeApplied !== condCostume)) {
     scene.remove(conductor.root); conductor = null;
   }
+  const singles = loadSingles();
+  for (const sec of engine.tracks) sec.single = !!singles[sec.name];   // セクションの代表トラック名で引く（衣装と同じ）
   const seats = layoutSeats(engine.tracks, footprintOf);
   let seed = 1;
   const costumes = loadCostumes();
@@ -1493,7 +1504,16 @@ function renderTrackTable() {
       ? '統合されたトラックは席を持たないので選べません（統合先のトラックで選んでください）'
       : 'このセクションの首席（前列の 1 人）だけがこのキャラクターになります。全員に着せたい時は ?costume= を使います';
     csSel.addEventListener('change', () => { saveCostume(tr.name, csSel.value); buildScene(currentMidi, { keepTime: true }); });
-    td2.append(document.createElement('br'), csLab, csSel);
+    // 1 人：このセクションの奏者を見た目上 1 人にする（音・動きはそのまま。2026-09-28 ユーザー指定）
+    const sgLab = document.createElement('label'); sgLab.className = 'pitch-label dyn-label';
+    const sgBox = document.createElement('input'); sgBox.type = 'checkbox';
+    sgBox.checked = !!loadSingles()[tr.name]; sgBox.disabled = !!tr.mergeTarget;
+    sgLab.title = tr.mergeTarget
+      ? '統合されたトラックは席を持たないので選べません（統合先のトラックで選んでください）'
+      : 'このセクションの奏者を 1 人だけにする（見た目だけ。音と動きは変わらない）';
+    sgLab.append(sgBox, ' 1 人');
+    sgBox.addEventListener('change', () => { saveSingle(tr.name, sgBox.checked); buildScene(currentMidi, { keepTime: true }); });
+    td2.append(document.createElement('br'), csLab, csSel, sgLab);
     row2.appendChild(td2);
     tbody.appendChild(row2);
     const applyFilter = () => {
