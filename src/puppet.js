@@ -60,6 +60,7 @@ const STICK_HAND_DIR = [0, -1, 0];   // 棒を持つ手の指先の向き＝真�
 // そのままだと手首で 90° 折れ、拳が前腕の端からぶら下がって「手首が外れた」ように見えた（2026-09-23 ユーザー指摘）。
 // 真下の方へ曲げるのはこの角度まで。人の手首が無理なく曲がる範囲
 const STICK_WRIST_MAX = deg2rad(40);
+const GERMAN_AIM_MAX = deg2rad(55);   // ジャーマン（ティンパニ）のマレットの仰角の上限（振りかぶり）
 // 棒を握る持ち物。**合わせシンバル（紐で持つ）は含めない**：棒用の握り・甲の向きを当てると手が崩れる（2026-09-22 ユーザー指摘）
 const GRIP_ITEMS = new Set(['stick', 'mallet', 'keymallet', 'bigmallet', 'hammer']);
 // ティンパニ 0.78・グランカッサ 1.5 → 1.4（2026-09-23 ユーザー指定：ひな壇に対して大きいので小さく）。
@@ -263,17 +264,48 @@ const BOW_TILT_MAX = 30 * Math.PI / 180;
 const PERC_ATTENTION = { L: [-6.8, 9.5, 1], R: [6.8, 9.5, 1] };
 // 金管の息継ぎで肩を上げる量 [px]（息継ぎの深さ 1 あたり）
 const BRASS_SHOULDER_LIFT = 0.8;
-// ティンパニ 3 台の打点（rig 座標 px。sprites.js の TIMP_SET から）：u ＝ 奏者から太鼓の中心への向き（水平）、v ＝ それと直角（奏者の右が +）。
-// 頭は打面の中心から奏者側へ半径の 35%・左右の手で ±3.5、手はそこから奏者側へ 8、構えはさらに 3 手前
 // ホルンを口を通る縦の軸で回し、レバー側（奏者の左）を客席へ出す角度。左腕が前へ押し出され、ベルは右の腰へ下がる（2026-09-27 ユーザー指定）。
 // rot3 は 'YXZ'：巻き管の傾き（x）のあとにこの向き（y）を掛ける
 const HORN_FWD = 25 * Math.PI / 180;
+// ティンパニ 3 台の打点（rig 座標 px。sprites.js の TIMP_SET から）：u ＝ 奏者から太鼓の中心への向き（水平）、v ＝ それと直角（奏者の右が +）。
+// 頭は打面の中心から奏者側へ半径の 35%・左右の手で ±3.5、手はそこから奏者側へ 8、構えは手の真上
 const TIMP_STRIKES = TIMP_SET.map(({ c, k }) => {
   const r = 14 * k, l = Math.hypot(c[0], c[1]), u = [c[0] / l, c[1] / l], v = [u[1], -u[0]];
   const pt = (along, side, y) => { const q = [c[0] - u[0] * along + v[0] * side, c[1] - u[1] * along + v[1] * side]; return [q[0], y, q[1]]; };
-  const one = (sgn) => ({ head: pt(0.35 * r, 3.5 * sgn, 15.5), hit: pt(0.35 * r + 8, 5 * sgn, 18.5), rest: pt(0.35 * r + 11, 7 * sgn, 22) });
+  const one = (sgn) => ({ head: pt(0.35 * r, 3.5 * sgn, 15.5), hit: pt(0.35 * r + 8, 5 * sgn, 18.5), rest: pt(0.35 * r + 8, 6 * sgn, 22) });   // 構えは打点の真上（2026-09-28：以前は 3 手前で、横の台では胸のすぐ前になり前腕が縦に立った）
   return { L: one(-1), R: one(1) };
 });
+// ティンパニで叩く台の方へ上半身ごと回る角度（2026-09-28 ユーザー指定）：台の中心の方向（rig 座標）の 8 割。左の台 ≈ −47°、右の台 ≈ +43°
+// （台を離した時に 6 割から増やした：横の台で、台から遠い方の手が届かなくなるため）
+const TIMP_YAW_GAIN = 0.8;
+const TIMP_YAW = TIMP_SET.map(({ c }) => TIMP_YAW_GAIN * Math.atan2(c[0], c[1]));
+// ティンパニの音ごとの台と手（曲を読んだ後に 1 度だけ作る。2026-09-28 ユーザー指定）：
+//  台 idx … 音域を 3 つに分けて 低＝左(0)・中＝中央(1)・高＝右(2)。ただし前の音から TIMP_FAST 秒以内で、前の音と左右の両端に分かれる時は後の音を中央へ寄せる
+//           （素早い交互打ちは隣り合う台どうしにする。両端だと両腕が大きく開き、体の向きも追いつかず、腕に無理が出た）
+//  手 side … 前の音と同じ台を TIMP_SAME 秒以内に続けて叩く時は前の音と反対の手（同じ台を両手で交互に。2026-09-28 ユーザー指摘：
+//           左の台だけ続く所で左手しか叩かず、右手が体の前を横切って胸の前で折り畳まれた）。
+//           台が変わる時は、左の台は左手・右の台は右手。中央は、素早い交互打ちの中なら前の音と反対の手、そうでなければ音の番号で交互
+const TIMP_FAST = 0.4, TIMP_SAME = 1.2;
+const TIMP_PLAN = new WeakMap();
+function timpPlan(tr) {
+  let plan = TIMP_PLAN.get(tr);
+  if (plan) return plan;
+  plan = new Map();
+  const lo = tr?.minPitch ?? 60, span = Math.max(1, (tr?.maxPitch ?? 72) - lo);
+  let prev = null;
+  for (const n of tr?.notes || []) {
+    let idx = Math.min(2, Math.floor(clamp((n.midi - lo) / span, 0, 0.999) * 3));
+    const fast = prev && n.time - prev.n.time < TIMP_FAST;
+    if (fast && Math.abs(idx - prev.idx) === 2) idx = 1;
+    const other = prev ? (prev.side === 'L' ? 'R' : 'L') : null;
+    const same = prev && prev.idx === idx && n.time - prev.n.time < TIMP_SAME;
+    const side = same ? other : idx === 0 ? 'L' : idx === 2 ? 'R' : fast ? other : (n.index % 2 ? 'L' : 'R');
+    plan.set(n, { idx, side });
+    prev = { n, idx, side };
+  }
+  TIMP_PLAN.set(tr, plan);
+  return plan;
+}
 const CYM_SWING = { freq: 1.6, damp: 1.4, kick: 1.5 };
 const BASSDRUM_TILT_ADD = 10 * Math.PI / 180;   // 太鼓の傾きを足す：打面を天へ 10°（もとの 0.15 rad ≈ 9° と合わせて約 19°）
 const BASSDRUM_YAW = -10 * Math.PI / 180;    // 太鼓の首振り：打面を奏者から外へ 10°（rig 座標で打面の法線 +x を +z 側へ）
@@ -350,7 +382,10 @@ const VARIANT = {
                 rest: { pos: [-5, 2, 10], rot3: [0.25, -0.3, 0] } },
   // 打楽器：strike = { L/R: { hit, rest, head } }（rig px）。p3.strike は 3D（手は楽器の上へ前方に伸びる）
   // 打楽器の hit/rest は手の先端（マレットの握り）。手首はその 4px 手前なので、握りを z 10〜12 に置いて手首を体の前 6〜8px に出す（2026-09-10）
-  timpani:    { drums: TIMP_STRIKES, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
+  // pole：脇を開けて肘を左右に出す（グロッケンと同じ考え。2026-09-28 ユーザー指定）。既定の POLE の「少し後ろ」は外して少し前へ：
+  // 腕を前へ伸ばすので、後ろ向きだと肘が体より後ろに引かれた（25 秒で半分のコマ）。
+  // 台が近かった時は横の台で肩→手の向きと平行になり肘が回り込んだので真下にしていたが、脇が閉まって見えた
+  timpani:    { grip: 'german', pole: { L: [-1, -0.5, 0.2], R: [1, -0.5, 0.2] }, drums: TIMP_STRIKES, velRest: [0, 25], windFrom: 64, downSec: [0.08, 0], floorStand: true, inst: { pos: [0, 15, 14], rot: 0 }, held: { L: 'mallet', R: 'mallet' }, roll: { byArt: true, rate: 6, from: 0.12 },   // ロールはキースイッチの奏法で（2026-09-23）
                 strike: { L: { hit: [-6, 24], rest: [-12, 32], head: [-6, 14] }, R: { hit: [6, 24], rest: [12, 32], head: [6, 14] } },
                 // hit = 手（体の近く・腰の高さ）、head = 先端が当たる点（皮の手前側）。マレット（10px）は皮に対して約 30° の浅い角度
                 p3: { pos: [0, 15, 14], strike: { L: { hit: [-5, 18.5, 17], rest: [-7, 22, 14], head: [-4, 15.5, 25] }, R: { hit: [5, 18.5, 17], rest: [7, 22, 14], head: [4, 15.5, 25] } } } },   // 左右の打点を 2px ずつ中央へ（2026-09-27 ユーザー指定：広がりすぎ）   // 手は打面（15.7）の上へ（2026-09-22） // 構えは打点より 6 上・3 手前（大きく振り上げる） // 握り z 11（手首 ≒ 7）。手首は握りより 1.5 上・4 手前に来るので、握りは肘（≒21）より 4〜5 下に置く。マレットは水平
@@ -1473,6 +1508,8 @@ export class Puppet {
         const to = cfg.tubeAt(n.midi, st.track), h = instPoint(this.inst, to[0], to[1], to[2]);
         return h[0] < cfg.splitX ? 'L' : 'R';
       }
+      // drums（ティンパニ）：手は timpPlan（左の台は左手・右の台は右手、中央は交互）
+      if (cfg.drums) { const pl = timpPlan(st.track).get(n); if (pl) return pl.side; }
       return n.index % 2 ? 'L' : 'R';
     };
     const both = !!cfg.bothArms; // シンバル：両手を同時に中央で合わせる（2026-09-11 ユーザー指定）
@@ -1501,9 +1538,18 @@ export class Puppet {
     const tw = cfg.rollTwist ? (this._rollTwist = approach(this._rollTwist ?? 0, roll ? cfg.rollTwist : 0, 5, dt)) : 0;
     const twW = cfg.rollTwist ? tw / cfg.rollTwist : 0;   // ひねりの進み具合 0〜1
     if (tw) this.spine.rotation.y += tw;
+    // drums（ティンパニ）：叩く台の方へ上半身ごと回る。次の音が 0.35 秒以内ならその台へ先に向き、なければ最後に叩いた台。休みの間は正面へ戻る。首は同じだけ戻す（下の fixed）
+    if (cfg.drums && !this.flat) {
+      const n = next && toNext < 0.35 ? next : onset;
+      const pl = n ? timpPlan(tr).get(n) : null;
+      const want = pl ? TIMP_YAW[pl.idx] * (1 - (this._rest ?? 0)) : 0;
+      this._drumYaw = approach(this._drumYaw ?? 0, want, 6, dt);
+      this.spine.rotation.y += this._drumYaw;
+    }
     if (fixed) {
       this._spineGaze(st, dt, 0.06 * st.posture + 0.05 * (this._strikePrev ?? 0), 0.25, (cfg.gazeYaw ?? 0) * (1 - twW));
       if (tw) this.headPivot.rotation.y -= tw;
+      if (cfg.drums && this._drumYaw) this.headPivot.rotation.y -= this._drumYaw;   // ティンパニ：体を台へ回しても顔は指揮者へ向けたまま（2026-09-28 ユーザー指定）
       this._rigToUpperBegin();
     }
     const U = (p) => (fixed && p ? this._rigToUpper(p) : p), UD = (d) => (fixed && d ? this._rigToUpperDir(d) : d);
@@ -1576,7 +1622,18 @@ export class Puppet {
         ant = 0; vel = onset ? vScale(onset.velocity) : vel; vRaw = onset ? onset.velocity : vRaw;
       }
       // drums（ティンパニ 3 台。2026-09-27）：音域を 3 つに分け、低い音は左・中は正面・高い音は右の太鼓の打点を使う
-      if (cfg.drums && strike?.[side]) sp = { ...sp, ...cfg.drums[Math.min(2, Math.floor(clamp(pn, 0, 0.999) * 3))][side] };
+      // 叩く台は手ごとに自分の音で決める：次の自分の音が 0.35 秒以内ならその台、なければ自分が最後に叩いた台の上で待つ（2026-09-28 ユーザー指摘）。
+      // 以前は自分の番でない手が曲全体の最後の音（pitchNorm）の台へ寄り、もう一方の手が叩く台まで体の前を横切って左肘が内側に折れた
+      let dIdx = null;
+      if (cfg.drums) {
+        const mem = (this._drumNote ??= {});
+        if (onset && armOf(onset) === side) mem[side] = onset;
+        // まだ叩いていない手は、曲全体の最後の音（pitchNorm）ではなく、今の音（なければ次の音）の台で待つ
+        const own = next && armOf(next) === side && toNext < 0.35 ? next : mem[side] || onset || next;
+        const pl = own ? timpPlan(tr).get(own) : null;
+        if (pl) dIdx = pl.idx;
+      }
+      if (cfg.drums && strike?.[side]) sp = { ...sp, ...cfg.drums[dIdx ?? Math.min(2, Math.floor(clamp(pn, 0, 0.999) * 3))][side] };
       const dx = spread ? (pn - 0.5) * 2 * spread : 0;
       // local：打点を楽器ローカル座標（px）で持ち、instPoint で rig へ直す（チューブラーベル。2026-09-25：楽器を斜めに置いたので、
       // 音程による横の移動 dx も楽器の x ＝管の並びに沿う）。それ以外は従来どおり rig 座標
@@ -1756,7 +1813,28 @@ export class Puppet {
           }
         }
         if (restW > 0) aim = attAim(aim);
-        this.setHand(side, U(attHand(side, wristT || target)), dt, (s > 0.5 || down) ? Infinity : (sw ? 45 : 22), UD(aim), UD(cfg.pole?.[side]) ?? null, cfg.handUp?.[side] ?? STICK_UP[side], face, cfg.wristMax ?? STICK_WRIST_MAX, !!wristT);   // pole：肘の向き（rig 座標。無ければ既定の横外）
+        // grip 'german'（ティンパニのジャーマン。2026-09-28 ユーザー指定）：手のひらを下にし、マレットは前腕の延長として拳から前へ出す。
+        // 拳（指先）の向き＝マレットの向き（手首の曲がりは STICK_WRIST_MAX まで）。甲は「マレットを含む縦の面の中で、マレットに直角な上側」
+        // ＝マレットが水平なら真上、振りかぶって立てるほど奏者側へ倒れる。そこへ外側（左手 −x・右手 +x）を 0.5 足す。
+        // 甲の目安を真上に固定すると、振りかぶりでマレットが真上を向いた時に平行になり、手首が回った。
+        // マレットの水平の向きには前へ 0.15 足し、真上・真下の瞬間も向きが定まるようにする。
+        // 従来の「拳は真下・甲は真横」は、台が 3 つになって腕を横へ伸ばすと前腕の向きとぶつかり、手首がねじれ・肘が回り込んでいた
+        let stickUp = cfg.handUp?.[side] ?? STICK_UP[side];
+        // 振りかぶりでマレットの先を上げすぎないよう、仰角を GERMAN_AIM_MAX までに抑える（2026-09-28）。台によっては手と打面の水平の距離が
+        // 短く、先を持ち上げるとマレットが真上を越えて奏者側へ倒れ、甲の向きが裏返っていた
+        if (cfg.grip === 'german' && aim) {
+          const hl0 = Math.hypot(aim[0], aim[2]), lim = Math.tan(GERMAN_AIM_MAX);
+          if (aim[1] > hl0 * lim) aim = hl0 > 1e-6 ? [aim[0], hl0 * lim, aim[2]] : [0, lim, 1];
+        }
+        if (cfg.grip === 'german' && aim) {
+          const al = Math.hypot(aim[0], aim[1], aim[2]) || 1, ax = aim[0] / al, ay = aim[1] / al, az = aim[2] / al;
+          let hx = ax, hz = az + 0.15; const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
+          const sx = -hz, sz = hx;                                   // 水平の横向き（マレットの水平の向き × 上）
+          const back = [-sz * ay, sz * ax - sx * az, sx * ay];       // 横向き × マレット：マレットに直角で上側
+          const out = side === 'L' ? -0.5 : 0.5;
+          face = UD(aim); stickUp = UD([back[0] + out, back[1], back[2]]);
+        }
+        this.setHand(side, U(attHand(side, wristT || target)), dt, (s > 0.5 || down) ? Infinity : (sw ? 45 : 22), UD(aim), UD(cfg.pole?.[side]) ?? null, stickUp, face, cfg.wristMax ?? STICK_WRIST_MAX, !!wristT);   // pole：肘の向き（rig 座標。無ければ既定の横外）
         if (aim) this.aimHeldDir(side, UD(aim), 'ny', up);
       } else {
         // 合わせシンバルなど、棒以外を持つ手は従来どおり（甲は真上・手は持ち物の向きに寄る）。
@@ -1828,10 +1906,16 @@ export class Puppet {
         // 奥行き：弦の面（sprites.js の harpCell で弦は z 5 のセル＝中心 2.75px）の両側 0.5px。以前は 0 を中心に ±1.5px で、
         // 弦から見て左手は 4.25px 手前で届かず、右手は弦を越えていた（2026-09-24 ユーザー指摘）
         let p = this.inst ? instPoint(this.inst, lx + 1.5 * s, ly + 0.5 * ant, this.flat ? 0 : HARP_STRING_Z + sign * 0.5) : [lx - 9, ly, 0];
-        let hd = null;
-        if (this.inst && !this.flat) { _b.set(0, 0, -sign).applyQuaternion(this.inst.quaternion); hd = [_b.x, _b.y, _b.z]; }
-        if (this.instFixed) { p = this._rigToUpper(p); if (hd) hd = this._rigToUpperDir(hd); }   // 床に固定：instPoint は rig の座標になるので上半身の座標へ
-        this.setHand(side, p, dt, s > 0.5 ? Infinity : 14, hd, null, PERC_UP); // ハープも甲は真上
+        // 手の向き（2026-09-28 ユーザー指定：甲が天を向いていた）：手のひらを弦に向け、甲は左右の外側（弦の面から離れる向き。左手 −z・右手 +z）。
+        // 指は弦の面に沿って前（柱の側＝楽器ローカル −x）へ。指を弦へ突き刺す向きのままだと、甲を外へ向けられない（指と甲の向きが平行になる）
+        let hd = null, up = PERC_UP;
+        if (this.inst && !this.flat) {
+          const mx = this.inst.scale.x < 0 ? -1 : 1;
+          _b.set(-mx, 0, 0).applyQuaternion(this.inst.quaternion); hd = [_b.x, _b.y, _b.z];
+          _b.set(0, 0, sign).applyQuaternion(this.inst.quaternion); up = [_b.x, _b.y, _b.z];
+        }
+        if (this.instFixed) { p = this._rigToUpper(p); if (hd) { hd = this._rigToUpperDir(hd); up = this._rigToUpperDir(up); } }   // 床に固定：instPoint は rig の座標になるので上半身の座標へ
+        this.setHand(side, p, dt, s > 0.5 ? Infinity : 14, hd, null, up);
       }
     }
     this.headPivot.rotation.z += -0.06 * st.posture + (cfg.headRoll ?? 0);   // headRoll：首を横に倒す（ハープ）
