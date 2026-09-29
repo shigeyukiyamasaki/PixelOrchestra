@@ -1354,7 +1354,7 @@ function buildDomes() {
     );
     mesh.name = `dome:${i}`;
     mesh.position.set(0, d.y ?? 0, SEAT_SHIFT_Z);
-    mesh.userData.scroll = { speed: d.speed || 0, period: 360 / tiles };   // 1 周期 = 素材 1 枚ぶんの角度 [deg]
+    mesh.userData.scroll = { speed: d.flow === false ? 0 : d.speed || 0, period: 360 / tiles };   // flow：「流れる速度」のチェック（オフで流さない）   // 1 周期 = 素材 1 枚ぶんの角度 [deg]
     mesh.renderOrder = -200 + k;                    // 何よりも先に描く
     g.add(mesh);
   });
@@ -1673,7 +1673,7 @@ function buildScreens() {
     );
     mesh.name = `screen:${i}`;
     mesh.receiveShadow = true;
-    mesh.userData.scroll = loop ? { speed: sc.speed || 0, period } : null;
+    mesh.userData.scroll = loop ? { speed: sc.flow === false ? 0 : sc.speed || 0, period } : null;   // flow：「流れる速度」のチェック
     mesh.position.y = y + (sc.lift ?? 0) + hgt / 2;    // 下端はひな壇の天面から lift だけ上（宙に浮かせる）
     mesh.renderOrder = ro - 1 + k * 0.05;               // 奥 → 手前 の順
     screens.add(mesh);

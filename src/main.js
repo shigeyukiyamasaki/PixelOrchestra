@@ -269,7 +269,7 @@ $('audioDelay').addEventListener('input', (e) => {
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
                       src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false,
-                      speed: 0, loop: false, gap: 1, fade: 0.1, bright: 1 };   // bright：明度（2026-09-29 ユーザー指定）   // fade：端のぼかし（2026-09-29 ユーザー指定：既定 0.1）
+                      speed: 0, loop: false, gap: 1, fade: 0.1, bright: 1, flow: true };   // bright：明度（2026-09-29 ユーザー指定）   // fade：端のぼかし（2026-09-29 ユーザー指定：既定 0.1）
 // tile（繰り返し幅）は廃止し、1 枚の幅は「大きさ」で決める形にした（2026-09-13）。古い保存データを移す
 const withDefaults = (o) => { const v = { ...SCREEN_BASE, ...o }; if (o && o.tile > 0) v.loop = true; delete v.tile; return v; };
 let screens = (() => {
@@ -278,7 +278,7 @@ let screens = (() => {
 })();
 // スカイドーム（遠景。3 層固定。追加も削除もしない）
 const DOME_BASE = { name: '', r: 40, y: -10, span: 180, tiles: 2, speed: 0, opacity: 1, show: true,
-                    src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12 };
+                    src: '', srcRaw: '', key: '#00ff00', thr: 0, flip: false, fade: 0.12, flow: true };
 let domes = (() => {
   try { const a = JSON.parse(LS.getItem(DOMES_KEY) || 'null');
     if (Array.isArray(a) && a.length === 3) {
@@ -521,6 +521,13 @@ function putKeyColor(lab, obj, changed, title) {
   lab.replaceWith(row);
 }
 
+// 「速度」（流れる速さ）の行の頭に流す／流さないのチェック（スクリーン・スカイドーム。2026-09-29 ユーザー指定：チェックを付けると「流れる速度」が収まらないので「速度」に）。「繰返」と同じ作り
+function flowCheck(row, o, changed) {
+  const cb = document.createElement('input'); cb.type = 'checkbox';
+  cb.checked = o.flow !== false;
+  cb.onchange = () => { o.flow = cb.checked; changed(); };
+  row.querySelector('span').prepend(cb);
+}
 // 値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen' });
@@ -605,7 +612,7 @@ function screenRow(sc, i) {
   slider('明度', 'bright', 0, 2, 0.05, 2, '絵の明るさの倍率。1 でそのまま、下げると暗く、上げると明るくなる（照明・影はそのまま効く）');
   slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '左右の両端で絵をなだらかに消す幅（絵の幅に対する割合。繰返の時は弧の両端）。0 でくっきり切れる');
   // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
-  slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う');
+  flowCheck(slider('速度', 'speed', -10, 10, 0.1, 1, 'チェック：オフで流さない（速さの値は残る）\n横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う'), sc, changed);
   // 繰返間隔：行の頭に「繰返」のチェック（以前は最下行にあった。2026-09-18 ユーザー指定）。文字を押してもチェックが切り替わる
   {
     const row = slider('繰返間隔', 'gap', 1, 6, 0.05, 2, '繰返：素材を横に繰り返して弧いっぱいに敷く（雲など）。1 枚の幅は「大きさ」で決まるので絵は歪まない\n間隔：繰り返した時の絵と絵の間隔。1 で隙間なし、2 で絵 1 枚ぶんの隙間が空く。絵の大きさは変わらない');
@@ -676,7 +683,7 @@ function domeRow(d, i) {
   slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
   slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '範囲の両端で絵をなだらかに消す幅（範囲に対する割合）。0 でくっきり切れる');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度');
-  slider('流れる速度', 'speed', -30, 30, 0.5, 1, '横に流れる速さ [度/秒]。プラスで右から左へ');   // 色玉の行のすぐ上に（2026-09-18 ユーザー指定）
+  flowCheck(slider('速度', 'speed', -30, 30, 0.5, 1, 'チェック：オフで流さない（速さの値は残る）\n横に流れる速さ [度/秒]。プラスで右から左へ'), d, changed);   // 色玉の行のすぐ上に（2026-09-18 ユーザー指定）
   // 抜く強さ：ラベル文字の代わりに、抜く色の色玉を置く（2026-09-18 ユーザー指定）
   putKeyColor(slider('', 'thr', 0, 1, 0.01, 2, '抜く強さ：キー色にどれだけ近い画素まで抜くか。0 で抜かない'), d, changed, '抜く色（緑背景の色）');
 
