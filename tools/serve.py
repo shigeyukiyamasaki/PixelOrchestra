@@ -60,6 +60,7 @@ def media_list(exts=MEDIA_EXT, max_files=20000):
 PROJECTS_DIR = 'projects'          # 起動時に chdir したアプリのフォルダ基準
 _NAME_RE = re.compile(r'[^/\\\x00-\x1f<>:"|?*]{1,60}')
 MAX_UPLOAD = 500 * 1024 * 1024     # 1 ファイルの上限（wav の長い曲でも収まる大きさ）
+MEDIA_DROP_DIR = 'PixelOrchestra_ドロップ'   # ドロップした素材の保存先（最初の素材ルートの中。2026-09-29 ユーザー指定）
 
 # ---- 編集したボクセル（2026-09-21 ユーザー指定）----
 # 衣装の部位（髪・兜・顔）を編集画面 /edit.html で直接いじって、ここに JSON で保存する。
@@ -244,6 +245,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if path.startswith('/voxels/'):    # 編集したボクセルの保存
             self._post_voxel(path)
             return
+        if path.startswith('/media-drop/'):   # スクリーン・スカイドームへドロップした素材（2026-09-29 ユーザー指定）
+            self._post_media_drop(path)
+            return
         if path.startswith('/publish/'):   # 公開（?dry=1 で送らずに一覧だけ）
             name = urllib.parse.unquote(path[len('/publish/'):], errors='surrogatepass')
             dry = 'dry=1' in (self.path.split('?', 1) + [''])[1]
@@ -276,6 +280,48 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
     def _project_parts(self, path):
         rest = urllib.parse.unquote(path[len('/projects/'):], errors='surrogatepass')
         return rest.split('/') if rest else []
+
+    # ---- ドロップした素材（2026-09-29 ユーザー指定）----
+    # POST /media-drop/<ファイル名>（中身そのまま）→ {dir, name, reused}。ブラウザはドロップしたファイルの場所を教えないので中身を受け取る。
+    # 素材ルートの中に同じ名前・同じ大きさのファイルがあればそれを使い（コピーしない）、無ければ最初の素材ルートの MEDIA_DROP_DIR へ保存する。
+    # 同じ名前で中身の大きさが違うファイルがある時は _2, _3 … を付ける（上書きしない）
+    def _post_media_drop(self, path):
+        name = os.path.basename(urllib.parse.unquote(path[len('/media-drop/'):], errors='surrogatepass'))
+        stem, ext = os.path.splitext(name)
+        if not name or name.startswith('.') or ext.lower() not in MEDIA_EXT:
+            self._json(400, {'error': f'画像・動画のファイルだけ入れられます（{" ".join(sorted(MEDIA_EXT))}）'})
+            return
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > MAX_UPLOAD:
+            self._json(413, {'error': 'ファイルが大きすぎます（500MB まで）'})
+            return
+        body = self.rfile.read(length)
+        roots = media_roots()
+        for d, names in media_list().items():
+            if name not in names:
+                continue
+            for root in roots:
+                p = os.path.join(root, d, name)
+                if os.path.isfile(p) and os.path.getsize(p) == len(body):
+                    self._json(200, {'dir': d, 'name': name, 'reused': True})
+                    return
+        if not roots or not os.path.isdir(roots[0]):
+            self._json(500, {'error': f'素材フォルダが見つかりません（{roots[0] if roots else "未設定"}）。外付けドライブがつながっているか確かめてください'})
+            return
+        dest_dir = os.path.join(roots[0], MEDIA_DROP_DIR)
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            out, k = name, 1
+            while os.path.exists(os.path.join(dest_dir, out)):
+                k += 1
+                out = f'{stem}_{k}{ext}'
+            _write_atomic(os.path.join(dest_dir, out), body)
+        except OSError as e:
+            self._json(500, {'error': f'保存できませんでした（{e}）'})
+            return
+        _media_cache.clear()   # 一覧に新しいファイルを出す
+        print(f'[media-drop] {out} を {dest_dir} に保存')
+        self._json(200, {'dir': MEDIA_DROP_DIR, 'name': out, 'reused': False})
 
     def _post_project(self, path):
         parts = self._project_parts(path)

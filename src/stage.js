@@ -227,6 +227,7 @@ function litScreenMaterial(sc, tex) {
     flip: { value: sc.flip ? 1 : 0 },
     uRepeat: { value: 1 }, uScroll: { value: 0 }, uLoop: { value: 0 }, uFill: { value: 1 },
     uFade: { value: 0 },
+    uVis: { value: new THREE.Vector2(0, 1) },   // 見えている範囲（面の横の座標 u）。端のぼかしはこの両端に掛ける
   };
   m.opacity = sc.opacity;
   m.onBeforeCompile = (shader) => {
@@ -237,7 +238,7 @@ function litScreenMaterial(sc, tex) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float hasMap; uniform vec3 keyColor; uniform float keyThr; uniform float flip;
-        uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade;
+        uniform float uRepeat; uniform float uScroll; uniform float uLoop; uniform float uFill; uniform float uFade; uniform vec2 uVis;
         varying vec2 vScreenUv;`)
       .replace('#include <map_fragment>', `
         float u = (flip > 0.5 ? vScreenUv.x : 1.0 - vScreenUv.x) * uRepeat + uScroll;   // 内側から見るので反転オフで 1 − uv.x（上の SCREEN_SHADER と同じ。2026-09-18）
@@ -251,11 +252,11 @@ function litScreenMaterial(sc, tex) {
           vec4 sc = vec4(1.0);
         #endif
         float sa = sc.a;
-        if (uFade > 0.001) sa *= smoothstep(0.0, uFade, vScreenUv.x) * smoothstep(0.0, uFade, 1.0 - vScreenUv.x);
+        if (uFade > 0.001) { float w = uFade * (uVis.y - uVis.x); sa *= smoothstep(uVis.x, uVis.x + w, vScreenUv.x) * (1.0 - smoothstep(uVis.y - w, uVis.y, vScreenUv.x)); }
         if (sa * diffuseColor.a < 0.01) discard;
         diffuseColor.rgb *= sc.rgb; diffuseColor.a *= sa;`);
   };
-  m.customProgramCacheKey = () => 'litScreen' + (tex ? ':map' : '');
+  m.customProgramCacheKey = () => 'litScreen2' + (tex ? ':map' : '');   // uVis を足した版（古い版のプログラムを使い回さない）
   return m;
 }
 
@@ -1295,7 +1296,7 @@ export function buildRisers(seats) {
     rim.renderOrder = ro + 0.3; risers.add(rim);
 
     // スクリーンを立てる段なら、その寸法を控えておく（スクリーン自体は buildScreens が作る）
-    if (row.screen) stageCtx.screenBase = { rIn, rOut, y: row.h, thMin, thMax, segs, clip, ro };
+    if (row.screen) stageCtx.screenBase = { rIn, rOut, y: row.h, thMin, thMax, segs, clip, cx, ro };
   }
   buildScreens();   // 土台の寸法が変わるので組み直す
 }
@@ -1626,7 +1627,7 @@ function buildScreens() {
   const { screens } = stageCtx;
   screens.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });   // 素材のテクスチャは MEDIA で使い回すので捨てない
   screens.clear();
-  const { rIn, rOut, y, thMin, thMax, segs, clip, ro } = stageCtx.screenBase;
+  const { rIn, rOut, y, thMin, thMax, segs, clip, cx, ro } = stageCtx.screenBase;
   // 手前のものが後に描かれるよう、奥（pos 大）から順に並べる（半透明の重なりを正しく出すため）
   const order = screenList.map((sc, i) => ({ sc, i })).sort((a, b) => b.sc.pos - a.sc.pos);
   const cTh = (thMin + thMax) / 2, halfTh = (thMax - thMin) / 2;
@@ -1648,6 +1649,15 @@ function buildScreens() {
     const half = loop ? halfTh : Math.min(halfTh, wid / 2 / r);
     const ctr = loop ? cTh : cTh + (sc.at ?? 0) * (halfTh - half);   // 横位置（-1 = 左端 / 0 = 中央 / 1 = 右端）
     const m = litScreenMaterial(sc, tex);   // 照明と影を受ける
+    m.uniforms.uFade.value = Math.max(0, Math.min(0.49, sc.fade ?? 0));   // 端のぼかし（スカイドームと同じ。2026-09-29 ユーザー指定）
+    m.color.setScalar(Math.max(0, sc.bright ?? 1));   // 明度：絵の色に掛ける倍率（2026-09-29 ユーザー指定）
+    // 端のぼかしは「見えている範囲」の両端に掛ける（2026-09-29 ユーザー指摘：ブツ切れのままだった）。面はひな壇の壁の位置 x = ±cx の
+    // 切り口で切られて見えるので、面の本当の端（切り口の外）でぼかしても見えない。切り口の角 ±asin(cx/r) を面の横の座標 u に直す
+    // （u = 0 が角 ctr + half、u = 1 が ctr − half）
+    if (cx && cx < r) {
+      const thc = Math.asin(cx / r), toU = (th) => (ctr + half - th) / (2 * half);
+      m.uniforms.uVis.value.set(Math.max(0, toU(thc)), Math.min(1, toU(-thc)));
+    }
     if (loop) {
       m.uniforms.uLoop.value = 1;
       m.uniforms.uRepeat.value = (r * half * 2) / period;

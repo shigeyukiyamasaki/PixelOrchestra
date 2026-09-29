@@ -269,7 +269,7 @@ $('audioDelay').addEventListener('input', (e) => {
 // （埋めないと「幅」がスライダーの最小値 0.02 と表示され、触った瞬間にスクリーンが潰れる）
 const SCREEN_BASE = { name: '', pos: 1, scale: 1, opacity: 1, show: true,
                       src: '', srcRaw: '', key: '#00ff00', thr: 0, at: 0, lift: 0, flip: false,
-                      speed: 0, loop: false, gap: 1 };
+                      speed: 0, loop: false, gap: 1, fade: 0.1, bright: 1 };   // bright：明度（2026-09-29 ユーザー指定）   // fade：端のぼかし（2026-09-29 ユーザー指定：既定 0.1）
 // tile（繰り返し幅）は廃止し、1 枚の幅は「大きさ」で決める形にした（2026-09-13）。古い保存データを移す
 const withDefaults = (o) => { const v = { ...SCREEN_BASE, ...o }; if (o && o.tile > 0) v.loop = true; delete v.tile; return v; };
 let screens = (() => {
@@ -453,6 +453,39 @@ function srcParts(sc) {
   const segs = u.slice('media/'.length).split('/').map(decodeURIComponent);
   return { dir: segs.slice(0, -1).join('/'), name: segs[segs.length - 1] };
 }
+// ドロップした素材（2026-09-29 ユーザー指定）：ブラウザはファイルの場所を教えないので中身をサーバーへ送る。
+// 素材フォルダに同じ名前・同じ大きさのものがあればそれを、無ければ素材フォルダの PixelOrchestra_ドロップ に保存したものを使う
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+async function uploadDropped(file) {
+  // 2 分で打ち切る（TOOL_CRAFT_RULES §5-1。ローカルのサーバーなので 500MB でも十分間に合う）
+  const r = await fetch(`media-drop/${encodeURIComponent(file.name)}`, { method: 'POST', body: file, signal: AbortSignal.timeout(120000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+// カード（box）へのファイルのドロップ。onPick(dir, name) は素材選びと同じ受け口
+function acceptFileDrop(box, onPick) {
+  box.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; box.classList.add('fileOver'); });
+  box.addEventListener('dragleave', (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove('fileOver'); });
+  box.addEventListener('drop', async (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); e.stopPropagation(); box.classList.remove('fileOver');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    setStatus(`${file.name} を読み込んでいます…`);
+    try {
+      const { dir, name, reused } = await uploadDropped(file);
+      onPick(dir, name);
+      setStatus(reused ? `${file.name}：素材フォルダの ${dir || '（直下）'} にある同じファイルを使います` : `${file.name}：素材フォルダの ${dir} に保存しました`);
+      loadMediaList(true);
+    } catch (err) {
+      setStatus(`✗ ${file.name} を入れられませんでした（${err.message}）`);
+    }
+  });
+}
+// カードの外に落とした時、ブラウザがファイルを開いてアプリを離れないようにする
+addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('drop', (e) => { if (hasFiles(e)) e.preventDefault(); });
 const mediaUrlOf = (dir, name) => `media/${[...(dir ? dir.split('/') : []), name].map(encodeURIComponent).join('/')}`;
 // Finder からコピーした絶対パスを、そのまま貼れるようにする（素材ルートの中なら /media/… に読み替える）
 function toMediaUrl(src) {
@@ -509,12 +542,14 @@ function screenRow(sc, i) {
     thumb.title = (sc.srcRaw || sc.src || '押すとフォルダを辿って素材を選べる（透過 PNG か、緑背景の mp4）') + '\nつまんで左右に動かすとカードを並べ替えられる';
   };
   drawThumb();
-  thumb.onclick = () => openPicker(thumb, sc, (dir, name) => {
+  const pickScreen = (dir, name) => {
     if (dir !== undefined) { sc.src = mediaUrlOf(dir, name); sc.srcRaw = `${dir}/${name}`; }
     drawThumb();
     changed();
     setTimeout(renderScreens, 600);   // 素材の大きさを説明文に出すため（読み込み後）
-  });
+  };
+  thumb.onclick = () => openPicker(thumb, sc, pickScreen);
+  acceptFileDrop(box, pickScreen);   // ファイルをカードへドロップ（2026-09-29 ユーザー指定）
   // カードの並べ替え：サムネイルをつまんで、ほかのカードの上で離す（2026-09-18 ユーザー指定）。
   // 押すだけなら上の onclick（素材選び）。数ピクセル動かした時だけ引きずりになる。
   // 並び順はメニューの中の順番だけで、舞台での前後（「奥行き」）は変えない
@@ -567,6 +602,8 @@ function screenRow(sc, i) {
   slider('横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
   slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
+  slider('明度', 'bright', 0, 2, 0.05, 2, '絵の明るさの倍率。1 でそのまま、下げると暗く、上げると明るくなる（照明・影はそのまま効く）');
+  slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '左右の両端で絵をなだらかに消す幅（絵の幅に対する割合。繰返の時は弧の両端）。0 でくっきり切れる');
   // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
   slider('流れる速度', 'speed', -10, 10, 0.1, 1, '横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う');
   // 繰返間隔：行の頭に「繰返」のチェック（以前は最下行にあった。2026-09-18 ユーザー指定）。文字を押してもチェックが切り替わる
@@ -613,10 +650,12 @@ function domeRow(d, i) {
     thumb.title = d.srcRaw || d.src || '押すとフォルダを辿って素材を選べる（雲などの遠景）';
   };
   drawThumb();
-  thumb.onclick = () => openPicker(thumb, d, (dir, name) => {
+  const pickDome = (dir, name) => {
     if (dir !== undefined) { d.src = mediaUrlOf(dir, name); d.srcRaw = `${dir}/${name}`; }
     drawThumb(); changed();
-  });
+  };
+  thumb.onclick = () => openPicker(thumb, d, pickDome);
+  acceptFileDrop(box, pickDome);   // ファイルをカードへドロップ（2026-09-29 ユーザー指定）
 
   const name = put(box, '<input type="text" class="name" title="名前（覚え書き）">');
   name.value = d.name || `スカイドーム${i + 1}`;

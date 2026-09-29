@@ -198,6 +198,8 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenRows .screen.dragging { opacity: .4; }
 #screenRows .screen.dropBefore { box-shadow: -6px 0 0 -1px var(--accent); }   /* 左の隙間（8px）に線 */
 #screenRows .screen.dropAfter { box-shadow: 6px 0 0 -1px var(--accent); }
+/* ファイルをカードへドロップする時の目印（スクリーン・スカイドーム。2026-09-29 ユーザー指定） */
+#screenBar .screen.fileOver { outline: 2px dashed var(--accent); outline-offset: -2px; }
 #screenBar .addCard { flex: 0 0 44px; align-self: stretch; font-size: 20px; color: var(--muted);
                       border: 1px dashed var(--line); border-radius: 8px; background: none; cursor: pointer; }
 #screenBar .addCard:hover { border-color: var(--accent); color: var(--accent); }
