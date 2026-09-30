@@ -75,6 +75,8 @@
       <label class="ctl pixDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
       <label class="ctl pixDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
       <label class="chk2 pixDep" title="輪郭線の 1 ドット内側に、線より薄い濃い色を重ねる（線 → 薄い線 → 物の色のグラデーション）"><input type="checkbox" id="outlineRing"> 内側の輪郭</label>
+      <label class="ctl pixDep ringDep" title="内側の輪郭の濃さ。0 で無し、1 で物の濃い色そのまま（「内側の輪郭」がオンの時に効く）"><span>内側の輪郭の濃さ <b data-value-for="outlineRingAmt">0.5</b></span><input type="range" id="outlineRingAmt" min="0" max="1" step="0.05" value="0.5"></label>
+      <label class="chk2 pixDep ringDep" title="輪郭の線（外周と、重なった物の境目の両方）を描かず、内側の輪郭（薄い縁取り）だけにする（内側の輪郭がオンの時だけ使える）"><input type="checkbox" id="outlineOuterOff"> 内側の輪郭だけ</label>
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
     </div>

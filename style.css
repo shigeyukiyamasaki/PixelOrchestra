@@ -49,6 +49,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #weatherBox:not(:has(#weatherOn:checked)) > *:not(.hd):not(.wxThunder) { opacity: .45; pointer-events: none; }
 /* 輪郭線はドット化とセット（2026-09-30 ユーザー指定：単独では使えない）。ドット化がオフの間は薄くして触れなくする */
 #boxPlayer:not(:has(#pixelOn:checked)) .pixDep { opacity: .45; pointer-events: none; }
+/* 「内側の輪郭だけ」「内側の輪郭の濃さ」は内側の輪郭がオンの時だけ（2026-10-01 ユーザー指定） */
+#boxPlayer:not(:has(#outlineRing:checked)) .ringDep { opacity: .45; pointer-events: none; }
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */

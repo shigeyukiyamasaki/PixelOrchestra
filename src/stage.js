@@ -916,7 +916,6 @@ const _flareTmp = new THREE.Vector3();
 // ほかの物との前後は深度で正しく決まる。影は奏者だけのパスで計算したもの（全員が映る）を本編でも使う
 export const PLAYER_LAYER = 4;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
-const RING_AMT = 0.5;    // 内側の輪郭の濃さ（線に対する割合）
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
 const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, all: false, keep: [] };
 // keep：全体の時もドットにしない物（パート名・ピアノロール。2026-09-30 ユーザー指定）。粗く描く時は隠し、書き込んだ後に KEEP_LAYER だけで上から描く
@@ -941,11 +940,11 @@ function pixelPass(renderer, scene, camera) {
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, near: { value: 0.1 }, far: { value: 200 } },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
-      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform float lineDark; uniform float ring;
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform float lineDark; uniform float ring; uniform float outerOff;
         // 輪郭の色（2026-10-01 ユーザー指定：セルアウト）：隣の物の色を lineDark（輪郭の明るさ）倍に暗くした色。0 で黒、1 で物の色そのまま。
         // 以前は黒との混ぜ具合（輪郭の色）も別に持っていたが、黒がほぼ 0 なので明るさとの掛け算になり、同じ働きの重複だった
         vec3 selOut(vec4 n) { return (n.rgb / max(n.a, 0.0001)) * lineDark; }
@@ -968,7 +967,7 @@ function pixelPass(renderer, scene, camera) {
               if (s1) { if (d1 < best) nc = n1; best = min(best, d1); na = max(na, n1.a); }
               if (s2) { if (d2 < best) nc = n2; best = min(best, d2); na = max(na, n2.a); }
               if (s3) { if (d3 < best) nc = n3; best = min(best, d3); na = max(na, n3.a); }
-              if (best < 1.0) {
+              if (best < 1.0 && outerOff < 0.5) {   // outerOff：線を消す（外周と奥行きの境目の両方。内側の輪郭だけ残す。2026-10-01 ユーザー指定）
                 float la = line * na;
                 if (la < 0.01) discard;
                 gl_FragColor = vec4(selOut(nc), la);
@@ -989,19 +988,19 @@ function pixelPass(renderer, scene, camera) {
             bool edge = (hx && ld - 0.5 * (l0 + l1) > gap) || (hy && ld - 0.5 * (l2 + l3) > gap)
                      || (!hx && ((s0 && l0 < ld - 2.0 * gap) || (s1 && l1 < ld - 2.0 * gap)))
                      || (!hy && ((s2 && l2 < ld - 2.0 * gap) || (s3 && l3 < ld - 2.0 * gap)));
-            if (edge) {   // 手前側の隣（一番近い物）の色で線を引く
+            if (edge && outerOff < 0.5) {   // 手前側の隣（一番近い物）の色で線を引く
               vec4 fc = c; float fl = ld;
               if (s0 && l0 < fl) { fl = l0; fc = n0; }
               if (s1 && l1 < fl) { fl = l1; fc = n1; }
               if (s2 && l2 < fl) { fl = l2; fc = n2; }
               if (s3 && l3 < fl) { fl = l3; fc = n3; }
               c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a);   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
-            } else if (ring > 0.0) {
+            } else if (ring > 0.0 && !edge) {
               // 内側の輪郭（2026-10-01 ユーザー指定）：線に接する物の縁の 1 ドット目に、自分の濃い色を線の ring 倍の濃さで重ねる（線→薄い線→物の色のグラデーション）。
               // 外側の線の内側＝隣が背景、内側の線の手前側＝隣が自分よりずっと奥
               bool rim = !s0 || !s1 || !s2 || !s3
                       || (s0 && l0 > ld + 2.0 * gap) || (s1 && l1 > ld + 2.0 * gap) || (s2 && l2 > ld + 2.0 * gap) || (s3 && l3 > ld + 2.0 * gap);
-              if (rim) c.rgb = mix(c.rgb, selOut(c) * c.a, line * ring * c.a);
+              if (rim) c.rgb = mix(c.rgb, selOut(c) * c.a, ring * c.a);   // ring：内側の輪郭の濃さ（輪郭の濃さとは別。2026-10-01）
             }
           } else if (c.a < 0.01) discard;
           // 半透明の物（スカイドーム等）は透明な黒の上に描いたので色に不透明度が掛かっている。割り戻してから重ねる
@@ -1035,7 +1034,7 @@ function renderMainWithPixels(renderer, scene, camera) {
   const u = pix.quad.mat.uniforms;
   u.tex.value = pix.rt.texture; u.depth.value = pix.rt.depthTexture;
   u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
-  u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? RING_AMT : 0;
+  u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? Math.max(0, Math.min(1, pix.ringAmt ?? 0.5)) : 0; u.outerOff.value = pix.outerOff ? 1 : 0;
   const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
   renderer.autoClear = false;
   renderer.render(pix.quad.scene, pix.quad.cam);
