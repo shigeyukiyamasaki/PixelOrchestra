@@ -1995,16 +1995,22 @@ function metalShader(shader) {
   // (3) フレネル（縁の反射）。視線に対して浅い角度の面ほど強く光る。
   //     ボクセルは面が軸に平行な平面ばかりで、点光源の鏡面だけだと「明るくなった」以上にならなかった。
   //     フレネルは**カメラの角度で変わる**ので、視点を回した時に縁がギラっと動き、金属らしさが出る（2026-09-23 ユーザー指定）
-  shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>',
+  // r128 の Phong の最後は「gl_FragColor = vec4( outgoingLight, diffuseColor.a );」の一行（#include <output_fragment> は r133 から）。
+  // 以前は output_fragment を探していて見つからず、縁の反射が効いていなかった（2026-10-01 に判明して修正）
+  const OUT = 'gl_FragColor = vec4( outgoingLight, diffuseColor.a );';
+  // 範囲 3 乗 → 2 乗、強さは「金属の照り返し」スライダー（METAL_FRES。既定 2.0。以前は固定 0.8）（2026-10-01 ユーザー指定）
+  shader.uniforms.uMetalFres = METAL_FRES;
+  shader.fragmentShader = '#define FRES_POW 2.0\nuniform float uMetalFres;\n' + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(OUT,
     `{
-      float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 3.0);
+      float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), FRES_POW);
       vec3 fTint = vec3(1.0);
       #ifdef USE_COLOR
         fTint = mix(vec3(1.0), vColor.rgb, 0.6);
       #endif
-      outgoingLight += fres * specular * 0.8 * fTint * mtl;
+      outgoingLight += fres * specular * uMetalFres * fTint * mtl;
     }
-    #include <output_fragment>`);
+    ${OUT}`);
   // (4) ブルームの素材として描く時（uBloomPass=1）：本編の深度で隠れた画素は捨てる
   shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>',
     `#include <clipping_planes_fragment>
@@ -2033,6 +2039,9 @@ const METAL_SPEC = 2;
 // 金属だけ**低い閾値**でブルームに乗せるため、天気と同じ「専用レイヤーで素材だけ描き足す」方式を使う（2026-09-23 ユーザー指定）。
 // 全体ブルームの閾値（レンズ欄）を下げると画面全部が光ってしまうので、金属には別の閾値を持たせる
 export const METAL_LAYER = 3;
+// 金属の照り返し（縁の反射＝フレネルの強さ。全マテリアル共有。2026-10-01 ユーザー指定）
+export const METAL_FRES = { value: 2.0 };
+export function setMetalFresnel(v) { METAL_FRES.value = Math.max(0, v); }
 export const METAL_BLOOM = {
   pass: { value: 0 },                       // 1 = ブルームの素材として描いている（renderFrame が切り替える）
   depth: { value: null }, res: { value: new THREE.Vector2(1, 1) },   // 本編の深度で隠れた画素を捨てる

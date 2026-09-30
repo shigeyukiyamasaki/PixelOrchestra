@@ -1085,7 +1085,30 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
       const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
       renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
       camera.layers.set(METAL_LAYER);
-      renderer.setRenderTarget(post.c); renderer.render(scene, camera);
+      if (pixOn && pix.on) {
+        // ドット化の時（2026-10-01 ユーザー指定：金属のブルームもドットの形に）：素材をドット化と同じ粗い解像度で描き、補間なしで post.c へ写す
+        const w = pix.rt.width, h = pix.rt.height;
+        if (!pix.metalRt || pix.metalRt.width !== w || pix.metalRt.height !== h) {
+          pix.metalRt?.dispose();
+          pix.metalRt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+        }
+        METAL_BLOOM.res.value.set(w, h);
+        renderer.setRenderTarget(pix.metalRt); renderer.setClearColor(0x000000, 0); renderer.clear();
+        renderer.render(scene, camera);
+        if (!pix.metalCopy) pix.metalCopy = new THREE.ShaderMaterial({
+          uniforms: { tex: { value: null } },
+          vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+          fragmentShader: 'uniform sampler2D tex; varying vec2 vUv; void main() { vec4 c = texture2D(tex, vUv); if (c.a < 0.5) discard; gl_FragColor = c; }',   // 金属の画素だけ上書き（元の作りと同じ）
+          depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false,
+        });
+        pix.metalCopy.uniforms.tex.value = pix.metalRt.texture;
+        camera.layers.set(0);
+        const prevMat = post.quad.material; post.quad.material = pix.metalCopy;
+        renderer.setRenderTarget(post.c); renderer.render(post.quadScene, post.quadCam);
+        post.quad.material = prevMat;
+      } else {
+        renderer.setRenderTarget(post.c); renderer.render(scene, camera);
+      }
       camera.layers.set(0);
       renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
       // 深度の参照は必ず外す（天気と同じ理由：次のフレームで post.main を描く時に同時読みになる）
