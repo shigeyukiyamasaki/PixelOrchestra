@@ -188,6 +188,10 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen .side label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
 #screenBar .screen .side > button { margin-top: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }   /* 削除は列の一番下 */
 #screenBar .screen .side > button:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+/* 複製（スクリーン。2026-09-29 ユーザー指定）：削除のすぐ上。赤は壊す操作だけの色なので、ふつうのボタンの色に戻す */
+#screenBar .screen .side > button.dup { background: none; border-color: var(--line); color: inherit; }
+#screenBar .screen .side > button.dup:hover { border-color: var(--accent); color: var(--accent); background: none; }
+#screenBar .screen .side > button.dup + button { margin-top: 4px; }
 /* 抜く色の色玉：「抜く強さ」の行のラベルの場所に置く（2026-09-18 ユーザー指定。以前は最下行にあった） */
 #screenBar .screen .sld input[type=color] { width: 26px; height: 16px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
 /* スカイドーム（遠景。3 層固定）はスクリーンと見分けが付くよう枠の色を変える */

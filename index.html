@@ -65,6 +65,15 @@
       <!-- 弦のショート系の弓（2026-09-28 ユーザー指定）：1 音で弓を動かす時間と、減速の強さ（音の頭の速さ＝平均の何倍か） -->
       <label class="ctl" title="弦のショート系（スタッカート・スピッカート等）で、1 音の弓を動かす時間 [秒]。MIDI ノートの長さは使わない"><span>ショートの長さ <b data-value-for="bowShortSec">0.3</b></span><input type="range" id="bowShortSec" min="0.05" max="1" step="0.05" value="0.3"></label>
       <label class="ctl" title="弦のショート系の弓の減速の強さ。音の頭の速さが平均の何倍か（1 で一定の速さ、大きいほど初速が速く急に止まる）"><span>ショートの初速 <b data-value-for="bowShortEase">4</b></span><input type="range" id="bowShortEase" min="1" max="8" step="0.5" value="4"></label>
+      <!-- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="chk2" title="奏者と指揮者だけを粗い解像度で描き、ドット絵のように見せる（背景・床・スクリーンはそのまま）"><input type="checkbox" id="pixelOn"> ドット化</label>
+      <label class="ctl" title="ドット化の粗さ。画面の何ピクセルを 1 ドットにするか（大きいほど粗い）"><span>ドットの大きさ <b data-value-for="pixelSize">3</b></span><input type="range" id="pixelSize" min="2" max="10" step="1" value="3"></label>
+      <!-- トゥーン陰影（2 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="chk2" title="奏者と指揮者の陰影を、なめらかな明暗ではなく段にくっきり分ける（アニメ塗り）"><input type="checkbox" id="toonOn"> トゥーン陰影</label>
+      <label class="ctl" title="陰影の段の細かさ。明るさ 1 あたり何段に分けるか（小さいほど段がはっきり、少なくなる）"><span>陰影の段数 <b data-value-for="toonSteps">3</b></span><input type="range" id="toonSteps" min="2" max="6" step="1" value="3"></label>
+      <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="chk2" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオフの時は画面の 1 ピクセル）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
+      <label class="ctl" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
     </div>

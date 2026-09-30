@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, LABEL_FONT, dotPart } from './sprites.js';
@@ -633,6 +633,13 @@ function screenRow(sc, i) {
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
   flip.checked = !!sc.flip;
   flip.onchange = () => { sc.flip = flip.checked; changed(); };
+  // 複製：設定を丸ごと写したカードを右隣に入れる（2026-09-29 ユーザー指定）
+  const dup = put(foot, '<button class="dup" title="このスクリーンを複製する（設定ごと。右隣に入る）">複製</button>');
+  dup.onclick = () => {
+    const copy = withDefaults(JSON.parse(JSON.stringify(sc)));
+    copy.name = `${sc.name || `スクリーン${i + 1}`}のコピー`;
+    screens.splice(i + 1, 0, copy); renderScreens(); changed();
+  };
   const del = put(foot, '<button title="このスクリーンを削除する">削除</button>');
   del.onclick = () => { screens.splice(i, 1); renderScreens(); changed(); };
   return box;
@@ -1091,7 +1098,8 @@ function settings() {
     weatherSpeed: num('weatherSpeed', 1), weatherFps: num('weatherFps', 12), weatherWidth: num('weatherWidth', 0.3),
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
     instFlash: num('instFlash', 1),
-    bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
+    pixelOn: $('pixelOn').checked, pixelSize: num('pixelSize', 3), toonOn: $('toonOn').checked, toonSteps: num('toonSteps', 3), outlineOn: $('outlineOn').checked, outlineAmt: num('outlineAmt', 1),   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
@@ -1916,6 +1924,9 @@ function animate() {
   }
   applyShake(shakeNow);   // 画面の揺れ：この描画の間だけカメラをずらす（空の球も一緒に動く）
   updateSky(camera);   // 空の球をカメラに追従
+  // 奏者のドット化（2026-09-30 ユーザー指定）：奏者と指揮者の root を渡す
+  { const s2 = settings(), any = s2.pixelOn || s2.toonOn || s2.outlineOn;
+    setPixelPlayers({ on: s2.pixelOn, size: s2.pixelSize, toon: s2.toonOn, steps: s2.toonSteps, outline: s2.outlineOn, lineAmt: s2.outlineAmt, roots: any ? [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])] : [] }); }
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
   undoShake();
 }

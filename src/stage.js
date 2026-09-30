@@ -91,7 +91,7 @@ export const SEAT_SHIFT_Z = -1.0; // 指揮者以外（座席・ひな壇）を�
 export const STAGE_X_HALF = 24;
 export const FLOOR_X_HALF = STAGE_X_HALF;   // 左右の縁（±x）
 export const FLOOR_Z_FRONT = 3;   // 手前の縁
-export const FLOOR_BACK_R = 29;   // 奥の縁は一番奥のひな壇の外径（29）と同じ弧（2026-09-13 ユーザー指定「雛壇のところでカット」。0.5 はみ出していたのを、ひな壇の背面の壁と面一に。2026-09-17 ユーザー指定）
+export const FLOOR_BACK_R = 31;   // 2026-09-29：一番奥のひな壇の奥行きを 1.5 倍（外径 29 → 31）にしたので合わせた。 奥の縁は一番奥のひな壇の外径（29）と同じ弧（2026-09-13 ユーザー指定「雛壇のところでカット」。0.5 はみ出していたのを、ひな壇の背面の壁と面一に。2026-09-17 ユーザー指定）
 
 const deg = (d) => (d * Math.PI) / 180;
 // 打楽器の後ろに置く、奏者のいないひな壇（キャラクター等を置く想定。2026-09-13 ユーザー指定）。
@@ -100,7 +100,8 @@ export const BACK_ROWS = [
   // clipX を指定すると、扇形の切り口ではなく x = ±clipX の垂直面で切る（2026-09-13 ユーザー指定）。
   // span は clipX より外まで届く広さにしておき、実際の端は clipX が決める
   // span 150：段の内径（25）の縁が切り口 x = ±24 まで届く広さ（130 では内側の縁が 22.7 で止まり、扇の切り口が見えた）
-  { r: 27, h: 4.0, span: 150, clipX: STAGE_X_HALF, screen: true },
+  // 奥行き 1.5 倍（2026-09-29 ユーザー指定）：内径 25 はそのまま、外径 29 → 31（中心 28・半幅 3）
+  { r: 28, half: 3, h: 4.0, span: 150, clipX: STAGE_X_HALF, screen: true },
 ];
 // 一番奥のひな壇の上に立てる湾曲スクリーン（2026-09-13 ユーザー指定）。背景やキャラクターを映す想定で、
 // 何枚でも重ねられる。pos は段の奥行きの中での位置（0 = 手前の辺 / 1 = 奥の辺）。
@@ -288,7 +289,7 @@ export function setScreens(list) {
   screenList = (list || []).map((o) => ({ ...o }));
   buildScreens();
 }
-const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）
+const RISER_HALF = 2;        // ひな壇の帯の半幅 [unit]（内径 r-2 〜 外径 r+2）。段ごとに row.half で上書きできる
 const RISER_MARGIN = deg(7); // 座席の両端に足す余白角
 const KB_CROWDED = 3;        // 鍵盤群（ピアノ・ハープ・チェレスタ・チューブラーベル）がこの台数以上で、チェレスタを木管の隣へ（2026-09-25 ユーザー指定）
 const CEL_PIANO_GAP = 0.5;   // 木管の隣のチェレスタとピアノとの隙間 [unit]
@@ -310,7 +311,7 @@ export function createStage(container) {
   // 金属のブルームのパス（camera.layers.set(METAL_LAYER)）でもライトを拾わせる。
   // three.js は camera.layers に合わないオブジェクトを**ライトも含めて**スキップするので、
   // 有効化しないと金属が真っ黒に描かれてブルームに何も乗らない（2026-09-23 に実際にそうなった）
-  const litEverywhere = (l) => { l.layers.enable(METAL_LAYER); return l; };
+  const litEverywhere = (l) => { l.layers.enable(METAL_LAYER); l.layers.enable(PLAYER_LAYER); return l; };   // 奏者だけのドット化のパスでも照らす
   const hemi = litEverywhere(new THREE.HemisphereLight('#ffffff', '#6a5a50', 0.7));
   scene.add(hemi);
   const amb = litEverywhere(new THREE.AmbientLight('#ffffff', 0));   // 環境光（跳ね返り）。屋外では天空光に少し足す（2026-09-17）
@@ -548,7 +549,7 @@ export function createStage(container) {
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
-  const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
+  const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
   stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
@@ -910,9 +911,137 @@ function blurPass(renderer, src, dst, dx, dy, step) {
 }
 /** 1 フレーム描く。屋外（太陽あり）なら太陽だけのブルームを掛け、屋内なら従来どおり直接描く */
 const _flareTmp = new THREE.Vector3();
+// ---- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ）----
+// 奏者だけを 1/size の解像度で描き（色と深度）、本編の前に最近傍で画面いっぱいに書き込む。本編は奏者を隠して上から描くので、
+// ほかの物との前後は深度で正しく決まる。影は奏者だけのパスで計算したもの（全員が映る）を本編でも使う
+export const PLAYER_LAYER = 4;
+const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
+const pix = { on: false, size: 3, roots: [], rt: null, quad: null, toon: false, steps: 3, outline: false, lineAmt: 1 };
+/** o = { on（ドット化）, size（画面の何 px を 1 ドットに）, toon（陰影を段に）, steps（明るさ 1 あたりの段数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
+ *  輪郭線はドット化の画像から引くので、ドット化がオフで輪郭線がオンの時は等倍（size 1）で描く */
+export function setPixelPlayers(o) { Object.assign(pix, o); TOON.steps.value = pix.toon ? Math.max(1, pix.steps || 3) : 0; if (pix.toon) injectToon(pix.roots); }
+// ---- トゥーン陰影（2 段目。2026-09-30 ユーザー指定：奏者だけ）----
+// 奏者の材質の光の計算の後に差し込む：明るさ（出る光 ÷ 地の色）を段に丸め、光の色合いは残す。
+// 段数は共有の uniform（0 で無効）なので、かけ外しで材質を作り直さない。差し込みは材質ごとに 1 度（既存の onBeforeCompile＝金属の処理につなぐ）
+const TOON = { steps: { value: 0 } };
+function injectToon(roots) {
+  for (const r of roots) r.traverse((o) => {
+    const ms = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of ms) {
+      if (m.userData.toon || m.isShaderMaterial) continue;
+      m.userData.toon = true;
+      const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+      m.onBeforeCompile = (shader, renderer) => {
+        prev?.call(m, shader, renderer);
+        // r128 の材質は最後が「gl_FragColor = vec4( outgoingLight, diffuseColor.a );」の一行（#include <output_fragment> は r133 から）
+        const OUT = 'gl_FragColor = vec4( outgoingLight, diffuseColor.a );';
+        if (!shader.fragmentShader.includes(OUT)) return;
+        shader.uniforms.uToonSteps = TOON.steps;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uToonSteps;')
+          .replace(OUT, `
+            if (uToonSteps > 0.5) {
+              vec3 albedo = max(diffuseColor.rgb, vec3(0.02));
+              vec3 L = outgoingLight / albedo;                       // 光の強さ（色つき）
+              float l = max(max(L.r, L.g), L.b);
+              float q = max(floor(l * uToonSteps + 0.5), l > 0.02 ? 1.0 : 0.0) / uToonSteps;   // 段に丸める（真っ黒にはしない）
+              outgoingLight = albedo * (l > 1e-4 ? L * (q / l) : vec3(0.0));
+            }
+            ${OUT}`);
+      };
+      m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|toon';
+      m.needsUpdate = true;
+    }
+  });
+}
+const _pixClear = new THREE.Color();
+function pixelPass(renderer, scene, camera) {
+  if (!(pix.on || pix.outline) || !pix.roots.length) return false;
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const k = pix.on ? Math.max(1, pix.size || 1) : 1, lw = Math.max(1, Math.round(size.x / k)), lh = Math.max(1, Math.round(size.y / k));
+  if (!pix.rt || pix.rt.width !== lw || pix.rt.height !== lh) {
+    pix.rt?.dispose();
+    pix.rt = new THREE.WebGLRenderTarget(lw, lh, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+    pix.rt.depthTexture = new THREE.DepthTexture(lw, lh);
+    pix.rt.depthTexture.type = THREE.UnsignedIntType;
+  }
+  if (!pix.quad) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
+                  line: { value: 0 }, lineCol: { value: new THREE.Color('#101016') }, near: { value: 0.1 }, far: { value: 200 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
+      // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform vec3 lineCol;
+        uniform float near; uniform float far; varying vec2 vUv;
+        float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
+        void main() {
+          vec4 c = texture2D(tex, vUv);
+          float d = texture2D(depth, vUv).r;
+          if (line > 0.0) {
+            vec2 o0 = vec2(texel.x, 0.0), o1 = vec2(-texel.x, 0.0), o2 = vec2(0.0, texel.y), o3 = vec2(0.0, -texel.y);
+            vec4 n0 = texture2D(tex, vUv + o0), n1 = texture2D(tex, vUv + o1), n2 = texture2D(tex, vUv + o2), n3 = texture2D(tex, vUv + o3);
+            float d0 = texture2D(depth, vUv + o0).r, d1 = texture2D(depth, vUv + o1).r, d2 = texture2D(depth, vUv + o2).r, d3 = texture2D(depth, vUv + o3).r;
+            if (c.a < 0.01) {
+              float best = 1.0;
+              if (n0.a > 0.01) best = min(best, d0);
+              if (n1.a > 0.01) best = min(best, d1);
+              if (n2.a > 0.01) best = min(best, d2);
+              if (n3.a > 0.01) best = min(best, d3);
+              if (best >= 1.0) discard;
+              gl_FragColor = vec4(lineCol, line);
+              gl_FragDepthEXT = best;
+              return;
+            }
+            float ld = lin(d), gap = ${LINE_GAP.toFixed(3)};
+            bool edge = (n0.a > 0.01 && lin(d0) < ld - gap) || (n1.a > 0.01 && lin(d1) < ld - gap)
+                     || (n2.a > 0.01 && lin(d2) < ld - gap) || (n3.a > 0.01 && lin(d3) < ld - gap);
+            if (edge) c.rgb = mix(c.rgb, lineCol, line);
+          } else if (c.a < 0.01) discard;
+          gl_FragColor = c;
+          gl_FragDepthEXT = d;   // 奏者の深度も書く（本編の物との前後を正しくする）
+        }`,
+      extensions: { fragDepth: true },
+      transparent: true, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth, toneMapped: false,
+    });
+    const scn = new THREE.Scene(), mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    mesh.frustumCulled = false; scn.add(mesh);
+    pix.quad = { scene: scn, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat };
+  }
+  for (const r of pix.roots) r.traverse((o) => o.layers.enable(PLAYER_LAYER));   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
+  renderer.getClearColor(_pixClear); const ca = renderer.getClearAlpha();
+  renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
+  camera.layers.set(PLAYER_LAYER);
+  renderer.render(scene, camera);   // 影の計算はここで（全員が映った状態で）
+  camera.layers.set(0);
+  renderer.setClearColor(_pixClear, ca);
+  for (const r of pix.roots) { r.userData.pixWasVisible = r.visible; r.visible = false; }
+  return true;
+}
+// 本編の描画先を消した直後に呼ぶ：奏者のドット絵を書き込み、奏者を隠した本編を上から描く（消さない・影は計算し直さない）
+function renderMainWithPixels(renderer, scene, camera) {
+  const u = pix.quad.mat.uniforms;
+  u.tex.value = pix.rt.texture; u.depth.value = pix.rt.depthTexture;
+  u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
+  u.near.value = camera.near; u.far.value = camera.far;
+  const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
+  renderer.autoClear = false;
+  renderer.render(pix.quad.scene, pix.quad.cam);
+  renderer.shadowMap.autoUpdate = false;
+  renderer.render(scene, camera);
+  renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
+  for (const r of pix.roots) r.visible = r.userData.pixWasVisible ?? true;
+  pix.quad.mat.uniforms.depth.value = null;   // 次のフレームで pix.rt に描く時に同時読みにならないよう外す
+}
+
 export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.7) {
   const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
-  if (!sunPass && bloomAll <= 0.001) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
+  const pixOn = pixelPass(renderer, scene, camera);
+  if (!sunPass && bloomAll <= 0.001) {
+    renderer.setRenderTarget(null);
+    if (pixOn) { renderer.clear(); renderMainWithPixels(renderer, scene, camera); } else renderer.render(scene, camera);
+    return;
+  }
   ensurePost(renderer);
   const { el, cloud } = stageCtx.bloom, gain = stageCtx.bloom.gain ?? 1, vis = sunPass ? stageCtx.bloom.vis : 0;
   const hT = Math.min(1, Math.max(0, (el - 3) / 32));
@@ -920,7 +1049,7 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
   const haze = 1 + 0.5 * Math.min(1, cloud / 0.5);               // 薄雲でにじみが広がる
   // 1) 本編 → 等倍 RT（深度付き）
   renderer.setRenderTarget(post.main); renderer.setClearColor(0x000000, 0); renderer.clear();
-  renderer.render(scene, camera);
+  if (pixOn) renderMainWithPixels(renderer, scene, camera); else renderer.render(scene, camera);
   // 全体ブルーム（2026-09-17）：本編の明るい部分を抜いて 1/4 RT でぼかす（2 段）。太陽のブルームとは別系統
   const texPerDegAll = post.c.height / (camera.fov || 50);
   if (bloomAll > 0.001) {
@@ -1228,7 +1357,7 @@ export function buildRisers(seats) {
   ];
   for (const { row, ro, fam, col } of rows) {
     if (row.h <= 0) continue;
-    const rIn = row.r - RISER_HALF, rOut = row.r + RISER_HALF;
+    const rIn = row.r - (row.half ?? RISER_HALF), rOut = row.r + (row.half ?? RISER_HALF);
     // この段（高さ h・半径帯）に座っている奏者の角度範囲（奏者のいない段は span をそのまま使う）
     let thMin = Infinity, thMax = -Infinity;
     for (const seat of seats) for (const p of seat.positions) {
@@ -2082,7 +2211,7 @@ export function layoutSeats(tracks, footprintOf = null) {
       const row = ROWS[fam];
       if (!(row.h > 0)) continue;
       const [thLo, thHi] = riserRange(fam);
-      const rIn = row.r - RISER_HALF, rOut = row.r + RISER_HALF;
+      const rIn = row.r - (row.half ?? RISER_HALF), rOut = row.r + (row.half ?? RISER_HALF);
       for (const st of group) for (const p of st.positions) {
         const c = st.clear, r = Math.hypot(p.x, p.z);
         if (r + c.back + CLEAR_PAD_R < rIn || r - c.front - CLEAR_PAD_R > rOut) continue;   // 半径の帯と重ならない
