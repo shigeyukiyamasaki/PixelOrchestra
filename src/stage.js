@@ -916,49 +916,18 @@ const _flareTmp = new THREE.Vector3();
 // ほかの物との前後は深度で正しく決まる。影は奏者だけのパスで計算したもの（全員が映る）を本編でも使う
 export const PLAYER_LAYER = 4;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
-const pix = { on: false, size: 3, roots: [], rt: null, quad: null, toon: false, steps: 3, outline: false, lineAmt: 1 };
-/** o = { on（ドット化）, size（画面の何 px を 1 ドットに）, toon（陰影を段に）, steps（明るさ 1 あたりの段数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
- *  輪郭線はドット化の画像から引くので、ドット化がオフで輪郭線がオンの時は等倍（size 1）で描く */
-export function setPixelPlayers(o) { Object.assign(pix, o); TOON.steps.value = pix.toon ? Math.max(1, pix.steps || 3) : 0; if (pix.toon) injectToon(pix.roots); }
-// ---- トゥーン陰影（2 段目。2026-09-30 ユーザー指定：奏者だけ）----
-// 奏者の材質の光の計算の後に差し込む：明るさ（出る光 ÷ 地の色）を段に丸め、光の色合いは残す。
-// 段数は共有の uniform（0 で無効）なので、かけ外しで材質を作り直さない。差し込みは材質ごとに 1 度（既存の onBeforeCompile＝金属の処理につなぐ）
-const TOON = { steps: { value: 0 } };
-function injectToon(roots) {
-  for (const r of roots) r.traverse((o) => {
-    const ms = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of ms) {
-      if (m.userData.toon || m.isShaderMaterial) continue;
-      m.userData.toon = true;
-      const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
-      m.onBeforeCompile = (shader, renderer) => {
-        prev?.call(m, shader, renderer);
-        // r128 の材質は最後が「gl_FragColor = vec4( outgoingLight, diffuseColor.a );」の一行（#include <output_fragment> は r133 から）
-        const OUT = 'gl_FragColor = vec4( outgoingLight, diffuseColor.a );';
-        if (!shader.fragmentShader.includes(OUT)) return;
-        shader.uniforms.uToonSteps = TOON.steps;
-        shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uToonSteps;')
-          .replace(OUT, `
-            if (uToonSteps > 0.5) {
-              vec3 albedo = max(diffuseColor.rgb, vec3(0.02));
-              vec3 L = outgoingLight / albedo;                       // 光の強さ（色つき）
-              float l = max(max(L.r, L.g), L.b);
-              float q = max(floor(l * uToonSteps + 0.5), l > 0.02 ? 1.0 : 0.0) / uToonSteps;   // 段に丸める（真っ黒にはしない）
-              outgoingLight = albedo * (l > 1e-4 ? L * (q / l) : vec3(0.0));
-            }
-            ${OUT}`);
-      };
-      m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|toon';
-      m.needsUpdate = true;
-    }
-  });
-}
+// rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
+const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1 };
+/** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
+ *  輪郭線はドット化の画像から引くので、ドット化がオフで輪郭線がオンの時は等倍で描く */
+// トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
+export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
 function pixelPass(renderer, scene, camera) {
   if (!(pix.on || pix.outline) || !pix.roots.length) return false;
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  const k = pix.on ? Math.max(1, pix.size || 1) : 1, lw = Math.max(1, Math.round(size.x / k)), lh = Math.max(1, Math.round(size.y / k));
+  // 1 ドットの大きさ [画素]（画面の画素より小さくはしない）
+  const k = pix.on ? Math.max(1, Math.min(size.x, size.y) / Math.max(1, pix.rows || 330)) : 1, lw = Math.max(1, Math.round(size.x / k)), lh = Math.max(1, Math.round(size.y / k));
   if (!pix.rt || pix.rt.width !== lw || pix.rt.height !== lh) {
     pix.rt?.dispose();
     pix.rt = new THREE.WebGLRenderTarget(lw, lh, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });

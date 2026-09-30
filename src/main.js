@@ -1099,7 +1099,8 @@ function settings() {
     weatherPos: num('weatherPos', 0.5), weatherHeight: num('weatherHeight', 12), weatherGlint: num('weatherGlint', 1),
     instFlash: num('instFlash', 1),
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
-    pixelOn: $('pixelOn').checked, pixelSize: num('pixelSize', 3), toonOn: $('toonOn').checked, toonSteps: num('toonSteps', 3), outlineOn: $('outlineOn').checked, outlineAmt: num('outlineAmt', 1),   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
+    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, outlineAmt: num('outlineAmt', 1),   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
@@ -1925,8 +1926,8 @@ function animate() {
   applyShake(shakeNow);   // 画面の揺れ：この描画の間だけカメラをずらす（空の球も一緒に動く）
   updateSky(camera);   // 空の球をカメラに追従
   // 奏者のドット化（2026-09-30 ユーザー指定）：奏者と指揮者の root を渡す
-  { const s2 = settings(), any = s2.pixelOn || s2.toonOn || s2.outlineOn;
-    setPixelPlayers({ on: s2.pixelOn, size: s2.pixelSize, toon: s2.toonOn, steps: s2.toonSteps, outline: s2.outlineOn, lineAmt: s2.outlineAmt, roots: any ? [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])] : [] }); }
+  { const s2 = settings(), any = s2.pixelOn || s2.outlineOn;
+    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, outline: s2.outlineOn, lineAmt: s2.outlineAmt, roots: any ? [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])] : [] }); }
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
   undoShake();
 }
