@@ -917,9 +917,12 @@ const _flareTmp = new THREE.Vector3();
 export const PLAYER_LAYER = 4;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
-const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1 };
+const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, all: false, keep: [] };
+// keep：全体の時もドットにしない物（パート名・ピアノロール。2026-09-30 ユーザー指定）。粗く描く時は隠し、書き込んだ後に KEEP_LAYER だけで上から描く
+const KEEP_LAYER = 5;
 /** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
- *  輪郭線はドット化の画像から引くので、ドット化がオフで輪郭線がオンの時は等倍で描く */
+ *  輪郭線はドット化の画像から引く（ドット化とセットで使う。単独ではかけない。2026-09-30 ユーザー指定）。
+ *  all：画面全体にかける（2026-09-30 ユーザー指定）。roots には scene を渡す。場面を丸ごと粗く描いて書き込むだけ（本編は描かない） */
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
@@ -937,11 +940,14 @@ function pixelPass(renderer, scene, camera) {
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineCol: { value: new THREE.Color('#101016') }, near: { value: 0.1 }, far: { value: 200 } },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, near: { value: 0.1 }, far: { value: 200 } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
-      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform vec3 lineCol;
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform float lineDark;
+        // 輪郭の色（2026-10-01 ユーザー指定：セルアウト）：隣の物の色を lineDark（輪郭の明るさ）倍に暗くした色。0 で黒、1 で物の色そのまま。
+        // 以前は黒との混ぜ具合（輪郭の色）も別に持っていたが、黒がほぼ 0 なので明るさとの掛け算になり、同じ働きの重複だった
+        vec3 selOut(vec4 n) { return (n.rgb / max(n.a, 0.0001)) * lineDark; }
         uniform float near; uniform float far; varying vec2 vUv;
         float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
         void main() {
@@ -951,23 +957,49 @@ function pixelPass(renderer, scene, camera) {
             vec2 o0 = vec2(texel.x, 0.0), o1 = vec2(-texel.x, 0.0), o2 = vec2(0.0, texel.y), o3 = vec2(0.0, -texel.y);
             vec4 n0 = texture2D(tex, vUv + o0), n1 = texture2D(tex, vUv + o1), n2 = texture2D(tex, vUv + o2), n3 = texture2D(tex, vUv + o3);
             float d0 = texture2D(depth, vUv + o0).r, d1 = texture2D(depth, vUv + o1).r, d2 = texture2D(depth, vUv + o2).r, d3 = texture2D(depth, vUv + o3).r;
-            if (c.a < 0.01) {
-              float best = 1.0;
-              if (n0.a > 0.01) best = min(best, d0);
-              if (n1.a > 0.01) best = min(best, d1);
-              if (n2.a > 0.01) best = min(best, d2);
-              if (n3.a > 0.01) best = min(best, d3);
-              if (best >= 1.0) discard;
-              gl_FragColor = vec4(lineCol, line);
-              gl_FragDepthEXT = best;
+            // 「物がある」＝色があり奥行きも書かれている（2026-09-30 ユーザー指摘：スクロールする木の輪郭が途中で消えた）。
+            // 空の球は画面全体に薄い透明度（0.01〜0.035）で描かれるが奥行きを書かないので、透明度だけで見ると場所により「物」扱いになり外側の線が消えた
+            bool s0 = n0.a > 0.01 && d0 < 0.99999, s1 = n1.a > 0.01 && d1 < 0.99999, s2 = n2.a > 0.01 && d2 < 0.99999, s3 = n3.a > 0.01 && d3 < 0.99999;
+            if (!(c.a > 0.01 && d < 0.99999)) {   // 背景（何も無い・空）：隣に物があれば外側の線
+              // 線の濃さは隣の物の透明度に比例（端のぼかし等で薄くなる所は線も薄く。2026-09-30 ユーザー指定）
+              float best = 1.0, na = 0.0; vec4 nc = vec4(0.0);   // nc：一番手前の隣の物の色（輪郭の色に使う）
+              if (s0) { if (d0 < best) nc = n0; best = min(best, d0); na = max(na, n0.a); }
+              if (s1) { if (d1 < best) nc = n1; best = min(best, d1); na = max(na, n1.a); }
+              if (s2) { if (d2 < best) nc = n2; best = min(best, d2); na = max(na, n2.a); }
+              if (s3) { if (d3 < best) nc = n3; best = min(best, d3); na = max(na, n3.a); }
+              if (best < 1.0) {
+                float la = line * na;
+                if (la < 0.01) discard;
+                gl_FragColor = vec4(selOut(nc), la);
+                gl_FragDepthEXT = best;
+                return;
+              }
+              if (c.a < 0.01) discard;
+              gl_FragColor = vec4(c.rgb / max(c.a, 0.0001), c.a);   // 空はそのまま
+              gl_FragDepthEXT = d;
               return;
             }
-            float ld = lin(d), gap = ${LINE_GAP.toFixed(3)};
-            bool edge = (n0.a > 0.01 && lin(d0) < ld - gap) || (n1.a > 0.01 && lin(d1) < ld - gap)
-                     || (n2.a > 0.01 && lin(d2) < ld - gap) || (n3.a > 0.01 && lin(d3) < ld - gap);
-            if (edge) c.rgb = mix(c.rgb, lineCol, line);
+            // 内側の線：奥行きが急に折れる所だけ（2026-09-30 ユーザー指摘：全体の時、遠くの地面が一面の線になった）。
+            // 浅い角度の地面は 1 ドットごとに奥行きが大きく変わるが、なだらかに続くだけなので、両隣との差（2 階差分）で見る。
+            // 自分が両隣の平均より gap 以上奥なら、手前の物の縁の奥側として線にする。gap は遠いほど大きく
+            float ld = lin(d), gap = max(${LINE_GAP.toFixed(3)}, ld * 0.03);
+            float l0 = lin(d0), l1 = lin(d1), l2 = lin(d2), l3 = lin(d3);
+            bool hx = s0 && s1, hy = s2 && s3;
+            bool edge = (hx && ld - 0.5 * (l0 + l1) > gap) || (hy && ld - 0.5 * (l2 + l3) > gap)
+                     || (!hx && ((s0 && l0 < ld - 2.0 * gap) || (s1 && l1 < ld - 2.0 * gap)))
+                     || (!hy && ((s2 && l2 < ld - 2.0 * gap) || (s3 && l3 < ld - 2.0 * gap)));
+            if (edge) {   // 手前側の隣（一番近い物）の色で線を引く
+              vec4 fc = c; float fl = ld;
+              if (s0 && l0 < fl) { fl = l0; fc = n0; }
+              if (s1 && l1 < fl) { fl = l1; fc = n1; }
+              if (s2 && l2 < fl) { fl = l2; fc = n2; }
+              if (s3 && l3 < fl) { fl = l3; fc = n3; }
+              c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a);   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
+            }
           } else if (c.a < 0.01) discard;
-          gl_FragColor = c;
+          // 半透明の物（スカイドーム等）は透明な黒の上に描いたので色に不透明度が掛かっている。割り戻してから重ねる
+          // （2026-09-30 ユーザー指摘：全体の時、床の向こうのドームが二重に暗くなり黒い影に見えた）
+          gl_FragColor = vec4(c.rgb / max(c.a, 0.0001), c.a);
           gl_FragDepthEXT = d;   // 奏者の深度も書く（本編の物との前後を正しくする）
         }`,
       extensions: { fragDepth: true },
@@ -977,14 +1009,18 @@ function pixelPass(renderer, scene, camera) {
     mesh.frustumCulled = false; scn.add(mesh);
     pix.quad = { scene: scn, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat };
   }
-  for (const r of pix.roots) r.traverse((o) => o.layers.enable(PLAYER_LAYER));   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
+  // 奏者の部品を PLAYER_LAYER に。pixSkip（足元の光）は入れず本編に残す
+  if (!pix.all) for (const r of pix.roots) r.traverse((o) => { if (o.userData.pixSkip) o.traverse((c) => { c.userData.pixSkipChild = true; c.layers.disable(PLAYER_LAYER); }); else if (!o.userData.pixSkipChild) o.layers.enable(PLAYER_LAYER); });   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
   renderer.getClearColor(_pixClear); const ca = renderer.getClearAlpha();
   renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
-  camera.layers.set(PLAYER_LAYER);
-  renderer.render(scene, camera);   // 影の計算はここで（全員が映った状態で）
+  if (!pix.all) camera.layers.set(PLAYER_LAYER);
+  if (pix.all) for (const o of pix.keep) { o.userData.pixWasVisible = o.visible; o.visible = false; }
+  renderer.render(scene, camera);
+  if (pix.all) for (const o of pix.keep) o.visible = o.userData.pixWasVisible ?? true;   // 影の計算はここで（全員が映った状態で）
   camera.layers.set(0);
   renderer.setClearColor(_pixClear, ca);
-  for (const r of pix.roots) { r.userData.pixWasVisible = r.visible; r.visible = false; }
+  // 本編では奏者の部品を層 0 から外して描かない（root ごと隠すと足元の光まで消えた。2026-10-01）
+  if (!pix.all) for (const r of pix.roots) r.traverse((o) => { if (!o.userData.pixSkipChild) o.layers.disable(0); });
   return true;
 }
 // 本編の描画先を消した直後に呼ぶ：奏者のドット絵を書き込み、奏者を隠した本編を上から描く（消さない・影は計算し直さない）
@@ -992,14 +1028,18 @@ function renderMainWithPixels(renderer, scene, camera) {
   const u = pix.quad.mat.uniforms;
   u.tex.value = pix.rt.texture; u.depth.value = pix.rt.depthTexture;
   u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
-  u.near.value = camera.near; u.far.value = camera.far;
+  u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35));
   const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
   renderer.autoClear = false;
   renderer.render(pix.quad.scene, pix.quad.cam);
   renderer.shadowMap.autoUpdate = false;
-  renderer.render(scene, camera);
+  if (!pix.all) renderer.render(scene, camera);   // 全体の時は粗く描いた画像がすべて（本編は描かない）
+  else if (pix.keep.length) {   // ドットにしない物だけを上から（奥行きは書き込んだ画像のもの）
+    for (const o of pix.keep) o.traverse((c) => c.layers.enable(KEEP_LAYER));
+    camera.layers.set(KEEP_LAYER); renderer.render(scene, camera); camera.layers.set(0);
+  }
   renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
-  for (const r of pix.roots) r.visible = r.userData.pixWasVisible ?? true;
+  if (!pix.all) for (const r of pix.roots) r.traverse((o) => o.layers.enable(0));
   pix.quad.mat.uniforms.depth.value = null;   // 次のフレームで pix.rt に描く時に同時読みにならないよう外す
 }
 

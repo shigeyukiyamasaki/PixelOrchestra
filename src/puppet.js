@@ -729,6 +729,7 @@ export class Puppet {
     this.lastOnsetIndex = -1; this._lift = 0; this._breath = 0; this._slide = 0; this._tilt = 0;
 
     this.glow = glowDisc(o.color || '#ffffff');
+    this.glow.userData.pixSkip = true;   // ドット化の粗い画像には入れず、本編で床の上に足す（加算なので透明な黒の上では消える。2026-10-01）
     this.glow.position.y = 0.01;
     this.root.add(this.glow);
     // 影：体・楽器・椅子は影を落とすが、受けない（床・ひな壇だけが受ける）。楽器や頭の影が胸に落ちて服が黒く潰れ、細かい面ではノイズに見えるため（2026-09-11 ユーザー指定）

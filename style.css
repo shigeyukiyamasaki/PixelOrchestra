@@ -47,6 +47,8 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 #panel .groupHd { margin: 14px 0 10px; }
 /* 天気の見出しのチェックがオフ（雨・雪を降らせない）なら、雷以外の項目は効かないので薄く（グレーアウト法則。2026-09-20） */
 #weatherBox:not(:has(#weatherOn:checked)) > *:not(.hd):not(.wxThunder) { opacity: .45; pointer-events: none; }
+/* 輪郭線はドット化とセット（2026-09-30 ユーザー指定：単独では使えない）。ドット化がオフの間は薄くして触れなくする */
+#boxPlayer:not(:has(#pixelOn:checked)) .pixDep { opacity: .45; pointer-events: none; }
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */

@@ -66,11 +66,13 @@
       <label class="ctl" title="弦のショート系（スタッカート・スピッカート等）で、1 音の弓を動かす時間 [秒]。MIDI ノートの長さは使わない"><span>ショートの長さ <b data-value-for="bowShortSec">0.3</b></span><input type="range" id="bowShortSec" min="0.05" max="1" step="0.05" value="0.3"></label>
       <label class="ctl" title="弦のショート系の弓の減速の強さ。音の頭の速さが平均の何倍か（1 で一定の速さ、大きいほど初速が速く急に止まる）"><span>ショートの初速 <b data-value-for="bowShortEase">4</b></span><input type="range" id="bowShortEase" min="1" max="8" step="0.5" value="4"></label>
       <!-- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="ctl" title="ドット化・輪郭線をかける範囲。全体にすると背景・床・スクリーン・パート名・ピアノロールもドットになる"><span>範囲</span><select id="pixelScope"><option value="players">奏者だけ</option><option value="all">全体</option></select></label>
       <label class="chk2" title="奏者と指揮者だけを粗い解像度で描き、ドット絵のように見せる（背景・床・スクリーンはそのまま）"><input type="checkbox" id="pixelOn"> ドット化</label>
       <label class="ctl" title="ドット化の細かさ。0 で一番粗く、100 で一番細かい（画面の短い方を 120〜720 ドットに分ける）。PC でもスマホでも同じ細かさになる"><span>ドットの細かさ <b data-value-for="pixelFine">35</b></span><input type="range" id="pixelFine" min="0" max="100" step="1" value="35"></label>
       <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
-      <label class="chk2" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオフの時は画面の 1 ピクセル）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
-      <label class="ctl" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
+      <label class="chk2 pixDep" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオンの時だけ使える）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
+      <label class="ctl pixDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
+      <label class="ctl pixDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
     </div>
