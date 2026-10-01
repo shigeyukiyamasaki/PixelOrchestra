@@ -66,17 +66,6 @@
       <!-- 弦のショート系の弓（2026-09-28 ユーザー指定）：1 音で弓を動かす時間と、減速の強さ（音の頭の速さ＝平均の何倍か） -->
       <label class="ctl" title="弦のショート系（スタッカート・スピッカート等）で、1 音の弓を動かす時間 [秒]。MIDI ノートの長さは使わない"><span>ショートの長さ <b data-value-for="bowShortSec">0.3</b></span><input type="range" id="bowShortSec" min="0.05" max="1" step="0.05" value="0.3"></label>
       <label class="ctl" title="弦のショート系の弓の減速の強さ。音の頭の速さが平均の何倍か（1 で一定の速さ、大きいほど初速が速く急に止まる）"><span>ショートの初速 <b data-value-for="bowShortEase">4</b></span><input type="range" id="bowShortEase" min="1" max="8" step="0.5" value="4"></label>
-      <!-- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ） -->
-      <label class="ctl" title="ドット化・輪郭線をかける範囲。全体にすると背景・床・スクリーン・パート名・ピアノロールもドットになる"><span>範囲</span><select id="pixelScope"><option value="players">奏者だけ</option><option value="all">全体</option></select></label>
-      <label class="chk2" title="奏者と指揮者だけを粗い解像度で描き、ドット絵のように見せる（背景・床・スクリーンはそのまま）"><input type="checkbox" id="pixelOn"> ドット化</label>
-      <label class="ctl" title="ドット化の細かさ。0 で一番粗く、100 で一番細かい（画面の短い方を 120〜720 ドットに分ける）。PC でもスマホでも同じ細かさになる"><span>ドットの細かさ <b data-value-for="pixelFine">35</b></span><input type="range" id="pixelFine" min="0" max="100" step="1" value="35"></label>
-      <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
-      <label class="chk2 pixDep" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオンの時だけ使える）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
-      <label class="ctl pixDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
-      <label class="ctl pixDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
-      <label class="chk2 pixDep" title="輪郭線の 1 ドット内側に、線より薄い濃い色を重ねる（線 → 薄い線 → 物の色のグラデーション）"><input type="checkbox" id="outlineRing"> 内側の輪郭</label>
-      <label class="ctl pixDep ringDep" title="内側の輪郭の濃さ。0 で無し、1 で物の濃い色そのまま（「内側の輪郭」がオンの時に効く）"><span>内側の輪郭の濃さ <b data-value-for="outlineRingAmt">0.5</b></span><input type="range" id="outlineRingAmt" min="0" max="1" step="0.05" value="0.5"></label>
-      <label class="chk2 pixDep ringDep" title="輪郭の線（外周と、重なった物の境目の両方）を描かず、内側の輪郭（薄い縁取り）だけにする（内側の輪郭がオンの時だけ使える）"><input type="checkbox" id="outlineOuterOff"> 内側の輪郭だけ</label>
       <!-- 金属表現（2026-09-23 ユーザー指定）：金管・シンバル類・フルート・ティンパニ・銅鑼の円盤だけ Phong にしてある。
            ボクセルは面が軸に平行な平面ばかりなので、鏡面が 1 以下・鋭さが高いとほとんどの面が反射角から外れて効果が見えない -->
     </div>
@@ -261,6 +250,37 @@
           <label class="ctl" title="太陽（と月）の眩しさ（レンズと目のグレア）。ブルーム（光のにじみ）・光のかぶり・光条の強さと広がり。0 で無し、2 で最大"><span>太陽の眩しさ <b data-value-for="sunBloom">1.5</b></span><input type="range" id="sunBloom" min="0" max="2" step="0.05" value="1.5"></label>
           <label class="ctl" title="ブルームの閾値。この明るさ（最大チャンネル）を超えた部分だけがにじむ。低いほど広い範囲がにじむ"><span>ブルーム閾値 <b data-value-for="bloomThr">0.7</b></span><input type="range" id="bloomThr" min="0" max="1" step="0.01" value="0.7"></label>
           <label class="ctl" title="金属（金管・シンバル類・フルート等）だけに使うブルームの閾値を、すぐ上の「ブルーム閾値」に対する割合で指定する。上限は 100 ＝ 他の素材と同じ閾値で、金属だけ光りにくくなることはない。下げるほど金属が乗りやすい。上の閾値を動かすと金属側も追随する。金属は専用レイヤーで別に抜くので、上の閾値を下げた時のように画面全体が光ることはない"><span>金属のﾌﾞﾙｰﾑ閾値（%） <b data-value-for="metalThrPct">65</b></span><input type="range" id="metalThrPct" min="0" max="100" step="5" value="65"></label>
+          </div>
+        </div>
+      </div>
+      <!-- ドット絵（奏者のドット化と輪郭線。2026-10-01 ユーザー指定：奏者パネルからレンズの下へ移した） -->
+      <div class="box" id="boxPixel">
+        <h3 class="hd">ドット絵</h3>
+        <!-- ドット化のオン／オフは見出しのチェック（先頭の label.chk を main.js が見出しへ移す。2026-10-01 ユーザー指定） -->
+        <label class="chk" title="奏者と指揮者（範囲が全体なら画面全体）を粗い解像度で描き、ドット絵のように見せる"><input type="checkbox" id="pixelOn"> ドット化</label>
+        <div class="ctl pixScope" title="ドット化・輪郭線をかける物（チェックした物だけドットになり、ほかは等倍のまま）"><span>範囲</span></div>
+          <div class="pixScopeList">
+            <label class="chk2" title="奏者と指揮者（楽器を含む）"><input type="checkbox" id="pix_players" checked> 奏者</label>
+            <label class="chk2" title="床・床の厚み・ひな壇・指揮台"><input type="checkbox" id="pix_stage"> 舞台</label>
+            <label class="chk2" title="一番奥のひな壇に立てたスクリーン"><input type="checkbox" id="pix_screens"> スクリーン</label>
+            <label class="chk2" title="遠景のドーム"><input type="checkbox" id="pix_domes"> スカイドーム</label>
+            <label class="chk2" title="雨・雪"><input type="checkbox" id="pix_weather"> 天気</label>
+            <label class="chk2" title="奏者の上の名前"><input type="checkbox" id="pix_labels"> パート名</label>
+            <label class="chk2" title="光の帯"><input type="checkbox" id="pix_roll"> ピアノロール</label>
+          </div>
+        <div class="twocol">
+          <div>
+      <!-- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="ctl" title="ドット化の細かさ。0 で一番粗く、100 で一番細かい（画面の短い方を 120〜720 ドットに分ける）。PC でもスマホでも同じ細かさになる"><span>ドットの細かさ <b data-value-for="pixelFine">35</b></span><input type="range" id="pixelFine" min="0" max="100" step="1" value="35"></label>
+          </div>
+          <div>
+      <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
+      <label class="chk2 pixDep" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオンの時だけ使える）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
+      <label class="ctl pixDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
+      <label class="ctl pixDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
+      <label class="chk2 pixDep" title="輪郭線の 1 ドット内側に、線より薄い濃い色を重ねる（線 → 薄い線 → 物の色のグラデーション）"><input type="checkbox" id="outlineRing"> 内側の輪郭</label>
+      <label class="ctl pixDep ringDep" title="内側の輪郭の濃さ。0 で無し、1 で物の濃い色そのまま（「内側の輪郭」がオンの時に効く）"><span>内側の輪郭の濃さ <b data-value-for="outlineRingAmt">0.5</b></span><input type="range" id="outlineRingAmt" min="0" max="1" step="0.05" value="0.5"></label>
+      <label class="chk2 pixDep ringDep" title="輪郭の線（外周と、重なった物の境目の両方）を描かず、内側の輪郭（薄い縁取り）だけにする（内側の輪郭がオンの時だけ使える）"><input type="checkbox" id="outlineOuterOff"> 内側の輪郭だけ</label>
           </div>
         </div>
       </div>

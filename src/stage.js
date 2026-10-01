@@ -516,7 +516,8 @@ export function createStage(container) {
   // 材質はライトに反応する Phong（鏡面 0 ＝ ピクセル単位の Lambert）。Lambert は頂点ごとの計算＋補間なので、頂点の少ない大きな床では
   // スポットの円錐の範囲が出ない（中心の頂点が明るいと外周まで明るくなる）。床・ひな壇の明るさは照明で決まり、影を受ける
   const stageMat = (opts) => { const m = new THREE.MeshPhongMaterial({ ...opts, shininess: 0, specular: 0x000000, depthWrite: stageDepthWrite }); stageMats.add(m); return m; };
-  const addStage = (mesh, order = -20) => { mesh.renderOrder = order; mesh.receiveShadow = true; scene.add(mesh); return mesh; };
+  const stageMeshes = [];   // 床・指揮台など（ドット化の「舞台」に使う）
+  const addStage = (mesh, order = -20) => { mesh.renderOrder = order; mesh.receiveShadow = true; scene.add(mesh); stageMeshes.push(mesh); return mesh; };
 
   // 床：ドット風の板目テクスチャ
   const floorTex = plankTexture();
@@ -551,7 +552,7 @@ export function createStage(container) {
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -917,12 +918,15 @@ const _flareTmp = new THREE.Vector3();
 export const PLAYER_LAYER = 4;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
-const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, all: false, keep: [] };
-// keep：全体の時もドットにしない物（パート名・ピアノロール。2026-09-30 ユーザー指定）。粗く描く時は隠し、書き込んだ後に KEEP_LAYER だけで上から描く
-const KEEP_LAYER = 5;
+const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1 };
 /** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
  *  輪郭線はドット化の画像から引く（ドット化とセットで使う。単独ではかけない。2026-09-30 ユーザー指定）。
- *  all：画面全体にかける（2026-09-30 ユーザー指定）。roots には scene を渡す。場面を丸ごと粗く描いて書き込むだけ（本編は描かない） */
+ *  roots：ドットにする物（奏者・舞台・スクリーン等をチェックで選ぶ。2026-10-01 ユーザー指定）。選ばなかった物は本編で等倍に描く */
+/** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
+export function pixelGroups() {
+  if (!stageCtx) return {};
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+}
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
@@ -1016,17 +1020,29 @@ function pixelPass(renderer, scene, camera) {
     pix.quad = { scene: scn, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat };
   }
   // 奏者の部品を PLAYER_LAYER に。pixSkip（足元の光）は入れず本編に残す
-  if (!pix.all) for (const r of pix.roots) r.traverse((o) => { if (o.userData.pixSkip) o.traverse((c) => { c.userData.pixSkipChild = true; c.layers.disable(PLAYER_LAYER); }); else if (!o.userData.pixSkipChild) o.layers.enable(PLAYER_LAYER); });   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
+  for (const r of pix.roots) r.traverse((o) => { if (o.userData.pixSkip) o.traverse((c) => { c.userData.pixSkipChild = true; c.layers.disable(PLAYER_LAYER); }); else if (!o.userData.pixSkipChild) o.layers.enable(PLAYER_LAYER); });   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
   renderer.getClearColor(_pixClear); const ca = renderer.getClearAlpha();
   renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
-  if (!pix.all) camera.layers.set(PLAYER_LAYER);
-  if (pix.all) for (const o of pix.keep) { o.userData.pixWasVisible = o.visible; o.visible = false; }
+  // 影はここでは作らない（前のフレームの本編で作った物を使う）。three.js は影を落とす物もこの時の層で選ぶので、
+  // ここで作ると範囲から外した物（奏者をオフにした時の奏者など）の影が消えた（2026-10-01 ユーザー指摘）
+  camera.layers.set(PLAYER_LAYER);
+  const autoShadow0 = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
   renderer.render(scene, camera);
-  if (pix.all) for (const o of pix.keep) o.visible = o.userData.pixWasVisible ?? true;   // 影の計算はここで（全員が映った状態で）
+  renderer.shadowMap.autoUpdate = autoShadow0;
   camera.layers.set(0);
   renderer.setClearColor(_pixClear, ca);
   // 本編では奏者の部品を層 0 から外して描かない（root ごと隠すと足元の光まで消えた。2026-10-01）
-  if (!pix.all) for (const r of pix.roots) r.traverse((o) => { if (!o.userData.pixSkipChild) o.layers.disable(0); });
+  // 本編ではドットにした物の色を書かない（層から外すと影も落とさなくなるので、色だけ止める。奥行きもドットの画像のものを使うので書かない）
+  pix.hidden = [];
+  for (const r of pix.roots) r.traverse((o) => {
+    if (o.userData.pixSkipChild || !o.material) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (m.userData.pixHid) continue;
+      m.userData.pixHid = { colorWrite: m.colorWrite, depthWrite: m.depthWrite };
+      m.colorWrite = false; m.depthWrite = false;
+      pix.hidden.push(m);
+    }
+  });
   return true;
 }
 // 本編の描画先を消した直後に呼ぶ：奏者のドット絵を書き込み、奏者を隠した本編を上から描く（消さない・影は計算し直さない）
@@ -1038,14 +1054,12 @@ function renderMainWithPixels(renderer, scene, camera) {
   const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
   renderer.autoClear = false;
   renderer.render(pix.quad.scene, pix.quad.cam);
-  renderer.shadowMap.autoUpdate = false;
-  if (!pix.all) renderer.render(scene, camera);   // 全体の時は粗く描いた画像がすべて（本編は描かない）
-  else if (pix.keep.length) {   // ドットにしない物だけを上から（奥行きは書き込んだ画像のもの）
-    for (const o of pix.keep) o.traverse((c) => c.layers.enable(KEEP_LAYER));
-    camera.layers.set(KEEP_LAYER); renderer.render(scene, camera); camera.layers.set(0);
-  }
+  renderer.render(scene, camera);   // ドットにしなかった物を上から（前後はドットの画像の奥行きで決まる）。影の地図はここで全部の物から作る
   renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = autoShadow;
-  if (!pix.all) for (const r of pix.roots) r.traverse((o) => o.layers.enable(0));
+  for (const m of pix.hidden || []) { m.colorWrite = m.userData.pixHid.colorWrite; m.depthWrite = m.userData.pixHid.depthWrite; delete m.userData.pixHid; }
+  pix.hidden = [];
+  // 目印の層は毎フレーム外す（2026-10-01 ユーザー指摘：奏者を範囲から外しても PLAYER_LAYER が残り、粗い画像にも描かれて等倍と重なり荒れた）
+  for (const r of pix.roots) r.traverse((o) => o.layers.disable(PLAYER_LAYER));
   pix.quad.mat.uniforms.depth.value = null;   // 次のフレームで pix.rt に描く時に同時読みにならないよう外す
 }
 
@@ -1091,7 +1105,7 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
       const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
       renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
       camera.layers.set(METAL_LAYER);
-      if (pixOn && pix.on) {
+      if (pixOn && pix.on && pix.metalPix) {   // 金属（楽器）は奏者がドットの時だけ粗く
         // ドット化の時（2026-10-01 ユーザー指定：金属のブルームもドットの形に）：素材をドット化と同じ粗い解像度で描き、補間なしで post.c へ写す
         const w = pix.rt.width, h = pix.rt.height;
         if (!pix.metalRt || pix.metalRt.width !== w || pix.metalRt.height !== h) {

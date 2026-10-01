@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -1101,7 +1101,7 @@ function settings() {
     metalFres: num('metalFres', 2),   // 金属の照り返し（2026-10-01 ユーザー指定）
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
     // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
-    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, pixelScope: $('pixelScope').value || 'players', outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
@@ -1929,9 +1929,20 @@ function animate() {
   // 奏者のドット化（2026-09-30 ユーザー指定）：奏者と指揮者の root を渡す
   { const s2 = settings(), any = s2.pixelOn;
     setMetalFresnel(s2.metalFres);   // 輪郭線はドット化とセット（単独では使わない。2026-09-30 ユーザー指定）
-    const all = s2.pixelScope === 'all';   // 範囲：奏者だけ／全体（2026-09-30 ユーザー指定）
-    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt, outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く all, keep: [labels, ...(roll ? [roll.group] : [])],   // パート名・ピアノロールはドットにしない
-      roots: !any ? [] : all ? [scene] : [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])] }); }
+    // 範囲：チェックした物だけドットにする（2026-10-01 ユーザー指定：プルダウンの「奏者だけ／全体」から、まとまりごとのオン／オフへ）
+    const G = pixelGroups(), sc = s2.pixelScope, roots = [];
+    if (any) {
+      if (sc.players) roots.push(...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : []));
+      if (sc.stage) roots.push(...(G.stage || []));
+      if (sc.screens) roots.push(...(G.screens || []));
+      if (sc.domes) roots.push(...(G.domes || []));
+      if (sc.weather) roots.push(...(G.weather || []));
+      if (sc.labels) roots.push(labels);
+      if (sc.roll && roll) roots.push(roll.group);
+    }
+    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
+      outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く
+      metalPix: !!sc.players, roots }); }
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
   undoShake();
 }
@@ -2137,6 +2148,7 @@ const SECTIONS = [
   { key: 'camera', label: 'カメラ', boxes: () => [boxByTitle('カメラ位置'), boxByTitle('カメラ中心点')] },   // 位置と中心点は 1 組
   { key: 'autocam', label: '自動カメラ', boxes: () => [$('autoCamBox')] },
   { key: 'lens', label: 'レンズ', boxes: () => [$('lensBox')] },
+  { key: 'pixel', label: 'ドット絵', boxes: () => [$('boxPixel')] },
   { key: 'sky', label: '空・時刻', boxes: () => [$('lightBox')] },
   { key: 'floor', label: '床', boxes: () => [boxByTitle('床')] },
   { key: 'weather', label: '天気', boxes: () => [$('weatherBox')] },

@@ -48,9 +48,9 @@ body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: var(-
 /* 天気の見出しのチェックがオフ（雨・雪を降らせない）なら、雷以外の項目は効かないので薄く（グレーアウト法則。2026-09-20） */
 #weatherBox:not(:has(#weatherOn:checked)) > *:not(.hd):not(.wxThunder) { opacity: .45; pointer-events: none; }
 /* 輪郭線はドット化とセット（2026-09-30 ユーザー指定：単独では使えない）。ドット化がオフの間は薄くして触れなくする */
-#boxPlayer:not(:has(#pixelOn:checked)) .pixDep { opacity: .45; pointer-events: none; }
+#boxPixel:not(:has(#pixelOn:checked)) > *:not(.hd) { opacity: .45; pointer-events: none; }   /* 見出しのドット化がオフの間は中身全体（2026-10-01） */
 /* 「内側の輪郭だけ」「内側の輪郭の濃さ」は内側の輪郭がオンの時だけ（2026-10-01 ユーザー指定） */
-#boxPlayer:not(:has(#outlineRing:checked)) .ringDep { opacity: .45; pointer-events: none; }
+#boxPixel:not(:has(#outlineRing:checked)) .ringDep { opacity: .45; pointer-events: none; }
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */
@@ -135,6 +135,10 @@ label.chk2.sub { margin-left: 18px; }   /* 配下の項目は字下げ */
 body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45; pointer-events: none; }   /* 照り返しがオフなら「色を乗せる」は効かない（グレーアウト法則） */
 /* 固定欄のレンズ箱（カメラ側の処理）：端末切替の下 */
 #camArea #lensBox { margin: 10px 0 0; width: 402px; }
+#camArea #boxPixel { margin: 10px 0 0; width: 402px; }   /* ドット絵（レンズの下。2026-10-01） */
+#boxPixel .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }
+#boxPixel .pixScopeList { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 0 14px; margin: 0 0 8px; }   /* 範囲のチェック（欄の幅いっぱいに 4 列） */
+#boxPixel .pixScopeList label { white-space: nowrap; }
 #lensBox .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; align-items: start; }   /* 2 列（左：露出・ブルーム／右：太陽の眩しさ・ブルーム閾値。2026-09-17 ユーザー指定） */
 /* スクリーンの操作メニュー（プレビューの下）。1 枚 = 縦長のカードで、追加すると右へ増える。2026-09-13 ユーザー指定 */
 #screenBar { width: 100%; padding: 6px 12px 8px; font-size: 12px; display: flex; align-items: stretch; gap: 16px; }
