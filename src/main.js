@@ -796,6 +796,7 @@ function renderScreens() {
   const add = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: 'スクリーンを 1 枚増やす' });
   add.onclick = addScreen;
   box.appendChild(add);
+  equalizeBarTabs();   // カードの増減で欄の高さが変わるので、そろえ直す（setBarHeight より前に）
   setBarHeight();
 }
 function addScreen() {
@@ -810,6 +811,33 @@ $('screenReload').addEventListener('click', (e) => {
 });
 // プレビューは端末の画素数どおりに置く。入り切らない時だけ丸ごと縮める（2026-09-14 ユーザー指定）。
 // 縮めても中の比率は変わらないので、実機で「どれだけ入るか」の見え方は保たれる
+// 下の段の縦タブ（2026-10-01 ユーザー指定）。選んだタブはこのブラウザに覚える（見る人ごとの表示の好み。プリセットには入れない）
+const BAR_TAB_KEY = 'pixelOrchestra.barTab';
+function showBarTab(id) {
+  for (const b of document.querySelectorAll('#screenBar .barTabs button')) {
+    const on = b.dataset.sec === id;
+    b.classList.toggle('on', on);
+    $(b.dataset.sec)?.classList.toggle('tabOn', on);
+    $(b.dataset.sec)?.classList.toggle('tabOff', !on);
+  }
+  try { localStorage.setItem(BAR_TAB_KEY, id); } catch { /* 保存できなくても表示は切り替わる */ }
+  equalizeBarTabs();
+  setBarHeight();
+}
+// 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
+// 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
+function equalizeBarTabs() {
+  const secs = ['domeSec', 'screenSec', 'modelSec'].map((id) => $(id)).filter(Boolean);
+  if (!secs.length) return;
+  const off = secs.filter((el) => el.classList.contains('tabOff'));
+  for (const el of secs) el.style.minHeight = '';
+  for (const el of off) el.classList.remove('tabOff');
+  const h = Math.max(...secs.map((el) => el.offsetHeight));
+  for (const el of off) el.classList.add('tabOff');
+  for (const el of secs) el.style.minHeight = `${h}px`;
+}
+for (const b of document.querySelectorAll('#screenBar .barTabs button')) b.addEventListener('click', () => showBarTab(b.dataset.sec));
+{ let t = 'screenSec'; try { t = localStorage.getItem(BAR_TAB_KEY) || t; } catch { /* 読めなければスクリーン */ } showBarTab($(t) ? t : 'screenSec'); }
 function setBarHeight() {
   const area = $('viewArea'), wrap = $('viewWrap');
   if (area.clientWidth < 2 || area.clientHeight < 2) return;

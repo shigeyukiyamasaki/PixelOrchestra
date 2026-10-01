@@ -109,6 +109,12 @@
     </div>
     <!-- スクリーン（ひな壇の上に重ねる層。背景やキャラクターを映す想定）。2026-09-13 ユーザー指定 -->
     <div id="screenBar">
+      <!-- 左端の縦タブで、スカイドーム・スクリーン・3Dモデルの欄を 1 つずつ切り替える（2026-10-01 ユーザー指定） -->
+      <div class="barTabs">
+        <button data-sec="domeSec">スカイドーム</button>
+        <button data-sec="screenSec">スクリーン</button>
+        <button data-sec="modelSec">3Dモデル</button>
+      </div>
       <!-- 左：スカイドーム（3 層固定）／右：スクリーン。2026-09-16 ユーザー指定で別セクションに分けた。
            スカイドームは一時上段へ移したが、上段を無くしてここへ戻した（2026-09-17 ユーザー指定） -->
       <section id="domeSec">

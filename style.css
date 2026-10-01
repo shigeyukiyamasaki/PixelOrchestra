@@ -146,11 +146,19 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #domeSec { flex: 0 1 796px; min-width: 0; display: flex; flex-direction: column; }   /* カード 260 × 3 ＋ 間隔 8 × 2 */
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 #modelSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 3D モデル（カード 1 枚＋＋。2026-10-01） */
+/* 縦タブ（2026-10-01 ユーザー指定）：選んだ欄だけ出し、その欄が段の幅いっぱいを使う */
+#screenBar .barTabs { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
+#screenBar .barTabs button { text-align: left; white-space: nowrap; color: var(--muted); }
+#screenBar .barTabs button.on { color: var(--accent); border-color: var(--accent); }
+#screenBar > section.tabOff { display: none; }
+#screenBar > section.tabOn { flex: 1 1 0; }
 #modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }
 #screenBar .hd > button:hover { border-color: #000; color: #000; background: rgba(0,0,0,.08); }
+/* 「素材の一覧を更新」は ▾ と同じ高さに（2026-10-01 ユーザー指摘：スクリーンの見出しだけ 3px 高かった） */
+#screenBar .hd > button:not(.secPre) { padding-top: 0; padding-bottom: 0; line-height: 16px; }
 #screenBar .hd > button ~ .secPre { margin-left: 6px; }   /* 箱ごとのプリセットの ▾ は「素材の一覧を更新」のすぐ右（2026-09-19） */
 #screenBar button { padding: 2px 8px; border-radius: 5px; border: 1px solid var(--line); background: none; color: inherit; cursor: pointer; font-size: 12px; }
 #screenBar button:hover { border-color: var(--accent); color: var(--accent); }
