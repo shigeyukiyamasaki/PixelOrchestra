@@ -145,6 +145,8 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
 #domeSec { flex: 0 1 796px; min-width: 0; display: flex; flex-direction: column; }   /* カード 260 × 3 ＋ 間隔 8 × 2 */
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+#modelSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 3D モデル（カード 1 枚＋＋。2026-10-01） */
+#modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }

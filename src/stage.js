@@ -547,12 +547,14 @@ export function createStage(container) {
   screens.position.z = SEAT_SHIFT_Z;
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
+  const models = new THREE.Group(); models.name = 'models';   // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
+  scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -925,7 +927,7 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -1496,6 +1498,62 @@ export const DOME_DEFAULT = [
 let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
 
 /** スカイドームの構成を差し替えて組み直す */
+// ---- 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定：樹木などを床に置く）----
+// 1 件 = { src（media/… の URL）, x, z（床の上の位置 [unit]）, y（床からの高さ）, rot（向き [度]）, scale（大きさの倍率）, show }。
+// GLB はメートル単位・Y 上・原点が根元の想定。MODEL_M で舞台の単位に直す（立った指揮者 ≒ 3.35 unit を背丈 1.7m とみて 1m ≒ 2 unit）
+const MODEL_M = 2.0;
+let modelList = [];
+const GLB = new Map();   // url → { scene, err, loading }
+export function setModels(list) { modelList = (list || []).map((o) => ({ ...o })); buildModels(); }
+function loadGlb(url) {
+  let e = GLB.get(url);
+  if (e) return e;
+  e = { scene: null, err: null, loading: true };
+  GLB.set(url, e);
+  if (!THREE.GLTFLoader) { e.err = 'GLTFLoader が読み込めていません'; e.loading = false; return e; }
+  new THREE.GLTFLoader().load(url, (g) => {
+    e.scene = g.scene; e.loading = false;
+    // 材質は Lambert に置き換える（2026-10-01 ユーザー指摘：光を受けていないように見えた）。GLB の PBR 材質は金属度 1 のことがあり、
+    // 環境マップの無いこの舞台では直接の光で明るさが変わらなかった。奏者・舞台と同じ Lambert なら時刻・照明に同じように反応する
+    const conv = new Map();
+    e.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = true;
+      // テクスチャは舞台と同じ「そのままの値」で扱う。GLTFLoader は sRGB の印を付けるが、この舞台は出力をリニアのまま出すので
+      // 中間の明るさが沈み、葉が黒く見えた（2026-10-01）
+      const raw = (t) => { if (t && t.encoding !== THREE.LinearEncoding) { t.encoding = THREE.LinearEncoding; t.needsUpdate = true; } return t; };
+      const toLambert = (m) => {
+        if (!m || m.isMeshLambertMaterial) return m;
+        raw(m.map); raw(m.emissiveMap);
+        if (!conv.has(m)) conv.set(m, new THREE.MeshLambertMaterial({
+          map: m.map || null, color: m.color ? m.color.clone() : 0xffffff, vertexColors: !!m.vertexColors,
+          emissive: m.emissive ? m.emissive.clone() : 0x000000, emissiveMap: m.emissiveMap || null,
+          transparent: !!m.transparent, opacity: m.opacity ?? 1, alphaTest: m.alphaTest || 0, side: m.side ?? THREE.FrontSide,
+        }));
+        return conv.get(m);
+      };
+      o.material = Array.isArray(o.material) ? o.material.map(toLambert) : toLambert(o.material);
+    });
+    buildModels();
+  }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; console.warn('[models] GLB を読めません:', url, e.err); });
+  return e;
+}
+function buildModels() {
+  if (!stageCtx) return;
+  const g = stageCtx.models;
+  g.clear();   // 形と材質は GLB の読み込み結果を使い回すので捨てない
+  for (const m of modelList) {
+    if (m.show === false || !m.src) continue;
+    const e = loadGlb(m.src);
+    if (!e.scene) continue;   // 読み込み中・失敗（読み終わったら組み直される）
+    const o = e.scene.clone(true);
+    o.position.set(m.x ?? 0, m.y ?? 0, m.z ?? 0);
+    o.rotation.y = deg(m.rot ?? 0);
+    o.scale.setScalar(MODEL_M * (m.scale > 0 ? m.scale : 1));
+    g.add(o);
+  }
+}
+
 export function setDomes(list) {
   domeList = (list || []).map((o) => ({ ...o }));
   buildDomes();

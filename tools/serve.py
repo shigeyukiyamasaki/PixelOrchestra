@@ -28,6 +28,8 @@ MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', 
 # 音声（上のバーの「音声」を素材フォルダから選ぶ用。場所がプリセットに保存される。2026-09-18 ユーザー指定）。
 # スクリーンの素材選びに音声が混ざらないよう、一覧は別の口（/media-audio.json）で返す
 AUDIO_EXT = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac'}
+# 3D モデル（床に置く樹木など。2026-10-01 ユーザー指定）。一覧は別の口（/media-models.json）
+MODEL_EXT = {'.glb'}
 _media_cache = {}   # 拡張子の組ごとに {'t': 時刻, 'data': 一覧}
 
 def media_list(exts=MEDIA_EXT, max_files=20000):
@@ -202,12 +204,12 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if path == '/projects.json':      # プロジェクトの一覧
             self._json(200, list_projects())
             return
-        if path in ('/media-roots.json', '/media-list.json', '/media-audio.json'):
+        if path in ('/media-roots.json', '/media-list.json', '/media-audio.json', '/media-models.json'):
             # roots: 絶対パスを /media/ の URL に直すため。list: 画像・動画の一覧／audio: 音声の一覧（UI の素材選び用）
             if path == '/media-roots.json':
                 data = media_roots()
             else:
-                exts = AUDIO_EXT if path == '/media-audio.json' else MEDIA_EXT
+                exts = AUDIO_EXT if path == '/media-audio.json' else MODEL_EXT if path == '/media-models.json' else MEDIA_EXT
                 if 'refresh=1' in (self.path.split('?', 1) + [''])[1]:
                     _media_cache.pop(tuple(sorted(exts)), None)
                 data = media_list(exts)
@@ -288,8 +290,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
     def _post_media_drop(self, path):
         name = os.path.basename(urllib.parse.unquote(path[len('/media-drop/'):], errors='surrogatepass'))
         stem, ext = os.path.splitext(name)
-        if not name or name.startswith('.') or ext.lower() not in MEDIA_EXT:
-            self._json(400, {'error': f'画像・動画のファイルだけ入れられます（{" ".join(sorted(MEDIA_EXT))}）'})
+        ok_ext = MEDIA_EXT | MODEL_EXT
+        if not name or name.startswith('.') or ext.lower() not in ok_ext:
+            self._json(400, {'error': f'画像・動画・3D モデルのファイルだけ入れられます（{" ".join(sorted(ok_ext))}）'})
             return
         length = int(self.headers.get('Content-Length') or 0)
         if length > MAX_UPLOAD:
@@ -297,7 +300,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
             return
         body = self.rfile.read(length)
         roots = media_roots()
-        for d, names in media_list().items():
+        for d, names in media_list(MODEL_EXT if ext.lower() in MODEL_EXT else MEDIA_EXT).items():
             if name not in names:
                 continue
             for root in roots:

@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -38,6 +38,7 @@ const SINGLE_KEY = 'pixelOrchestra.singlePlayer.v1';       // トラック名 �
 const CONDUCTOR_COSTUME_KEY = 'pixelOrchestra.conductorCostume.v1'; // 指揮者に着せる衣装のキー（2026-09-22 ユーザー指定）
 const SCREENS_KEY = 'pixelOrchestra.screens.v1';       // ひな壇の上に重ねるスクリーンの構成（枚数・位置・高さ・色・濃度）
 const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入力履歴と「ゲーム → 作曲者」
+const MODELS_KEY = 'pixelOrchestra.models.v1';         // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
 const SECTION_PRESETS_KEY = 'pixelOrchestra.sectionPresets.v1'; // 箱ごとのプリセット { 箱: { 名前: 中身 } }（天気・光源など細かい単位。2026-09-19 ユーザー指定）
@@ -49,7 +50,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -291,6 +292,20 @@ function saveDomes() {
   clearTimeout(domeSaveTimer);
   domeSaveTimer = setTimeout(() => {
     try { LS.setItem(DOMES_KEY, JSON.stringify(domes)); pushSettings(); } catch (e) { console.warn('スカイドーム設定の保存失敗:', e); }
+  }, 400);
+}
+// 床に置く 3D モデル（2026-10-01 ユーザー指定）。x・z は床の上の位置、y は床からの高さ、rot は向き [度]、scale は大きさの倍率
+const MODEL_BASE = { name: '', src: '', srcRaw: '', x: 19, z: 0, y: 0, rot: 0, scale: 1, show: true };
+const modelDefaults = (o) => ({ ...MODEL_BASE, ...o });
+let models = (() => {
+  try { const a = JSON.parse(LS.getItem(MODELS_KEY) || 'null'); if (Array.isArray(a)) return a.map(modelDefaults); } catch (e) { console.warn('3D モデル設定の読込失敗:', e); }
+  return [];
+})();
+let modelSaveTimer = null;
+function saveModels() {
+  clearTimeout(modelSaveTimer);
+  modelSaveTimer = setTimeout(() => {
+    try { LS.setItem(MODELS_KEY, JSON.stringify(models)); pushSettings(); } catch (e) { console.warn('3D モデル設定の保存失敗:', e); }
   }, 400);
 }
 let screenSaveTimer = null;
@@ -645,6 +660,63 @@ function screenRow(sc, i) {
   return box;
 }
 // スカイドーム 1 枚ぶんのカード。作りはスクリーンのカードと同じで、項目だけ違う
+// 3D モデル 1 つぶんのカード（2026-10-01 ユーザー指定）。作りはスカイドーム・スクリーンのカードと同じ
+let modelFileList = {};
+async function loadModelList() {
+  try { const r = await fetch('media-models.json', { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); modelFileList = (await r.json()) || {}; }
+  catch (e) { console.warn('3D モデルの一覧を取得できませんでした:', e.message); setStatus('✗ 3D モデルの一覧を取れません（開発サーバー tools/serve.py を再起動してください）'); }
+}
+function modelRow(m, i) {
+  const box = Object.assign(document.createElement('div'), { className: 'screen model' });
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setModels(models); saveModels(); };
+  const top = put(box, '<div class="top"></div>');
+  const thumb = top.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  const side = put(top, '<div class="side"></div>');
+  const drawThumb = () => {
+    thumb.textContent = '';
+    const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = m.src ? 'GLB' : '素材'; thumb.appendChild(ph);
+    const cap = document.createElement('span'); cap.className = 'cap';
+    cap.textContent = m.src ? (srcParts(m)?.name || m.srcRaw || '') : '素材を選ぶ';
+    thumb.appendChild(cap);
+    thumb.title = m.srcRaw || m.src || '押すとフォルダを辿って 3D モデル（.glb）を選べる。ファイルをこのカードへドロップしてもよい';
+  };
+  drawThumb();
+  const pick = (dir, name) => {
+    if (dir !== undefined) { m.src = mediaUrlOf(dir, name); m.srcRaw = `${dir}/${name}`; }
+    drawThumb(); changed();
+  };
+  thumb.onclick = async () => { await loadModelList(); openPicker(thumb, m, pick, modelFileList); };
+  acceptFileDrop(box, pick);
+
+  const name = put(box, '<input type="text" class="name" title="名前（覚え書き）">');
+  name.value = m.name || `モデル${i + 1}`;
+  name.oninput = () => { m.name = name.value; saveModels(); };
+  name.onkeydown = (e) => e.stopPropagation();
+
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input');
+    el.value = m[key] ?? MODEL_BASE[key] ?? +min;
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { m[key] = +el.value; box2.show(); changed(); };
+    return lab;
+  };
+  slider('横位置', 'x', -30, 30, 0.1, 1, '左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
+  slider('奥行き', 'z', -36, 8, 0.1, 1, '前後の位置 [unit]。プラスが客席側、マイナスが奥（指揮台は約 −2）');
+  slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床（根元）に立つ');
+  slider('向き', 'rot', -180, 180, 1, 0, '縦の軸まわりの向き [度]');
+  slider('大きさ', 'scale', 0.1, 5, 0.05, 2, '大きさの倍率。1 で書き出した時の実寸（メートル単位）');
+
+  const show = put(side, '<label title="このモデルを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = m.show !== false;
+  show.onchange = () => { m.show = show.checked; changed(); };
+  const dup = put(side, '<button class="dup" title="このモデルを複製する（設定ごと。右隣に入る）">複製</button>');
+  dup.onclick = () => { const c = modelDefaults(JSON.parse(JSON.stringify(m))); c.name = `${m.name || `モデル${i + 1}`}のコピー`; models.splice(i + 1, 0, c); renderScreens(); changed(); };
+  const del = put(side, '<button title="このモデルを削除する">削除</button>');
+  del.onclick = () => { models.splice(i, 1); renderScreens(); changed(); };
+  return box;
+}
 function domeRow(d, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen dome' });
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
@@ -708,9 +780,16 @@ function domeRow(d, i) {
 }
 
 function renderScreens() {
-  const box = $('screenRows'), dbox = $('domeRows');
+  const box = $('screenRows'), dbox = $('domeRows'), mbox = $('modelRows');
   if (!box || !dbox) return;
   box.textContent = ''; dbox.textContent = '';
+  if (mbox) {   // 3D モデル（2026-10-01）
+    mbox.textContent = '';
+    models.forEach((m, i) => mbox.appendChild(modelRow(m, i)));
+    const addM = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '3D モデルを 1 つ増やす' });
+    addM.onclick = () => { models.push(modelDefaults({ name: `モデル${models.length + 1}` })); renderScreens(); setModels(models); saveModels(); };
+    mbox.appendChild(addM);
+  }
   domes.forEach((d, i) => dbox.appendChild(domeRow(d, i)));    // 遠景（3 層固定）は左のセクションへ
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
   // 右端の「＋」でカードを増やす
@@ -1101,7 +1180,7 @@ function settings() {
     metalFres: num('metalFres', 2),   // 金属の照り返し（2026-10-01 ユーザー指定）
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
     // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
-    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
@@ -1934,6 +2013,7 @@ function animate() {
     if (any) {
       if (sc.players) roots.push(...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : []));
       if (sc.stage) roots.push(...(G.stage || []));
+      if (sc.models) roots.push(...(G.models || []));
       if (sc.screens) roots.push(...(G.screens || []));
       if (sc.domes) roots.push(...(G.domes || []));
       if (sc.weather) roots.push(...(G.weather || []));
@@ -1996,7 +2076,7 @@ function snapshotSettings() {
 // 集めるだけなら fn の中で控えて undefined を返す
 function mapAssetSrcs(snap, fn) {
   const out = { ...snap };
-  for (const k of [SCREENS_KEY, DOMES_KEY]) {
+  for (const k of [SCREENS_KEY, DOMES_KEY, MODELS_KEY]) {
     if (out[k] == null) continue;
     try {
       const a = JSON.parse(out[k]);
@@ -2017,7 +2097,8 @@ function applySnapshot(p, src) {
   try { const a = JSON.parse(LS.getItem(DOMES_KEY) || 'null');
         if (Array.isArray(a) && a.length === 3) domes = a.map((o) => { const v = { ...DOME_BASE, ...o }; v.r = Math.min(50, Math.max(10, v.r)); return v; }); }
   catch (e) { console.warn('スカイドームの復元失敗:', e); }
-  renderScreens(); setScreens(screens); setDomes(domes);
+  try { const a = JSON.parse(LS.getItem(MODELS_KEY) || 'null'); models = Array.isArray(a) ? a.map(modelDefaults) : []; } catch (e) { console.warn('3D モデルの復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes); setModels(models);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
@@ -2163,6 +2244,7 @@ const SECTIONS = [
   { key: 'tempo', label: 'テンポ・拍子', boxes: () => [boxByTitle('テンポ・拍子')] },
   { key: 'dome', label: 'スカイドーム', sec: 'domeSec' },
   { key: 'screen', label: 'スクリーン', sec: 'screenSec' },
+  { key: 'model', label: '3Dモデル', sec: 'modelSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
   { key: 'env', label: '環境', group: ['sky', 'weather', 'light'], hdId: 'envHd' },
 ];
@@ -2176,7 +2258,7 @@ const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
 function sectionSnap(sec) {
   if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
-  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : screens)) };
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : screens)) };
   const v = {}, r = {};
   for (const el of sectionInputs(sec)) {
     if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2191,8 +2273,9 @@ function applySection(sec, d) {
   if (sec.sec) {
     if (!Array.isArray(d.list)) return;
     if (sec.key === 'dome') { if (d.list.length !== 3) return; domes = d.list.map((o) => { const x = { ...DOME_BASE, ...o }; x.r = Math.min(50, Math.max(10, x.r)); return x; }); saveDomes(); }
+    else if (sec.key === 'model') { models = d.list.map(modelDefaults); saveModels(); }
     else { screens = d.list.map(withDefaults); saveScreens(); }
-    renderScreens(); setScreens(screens); setDomes(domes);
+    renderScreens(); setScreens(screens); setDomes(domes); setModels(models);
     return;
   }
   for (const [id, val] of Object.entries(d.v || {})) {
@@ -2298,6 +2381,7 @@ if (!VIEW_NAME) { projectSlot.render(); presetSlot.render(); }   // 視聴モー
 audioDelayPrev = audioDelaySec();   // 復元した値を基準にする（0 のままだと最初の 1 回だけ音がずれる）
 setupCredits();       // クレジットの履歴（候補）と「ゲーム → 作曲者」
 setDomes(domes);      // スカイドーム（遠景。3 層固定）
+setModels(models);    // 床に置く 3D モデル（2026-10-01）
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
 refreshValueLabels();
