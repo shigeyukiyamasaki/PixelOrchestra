@@ -295,7 +295,7 @@ function saveDomes() {
   }, 400);
 }
 // 床に置く 3D モデル（2026-10-01 ユーザー指定）。x・z は床の上の位置、y は床からの高さ、rot は向き [度]、scale は大きさの倍率
-const MODEL_BASE = { name: '', src: '', srcRaw: '', x: 19, z: 0, y: 0, rot: 0, scale: 1, show: true };
+const MODEL_BASE = { name: '', src: '', srcRaw: '', x: 19, z: 0, y: 0, rot: 0, scale: 1, texPix: 0, show: true };
 const modelDefaults = (o) => ({ ...MODEL_BASE, ...o });
 let models = (() => {
   try { const a = JSON.parse(LS.getItem(MODELS_KEY) || 'null'); if (Array.isArray(a)) return a.map(modelDefaults); } catch (e) { console.warn('3D モデル設定の読込失敗:', e); }
@@ -707,6 +707,7 @@ function modelRow(m, i) {
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床（根元）に立つ');
   slider('向き', 'rot', -180, 180, 1, 0, '縦の軸まわりの向き [度]');
   slider('大きさ', 'scale', 0.1, 5, 0.05, 2, '大きさの倍率。1 で書き出した時の実寸（メートル単位）');
+  slider('粗さ', 'texPix', 0, 1, 0.05, 2, 'テクスチャの粗さ。0 で元のまま、上げるほどテクスチャだけドットになる（形の輪郭はなめらかなまま。葉の形が絵の透明部分でできている所は、縁もドットになる）。0.5 で一辺 128 画素');
 
   const show = put(side, '<label title="このモデルを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = m.show !== false;

@@ -1499,7 +1499,7 @@ let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
 
 /** スカイドームの構成を差し替えて組み直す */
 // ---- 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定：樹木などを床に置く）----
-// 1 件 = { src（media/… の URL）, x, z（床の上の位置 [unit]）, y（床からの高さ）, rot（向き [度]）, scale（大きさの倍率）, show }。
+// 1 件 = { src（media/… の URL）, x, z（床の上の位置 [unit]）, y（床からの高さ）, rot（向き [度]）, scale（大きさの倍率）, texPix（テクスチャの粗さ 0〜1）, show }。
 // GLB はメートル単位・Y 上・原点が根元の想定。MODEL_M で舞台の単位に直す（立った指揮者 ≒ 3.35 unit を背丈 1.7m とみて 1m ≒ 2 unit）
 const MODEL_M = 2.0;
 let modelList = [];
@@ -1538,6 +1538,35 @@ function loadGlb(url) {
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
 }
+// テクスチャだけドットにする（2026-10-01 ユーザー指定：形はなめらかなまま）。texPix 0〜1 → 一辺の画素数（0 は元のまま）。
+// 縮めた画像を補間なし（最近傍）で貼る。縮めるのは粗さを変えた時だけ（キャッシュ）
+const texPixSize = (v) => (v > 0 ? Math.max(8, Math.round(512 * (1 - Math.min(1, v)) ** 2)) : 0);
+const PIX_TEX = new Map(), PIX_MAT = new Map();
+function pixTexture(tex, size) {
+  const img = tex?.image;
+  if (!img || !img.width) return tex;
+  const key = `${tex.uuid}:${size}`;
+  if (PIX_TEX.has(key)) return PIX_TEX.get(key);
+  const k = Math.min(1, size / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);   // 縮める時はなめらかに平均（1 画素 ＝ その範囲の平均色）
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.encoding = tex.encoding;
+  t.offset.copy(tex.offset); t.repeat.copy(tex.repeat); t.rotation = tex.rotation; t.center.copy(tex.center);
+  PIX_TEX.set(key, t);
+  return t;
+}
+function pixMaterial(m, size) {
+  const key = `${m.uuid}:${size}`;
+  if (PIX_MAT.has(key)) return PIX_MAT.get(key);
+  const c = m.clone();
+  if (m.map) c.map = pixTexture(m.map, size);
+  if (m.emissiveMap) c.emissiveMap = pixTexture(m.emissiveMap, size);
+  PIX_MAT.set(key, c);
+  return c;
+}
 function buildModels() {
   if (!stageCtx) return;
   const g = stageCtx.models;
@@ -1550,6 +1579,8 @@ function buildModels() {
     o.position.set(m.x ?? 0, m.y ?? 0, m.z ?? 0);
     o.rotation.y = deg(m.rot ?? 0);
     o.scale.setScalar(MODEL_M * (m.scale > 0 ? m.scale : 1));
+    const ps = texPixSize(m.texPix ?? 0);
+    if (ps) o.traverse((n) => { if (n.isMesh) n.material = Array.isArray(n.material) ? n.material.map((x) => pixMaterial(x, ps)) : pixMaterial(n.material, ps); });
     g.add(o);
   }
 }
