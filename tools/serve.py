@@ -63,6 +63,11 @@ PROJECTS_DIR = 'projects'          # 起動時に chdir したアプリのフォ
 _NAME_RE = re.compile(r'[^/\\\x00-\x1f<>:"|?*]{1,60}')
 MAX_UPLOAD = 500 * 1024 * 1024     # 1 ファイルの上限（wav の長い曲でも収まる大きさ）
 MEDIA_DROP_DIR = 'PixelOrchestra_ドロップ'   # ドロップした素材の保存先（最初の素材ルートの中。2026-09-29 ユーザー指定）
+# ドロップ先は種類ごとに分ける（2026-10-02 ユーザー指定：画像と GLB が 1 か所に混ざっていた）
+IMAGE_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+def drop_subdir(ext):
+    ext = ext.lower()
+    return '3Dモデル' if ext in MODEL_EXT else '画像' if ext in IMAGE_EXT else '動画'
 
 # ---- 編集したボクセル（2026-09-21 ユーザー指定）----
 # 衣装の部位（髪・兜・顔）を編集画面 /edit.html で直接いじって、ここに JSON で保存する。
@@ -285,7 +290,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
     # ---- ドロップした素材（2026-09-29 ユーザー指定）----
     # POST /media-drop/<ファイル名>（中身そのまま）→ {dir, name, reused}。ブラウザはドロップしたファイルの場所を教えないので中身を受け取る。
-    # 素材ルートの中に同じ名前・同じ大きさのファイルがあればそれを使い（コピーしない）、無ければ最初の素材ルートの MEDIA_DROP_DIR へ保存する。
+    # 素材ルートの中に同じ名前・同じ大きさのファイルがあればそれを使い（コピーしない）、無ければ最初の素材ルートの MEDIA_DROP_DIR/<種類> へ保存する。
     # 同じ名前で中身の大きさが違うファイルがある時は _2, _3 … を付ける（上書きしない）
     def _post_media_drop(self, path):
         name = os.path.basename(urllib.parse.unquote(path[len('/media-drop/'):], errors='surrogatepass'))
@@ -311,7 +316,8 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if not roots or not os.path.isdir(roots[0]):
             self._json(500, {'error': f'素材フォルダが見つかりません（{roots[0] if roots else "未設定"}）。外付けドライブがつながっているか確かめてください'})
             return
-        dest_dir = os.path.join(roots[0], MEDIA_DROP_DIR)
+        drop_dir = f'{MEDIA_DROP_DIR}/{drop_subdir(ext)}'
+        dest_dir = os.path.join(roots[0], drop_dir)
         try:
             os.makedirs(dest_dir, exist_ok=True)
             out, k = name, 1
@@ -324,7 +330,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
             return
         _media_cache.clear()   # 一覧に新しいファイルを出す
         print(f'[media-drop] {out} を {dest_dir} に保存')
-        self._json(200, {'dir': MEDIA_DROP_DIR, 'name': out, 'reused': False})
+        self._json(200, {'dir': drop_dir, 'name': out, 'reused': False})
 
     def _post_project(self, path):
         parts = self._project_parts(path)
