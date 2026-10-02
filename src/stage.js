@@ -1500,8 +1500,9 @@ let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
 /** スカイドームの構成を差し替えて組み直す */
 // ---- 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定：樹木などを床に置く）----
 // 1 件 = { src（media/… の URL）, x, z（床の上の位置 [unit]）, y（床からの高さ）, rot（向き [度]）, scale（大きさの倍率）, texPix（テクスチャの粗さ 0〜1）, show }。
-// GLB はメートル単位・Y 上・原点が根元の想定。MODEL_M で舞台の単位に直す（立った指揮者 ≒ 3.35 unit を背丈 1.7m とみて 1m ≒ 2 unit）
-const MODEL_M = 2.0;
+// GLB はメートル単位・Y 上・原点が根元の想定。MODEL_M で舞台の単位に直す（立った指揮者 ≒ 3.35 unit を背丈 1.7m とみると 1m ≒ 2 unit）。
+// 楽器と同じく実物の 1.25 倍にそろえて 2.5（2026-10-02 ユーザー指定：実寸のままだと、大きめに作った楽器・奏者の中で木が小さく見えた）
+const MODEL_M = 2.5;
 let modelList = [];
 const GLB = new Map();   // url → { scene, err, loading }
 export function setModels(list) { modelList = (list || []).map((o) => ({ ...o })); buildModels(); }
