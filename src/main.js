@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -676,6 +676,13 @@ function modelRow(m, i) {
   const drawThumb = () => {
     thumb.textContent = '';
     const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = m.src ? 'GLB' : '素材'; thumb.appendChild(ph);
+    // 読み込めたらモデルを描いた画像に差し替える（2026-10-02 ユーザー指定）。選び直した後に古い画像が届いたら捨てる
+    const src = m.src;
+    if (src) modelThumb(src, (url) => {
+      if (m.src !== src || !ph.parentNode) return;   // 読み込み済みならカードを画面に載せる前に呼ばれるので isConnected では判断しない
+      const img = Object.assign(document.createElement('img'), { src: url, draggable: false });
+      ph.replaceWith(img);
+    });
     const cap = document.createElement('span'); cap.className = 'cap';
     cap.textContent = m.src ? (srcParts(m)?.name || m.srcRaw || '') : '素材を選ぶ';
     thumb.appendChild(cap);

@@ -1535,8 +1535,45 @@ function loadGlb(url) {
       o.material = Array.isArray(o.material) ? o.material.map(toLambert) : toLambert(o.material);
     });
     buildModels();
-  }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; console.warn('[models] GLB を読めません:', url, e.err); });
+    e.waiters?.splice(0).forEach((f) => f());
+  }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
+}
+// GLB のサムネイル（2026-10-02 ユーザー指定：カードに何も出なかった）。読み込んだモデルだけを斜め上から 1 回描いて画像（dataURL）にする。
+// 舞台の renderer の状態（影・クリッピング・大きさ）を乱さないよう、専用の小さな renderer で描く。結果は url ごとに使い回す
+const THUMB_PX = 160;   // サムネイル 1 辺の画素数（カードの表示は高さ 96px）
+const THUMB = new Map();   // url → dataURL
+let thumbRenderer = null;
+export function modelThumb(url, cb) {
+  if (!url) return;
+  if (THUMB.has(url)) { cb(THUMB.get(url)); return; }
+  const e = loadGlb(url);
+  const draw = () => {
+    if (!e.scene) return;
+    if (!THUMB.has(url)) {
+      if (!thumbRenderer) {
+        thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        thumbRenderer.setClearColor(0x000000, 0);
+        thumbRenderer.setSize(THUMB_PX, THUMB_PX, false);
+      }
+      const scene = new THREE.Scene();
+      const o = e.scene.clone(true);
+      scene.add(o);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.6); sun.position.set(1, 2, 1.5); scene.add(sun);
+      // 全体が収まる距離：外接球の半径を画角の半分で割る（少し余白）
+      const box = new THREE.Box3().setFromObject(o);
+      const sph = box.getBoundingSphere(new THREE.Sphere());
+      const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 1000);
+      const dist = (sph.radius / Math.sin(deg(15))) * 1.05;
+      cam.position.copy(sph.center).add(new THREE.Vector3(0.8, 0.6, 1.2).normalize().multiplyScalar(dist));
+      cam.lookAt(sph.center);
+      thumbRenderer.render(scene, cam);
+      THUMB.set(url, thumbRenderer.domElement.toDataURL('image/png'));
+    }
+    cb(THUMB.get(url));
+  };
+  if (e.loading) (e.waiters ||= []).push(draw); else draw();
 }
 // テクスチャだけドットにする（2026-10-01 ユーザー指定：形はなめらかなまま）。texPix 0〜1 → 一辺の画素数（0 は元のまま）。
 // 縮めた画像を補間なし（最近傍）で貼る。縮めるのは粗さを変えた時だけ（キャッシュ）
