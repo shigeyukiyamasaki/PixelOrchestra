@@ -128,7 +128,19 @@
       <!-- 床に置く 3D モデル（GLB。樹木など。2026-10-01 ユーザー指定） -->
       <section id="modelSec">
         <div class="hd">3Dモデル</div>
-        <div id="modelRows"></div>
+        <div class="modelBody">
+          <!-- 3D モデル用の風（2026-10-02 ユーザー指定）。植物（FABOTANIC／VERDANT の GLB）だけが揺れる。岩などは揺れない。曲と関係なく揺れ続ける -->
+          <div id="modelWind">
+            <label class="sub" title="3D モデルの風。オフで揺れが止まり、まっすぐ立った形に戻る"><input type="checkbox" id="modelWindOn" checked> 風</label>
+            <div class="wb">
+            <label class="ctl" title="揺れの大きさ。0 で揺れない。植物（FABOTANIC で書き出した GLB）だけが揺れる"><span>揺れ幅 <b data-value-for="modelWindAmp">1</b></span><input type="range" id="modelWindAmp" min="0" max="3" step="0.05" value="1"></label>
+            <label class="ctl" title="揺れの速さ（周期）。1 で標準、2 で倍の速さ。揺れの大きさは変わらない"><span>揺れの速さ <b data-value-for="modelWindRate">1</b></span><input type="range" id="modelWindRate" min="0" max="3" step="0.05" value="1"></label>
+            <label class="ctl" title="風の向き [度]。0 で客席から見て右へ、90 で奥へ、−90 で手前へ吹く。木はこの向きへしなる"><span>向き <b data-value-for="modelWindDir">0</b></span><input type="range" id="modelWindDir" min="-180" max="180" step="1" value="0"></label>
+            <label class="ctl" title="突風（0〜1）。周期の違う揺れを重ねて、揺れを不規則にする"><span>突風 <b data-value-for="modelWindGust">0.25</b></span><input type="range" id="modelWindGust" min="0" max="1" step="0.05" value="0.25"></label>
+            </div>
+          </div>
+          <div id="modelRows"></div>
+        </div>
       </section>
     </div>
   </div>

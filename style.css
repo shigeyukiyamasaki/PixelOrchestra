@@ -154,6 +154,13 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar > section.tabOff { display: none; }
 #screenBar > section.tabOn { flex: 1 1 0; }
 #modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+/* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
+#modelSec .modelBody { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 8px; }
+#modelSec .modelBody > #modelRows { flex: 1 1 0; min-width: 0; }
+#modelWind { flex: 0 0 150px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+#modelWind .sub { font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
+#modelWind:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は中身を薄く（見出しのチェックは通常表示。グレーアウト法則） */
+#modelWind .ctl { margin: 4px 0; }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }

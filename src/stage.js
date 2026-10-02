@@ -1531,14 +1531,113 @@ function loadGlb(url) {
           emissive: m.emissive ? m.emissive.clone() : 0x000000, emissiveMap: m.emissiveMap || null,
           transparent: !!m.transparent, opacity: m.opacity ?? 1, alphaTest: m.alphaTest || 0, side: m.side ?? THREE.FrontSide,
         }));
+        conv.get(m).userData = { ...m.userData };   // GLB の印（verdantMaterial：幹・葉など）を風の判定に使う
         return conv.get(m);
       };
       o.material = Array.isArray(o.material) ? o.material.map(toLambert) : toLambert(o.material);
     });
+    e.wind = windInfo(e.scene);
     buildModels();
     e.waiters?.splice(0).forEach((f) => f());
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
+}
+// ---- 3D モデルの風（2026-10-02 ユーザー指定）----
+// FABOTANIC（VERDANT）の書き出し ZIP に付く src/VerdantVegetation.js（MIT。AMIX｜トミナガハルキ）の「高さで曲げる」風を r128 用に移した。
+// GLB は静止したまま、描く時に頂点を風下へずらす：ずらす量は（高さ ÷ 木の高さ）の 2 乗に比例し、上ほど遅れて揺れる（しなりが上へ伝わる）。
+// 2 つの波を重ね（2 つ目が突風）、木の位置で位相をずらす。面の向きも傾けて陰影を合わせ、影用の描き方にも同じずらしを入れる。
+// 揺らすのは GLB に VERDANT の印（ノードの extras.verdant と材質の extras.verdantMaterial）がある植物だけ（岩などは揺らさない）。
+// 時刻は曲と合わせず実時間で進める（曲を止めても揺れる。2026-10-02 ユーザー指定）
+const WIND_STATIC = new Set(['soil', 'stone', 'moss', 'litter', 'succulent', 'hardLeaf', 'lowpolyGround', 'impostor']);   // 揺らさない材質（元のコードと同じ）
+// 種類ごとの揺れ方（しなり flex・周期 freq・上への遅れ lag）。ZIP の manifest.json の windProfiles をそのまま写した
+const WIND_PROFILES = {
+  cactuscolumn: [0, 1, 0], cactuspad: [0, 1, 0], palmpinnate: [0.34, 0.78, 0.78], palmfan: [0.38, 0.74, 0.82], cycad: [0.14, 0.68, 0.52],
+  succulent: [0, 1, 0], field: [1.05, 1.12, 0.85], grass: [1.2, 1.22, 1], pampas: [1.3, 0.74, 1.35], deadgrass: [1, 0.9, 1],
+  bamboo: [0.5, 0.78, 1.05], sasa: [0.8, 1, 0.9], tree: [0.25, 0.8, 0.8], oak: [0.23, 0.78, 0.75], cherry: [0.32, 0.85, 0.85],
+  maple: [0.33, 0.9, 0.85], ginkgo: [0.29, 0.84, 0.8], zelkova: [0.3, 0.86, 0.8], cedar: [0.25, 0.94, 0.7], fir: [0.23, 0.85, 0.7],
+  pine: [0.26, 0.76, 0.8], fern: [0.8, 1, 0.9], fernb: [0.72, 0.92, 0.88], cloverb: [0.62, 1.12, 0.72], plumegrassb: [1, 1.05, 0.95],
+  finegrassb: [0.86, 1.16, 0.84], floweringtreeb: [0.48, 0.82, 0.7], succulentb: [0, 0.65, 0.4], succulentc: [0, 0.8, 0.58],
+  ficus: [0.4, 0.86, 0.7], splitleaf: [0.35, 0.82, 0.72], hardleaf: [0, 0.72, 0.42], dandelion: [0.85, 1.08, 0.9], plantain: [0.65, 1, 0.8],
+  daisy: [0.8, 1.1, 0.9], poppy: [1, 0.9, 1.05], yarrow: [0.8, 1, 0.9], clover: [0.6, 1.18, 0.7], meadow: [1.05, 1.2, 0.9],
+  meadowb: [0.85, 1.1, 0.9], meadowc: [1.05, 0.96, 1.15],
+};
+const WIND_DEFAULT = [0.3, 0.85, 0.8];   // 表に無い種類（木の平均くらい）
+// 全モデル共通の値（uniform を共有するので、ここを書き換えれば全部に効く）
+const WIND_U = { vdTime: { value: 0 }, vdSpeed: { value: 6 }, vdGust: { value: 0.25 }, vdStrength: { value: 1 }, vdDirection: { value: new THREE.Vector2(1, 0) } };
+/** 3D モデルの風（2026-10-02 ユーザー指定で「揺れ幅」と「揺れの速さ」に分けた）。
+ *  on：オフで揺れない（まっすぐの形）。amp：揺れ幅の倍率（1 で風速 6 相当）。dirDeg：向き [度]（0 で客席から見て右へ）。gust：突風 0〜1。
+ *  揺れの速さ（周期）は tickModelWind に渡す時間の進め方で変える。元の式の「風速」は揺れ幅と周期の両方に効いていたので、
+ *  周期側は WIND_SPEED_REF に固定し、揺れ幅は vdStrength で別に掛ける */
+const WIND_SPEED_REF = 6;
+export function setModelWind({ on = true, amp = 1, dirDeg = 0, gust = 0.25 } = {}) {
+  WIND_U.vdStrength.value = on ? Math.max(0, amp) : 0;
+  WIND_U.vdSpeed.value = WIND_SPEED_REF;
+  WIND_U.vdGust.value = Math.max(0, Math.min(1, gust));
+  WIND_U.vdDirection.value.set(Math.cos(deg(dirDeg)), -Math.sin(deg(dirDeg)));   // 舞台の x・z（+z が客席側。プラスの角度で奥へ回る）
+}
+/** 風の時刻を進める（毎フレーム、実時間の経過秒で呼ぶ） */
+export function tickModelWind(dt) { WIND_U.vdTime.value += Math.max(0, Math.min(0.1, dt || 0)); }
+function windInfo(scene) {
+  let species = null;
+  scene.traverse((o) => { species ??= o.userData?.verdant?.state?.species ?? null; });
+  if (!species) return null;                                           // VERDANT の GLB でなければ揺らさない
+  const [flex, freq, lag] = WIND_PROFILES[species] ?? WIND_DEFAULT;
+  if (!flex) return null;                                              // サボテン・多肉など（揺れない種類）
+  const H = Math.max(0.001, new THREE.Box3().setFromObject(scene).max.y);   // 木の高さ（GLB の単位 ＝ m。原点が根元）
+  return { H, flex, freq, lag, key: `${species}:${H.toFixed(4)}` };
+}
+const WIND_GLSL = [
+  'uniform float vdTime, vdSpeed, vdGust, vdStrength, vdHeight, vdFlex, vdFreq, vdLag;',
+  'uniform vec2 vdDirection;',
+  'vec3 verdantBend(vec3 p, vec3 root, vec2 direction, out float slope) {',
+  '  float H = max(.001, vdHeight), h = clamp(p.y / H, 0., 1.), phase = dot(root.xz, vec2(.91, 1.31));',
+  '  float a = vdTime * vdFreq * (1. + vdSpeed * .075) + phase - vdLag * h;',
+  '  float b = vdTime * vdFreq * 2.07 + phase * 1.7 - vdLag * h * .55;',
+  '  float w = sin(a) + sin(b) * vdGust * .42, dh = -vdLag * cos(a) - vdLag * .55 * cos(b) * vdGust * .42;',
+  '  float strength = .012 * vdSpeed * vdFlex * vdStrength, d = H * strength * h * h * w;',
+  '  slope = (p.y > 0. && p.y < H) ? strength * (2. * h * w + h * h * dh) : 0.;',
+  '  p.xz += direction * d; return p; }',
+  // 風向きを物体の中の向きに直す：回転＋等倍の拡大なので、逆行列の代わりに転置（各軸との内積）でよい（向きは正規化する）
+  'vec2 verdantDirection() { mat3 m = mat3(modelMatrix); vec3 v = vec3(vdDirection.x, 0., vdDirection.y);',
+  '  vec3 d = vec3(dot(m[0], v), dot(m[1], v), dot(m[2], v)); float len = length(d.xz); return len > 1.e-8 ? d.xz / len : vec2(1., 0.); }',
+  'vec3 verdantRoot() { return modelMatrix[3].xyz; }',
+].join('\n');
+function windPatch(material, w) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WIND_U, { vdHeight: { value: w.H }, vdFlex: { value: w.flex }, vdFreq: { value: w.freq }, vdLag: { value: w.lag } });
+    shader.vertexShader = WIND_GLSL + '\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat vdSlope; transformed = verdantBend(transformed, verdantRoot(), verdantDirection(), vdSlope);')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nfloat vdNormalSlope; vec3 vdIgnore = verdantBend(position, verdantRoot(), verdantDirection(), vdNormalSlope); objectNormal.y -= vdNormalSlope * dot(objectNormal.xz, verdantDirection());');
+  };
+  material.customProgramCacheKey = () => `pxo-wind-v1:${w.key}`;   // 揺れ方の値ごとに別のプログラム（風なしの材質とも分ける）
+  return material;
+}
+const WIND_MAT = new Map(), WIND_DEPTH = new Map();
+function windMaterial(m, w) {
+  const key = `${m.uuid}:${w.key}`;
+  if (!WIND_MAT.has(key)) WIND_MAT.set(key, windPatch(m.clone(), w));
+  return WIND_MAT.get(key);
+}
+function windDepth(w, m) {   // 影（太陽などの平行光）用。揺れていない影が残らないよう、同じずらしを入れる
+  // 葉の透明部分が影に出るよう、元の材質の絵・抜き・面の向きを写す（three が自動で作る影用の材質と同じ。2026-10-03 修正：
+  // 最初は 1 つの材質を全部に使っていて、葉を抜いている GLB だと影が四角い板の集まりになっていた）
+  const key = `${w.key}:${m.uuid}`;
+  if (!WIND_DEPTH.has(key)) {
+    const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: m.side ?? THREE.FrontSide });
+    if (m.alphaTest > 0) { d.map = m.map || null; d.alphaMap = m.alphaMap || null; d.alphaTest = m.alphaTest; }
+    WIND_DEPTH.set(key, windPatch(d, w));
+  }
+  return WIND_DEPTH.get(key);
+}
+function applyWind(o, w) {
+  o.traverse((n) => {
+    if (!n.isMesh) return;
+    const mats = Array.isArray(n.material) ? n.material : [n.material];
+    const kind = mats[0]?.userData?.verdantMaterial;
+    if (!kind || WIND_STATIC.has(kind)) return;
+    n.material = Array.isArray(n.material) ? mats.map((x) => windMaterial(x, w)) : windMaterial(n.material, w);
+    n.customDepthMaterial = windDepth(w, mats[0]);
+  });
 }
 // GLB のサムネイル（2026-10-02 ユーザー指定：カードに何も出なかった）。読み込んだモデルだけを斜め上から 1 回描いて画像（dataURL）にする。
 // 舞台の renderer の状態（影・クリッピング・大きさ）を乱さないよう、専用の小さな renderer で描く。結果は url ごとに使い回す
@@ -1619,6 +1718,7 @@ function buildModels() {
     o.scale.setScalar(MODEL_M * (m.scale > 0 ? m.scale : 1));
     const ps = texPixSize(m.texPix ?? 0);
     if (ps) o.traverse((n) => { if (n.isMesh) n.material = Array.isArray(n.material) ? n.material.map((x) => pixMaterial(x, ps)) : pixMaterial(n.material, ps); });
+    if (e.wind) applyWind(o, e.wind);   // 植物（VERDANT の GLB）だけ風で揺らす。粗さの材質（複製）にも当て直す
     g.add(o);
   }
 }

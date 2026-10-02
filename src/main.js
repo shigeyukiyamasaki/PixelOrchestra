@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -1088,7 +1088,7 @@ function setupCredits() {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id]')]
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id], #modelWind input[id]')]   // #modelWind：3D モデル用の風（2026-10-02）
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));   // プリセット・プロジェクトの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
 // 対象は右メニュー（ラジオがあるのは右メニューだけ。別の場所に置く時はここに足す）
@@ -1123,13 +1123,13 @@ function loadSettings() {
 // 雪は値そのまま（上限 10 は吹雪用）（2026-09-19 ユーザー指定）
 const RAIN_SPEED_SCALE = 0.3;
 let saveTimer = null;
-for (const id of ['panel', 'topbar', 'camBar', 'viewArea']) document.getElementById(id)?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar', 'camBar', 'viewArea', 'modelWind']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
-const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
+const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id], #modelWind input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
 // 値表示の書式（2026-09-16 ユーザー指定：時刻は時計表記）。toText: 数値 → 表示、fromText: 入力 → 数値（NaN なら不正）
 const VALUE_FMT = {
   sunHour: {
@@ -1952,6 +1952,10 @@ function animate() {
   const now = performance.now();
   const dt = Math.min(0.1, (now - lastPerf) / 1000);
   lastPerf = now;
+  // 3D モデルの風（2026-10-02 ユーザー指定）：曲と関係なく実時間で揺らす。値は毎フレーム入力欄から読む（プリセットの読み込みにもそのまま追従）
+  const wv = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
+  setModelWind({ on: $('modelWindOn').checked, amp: wv('modelWindAmp', 1), rate: wv('modelWindRate', 1), dirDeg: wv('modelWindDir', 0), gust: wv('modelWindGust', 0.25) });
+  tickModelWind(dt * wv('modelWindRate', 1));   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();
 
