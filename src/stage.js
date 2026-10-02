@@ -1066,6 +1066,7 @@ function renderMainWithPixels(renderer, scene, camera) {
 }
 
 export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.7) {
+  updateModelShadow(renderer, scene);   // 3D モデルの影（奏者に落とす分）を先に描く
   const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
   const pixOn = pixelPass(renderer, scene, camera);
   if (!sunPass && bloomAll <= 0.001) {
@@ -1639,6 +1640,64 @@ function applyWind(o, w) {
     n.customDepthMaterial = windDepth(w, mats[0]);
   });
 }
+// ---- 3D モデル（木など）の影を奏者に落とす（2026-10-03 ユーザー指定）----
+// 奏者は影を受けない（楽器や頭の影が胸に落ちて黒く潰れ、ノイズに見えたため。2026-09-11）。three の影は「光ごとに 1 枚の影の地図」を
+// 受ける物すべてに落とすので、受けるようにすると奏者自身の影も戻ってくる。しかも r128 は影の地図に入れる物を光ごとに選べない
+// （メインのカメラのレイヤーで決まる）。そこで太陽と同じ向き・範囲の直交カメラで 3D モデルだけを描いて奥行きを取り、
+// 奏者の材質にはその奥行きだけを読ませて、太陽（夜は月）の直射を落とす。奏者どうし・自分の影は出ない
+const MODEL_SHADOW_LAYER = 5;   // 1：太陽の円盤、2：天気、3：金属、4：奏者のドット化（各 const の定義を参照）
+const MODEL_SHADOW_PX = 2048;   // 奥行きの画像の 1 辺（太陽の影の地図と同じ）
+const MODEL_SHADOW_BIAS = 0.002;   // 奥行きの比較の余裕（奥行き 149 unit に対して 0.3 unit ほど）
+const TS_U = { pxoTsMap: { value: null }, pxoTsMatrix: { value: new THREE.Matrix4() }, pxoTsOn: { value: 0 }, pxoTsBias: { value: MODEL_SHADOW_BIAS } };
+const MSH = { rt: null, cam: new THREE.OrthographicCamera(-34, 34, 34, -34, 1, 150), roots: [] };
+MSH.cam.layers.set(MODEL_SHADOW_LAYER);
+const TS_DONE = new WeakSet();
+/** 3D モデルの影を受ける奏者（体・楽器・椅子）。毎フレーム呼んでよい（材質は 1 度だけ書き換える。持ち替えで増えた部品も拾う） */
+export function setModelShadowReceivers(roots) { MSH.roots = roots || []; }
+function patchModelShadow(mat) {
+  if (!mat || TS_DONE.has(mat) || !(mat.isMeshLambertMaterial || mat.isMeshPhongMaterial || mat.isMeshStandardMaterial)) return;
+  TS_DONE.add(mat);
+  const prev = mat.onBeforeCompile, baseKey = mat.customProgramCacheKey();   // 元の書き換え（金属・発光など）とそのキーは先に控える
+  mat.onBeforeCompile = (shader, r) => {
+    prev.call(mat, shader, r);
+    Object.assign(shader.uniforms, TS_U);
+    shader.vertexShader = 'uniform mat4 pxoTsMatrix;\nvarying vec4 pxoTsCoord;\n' + shader.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoTsCoord = pxoTsMatrix * ( modelMatrix * vec4( transformed, 1.0 ) );');
+    // 直射（太陽・月）だけを落とす。環境光（天空光・照り返し）はそのまま
+    shader.fragmentShader = 'uniform sampler2D pxoTsMap;\nuniform float pxoTsOn, pxoTsBias;\nvarying vec4 pxoTsCoord;\n' + shader.fragmentShader
+      .replace('#include <aomap_fragment>', [
+        '{ vec3 tsC = pxoTsCoord.xyz / pxoTsCoord.w;',
+        '  if ( pxoTsOn > 0.5 && all( greaterThanEqual( tsC, vec3( 0.0 ) ) ) && all( lessThanEqual( tsC, vec3( 1.0 ) ) ) ) {',
+        '    float tsS = step( tsC.z - pxoTsBias, texture2D( pxoTsMap, tsC.xy ).r );',
+        '    reflectedLight.directDiffuse *= tsS; reflectedLight.directSpecular *= tsS; } }',
+        '#include <aomap_fragment>'].join('\n'));
+  };
+  mat.customProgramCacheKey = () => `${baseKey}|pxoModelShadow1`;
+  mat.needsUpdate = true;
+}
+function updateModelShadow(renderer, scene) {
+  const sun = stageCtx?.sun;
+  for (const r of MSH.roots) r?.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) patchModelShadow(m); });
+  const on = !!(sun && sun.visible && sun.castShadow && stageCtx.models.children.length);
+  TS_U.pxoTsOn.value = on ? 1 : 0;
+  if (!on) return;
+  if (!MSH.rt) {
+    MSH.rt = new THREE.WebGLRenderTarget(MODEL_SHADOW_PX, MODEL_SHADOW_PX, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+    MSH.rt.depthTexture = new THREE.DepthTexture(MODEL_SHADOW_PX, MODEL_SHADOW_PX);
+    MSH.rt.depthTexture.type = THREE.UnsignedIntType;
+    TS_U.pxoTsMap.value = MSH.rt.depthTexture;
+  }
+  // 太陽の影のカメラと同じ範囲・向き
+  const c = MSH.cam, sc = sun.shadow.camera;
+  c.left = sc.left; c.right = sc.right; c.top = sc.top; c.bottom = sc.bottom; c.near = sc.near; c.far = sc.far; c.updateProjectionMatrix();
+  c.position.copy(sun.position); c.lookAt(sun.target.position); c.updateMatrixWorld();
+  TS_U.pxoTsMatrix.value.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1).multiply(c.projectionMatrix).multiply(c.matrixWorldInverse);
+  // モデルだけを描いて奥行きを取る（材質はそのまま使うので、葉の抜きと風の揺れが影にも乗る。色は捨てる）
+  const prevRT = renderer.getRenderTarget(), autoShadow = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;   // この描画で太陽の影の地図まで作り直さない
+  renderer.setRenderTarget(MSH.rt); renderer.clear(); renderer.render(scene, c);
+  renderer.setRenderTarget(prevRT); renderer.shadowMap.autoUpdate = autoShadow;
+}
 // GLB のサムネイル（2026-10-02 ユーザー指定：カードに何も出なかった）。読み込んだモデルだけを斜め上から 1 回描いて画像（dataURL）にする。
 // 舞台の renderer の状態（影・クリッピング・大きさ）を乱さないよう、専用の小さな renderer で描く。結果は url ごとに使い回す
 const THUMB_PX = 160;   // サムネイル 1 辺の画素数（カードの表示は高さ 96px）
@@ -1719,6 +1778,7 @@ function buildModels() {
     const ps = texPixSize(m.texPix ?? 0);
     if (ps) o.traverse((n) => { if (n.isMesh) n.material = Array.isArray(n.material) ? n.material.map((x) => pixMaterial(x, ps)) : pixMaterial(n.material, ps); });
     if (e.wind) applyWind(o, e.wind);   // 植物（VERDANT の GLB）だけ風で揺らす。粗さの材質（複製）にも当て直す
+    o.traverse((n) => { if (n.isMesh) n.layers.enable(MODEL_SHADOW_LAYER); });   // 奏者に落とす影の元（updateModelShadow で太陽から描く）
     g.add(o);
   }
 }
