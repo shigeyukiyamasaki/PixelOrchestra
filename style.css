@@ -146,6 +146,9 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 /* 左：スカイドーム（3 枚分の幅に固定。入らない時はその中で横スクロール）／右：スクリーン（残り全部）。2026-09-16 ユーザー指定 */
 #domeSec { flex: 0 1 796px; min-width: 0; display: flex; flex-direction: column; }   /* カード 260 × 3 ＋ 間隔 8 × 2 */
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+#floorSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 床（右メニューから移した。2026-10-03） */
+#floorSec .ctl.row { max-width: 260px; }
+#floorSec .ctl.row > span { white-space: nowrap; }
 #modelSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 3D モデル（カード 1 枚＋＋。2026-10-01） */
 #stoneSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 石のジェネレーター（2026-10-03） */
 #grassSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 草のジェネレーター（2026-10-03） */
@@ -168,13 +171,8 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen.gen .sld { grid-template-columns: 7.4em minmax(0, 1fr) auto; }   /* 「縁のなめらかさ」「大きさのばらつき」など長い名前が入る幅（5.4em ではスライダーに重なった。2026-10-03） */
 #screenBar .screen.gen .genChecks { flex-wrap: wrap; gap: 4px 12px; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
-#modelSec .modelBody { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 8px; }
-#modelSec .modelBody > #modelRows { flex: 1 1 0; min-width: 0; }
-#modelWind { flex: 0 0 150px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-#modelWind .sub { font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
-#modelWind:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は中身を薄く（見出しのチェックは通常表示。グレーアウト法則） */
-#modelWind .ctl { margin: 4px 0; }
-#modelWind .plantSub { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }   /* 風の下に植物の明るさ（2026-10-03） */
+#windBox:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は揺れの設定を薄く（植物の明るさは常に効く。グレーアウト法則） */
+#windBox .plantSub { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }

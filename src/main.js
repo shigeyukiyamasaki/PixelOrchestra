@@ -11,7 +11,6 @@ import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
 import { HEAD_Y } from './pianoRoll.js';
-import { TENCHI } from './logoData.js';
 import { PianoRoll } from './pianoRoll.js';
 import { AutoCamera } from './autoCam.js';
 
@@ -121,41 +120,6 @@ let puppets = [];       // { puppet, track }
 let conductor = null;
 let labels = new THREE.Group(); // パート名ラベル
 scene.add(labels);
-
-// ロゴ（画像 → ボクセル）。配置は仮置き：舞台の後方に立てる（2026-09-12。置き場所は後で決める）
-const logo = dotPart(TENCHI, { depth: 6, res: 1.4, name: 'tenchi', back: { '#1f7fc0': '#12689d', '#1c6a9e': '#125275', '#1a5378': '#12405e', '#f2f6fa': '#9fb4c4' },
-  inner: { chars: 'i', depth: 3, z0: -3 } }); // 内側は本体より 3 セル奥 // 文字の内側は 8 セル奥に引っ込めた白い板（紺・青が出っ張る）
-scene.add(logo);
-window.__logo = logo; // 位置合わせ用（位置・大きさ・濃度は「タイトル」の設定から）
-let logoOpacity = 1;
-
-// ---- タイトルを「ひな壇の曲率」で曲げる（2026-09-13 ユーザー指定）----
-// ひな壇は (0, SEAT_SHIFT_Z) を中心とした円弧なので、ロゴをその中心まわりの円筒に巻き付ける。
-// 半径はロゴの Z 位置から毎フレーム決まるので、Z を動かせばその位置の曲がり方になる。
-// 頂点シェーダで曲げる（ジオメトリは他と共有＆キャッシュされているため、作り直さない）
-const bendU = { uBend: { value: 0 }, uCz: { value: SEAT_SHIFT_Z }, uX0: { value: 0 }, uZ0: { value: 0 }, uS: { value: 1 } };
-logo.traverse((m) => {
-  if (!m.isMesh) return;
-  m.material.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, bendU);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>
-        uniform float uBend; uniform float uCz; uniform float uX0; uniform float uZ0; uniform float uS;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        if (uBend > 0.5) {
-          float R0 = uCz - uZ0;                       // ロゴの中心面から円弧の中心までの距離
-          if (R0 > 1.0) {
-            float th = (uX0 + uS * transformed.x) / R0;   // 弧の長さが横位置と一致するように
-            float Rv = R0 - uS * transformed.z;           // 厚みぶんは半径方向にずらす
-            float xw = Rv * sin(th);
-            float zw = uCz - Rv * cos(th);
-            transformed.x = (xw - uX0) / uS;              // 親の位置・倍率を打ち消してローカルへ戻す
-            transformed.z = (zw - uZ0) / uS;
-          }
-        }`);
-  };
-  m.material.needsUpdate = true;
-});
 
 let midiFileName = '';
 let currentMidi = null;
@@ -1084,7 +1048,7 @@ function showBarTab(id) {
 // 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
 // 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
 function equalizeBarTabs() {
-  const secs = ['domeSec', 'screenSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec'].map((id) => $(id)).filter(Boolean);
+  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec'].map((id) => $(id)).filter(Boolean);
   if (!secs.length) return;
   const off = secs.filter((el) => el.classList.contains('tabOff'));
   for (const el of secs) el.style.minHeight = '';
@@ -1337,7 +1301,7 @@ function setupCredits() {
 }
 
 // ---------- 設定（id 付き input を自動収集して保存・復元） ----------
-const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id], #modelWind input[id]')]   // #modelWind：3D モデル用の風（2026-10-02）
+const SETTING_IDS = () => [...document.querySelectorAll('#panel input[id], #panel select[id], #topbar input[id], #topbar select[id], #camBar input[id], #camBar select[id], #viewArea input[id], #viewArea select[id], #screenBar select[id]')]   // #screenBar：下段の「床」タブ（2026-10-04。カードの中の入力は id を持たず、別に保存している）
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));   // プリセット・プロジェクトの一覧・名前欄は設定ではない
 // ラジオボタンは name をキーに、選択中の value を保存
 // 対象は右メニュー（ラジオがあるのは右メニューだけ。別の場所に置く時はここに足す）
@@ -1372,15 +1336,20 @@ function loadSettings() {
 // 雪は値そのまま（上限 10 は吹雪用）（2026-09-19 ユーザー指定）
 const RAIN_SPEED_SCALE = 0.3;
 let saveTimer = null;
-for (const id of ['panel', 'topbar', 'camBar', 'viewArea', 'modelWind']) document.getElementById(id)?.addEventListener('input', () => {
+for (const id of ['panel', 'topbar', 'camBar', 'viewArea', 'screenBar']) document.getElementById(id)?.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveSettings, 400);
   refreshValueLabels();
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
-const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id], #modelWind input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
+const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
 // 値表示の書式（2026-09-16 ユーザー指定：時刻は時計表記）。toText: 数値 → 表示、fromText: 入力 → 数値（NaN なら不正）
 const VALUE_FMT = {
+  // 階調の細かさ（2026-10-04 ユーザー指定）：一番右（32）は丸めない＝ふつうの 256 段なので「256」と出す。32 以上を打つと 256 扱い
+  pixelLevels: {
+    toText: (v) => (v >= 32 ? '256' : String(Math.round(v))),
+    fromText: (t) => { const v = parseFloat(t); return Number.isFinite(v) ? Math.min(32, v) : NaN; },
+  },
   sunHour: {
     toText: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${h}:${String(m).padStart(2, '0')}`; },
     fromText: (t) => { const m = /^\s*(\d{1,2})(?::(\d{1,2}))?\s*$/.exec(t); return m ? (+m[1]) + (m[2] ? (+m[2]) / 60 : 0) : (Number.isFinite(parseFloat(t)) ? parseFloat(t) : NaN); },
@@ -1465,7 +1434,7 @@ function settings() {
     metalFres: num('metalFres', 2),   // 金属の照り返し（2026-10-01 ユーザー指定）
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
     // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
-    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), pixelLevels: num('pixelLevels', 32), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
@@ -1502,8 +1471,6 @@ function settings() {
     moonAge: num('moonAge', 15), moonAzimuth: num('moonAzimuth', 180), moonElev: num('moonElev', 30), moonBright: num('moonBright', 1),   // 月（2026-09-16）
     exposure: num('exposure', 1), bloomAll: num('bloomAll', 0), bloomThr: num('bloomThr', 0.7),   // 画面全体のブルームと閾値（2026-09-17）
     bgTop: $('bgTop').value, bgBottom: $('bgBottom').value, bgMid: num('bgMid', 50), bgFlip: $('bgFlip').checked,
-    showTitle: $('showTitle').checked, // タイトルのロゴ（2026-09-12）
-    titleBend: $('titleBend').checked,    // ひな壇の曲率で曲げる（2026-09-13）
     // 自動カメラ（演奏会のカメラワーク。2026-09-13）
     autoCam: $('autoCam').checked, camRate: num('camRate', 1), camClose: num('camClose', 0.6),
     camMove: num('camMove', 0.6), camMoveFreq: num('camMoveFreq', 0.6),
@@ -1512,7 +1479,6 @@ function settings() {
     showCredits: $('showCredits').checked,
     credit1: $('credit1').value, credit2: $('credit2').value, credit3: $('credit3').value, credit4: $('credit4').value,
     creditScale: num('creditScale', 1), creditColor: $('creditColor').value, creditOpacity: num('creditOpacity', 0.8),
-    titleX: num('titleX', 0), titleY: num('titleY', 7), titleZ: num('titleZ', -12), titleScale: num('titleScale', 1), titleOpacity: num('titleOpacity', 1),
     facing: 'conductor',  // 体の向きは指揮者固定（2026-09-10 ユーザー確定。UI は撤去）
     partStyle: 'voxel',   // 絵の方式はボクセル固定（2026-09-10 ユーザー確定。2D の板の実装は sprites.js に残っているが UI は撤去）
   };
@@ -2275,15 +2241,6 @@ function animate() {
     updateWeather(t);      // 雨・雪・雷も時刻から決める（setShadows の後：屋外かどうかを見る）
     applyTempo(s, engine.bpmAt(tm), beat);
     applyCredits(s);
-    logo.visible = s.showTitle;
-    logo.position.set(s.titleX, s.titleY, s.titleZ);
-    logo.scale.setScalar(s.titleScale);
-    bendU.uBend.value = s.titleBend ? 1 : 0;   // 曲げは毎フレーム位置・倍率を渡す（Z を動かせば曲率も変わる）
-    bendU.uX0.value = s.titleX; bendU.uZ0.value = s.titleZ; bendU.uS.value = s.titleScale;
-    if (s.titleOpacity !== logoOpacity) { // 透過（1 未満なら透明扱いにして奥のものが透ける）
-      logoOpacity = s.titleOpacity;
-      logo.traverse((m) => { if (m.isMesh) { m.material.opacity = logoOpacity; m.material.transparent = logoOpacity < 1; m.material.depthWrite = logoOpacity >= 1; m.material.needsUpdate = true; } });
-    }
     setGlowSoftness(s.glowSoft);
     roll.setVisible(s.showRoll);
     roll.setMode(s.showLandLine);
@@ -2312,7 +2269,7 @@ function animate() {
       if (sc.labels) roots.push(labels);
       if (sc.roll && roll) roots.push(roll.group);
     }
-    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
+    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, levels: s2.pixelLevels, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
       outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く
       metalPix: !!sc.players, roots }); }
   const playerRoots = [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])];
@@ -2535,10 +2492,10 @@ const SECTIONS = [
   { key: 'lens', label: 'レンズ', boxes: () => [$('lensBox')] },
   { key: 'pixel', label: 'ドット絵', boxes: () => [$('boxPixel')] },
   { key: 'sky', label: '空・時刻', boxes: () => [$('lightBox')] },
-  { key: 'floor', label: '床', boxes: () => [boxByTitle('床')] },
+  { key: 'floor', label: '床', boxes: () => [$('floorSec')] },   // 下段のタブへ移した（2026-10-03）
   { key: 'weather', label: '天気', boxes: () => [$('weatherBox')] },
   { key: 'light', label: '光源・影', boxes: () => [$('srcBox')] },
-  { key: 'title', label: 'タイトル', boxes: () => [boxByTitle('タイトル')] },
+  { key: 'wind', label: '風・植物', boxes: () => [$('windBox')] },   // 3Dモデルの欄から移した（2026-10-03）
   { key: 'roll', label: 'ピアノロール', boxes: () => [$('boxRoll')] },
   { key: 'player', label: '奏者', boxes: () => [$('boxPlayer')] },
   { key: 'shake', label: '揺れ', boxes: () => [$('boxShake')] },
@@ -2553,7 +2510,7 @@ const SECTIONS = [
   { key: 'grass', label: '草', sec: 'grassSec' },
   { key: 'water', label: '水', sec: 'waterSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
-  { key: 'env', label: '環境', group: ['sky', 'weather', 'light'], hdId: 'envHd' },
+  { key: 'env', label: '環境', group: ['sky', 'weather', 'light', 'wind'], hdId: 'envHd' },
 ];
 const SECTION_BY_KEY = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
 const secPresets = {

@@ -921,6 +921,17 @@ const _flareTmp = new THREE.Vector3();
 // 奏者だけを 1/size の解像度で描き（色と深度）、本編の前に最近傍で画面いっぱいに書き込む。本編は奏者を隠して上から描くので、
 // ほかの物との前後は深度で正しく決まる。影は奏者だけのパスで計算したもの（全員が映る）を本編でも使う
 export const PLAYER_LAYER = 4;
+// 階調の細かさ（2026-10-04 ユーザー指定）：色の成分ごとに lv 段へ丸める。32 以上で丸めない。
+// 舞台は色を変換せずそのまま画面に出す（outputEncoding は既定のまま）ので、画面の値をそのまま等分する（ガンマを掛けて刻むと暗い色が黒に潰れた）
+const PIX_QUANT_GLSL = `vec3 pxoQuant( vec3 c, float lv ) {
+  if ( lv >= 31.5 ) return c;
+  return floor( max( c, 0.0 ) * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
+}
+// 透明度も同じ段数で丸める（2026-10-04 ユーザー指定：泡の消え方・水の縁が、階調を粗くしても滑らかなままだった）。0 になったら描かない
+float pxoQuantA( float a, float lv ) {
+  if ( lv >= 31.5 ) return a;
+  return floor( clamp( a, 0.0, 1.0 ) * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
+}`;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
 const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1 };
@@ -930,12 +941,15 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.water], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  // 水はドット化の対象に入れない（2026-10-04 ユーザー指摘：ドット絵と 3D モデルをオンにすると水が消えた）。水は半透明で奥行きを書かないので、
+  // 粗い画像に描くと「一番奥」扱いになり、あとから等倍で描く床に上から塗られて消えた。代わりに水のシェーダーが同じます目でドットにする（WATER_PIX）
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
 function pixelPass(renderer, scene, camera) {
+  WATER_PIX.uPixDot.value.set(0, 0);
   if (!(pix.on || pix.outline) || !pix.roots.length) return false;
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   // 1 ドットの大きさ [画素]（画面の画素より小さくはしない）
@@ -946,10 +960,12 @@ function pixelPass(renderer, scene, camera) {
     pix.rt.depthTexture = new THREE.DepthTexture(lw, lh);
     pix.rt.depthTexture.type = THREE.UnsignedIntType;
   }
+  WATER_PIX.uPixLv.value = pix.on ? (pix.levels ?? 32) : 32;
+  if (pix.on && stageCtx && pix.roots.includes(stageCtx.models)) WATER_PIX.uPixDot.value.set(size.x / lw, size.y / lh);   // 水も同じます目のドットに（範囲に 3D モデルがある時）
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 } },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
@@ -957,9 +973,10 @@ function pixelPass(renderer, scene, camera) {
         // 輪郭の色（2026-10-01 ユーザー指定：セルアウト）：隣の物の色を lineDark（輪郭の明るさ）倍に暗くした色。0 で黒、1 で物の色そのまま。
         // 以前は黒との混ぜ具合（輪郭の色）も別に持っていたが、黒がほぼ 0 なので明るさとの掛け算になり、同じ働きの重複だった
         vec3 selOut(vec4 n) { return (n.rgb / max(n.a, 0.0001)) * lineDark; }
-        uniform float near; uniform float far; varying vec2 vUv;
+        uniform float near; uniform float far; uniform float lv; varying vec2 vUv;
+        ${PIX_QUANT_GLSL}
         float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
-        void main() {
+        void pxoBody() {
           vec4 c = texture2D(tex, vUv);
           float d = texture2D(depth, vUv).r;
           if (line > 0.0) {
@@ -1016,7 +1033,8 @@ function pixelPass(renderer, scene, camera) {
           // （2026-09-30 ユーザー指摘：全体の時、床の向こうのドームが二重に暗くなり黒い影に見えた）
           gl_FragColor = vec4(c.rgb / max(c.a, 0.0001), c.a);
           gl_FragDepthEXT = d;   // 奏者の深度も書く（本編の物との前後を正しくする）
-        }`,
+        }
+        void main() { pxoBody(); gl_FragColor.rgb = pxoQuant(gl_FragColor.rgb, lv); gl_FragColor.a = pxoQuantA(gl_FragColor.a, lv); if (gl_FragColor.a <= 0.0) discard; }   // 階調の細かさ（輪郭線の色・透明度にも掛かる）`,
       extensions: { fragDepth: true },
       transparent: true, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth, toneMapped: false,
     });
@@ -2106,7 +2124,9 @@ function buildGrass() {
 const WATER_MAX_C = 64;          // 1 水場の円の数の上限（シェーダーの配列の大きさ）
 const WATER_LIFT = 0.02;         // 床からの浮かせ [unit]（床とのちらつき防止）
 const WATER_WET = 0.3;           // 板の外周の余白 [unit]（2026-10-03：岸の外にはみ出し・打ち寄せる泡の粒のぶん）
-const WATER_U = { uWT: { value: 0 } };   // 水の時刻（全水場で共有。曲と関係なく実時間で進める）
+const WATER_U = { uWT: { value: 0 } };
+// ドット絵（範囲に 3D モデル）の時の 1 ドットの大きさ [画素]。0 でドットにしない（2026-10-04 ユーザー指定）。pixelPass が毎フレーム決める
+const WATER_PIX = { uPixDot: { value: new THREE.Vector2() }, uPixLv: { value: 32 } };   // uPixLv：階調の細かさ（ドットにした物と同じ。32 で制限なし）   // 水の時刻（全水場で共有。曲と関係なく実時間で進める）
 // 奏者の位置（「奏者をよける」用。全水場で共有）。x, z と陸地とみなす半径 [unit]
 const WATER_MAX_PL = 128, WATER_PL_R = 1.3, WATER_COND_R = 1.9;   // 奏者（椅子・楽器ぶん）と、指揮者（一辺 2.2 の指揮台の角まで陸に）の半径
 const WATER_PL = { uPl: { value: Array.from({ length: WATER_MAX_PL }, () => new THREE.Vector3()) }, uPlN: { value: 0 } };
@@ -2154,7 +2174,7 @@ function waterMaterial() {
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
-    Object.assign(shader.uniforms, WATER_U, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
+    Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
     // pxoVV：視点から見た座標で、この点からカメラへの向き（2026-10-03：r128 は Lambert に cameraPosition を渡さないので自分で持つ）
     shader.vertexShader = 'varying vec3 pxoWW, pxoVV;\n' + shader.vertexShader
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoVV = -( modelViewMatrix * vec4( transformed, 1.0 ) ).xyz;');
@@ -2166,7 +2186,9 @@ uniform vec3 uPl[ ${WATER_MAX_PL} ];   // 奏者の位置（x, z, 半径）
 uniform int uPlN;
 uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U を共有。2026-10-03）
 uniform vec2 vdDirection;
-uniform vec2 uFlow;
+uniform vec2 uFlow, uPixDot;
+uniform float uPixLv;
+${PIX_QUANT_GLSL}
 uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
 uniform float uSkyMid, uSkyFlip, glowAmt, spread;
 ${FLOOR_GLSL}
@@ -2217,9 +2239,24 @@ float pxoWaterSDF0( vec2 p ) {   // 円をなめらかにくっつけた形（�
 // 岸の細かいギザギザ（2026-10-03 ユーザー指定）：数 cm と十数 cm の 2 種類のノイズで、岸の線を内外に揺らす（uJag 1 で最大 約 5cm）
 float pxoJag( vec2 p ) { return uJag > 0.0 ? uJag * 0.12 * ( ( pxoWN( p * 15.0 ) * 0.55 + pxoWN( p * 5.5 + 3.7 ) * 0.45 ) * 2.0 - 1.0 ) : 0.0; }
 float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
-` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-{ if ( pxoOutsideFloor( pxoWW ) ) discard;
-  float sd = pxoWaterSDF( pxoWW.xz );
+` + shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if ( uPixDot.x > 0.0 ) {   // 階調の細かさ（ドットに揃えた時だけ）。透明度も丸めて、泡の消え方・水の縁も段にする
+    gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );
+    gl_FragColor.a = pxoQuantA( gl_FragColor.a, uPixLv );
+    if ( gl_FragColor.a <= 0.0 ) discard;
+  }`).replace('#include <color_fragment>', `#include <color_fragment>
+{
+  // ドット絵（2026-10-04 ユーザー指定）：画面を石・草のドットと同じます目で区切り、ます目の中は真ん中の点の位置で計算する。
+  // 水は半透明で奥行きを書かないので、ドットの粗い画像には入れず本編で描き（入れると床に塗られて消えた）、ここでドットに揃える。
+  // 水面は平らなので、真ん中の点の位置は画素の位置から画面上の変化率で外挿すれば足りる
+  vec3 pxoP = pxoWW, pxoV = pxoVV;
+  if ( uPixDot.x > 0.0 ) {
+    vec2 dc = ( floor( gl_FragCoord.xy / uPixDot ) + 0.5 ) * uPixDot - gl_FragCoord.xy;
+    pxoP += dFdx( pxoWW ) * dc.x + dFdy( pxoWW ) * dc.y;
+    pxoV += dFdx( pxoVV ) * dc.x + dFdy( pxoVV ) * dc.y;
+  }
+  if ( pxoOutsideFloor( pxoP ) ) discard;
+  float sd = pxoWaterSDF( pxoP.xz );
   if ( sd > 0.3 ) discard;   // 岸の外は、はみ出した・打ち寄せた泡の粒だけ描く（濡れて暗い床の輪はやめた。2026-10-03）
   // 泡：岸に沿った大小の粒の集まり（2026-10-03 ユーザー指定）。粒を置くかどうかは「粒の中心」の位置で決め、粒は丸ごと描く
   // （水の外にはみ出してよい）。こうすると輪郭そのものが丸の並びでできて見える（最初は 1 粒ずつ水の形の線で切っていて、
@@ -2240,13 +2277,13 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   vec2 gn = vec2( 0.0, 1.0 );
   if ( sd > -0.6 ) {
     // 粒の判定はギザギザ抜きのなめらかな形から見積もり、粒の中心でのギザギザを足す（画素ごとのギザギザで判定すると粒がちぎれた。2026-10-03）
-    float sd0 = pxoWaterSDF0( pxoWW.xz );
-    gn = vec2( pxoWaterSDF0( pxoWW.xz + vec2( 0.02, 0.0 ) ) - sd0, pxoWaterSDF0( pxoWW.xz + vec2( 0.0, 0.02 ) ) - sd0 );
+    float sd0 = pxoWaterSDF0( pxoP.xz );
+    gn = vec2( pxoWaterSDF0( pxoP.xz + vec2( 0.02, 0.0 ) ) - sd0, pxoWaterSDF0( pxoP.xz + vec2( 0.0, 0.02 ) ) - sd0 );
     gn = length( gn ) > 1e-6 ? normalize( gn ) : vec2( 0.0, 1.0 );
     // 風下の岸（岸の外向き gn が風下を向く）ほど強く、風上の岸ほど穏やかに打ち寄せる
     float dw = dot( gn, wD );
     sa = SURGE_A * clamp( 1.0 + 0.8 * Wc * max( dw, 0.0 ) - 0.5 * Wc * max( -dw, 0.0 ), 0.3, 2.0 );
-    vec2 p = pxoWW.xz, p0 = p - gn * sa * 0.5;   // 押し出しの真ん中に戻した位置の周りのます目を調べる
+    vec2 p = pxoP.xz, p0 = p - gn * sa * 0.5;   // 押し出しの真ん中に戻した位置の周りのます目を調べる
     {   // 小さい粒：7cm ます目。元の中心が内側 25cm〜きわのすぐ外（1.5cm）の間（2026-10-03：内側の小さい泡を減らした。40cm → 25cm、内側ほど急に減る）
       vec2 fb = floor( p0 / 0.07 );
       for ( int j = -2; j <= 2; j ++ ) for ( int i = -2; i <= 2; i ++ ) {
@@ -2289,7 +2326,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     float wet = 0.0;
     float k = 2.0 * ( sd - 0.02 ) / sa - 1.0;   // この点まで届くのに要る sin θ
     if ( k < 1.0 ) {
-      float th = uWT * 1.2 + pxoWN( pxoWW.xz * 0.6 ) * 6.283, hi = 3.14159 - asin( max( k, -1.0 ) );
+      float th = uWT * 1.2 + pxoWN( pxoP.xz * 0.6 ) * 6.283, hi = 3.14159 - asin( max( k, -1.0 ) );
       float sinT = sin( th );
       float since = sinT > k ? 0.0 : mod( th - hi, 6.283 ) / 1.2;   // 届き終えてからの秒数
       // 泡の先の所は境目がくっきりしないよう、届く少し手前からなめらかに濡らす。届く一番先（SURGE_A）の外へも少しぼかして消す
@@ -2313,9 +2350,9 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     vec2 f = normalize( uFlow ), pp = vec2( -f.y, f.x );
     float sp = max( uSpeed, 0.12 );
     // 風下へさざ波を流す（湖・水たまりでも。川は流れと合わさる）。速さは「揺れの速さ」で進む風の時刻 wT と強さで
-    vec2 pR = pxoWW.xz - wD * wT * 0.55 * Wc;
+    vec2 pR = pxoP.xz - wD * wT * 0.55 * Wc;
     // 風紋（突風）：ときどき水面のまだらがザワッと波立ち、風下へ走る
-    float gustP = vdGust * Wc * smoothstep( 0.55, 0.8, pxoWN( pxoWW.xz * 0.3 - wD * wT * 0.9 ) );
+    float gustP = vdGust * Wc * smoothstep( 0.55, 0.8, pxoWN( pxoP.xz * 0.3 - wD * wT * 0.9 ) );
     float ampW = ( 0.15 + 0.85 * Wc ) * ( 1.0 + 1.2 * gustP );   // 波立ちの強さ（無風でほぼ鏡）
     vec2 q = vec2( dot( pR, f ), dot( pR, pp ) );
     vec2 q1 = q * vec2( 2.2, 3.4 ) - vec2( uWT * sp * 1.3, uWT * 0.15 );
@@ -2329,11 +2366,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     vec2 g = vec2( hx - h0, hy - h0 ) / e;
     vec2 gw = f * g.x + pp * g.y;   // 流れの座標から世界の xz へ
     vec3 n = normalize( vec3( -gw.x * 0.06 * ampW, 1.0, -gw.y * 0.06 * ampW ) );
-    vec3 nV = normalize( ( viewMatrix * vec4( n, 0.0 ) ).xyz ), vV = normalize( pxoVV );   // 視点から見た座標の、面の向きとカメラへの向き
+    vec3 nV = normalize( ( viewMatrix * vec4( n, 0.0 ) ).xyz ), vV = normalize( pxoV );   // 視点から見た座標の、面の向きとカメラへの向き
     col *= 1.0 + ( 0.16 * h0 - 0.1 ) * min( ampW, 2.0 );   // さざ波の明暗（風が強いほど強い）
     col *= 1.0 - 0.18 * gustP;   // 風紋はザワッと暗く
     // 水底のゆらめく光（コースティクス）：浅い所ほど強い。2 つのずれたノイズの差が 0 に近い所が細い光の網になる
-    vec2 cq = pxoWW.xz * 3.2;
+    vec2 cq = pxoP.xz * 3.2;
     float ca = pxoWN( cq + vec2( uWT * 0.35, uWT * 0.21 ) ), cb = pxoWN( cq * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
     float caus = pow( 1.0 - clamp( abs( ca - cb ) * 3.0, 0.0, 1.0 ), 6.0 );
     col += caus * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * vec3( 0.6, 0.66, 0.56 ) * ( 0.3 + 0.7 * min( Wc, 1.5 ) );   // 2026-10-03 ユーザー指定で強く（0.32 → 0.6、消える深さ 0.55 → 1.0）
@@ -2371,7 +2408,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // きらめき（2026-10-03 ユーザー指定）：鏡の反射の角度に関係なく、さざ波の山のところどころで小さな光の点が瞬く（演出）。
     // 5cm ほどのます目ごとに 1 点、粒ごとにずれた周期でふっと光って消える。明るさは太陽・月の光に合わせ、泡の上には出さない
     if ( uGlit > 0.0 ) {
-      vec2 gq = pxoWW.xz / 0.12, gid = floor( gq ), go = fract( gq ) - 0.5;   // 5cm ほどのます目（3cm ではふつうの距離で小さすぎた）
+      vec2 gq = pxoP.xz / 0.12, gid = floor( gq ), go = fract( gq ) - 0.5;   // 5cm ほどのます目（3cm ではふつうの距離で小さすぎた）
       float g1 = pxoWH( gid + 7.1 ), g2 = pxoWH( gid + 31.9 ), g3 = pxoWH( gid + 57.3 ), g4 = pxoWH( gid + 91.7 );
       float crest = smoothstep( 0.62, 0.95, h0 );   // さざ波の山ほど出やすい
       float tw = pow( max( 0.0, sin( uWT * mix( 1.5, 3.5, g2 ) + g3 * 6.283 ) ), 10.0 );   // ふっと光って消える
@@ -2388,7 +2425,8 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-water-v30';
+  m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
+  m.customProgramCacheKey = () => 'pxo-water-v34';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）
