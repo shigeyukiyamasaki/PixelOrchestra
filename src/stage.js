@@ -2119,7 +2119,7 @@ const c3 = (h) => { const c = new THREE.Color(h); return `vec3( ${c.r.toFixed(4)
 function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
-    uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
+    uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
     Object.assign(shader.uniforms, WATER_U, WATER_SKY, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
@@ -2129,7 +2129,7 @@ function waterMaterial() {
     shader.fragmentShader = `varying vec3 pxoWW, pxoVV;
 uniform vec4 uC[ ${WATER_MAX_C} ];
 uniform int uN;
-uniform float uK, uDeep, uDepth, uJag, uSpeed, uHL, uWT;
+uniform float uK, uDeep, uDepth, uJag, uGlit, uSpeed, uHL, uWT;
 uniform vec2 uFlow;
 uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
 uniform float uSkyMid, uSkyFlip, glowAmt, spread;
@@ -2292,12 +2292,27 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         totalEmissiveRadiance += ( pow( rl, 400.0 ) * 3.0 + pow( rl, 40.0 ) * 0.25 ) * directionalLights[ i ].color;
       }
     #endif
+    // きらめき（2026-10-03 ユーザー指定）：鏡の反射の角度に関係なく、さざ波の山のところどころで小さな光の点が瞬く（演出）。
+    // 5cm ほどのます目ごとに 1 点、粒ごとにずれた周期でふっと光って消える。明るさは太陽・月の光に合わせ、泡の上には出さない
+    if ( uGlit > 0.0 ) {
+      vec2 gq = pxoWW.xz / 0.12, gid = floor( gq ), go = fract( gq ) - 0.5;   // 5cm ほどのます目（3cm ではふつうの距離で小さすぎた）
+      float g1 = pxoWH( gid + 7.1 ), g2 = pxoWH( gid + 31.9 ), g3 = pxoWH( gid + 57.3 ), g4 = pxoWH( gid + 91.7 );
+      float crest = smoothstep( 0.62, 0.95, h0 );   // さざ波の山ほど出やすい
+      float tw = pow( max( 0.0, sin( uWT * mix( 1.5, 3.5, g2 ) + g3 * 6.283 ) ), 10.0 );   // ふっと光って消える
+      float pt = 1.0 - smoothstep( 0.08, 0.26, length( go - ( vec2( g3, g4 ) - 0.5 ) * 0.4 ) );
+      float glit = step( g1, 0.35 * min( uGlit, 2.0 ) ) * crest * tw * pt * ( 1.0 - foam );
+      vec3 lc = vec3( 0.0 );
+      #if NUM_DIR_LIGHTS > 0
+        for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) lc += directionalLights[ i ].color;
+      #endif
+      totalEmissiveRadiance += glit * ( lc * 1.8 + 0.15 ) * max( 0.5, uGlit );
+    }
     totalEmissiveRadiance *= aw / a2;   // 空の映り込み・照り返しも水の濃さに合わせて薄める（ふちで光だけ残らないように）
   }
   if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-water-v25';
+  m.customProgramCacheKey = () => 'pxo-water-v27';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）
@@ -2346,6 +2361,7 @@ function buildWater() {
     u.uDeep.value = Math.max(0.1, rMax);
     u.uDepth.value = Math.max(0.05, st.depth ?? 1);   // 深さ（2026-10-03）
     u.uJag.value = 1;   // 岸のギザギザ：最大で固定（2026-10-03 ユーザー指定。スライダーは外した）
+    u.uGlit.value = Math.max(0, st.glitter ?? 1);   // きらめき（2026-10-03）
     u.uFlow.value.set(Math.cos(deg(st.dir ?? 0)), -Math.sin(deg(st.dir ?? 0)));
     u.uSpeed.value = Math.max(0, st.flow ?? 1);
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
