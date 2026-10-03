@@ -1772,10 +1772,10 @@ const STONE_CAP_MAT = (() => {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
   const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
   m.onBeforeCompile = (shader) => {
-    shader.vertexShader = 'attribute float pxoScale;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS;\n' + shader.vertexShader
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale;');
+    shader.vertexShader = 'attribute float pxoScale, pxoShade;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS, pxoCapK;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale; pxoCapK = pxoShade;');
     shader.fragmentShader = `varying vec3 pxoCapW, pxoCapN;
-varying float pxoCapS;
+varying float pxoCapS, pxoCapK;
 float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 n = normalize( pxoCapN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
@@ -1784,9 +1784,9 @@ float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( 
   float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );   // 点の半分の幅（ます目に対する割合。焼き込みのボロノイと同じ値）
   vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
   float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
-  diffuseColor.rgb = mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ); }`);
+  diffuseColor.rgb = mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoCapK; }`);   // pxoCapK：石ごとの色の濃さ（表面と同じ倍率）
   };
-  m.customProgramCacheKey = () => 'pxo-stonecap-v1';
+  m.customProgramCacheKey = () => 'pxo-stonecap-v2';
   return m;
 })();
 // 床の縁の平面（外向きの法線 n・n·p ≤ d が床の側）のうち、中心 (x, z)・半径 rc の円にかかるもの。全部外なら null
@@ -1859,7 +1859,7 @@ function clipClosed(tris, pl) {
   return out;
 }
 // 1 個の石を世界の座標に置いて、床の縁で切った 2 つの形（表面・断面）にする
-function cutStoneMeshes(shape, matrix, planes, scale) {
+function cutStoneMeshes(shape, matrix, planes, scale, shade = 1) {
   const g = shape.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
   const nm = new THREE.Matrix3().getNormalMatrix(matrix);
   const vert = (i) => ({ p: new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(matrix), n: na ? new THREE.Vector3().fromBufferAttribute(na, i).applyMatrix3(nm).normalize() : new THREE.Vector3(0, 1, 0), uv: ua ? new THREE.Vector2().fromBufferAttribute(ua, i) : null });
@@ -1877,12 +1877,18 @@ function cutStoneMeshes(shape, matrix, planes, scale) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     if (uv) geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    else geo.setAttribute('pxoScale', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(scale), 1));
+    else {
+      geo.setAttribute('pxoScale', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(scale), 1));
+      geo.setAttribute('pxoShade', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(shade), 1));
+    }
     return geo;
   };
   const surf = tris.filter((t) => !t[3]), caps = tris.filter((t) => t[3]);
   const meshes = [];
-  if (surf.length) meshes.push(new THREE.Mesh(build(surf, true), shape.material));
+  if (surf.length) {   // 表面：色の濃さを掛けた材質の複製（組み直すたびに捨てる）
+    const mat = shape.material.clone(); mat.color.multiplyScalar(shade); mat.userData.pxoOwned = true;
+    meshes.push(new THREE.Mesh(build(surf, true), mat));
+  }
   if (caps.length) meshes.push(new THREE.Mesh(build(caps, false), STONE_CAP_MAT));
   for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; m.layers.enable(MODEL_SHADOW_LAYER); }
   return meshes;
@@ -1893,12 +1899,12 @@ function rng32(seed) {   // mulberry32（種から決まる乱数）
   return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 function gauss(r) { return Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r()); }
-const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
+const _sc = new THREE.Color(), _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
 function buildStones() {
   if (!stageCtx) return;
   const g = stageCtx.stones;
   g.clear();   // プールの InstancedMesh は捨てずに使い回す
-  for (const m of STONE_EDGE) m.geometry.dispose();   // 縁で切った形は毎回作り直す（材質は共有なので捨てない）
+  for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
   const stoneShapes = stonePatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
   const rockShapes = rockPatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
@@ -1911,7 +1917,11 @@ function buildStones() {
     const count = Math.max(0, Math.min(STONE_MAX, Math.round(st.count ?? 20)));
     const spread = Math.max(0, st.spread ?? 3), size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.4));
     const placed = [];   // { x, z, rad }
-    const per = shapes.map(() => []);
+    const per = shapes.map(() => []), perShade = shapes.map(() => []);
+    // 色の濃さ（2026-10-03 ユーザー指定）：1 で元の色、1 上がるごとに明るさが半分。ばらつきは石ごと（±2σ まで）。
+    // 並びとは別の乱数を使う（このスライダーを足す前に作った群れの並びが変わらないように）
+    const rc = rng32(((st.seed ?? 1) ^ 0x9e3779b9) >>> 0);
+    const shadeOf = () => Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
     for (let i = 0; i < count; i++) {
       for (let t = 0; t < STONE_TRIES; t++) {
         // 中心ほど多く、外ほどまばら（正規分布。σ = ばらけ具合の半分、外れすぎはばらけ具合の 1.5 倍で止める）
@@ -1930,8 +1940,9 @@ function buildStones() {
         const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
-        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M)) { STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
-        per[pi].push(mat);                                     // 床の中：まとめて描く
+        const shade = shadeOf();
+        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
+        per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
         break;
       }
     }
@@ -1941,14 +1952,15 @@ function buildStones() {
       let im = STONE_POOL.get(key);
       if (!im || im.geometry !== p.s.geometry) {
         im = new THREE.InstancedMesh(p.s.geometry, p.s.material, STONE_MAX);
+        im.setColorAt(0, new THREE.Color(1, 1, 1));   // 石ごとの色の入れ物を、上限の個数ぶん先に作る（個数を減らした後に作ると足りなくなる）
         im.castShadow = true; im.receiveShadow = true;
         im.frustumCulled = false;   // 境界は元の形 1 個分しか無いので、画面外と誤判定させない
         im.layers.enable(MODEL_SHADOW_LAYER);   // 奏者に落とす影の元
         STONE_POOL.set(key, im);
       }
       im.count = per[pi].length;
-      per[pi].forEach((m, i) => im.setMatrixAt(i, m));
-      im.instanceMatrix.needsUpdate = true;
+      per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setScalar(perShade[pi][i])); });
+      im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
       g.add(im);
     });
   });

@@ -304,7 +304,7 @@ let models = (() => {
 })();
 // 石のジェネレーター（2026-10-03 ユーザー指定）。x・z は群れの中心、y は床からの高さ、spread はばらけ具合 [unit]、
 // count は個数、size は大きさの倍率（1 で GLB の 1.25 倍＝3D モデルと同じ）、sizeVar は大きさのばらつき（0〜1）、seed は並び（並べ直しで変わる）
-const STONE_BASE = { name: '', x: -12, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, seed: 1, show: true };
+const STONE_BASE = { name: '', x: -12, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true };   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
 const stoneDefaults = (o) => ({ ...STONE_BASE, ...o });
 let stones = (() => {
   try { const a = JSON.parse(LS.getItem(STONES_KEY) || 'null'); if (Array.isArray(a)) return a.map(stoneDefaults); } catch (e) { console.warn('石の設定の読込失敗:', e); }
@@ -356,6 +356,8 @@ function stoneRow(st, i) {
   slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '散らばる範囲の広さ [unit]。中心ほど多く、外ほどまばら（ほぼこの値の 1.5 倍までに収まる）');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率。1 で 3D モデルと同じ（石1 の幅 32cm を実物の 1.25 倍で置く）。幅が 45〜80cm（GLB の寸法。舞台の見た目では 56〜100cm）の石は岩の形が混ざり、それより大きいと全部岩になる');
   slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/8〜8 倍）');
+  slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
+  slider('色のばらつき', 'shadeVar', 0, 1, 0.05, 2, '石ごとの色の濃さのばらつき。0 で全部同じ、1 で濃さが ±1 ほどばらつく（明るさ 1/2〜2 倍）');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
