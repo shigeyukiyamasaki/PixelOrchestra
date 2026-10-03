@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -41,6 +41,7 @@ const CREDITS_KEY = 'pixelOrchestra.credits.v1';       // クレジットの入�
 const MODELS_KEY = 'pixelOrchestra.models.v1';         // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
 const STONES_KEY = 'pixelOrchestra.stones.v1';         // 石のジェネレーター（2026-10-03 ユーザー指定）
 const GRASS_KEY = 'pixelOrchestra.grass.v1';           // 草のジェネレーター（2026-10-03 ユーザー指定）
+const WATER_KEY = 'pixelOrchestra.water.v1';           // 水のジェネレーター（2026-10-03 ユーザー指定）
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
 const SECTION_PRESETS_KEY = 'pixelOrchestra.sectionPresets.v1'; // 箱ごとのプリセット { 箱: { 名前: 中身 } }（天気・光源など細かい単位。2026-09-19 ユーザー指定）
@@ -52,7 +53,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -455,6 +456,62 @@ function grassRow(st, i) {
   const del = put(btns, '<button class="del" title="この群れを削除する">削除</button>');
   del.onclick = () => { grass.splice(i, 1); renderScreens(); changed(); };
   put(box, `<div class="note">${grassNote()}</div>`);
+  return box;
+}
+// 水のジェネレーター（2026-10-03 ユーザー指定）。長さ 0 で湖、細く長くで川、分かれを増やすと水たまりが散らばる
+const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, seed: 1, show: true };   // depth：深さ（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+const waterDefaults = (o) => ({ ...WATER_BASE, ...o });
+let water = (() => {
+  try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); if (Array.isArray(a)) return a.map(waterDefaults); } catch (e) { console.warn('水の設定の読込失敗:', e); }
+  return [];
+})();
+let waterSaveTimer = null;
+function saveWater() {
+  clearTimeout(waterSaveTimer);
+  waterSaveTimer = setTimeout(() => {
+    try { LS.setItem(WATER_KEY, JSON.stringify(water)); pushSettings(); } catch (e) { console.warn('水の設定の保存失敗:', e); }
+  }, 400);
+}
+function waterRow(st, i) {
+  const box = Object.assign(document.createElement('div'), { className: 'screen water gen' });
+  hoverHighlight(box, 'water', i);
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setWater(water); saveWater(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）
+  const top = put(box, '<div class="stoneTop"></div>');
+  const name = top.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
+  name.value = st.name || `水${i + 1}`;
+  name.oninput = () => { st.name = name.value; saveWater(); };
+  name.onkeydown = (e) => e.stopPropagation();
+  const show = put(top, '<label title="この水場を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = st.show !== false;
+  show.onchange = () => { st.show = show.checked; changed(); };
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input');
+    el.value = st[key] ?? WATER_BASE[key] ?? +min;
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { st[key] = +el.value; box2.show(); changed(); };
+    return lab;
+  };
+  slider('横位置', 'x', -30, 30, 0.1, 1, '水場の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
+  slider('奥行き', 'z', -36, 8, 0.1, 1, '水場の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床の上に張る');
+  slider('長さ', 'len', 0, 60, 0.1, 1, '水の線の長さ [unit]。0 で 1 か所にまとまって湖、長くすると川');
+  slider('太さ', 'width', 0.2, 20, 0.05, 2, '水の幅 [unit]。細くすれば小川、太くすれば大河・大きな湖');
+  slider('蛇行', 'meander', 0, 1, 0.05, 2, '川の曲がり具合。0 でまっすぐ');
+  slider('向き', 'dir', -180, 180, 1, 0, '川の向き・流れる向き [度]。0 で客席から見て右へ、90 で奥へ');
+  slider('分かれ', 'pieces', 1, 8, 1, 0, '水のかたまりの数。1 で 1 つの川・湖。増やすと、小さな水たまりが散らばる');
+  slider('散らばり', 'scatter', 0, 20, 0.1, 1, '分かれた水たまりが散らばる広さ [unit]（分かれが 2 以上の時）');
+  slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ');
+  slider('深さ', 'depth', 0.1, 3, 0.05, 2, '水の深さ。深くするほど色が濃くなり、床が透けて見えるのは岸のきわだけになる。浅くすると水全体が透けて、水底のゆらめく光が広く出る');
+  slider('流れ', 'flow', 0, 3, 0.05, 2, '波の流れる速さ（向きに沿って流れる）。0 で止まって、ときどききらめくだけ（湖・水たまり向き）');
+  const btns = put(box, '<div class="stoneBtns"></div>');
+  const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（蛇行・岸・水たまりの位置）だけ変える">作り直し</button>');
+  again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
+  const dup = put(btns, '<button title="この水場を複製する（設定ごと。右隣に入る）">複製</button>');
+  dup.onclick = () => { const c = waterDefaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `水${i + 1}`}のコピー`; water.splice(i + 1, 0, c); renderScreens(); changed(); };
+  const del = put(btns, '<button class="del" title="この水場を削除する">削除</button>');
+  del.onclick = () => { water.splice(i, 1); renderScreens(); changed(); };
   return box;
 }
 let modelSaveTimer = null;
@@ -973,6 +1030,14 @@ function renderScreens() {
     addG.onclick = () => { grass.push(grassDefaults({ name: `草${grass.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setGrass(grass); saveGrass(); };
     gbox.appendChild(addG);
   }
+  const wbox = $('waterRows');
+  if (wbox) {   // 水のジェネレーター（2026-10-03）
+    wbox.textContent = '';
+    water.forEach((st, i) => wbox.appendChild(waterRow(st, i)));
+    const addW = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '水場を 1 つ増やす' });
+    addW.onclick = () => { water.push(waterDefaults({ name: `水${water.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setWater(water); saveWater(); };
+    wbox.appendChild(addW);
+  }
   domes.forEach((d, i) => dbox.appendChild(domeRow(d, i)));    // 遠景（3 層固定）は左のセクションへ
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
   // 右端の「＋」でカードを増やす
@@ -1010,7 +1075,7 @@ function showBarTab(id) {
 // 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
 // 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
 function equalizeBarTabs() {
-  const secs = ['domeSec', 'screenSec', 'modelSec', 'stoneSec', 'grassSec'].map((id) => $(id)).filter(Boolean);
+  const secs = ['domeSec', 'screenSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec'].map((id) => $(id)).filter(Boolean);
   if (!secs.length) return;
   const off = secs.filter((el) => el.classList.contains('tabOff'));
   for (const el of secs) el.style.minHeight = '';
@@ -1679,6 +1744,7 @@ function applyBackground(top, bottom, mid, flip, exposure = 1) {
   if (css === bgApplied) return;
   bgApplied = css;
   $('view').style.background = css;
+  setWaterSky(top, bottom, mid, flip);   // 水面に同じ空の色を映す（2026-10-03）
 }
 // 太陽光・自動のとき、詳細（強さ・方角・高度・色温度・天空光）のスライダーに計算値を入れて追従させる（2026-09-16 ユーザー指定）。
 // 手動に切り替えた時はその値から始められる。input イベントは出さない（保存は次の操作時にまとめて）
@@ -2131,7 +2197,8 @@ function animate() {
   const wv = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
   setModelWind({ on: $('modelWindOn').checked, amp: wv('modelWindAmp', 1), rate: wv('modelWindRate', 1), dirDeg: wv('modelWindDir', 0), gust: wv('modelWindGust', 0.25) });
   setPlantBrightness(wv('plantBright', 1));   // 植物の明るさ（2026-10-03。変わった時だけ材質の色を入れ直す）
-  tickModelWind(dt * wv('modelWindRate', 1));   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
+  tickModelWind(dt * wv('modelWindRate', 1));
+  tickWater(dt);   // 水の波（2026-10-03。曲と関係なく実時間で）   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();
 
@@ -2317,7 +2384,8 @@ function applySnapshot(p, src) {
   try { const a = JSON.parse(LS.getItem(MODELS_KEY) || 'null'); models = Array.isArray(a) ? a.map(modelDefaults) : []; } catch (e) { console.warn('3D モデルの復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(STONES_KEY) || 'null'); stones = Array.isArray(a) ? a.map(stoneDefaults) : []; } catch (e) { console.warn('石の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(GRASS_KEY) || 'null'); grass = Array.isArray(a) ? a.map(grassDefaults) : []; } catch (e) { console.warn('草の復元失敗:', e); }
-  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass);
+  try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); water = Array.isArray(a) ? a.map(waterDefaults) : []; } catch (e) { console.warn('水の復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
@@ -2472,6 +2540,7 @@ const SECTIONS = [
   { key: 'model', label: '3Dモデル', sec: 'modelSec' },
   { key: 'stone', label: '石', sec: 'stoneSec' },
   { key: 'grass', label: '草', sec: 'grassSec' },
+  { key: 'water', label: '水', sec: 'waterSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
   { key: 'env', label: '環境', group: ['sky', 'weather', 'light'], hdId: 'envHd' },
 ];
@@ -2485,7 +2554,7 @@ const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
 function sectionSnap(sec) {
   if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
-  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : screens)) };
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : screens)) };
   const v = {}, r = {};
   for (const el of sectionInputs(sec)) {
     if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2503,8 +2572,9 @@ function applySection(sec, d) {
     else if (sec.key === 'model') { models = d.list.map(modelDefaults); saveModels(); }
     else if (sec.key === 'stone') { stones = d.list.map(stoneDefaults); saveStones(); }
     else if (sec.key === 'grass') { grass = d.list.map(grassDefaults); saveGrass(); }
+    else if (sec.key === 'water') { water = d.list.map(waterDefaults); saveWater(); }
     else { screens = d.list.map(withDefaults); saveScreens(); }
-    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass);
+    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water);
     return;
   }
   for (const [id, val] of Object.entries(d.v || {})) {
@@ -2614,6 +2684,7 @@ setDomes(domes);      // スカイドーム（遠景。3 層固定）
 setModels(models);    // 床に置く 3D モデル（2026-10-01）
 setStones(stones);    // 石のジェネレーター（2026-10-03）。形のもと（石1・石2…）は素材の一覧から探す
 setGrass(grass);      // 草のジェネレーター（2026-10-03）。形のもと（草1・草2…）も同じく
+setWater(water);      // 水のジェネレーター（2026-10-03）
 refreshStonePatterns();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);

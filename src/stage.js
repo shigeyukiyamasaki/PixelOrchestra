@@ -550,13 +550,14 @@ export function createStage(container) {
   const models = new THREE.Group(); models.name = 'models';   // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
   const stones = new THREE.Group(); stones.name = 'stones'; scene.add(stones);   // 石のジェネレーター（2026-10-03 ユーザー指定）
   const grass = new THREE.Group(); grass.name = 'grass'; scene.add(grass);       // 草のジェネレーター（2026-10-03 ユーザー指定）
+  const water = new THREE.Group(); water.name = 'water'; scene.add(water);       // 水のジェネレーター（2026-10-03 ユーザー指定）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -929,7 +930,7 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.water], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -2090,6 +2091,272 @@ function buildGrass() {
     });
   });
 }
+// ---- 水のジェネレーター（2026-10-03 ユーザー指定）----
+// 川・湖・水たまりを 1 つの仕組みで作る：水面を「たくさんの円をなめらかにくっつけた形」として、描く時に計算する。
+// 円を線に沿って並べれば川（長さ・太さ・蛇行・向き）、長さ 0 なら 1 か所にまとまって湖、分かれを増やすと離れた水たまりが散らばる。
+// 見た目は平らなアニメ調：岸からの距離で 3 段の色（浅い・中・深い）、岸に泡の白い線、その外に濡れて暗い床の輪。
+// 波はドット単位のコマ送りの線で、川は「向き」に沿って流れる（流れ 0 で止まって、ときどききらめくだけ）。
+// 床の上（+2cm）に 1 枚の板を張り、水の外は描かない。照明（Lambert）と影を受ける。床の外は描かない。
+// 1 水場 = { x, z, y, len（長さ）, width（太さ）, meander（蛇行 0〜1）, dir（向き [度]）, pieces（分かれ）, scatter（散らばり）,
+//           smooth（縁のなめらかさ 0〜1）, flow（流れ 0〜2）, seed, show }
+const WATER_MAX_C = 64;          // 1 水場の円の数の上限（シェーダーの配列の大きさ）
+const WATER_LIFT = 0.02;         // 床からの浮かせ [unit]（床とのちらつき防止）
+const WATER_WET = 0.3;           // 板の外周の余白 [unit]（2026-10-03：岸の外にはみ出し・打ち寄せる泡の粒のぶん）
+const WATER_U = { uWT: { value: 0 } };   // 水の時刻（全水場で共有。曲と関係なく実時間で進める）
+// 映り込む空の色（2026-10-03 ユーザー指定）：画面の空のグラデーション（上の色・地平線の色・中間点・上下反転。露出を掛けた後の色）
+const WATER_SKY = { uSkyTop: { value: new THREE.Color('#3d6fb0') }, uSkyBot: { value: new THREE.Color('#a9cfe8') }, uSkyMid: { value: 0.5 }, uSkyFlip: { value: 0 } };
+/** 水に映る空の色（main.js の applyBackground と同じ値。top・bottom は露出を掛けた後の色、mid は 0〜100） */
+export function setWaterSky(top, bottom, mid, flip) {
+  WATER_SKY.uSkyTop.value.set(top); WATER_SKY.uSkyBot.value.set(bottom);
+  WATER_SKY.uSkyMid.value = Math.max(0.01, Math.min(0.99, (+mid || 50) / 100)); WATER_SKY.uSkyFlip.value = flip ? 1 : 0;
+}
+let waterList = [];
+/** 水場の一覧 */
+export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); }
+/** 水の時刻を進める（毎フレーム、実時間の経過秒で） */
+export function tickWater(dt) { WATER_U.uWT.value += Math.max(0, Math.min(0.1, dt || 0)); }
+const c3 = (h) => { const c = new THREE.Color(h); return `vec3( ${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)} )`; };
+function waterMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
+    uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
+  m.onBeforeCompile = (shader) => {
+    const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
+    Object.assign(shader.uniforms, WATER_U, WATER_SKY, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
+    // pxoVV：視点から見た座標で、この点からカメラへの向き（2026-10-03：r128 は Lambert に cameraPosition を渡さないので自分で持つ）
+    shader.vertexShader = 'varying vec3 pxoWW, pxoVV;\n' + shader.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoVV = -( modelViewMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = `varying vec3 pxoWW, pxoVV;
+uniform vec4 uC[ ${WATER_MAX_C} ];
+uniform int uN;
+uniform float uK, uDeep, uDepth, uJag, uSpeed, uHL, uWT;
+uniform vec2 uFlow;
+uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
+uniform float uSkyMid, uSkyFlip, glowAmt, spread;
+${FLOOR_GLSL}
+vec3 pxoSkyColor( vec3 d ) {   // 向き d（世界の座標）に見える空の色：画面の空のグラデーション＋太陽側の夕焼け（空の球と同じ式を簡単にしたもの）
+  float y = uSkyFlip > 0.5 ? -d.y : d.y;
+  // 画面に見えている空は地平線からおよそ 30° まで。その高さで上の色に達するように合わせる（2026-10-03：最初は真上を上の色にしていて、
+  // ふつうの角度の水面には地平線寄りの色ばかりが映り、空の上の色を変えても水色のままだった）
+  float u = 1.0 - clamp( y / 0.5, 0.0, 1.0 );   // 0：高さ 30° より上 … 1：地平線
+  float tt = pow( u, log( 0.5 ) / log( uSkyMid ) );   // CSS の linear-gradient の中間点（色の折り返し）に合わせる
+  vec3 c = mix( uSkyTop, uSkyBot, tt );
+  vec3 sdn = normalize( sunDir );
+  float ang = acos( clamp( dot( d, sdn ), -1.0, 1.0 ) ), sg = radians( 12.0 + 45.0 * spread );
+  float lobe3 = exp( -( ang * ang ) / ( sg * sg ) );
+  vec2 hh = normalize( d.xz + vec2( 1e-5, 0.0 ) );
+  float cc = dot( hh, normalize( sdn.xz + vec2( 1e-5, 0.0 ) ) ), k = clamp( 0.45 * spread, 0.0, 0.9 );
+  float lobeAz = pow( clamp( cc * ( 1.0 - k ) + k, 0.0, 1.0 ), 1.5 ), hz = exp( -max( y, 0.0 ) * 2.2 / max( 0.25, spread ) );
+  float lowSun = 1.0 - clamp( sdn.y / 0.26, 0.0, 1.0 );
+  return mix( c, glowColor, clamp( glowAmt * mix( lobe3, lobeAz * hz, lowSun ), 0.0, 1.0 ) );
+}
+float pxoWH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+float pxoWN( vec2 p ) {   // なめらかな値ノイズ（0〜1）
+  vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( pxoWH( i ), pxoWH( i + vec2( 1.0, 0.0 ) ), f.x ), mix( pxoWH( i + vec2( 0.0, 1.0 ) ), pxoWH( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+}
+float pxoWaterSDF0( vec2 p ) {   // 円をなめらかにくっつけた形（多項式の smooth min）。負が水の中。ギザギザ抜き
+  float d = 1e5;
+  for ( int i = 0; i < ${WATER_MAX_C}; i ++ ) {
+    if ( i >= uN ) break;
+    float di = length( p - uC[ i ].xy ) - uC[ i ].z;
+    float h = clamp( 0.5 + 0.5 * ( di - d ) / uK, 0.0, 1.0 );
+    d = mix( di, d, h ) - uK * h * ( 1.0 - h );
+  }
+  return d;
+}
+// 岸の細かいギザギザ（2026-10-03 ユーザー指定）：数 cm と十数 cm の 2 種類のノイズで、岸の線を内外に揺らす（uJag 1 で最大 約 5cm）
+float pxoJag( vec2 p ) { return uJag > 0.0 ? uJag * 0.12 * ( ( pxoWN( p * 15.0 ) * 0.55 + pxoWN( p * 5.5 + 3.7 ) * 0.45 ) * 2.0 - 1.0 ) : 0.0; }
+float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
+` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{ if ( pxoOutsideFloor( pxoWW ) ) discard;
+  float sd = pxoWaterSDF( pxoWW.xz );
+  if ( sd > 0.3 ) discard;   // 岸の外は、はみ出した・打ち寄せた泡の粒だけ描く（濡れて暗い床の輪はやめた。2026-10-03）
+  // 泡：岸に沿った大小の粒の集まり（2026-10-03 ユーザー指定）。粒を置くかどうかは「粒の中心」の位置で決め、粒は丸ごと描く
+  // （水の外にはみ出してよい）。こうすると輪郭そのものが丸の並びでできて見える（最初は 1 粒ずつ水の形の線で切っていて、
+  // 輪郭の線がそのまま見えた）。粒は流さず、置き場所も固定で、1 粒ずつ大きさだけがゆっくり膨らんだり縮んだりする（出たり消えたりは
+  // 炭酸の泡のように見えたのでやめた。2026-10-03）。中心はます目の中のどこでもよく、隣にはみ出す
+  // （周り 3×3 のます目を調べる。ずれが小さいと碁盤の目に見えた）。きわではほぼ全部のます目に入り、線のように連なる
+  // 打ち寄せ（2026-10-03 ユーザー指定）：泡の帯が陸側へ最大 SURGE_A 押し出されては引く。陸側に出た時ほど粒が大きい。
+  // 岸に沿って場所ごとにタイミングをずらし、波が岸を伝うように見せる。粒の置き場所（元の位置）は固定。
+  // 重さ対策：この点の水の形の距離 sd と外向き（岸に垂直）の向き gn を 1 回だけ求め、近くの粒の距離は sd + gn·(粒 − この点) で近似する
+  float dotF = 0.0, dotB = 0.0;
+  const float SURGE_A = 0.1;
+  if ( sd > -0.6 ) {
+    // 粒の判定はギザギザ抜きのなめらかな形から見積もり、粒の中心でのギザギザを足す（画素ごとのギザギザで判定すると粒がちぎれた。2026-10-03）
+    float sd0 = pxoWaterSDF0( pxoWW.xz );
+    vec2 gn = vec2( pxoWaterSDF0( pxoWW.xz + vec2( 0.02, 0.0 ) ) - sd0, pxoWaterSDF0( pxoWW.xz + vec2( 0.0, 0.02 ) ) - sd0 );
+    gn = length( gn ) > 1e-6 ? normalize( gn ) : vec2( 0.0, 1.0 );
+    vec2 p = pxoWW.xz, p0 = p - gn * SURGE_A * 0.5;   // 押し出しの真ん中に戻した位置の周りのます目を調べる
+    {   // 小さい粒：7cm ます目。元の中心が内側 25cm〜きわのすぐ外（1.5cm）の間（2026-10-03：内側の小さい泡を減らした。40cm → 25cm、内側ほど急に減る）
+      vec2 fb = floor( p0 / 0.07 );
+      for ( int j = -2; j <= 2; j ++ ) for ( int i = -2; i <= 2; i ++ ) {
+        vec2 fid = fb + vec2( float( i ), float( j ) );
+        float f1 = pxoWH( fid ), f2 = pxoWH( fid + 41.7 ), f3 = pxoWH( fid + 83.3 ), f4 = pxoWH( fid + 29.9 ), f5 = pxoWH( fid + 7.7 );
+        vec2 cw = ( fid + vec2( f4, f3 ) ) * 0.07;   // 元の中心（世界の座標）
+        float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
+        if ( sdc > 0.015 || sdc < -0.25 ) continue;
+        if ( f1 > min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 ) ) continue;   // きわほど多い
+        float surge = 0.5 + 0.5 * sin( uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283 );
+        float r = mix( 0.22, 0.5, f2 ) * 0.07 * mix( 0.6, 1.2, surge ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, f5 ) + f5 * 6.283 ) );
+        float d = length( p - ( cw + gn * SURGE_A * surge ) );
+        dotF = max( dotF, ( 1.0 - smoothstep( r - 0.0056, r, d ) ) * mix( 0.6, 1.0, f3 ) );
+      }
+    }
+    {   // 大きい粒：16cm ます目（直径 7〜14cm ほど）。元の中心が内側 30cm〜きわのすぐ外（3cm）の間（2026-10-03：約 1.6 倍に増やした）
+      vec2 bb = floor( ( p0 + 0.37 ) / 0.16 );
+      for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
+        vec2 bid = bb + vec2( float( i ), float( j ) );
+        float b1 = pxoWH( bid + 3.3 ), b2 = pxoWH( bid + 61.1 ), b3 = pxoWH( bid + 97.7 ), b4 = pxoWH( bid + 11.3 ), b5 = pxoWH( bid + 19.9 );
+        vec2 cw = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37;
+        float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
+        if ( sdc > 0.03 || sdc < -0.3 ) continue;
+        if ( b1 > pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8 ) continue;
+        float surge = 0.5 + 0.5 * sin( uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283 );
+        float r = mix( 0.22, 0.44, b2 ) * 0.16 * mix( 0.6, 1.2, surge ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, b5 ) + b5 * 6.283 ) );
+        float d = length( p - ( cw + gn * SURGE_A * surge ) );
+        dotB = max( dotB, ( 1.0 - smoothstep( r - 0.0096, r, d ) ) * mix( 0.7, 1.0, b3 ) );
+      }
+    }
+  }
+  float foam = max( dotF, dotB );
+  if ( sd > 0.0 ) {   // 岸の外：はみ出した・打ち寄せた泡の粒と、引いた後の濡れた跡
+    // 濡れた跡（2026-10-03 ユーザー指定）：泡の先がこの点まで届いていた時から経った時間で、暗さを薄くしていく（約 1.5 秒で乾く）。
+    // 泡の先の位置は SURGE_A × surge（＋粒の大きさぶん）。surge = 0.5 + 0.5 sin θ なので、届いているのは sin θ > k の間。
+    // 最後に届き終えた位相からの経過を、記録を持たずにその場で求める（打ち寄せの周期 約 5 秒の間に乾くので、前の回は気にしなくてよい）
+    float wet = 0.0;
+    float k = 2.0 * ( sd - 0.02 ) / SURGE_A - 1.0;   // この点まで届くのに要る sin θ
+    if ( k < 1.0 ) {
+      float th = uWT * 1.2 + pxoWN( pxoWW.xz * 0.6 ) * 6.283, hi = 3.14159 - asin( max( k, -1.0 ) );
+      float sinT = sin( th );
+      float since = sinT > k ? 0.0 : mod( th - hi, 6.283 ) / 1.2;   // 届き終えてからの秒数
+      // 泡の先の所は境目がくっきりしないよう、届く少し手前からなめらかに濡らす。届く一番先（SURGE_A）の外へも少しぼかして消す
+      wet = max( exp( -since / 1.5 ), smoothstep( k - 0.35, k + 0.05, sinT ) );
+      wet *= 1.0 - smoothstep( SURGE_A * 0.8, SURGE_A + 0.06, sd );
+    }
+    float wa = 0.3 * wet;
+    float a = foam + ( 1.0 - foam ) * wa;
+    if ( a < 0.01 ) discard;
+    diffuseColor = vec4( vec3( 0.95, 0.98, 1.0 ) * foam / a, a );   // 泡は白、濡れた跡は暗く（黒を薄く重ねる）
+  } else {
+    // 2026-10-03 リアル寄りに作り直し（ユーザー指摘：野草や石に比べて大味）。色の段・大きなドットの波をやめ、
+    // なめらかな深さの色、細かいさざ波（2 重）、照り返しのきらめき、斜めから見た空の映り込み、細い泡の線にした
+    // 岸からの深さ（0：岸 … 1：一番深い所の目安）に「深さ」スライダー（uDepth）を掛ける。1 を超えた分はさらに濃い紺へ（2026-10-03 ユーザー指定）
+    float t = clamp( -sd / max( 0.05, uDeep ) * uDepth, 0.0, 3.0 );
+    vec3 col = mix( ${c3('#6fc2d6')}, ${c3('#2c78ad')}, smoothstep( 0.0, 0.45, t ) );
+    col = mix( col, ${c3('#1b4a82')}, smoothstep( 0.45, 1.0, t ) );
+    col = mix( col, ${c3('#081a33')}, smoothstep( 1.0, 2.6, t ) * 0.85 );
+    float alpha = mix( 0.5, 0.96, smoothstep( 0.0, 0.3, t ) );   // 浅い所は床が透ける
+    // さざ波：流れに沿って動く 3 重のなめらかなノイズ（2026-10-03 さらにリアル寄りに：2 重 → 3 重）。止まった水はゆっくり漂うだけ
+    vec2 f = normalize( uFlow ), pp = vec2( -f.y, f.x );
+    float sp = max( uSpeed, 0.12 );
+    vec2 q = vec2( dot( pxoWW.xz, f ), dot( pxoWW.xz, pp ) );
+    vec2 q1 = q * vec2( 2.2, 3.4 ) - vec2( uWT * sp * 1.3, uWT * 0.15 );
+    vec2 q2 = q * vec2( 5.5, 7.0 ) - vec2( uWT * sp * 2.1, -uWT * 0.25 );
+    vec2 q3 = q * vec2( 13.0, 15.0 ) - vec2( uWT * sp * 3.4, uWT * 0.4 );
+    float e = 0.04;
+    #define PXO_H( o1, o2, o3 ) ( pxoWN( q1 + o1 ) + 0.5 * pxoWN( q2 + o2 ) + 0.22 * pxoWN( q3 + o3 ) )
+    float h0 = PXO_H( vec2( 0.0 ), vec2( 0.0 ), vec2( 0.0 ) );
+    float hx = PXO_H( vec2( e, 0.0 ), vec2( e * 2.5, 0.0 ), vec2( e * 5.9, 0.0 ) );
+    float hy = PXO_H( vec2( 0.0, e ), vec2( 0.0, e * 2.0 ), vec2( 0.0, e * 4.4 ) );
+    vec2 g = vec2( hx - h0, hy - h0 ) / e;
+    vec2 gw = f * g.x + pp * g.y;   // 流れの座標から世界の xz へ
+    vec3 n = normalize( vec3( -gw.x * 0.06, 1.0, -gw.y * 0.06 ) );
+    vec3 nV = normalize( ( viewMatrix * vec4( n, 0.0 ) ).xyz ), vV = normalize( pxoVV );   // 視点から見た座標の、面の向きとカメラへの向き
+    col *= 0.9 + 0.16 * h0;   // さざ波の明暗
+    // 水底のゆらめく光（コースティクス）：浅い所ほど強い。2 つのずれたノイズの差が 0 に近い所が細い光の網になる
+    vec2 cq = pxoWW.xz * 3.2;
+    float ca = pxoWN( cq + vec2( uWT * 0.35, uWT * 0.21 ) ), cb = pxoWN( cq * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
+    float caus = pow( 1.0 - clamp( abs( ca - cb ) * 3.0, 0.0, 1.0 ), 6.0 );
+    col += caus * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * vec3( 0.6, 0.66, 0.56 );   // 2026-10-03 ユーザー指定で強く（0.32 → 0.6、消える深さ 0.55 → 1.0）
+    // 空の映り込み：波の向きで反射した方向に見える空の色（画面の空のグラデーション＋夕焼け）を映す（2026-10-03 ユーザー指定）。
+    // 斜めから見るほど強い（シュリックの近似、水の反射率 2%）。空は「見えている色」なので照明を掛けず、発光として足す
+    vec3 rW = transpose( mat3( viewMatrix ) ) * reflect( -vV, nV );   // 反射の向き（世界の座標）
+    if ( rW.y < 0.02 ) rW.y = 0.02;   // 下向きの反射は地平線の色にとどめる
+    float fr = 0.02 + 0.98 * pow( 1.0 - clamp( dot( nV, vV ), 0.0, 1.0 ), 5.0 );
+    // 強さは演出として土台 35%（2026-10-03 ユーザー指摘：実物どおりの 2〜10% では、ふつうの角度から空を赤くしても水色のままだった）
+    float rk = clamp( 0.35 + 0.65 * fr, 0.0, 0.9 );
+    col *= 1.0 - rk;
+    totalEmissiveRadiance += pxoSkyColor( normalize( rW ) ) * rk;
+    alpha = max( alpha, fr );
+    col = mix( col, vec3( 0.95, 0.98, 1.0 ), foam );   // 泡（上で計算）
+    // 水のふちは 10cm かけて透明にし、その下の地面は「濡れて暗い」として重ねる（2026-10-03 ユーザー指摘：ふちを 2cm で消していて、
+    // その細い帯だけ乾いた明るい地面が見え、濡れた跡との境目がくっきりして水が浮いて見えた）。水 → 濡れた地面 → 乾いた地面となめらかに
+    float aw = max( alpha * smoothstep( 0.0, -0.1, sd ), foam );
+    float a2 = aw + ( 1.0 - aw ) * 0.3;
+    diffuseColor = vec4( col * aw / a2, a2 );
+    // 照り返しのきらめき（太陽・月の平行光の鏡面反射）：鋭い芯と広めのにじみ
+    #if NUM_DIR_LIGHTS > 0
+      for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+        float rl = max( dot( reflect( -directionalLights[ i ].direction, nV ), vV ), 0.0 );
+        totalEmissiveRadiance += ( pow( rl, 400.0 ) * 3.0 + pow( rl, 40.0 ) * 0.25 ) * directionalLights[ i ].color;
+      }
+    #endif
+    totalEmissiveRadiance *= aw / a2;   // 空の映り込み・照り返しも水の濃さに合わせて薄める（ふちで光だけ残らないように）
+  }
+  if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
+}`);
+  };
+  m.customProgramCacheKey = () => 'pxo-water-v25';
+  return m;
+}
+function waterCircles(st) {   // 水場の円の並び（[x, z, r]）
+  const r = rng32(st.seed ?? 1);
+  const pieces = Math.max(1, Math.min(8, Math.round(st.pieces ?? 1)));
+  const len = Math.max(0, st.len ?? 12), wid = Math.max(0.1, st.width ?? 2), mean = Math.max(0, Math.min(1, st.meander ?? 0.4));
+  const scatter = Math.max(0, st.scatter ?? 6), dir0 = deg(st.dir ?? 0), rough = 1 - Math.max(0, Math.min(1, st.smooth ?? 0.5));
+  const perPiece = Math.floor(WATER_MAX_C / pieces), out = [];
+  for (let k = 0; k < pieces; k++) {
+    // 分かれ：1 つ目は中心、ほかは散らばりの範囲に。分かれた分だけ小さく（水たまり）
+    const a0 = r() * Math.PI * 2, d0 = k === 0 ? 0 : scatter * (0.4 + 0.6 * r());
+    let x = (st.x ?? 0) + Math.cos(a0) * d0, z = (st.z ?? 0) + Math.sin(a0) * d0;
+    const sc = k === 0 ? 1 : 0.45 + 0.4 * r(), L = len * sc, W = wid * sc;
+    const step = Math.max(W * 0.35, 0.05), n = Math.max(3, Math.min(perPiece, Math.ceil(L / step) + 1));
+    const ph = r() * Math.PI * 2, fr = 0.6 + r() * 0.8, dir = dir0 + (k === 0 ? 0 : (r() - 0.5) * 2);
+    // 線の真ん中が中心に来るよう、半分戻ってから歩く
+    let ang = dir; x -= Math.cos(dir) * L / 2; z += Math.sin(dir) * L / 2;
+    for (let i = 0; i < n; i++) {
+      const t = n > 1 ? i / (n - 1) : 0;
+      ang = dir + mean * 1.2 * Math.sin(t * Math.PI * 2 * fr + ph);   // 蛇行：向きを波打たせる
+      const rr = (W / 2) * (1 + rough * (r() - 0.5) * 0.8);
+      const j = rough * W * 0.35 * (r() - 0.5);   // 横へのゆがみ（縁がゴツゴツ）
+      out.push([x + Math.sin(ang) * j, z + Math.cos(ang) * j, rr]);
+      x += Math.cos(ang) * (L / Math.max(1, n - 1)); z -= Math.sin(ang) * (L / Math.max(1, n - 1));   // 0° で客席から見て右（+x）、プラスで奥（−z）
+    }
+  }
+  return out;
+}
+function buildWater() {
+  if (!stageCtx) return;
+  HL_VER++;
+  const g = stageCtx.water;
+  for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
+  g.clear();
+  waterList.forEach((st, ci) => {
+    if (st.show === false) return;
+    const cs = waterCircles(st);
+    if (!cs.length) return;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
+    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
+    const pad = WATER_WET + 0.2;
+    const mat = waterMaterial(), u = mat.userData.u;
+    cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
+    u.uN.value = cs.length;
+    u.uK.value = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
+    u.uDeep.value = Math.max(0.1, rMax);
+    u.uDepth.value = Math.max(0.05, st.depth ?? 1);   // 深さ（2026-10-03）
+    u.uJag.value = 1;   // 岸のギザギザ：最大で固定（2026-10-03 ユーザー指定。スライダーは外した）
+    u.uFlow.value.set(Math.cos(deg(st.dir ?? 0)), -Math.sin(deg(st.dir ?? 0)));
+    u.uSpeed.value = Math.max(0, st.flow ?? 1);
+    const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
+    geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + WATER_LIFT, (z0 + z1) / 2);
+    mesh.receiveShadow = true; mesh.renderOrder = -10;
+    mesh.userData.pxoCard = ci;
+    g.add(mesh);
+  });
+}
 // ---- カードのホバーで、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）----
 // 3D モデル・石：形を画面上で少し太らせた複製の裏側だけを単色で描く（一回り大きい裏面。手前の本体からはみ出た分が輪郭になる）。
 //   太らせる向きは、角で割れないよう同じ位置の頂点の法線をならしたもの。風で揺れる植物は輪郭も同じに揺らす。手前の物に隠れる所は出ない
@@ -2170,8 +2437,10 @@ function updateHighlight(renderer) {
   hlBuilt = key;
   for (const o of hlObjs) { o.parent?.remove(o); o.userData.pxoHlDispose?.(); }
   hlObjs = [];
+  if (stageCtx) for (const m of stageCtx.water.children) m.material.userData.u.uHL.value = 0;   // 水は材質の岸の線で示す
   if (!hlTarget || !stageCtx) return;
   const { kind, index } = hlTarget;
+  if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
   if (kind === 'model' || kind === 'stone' || kind === 'grass') {
     const g = kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : stageCtx.grass;
