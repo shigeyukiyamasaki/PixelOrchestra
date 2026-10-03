@@ -1956,6 +1956,7 @@ function buildStones() {
         const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
+        if (WATER_AVOID.length && waterSdfAt(x, z) < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
         if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
@@ -2029,7 +2030,8 @@ function grassShape(url) {   // GLB の部品ごとの形（ノードの位置�
       parts.push({ name: o.name, geometry, material: plantMat(grassPatch(src.clone(), e.wind)),   // plantMat：植物の明るさ（3D モデル欄）も効かせる
          depth: grassPatch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }), e.wind) });
     });
-    e.grass = { parts, wind: e.wind };
+    const bb = new THREE.Box3(); for (const p of parts) { p.geometry.computeBoundingBox(); bb.union(p.geometry.boundingBox); }
+    e.grass = { parts, wind: e.wind, r: Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 };   // r：株の半径 [m]
   }
   return e.grass;
 }
@@ -2066,7 +2068,9 @@ function buildGrass() {
       const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar);   // 大きさのばらつき：1 で 1/4〜4 倍（±2σ まで）
       const pi = pickShape(r()), rot = r() * Math.PI * 2;
       const shade = Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
-      if (pi < 0 || !insideFloor(x, z)) continue;   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
+      if (pi < 0 || !insideFloor(x, z)) continue;
+      // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
+      if (WATER_AVOID.length && waterSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
       per[pi].push([_sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
     }
     shapes.forEach((p, pi) => {
@@ -2103,6 +2107,20 @@ const WATER_MAX_C = 64;          // 1 水場の円の数の上限（シェーダ
 const WATER_LIFT = 0.02;         // 床からの浮かせ [unit]（床とのちらつき防止）
 const WATER_WET = 0.3;           // 板の外周の余白 [unit]（2026-10-03：岸の外にはみ出し・打ち寄せる泡の粒のぶん）
 const WATER_U = { uWT: { value: 0 } };   // 水の時刻（全水場で共有。曲と関係なく実時間で進める）
+// 奏者の位置（「奏者をよける」用。全水場で共有）。x, z と陸地とみなす半径 [unit]
+const WATER_MAX_PL = 128, WATER_PL_R = 1.3, WATER_COND_R = 1.9;   // 奏者（椅子・楽器ぶん）と、指揮者（一辺 2.2 の指揮台の角まで陸に）の半径
+const WATER_PL = { uPl: { value: Array.from({ length: WATER_MAX_PL }, () => new THREE.Vector3()) }, uPlN: { value: 0 } };
+const _plv = new THREE.Vector3();
+/** 奏者の root と指揮者の root。毎フレーム呼んでよい（位置を写すだけ） */
+export function setWaterPlayers(roots, conductorRoot = null) {
+  let n = 0;
+  for (const r of roots || []) {
+    if (!r || n >= WATER_MAX_PL) continue;
+    r.getWorldPosition(_plv);
+    WATER_PL.uPl.value[n++].set(_plv.x, _plv.z, r === conductorRoot ? WATER_COND_R : WATER_PL_R);
+  }
+  WATER_PL.uPlN.value = n;
+}
 // 映り込む空の色（2026-10-03 ユーザー指定）：画面の空のグラデーション（上の色・地平線の色・中間点・上下反転。露出を掛けた後の色）
 const WATER_SKY = { uSkyTop: { value: new THREE.Color('#3d6fb0') }, uSkyBot: { value: new THREE.Color('#a9cfe8') }, uSkyMid: { value: 0.5 }, uSkyFlip: { value: 0 } };
 /** 水に映る空の色（main.js の applyBackground と同じ値。top・bottom は露出を掛けた後の色、mid は 0〜100） */
@@ -2112,24 +2130,40 @@ export function setWaterSky(top, bottom, mid, flip) {
 }
 let waterList = [];
 /** 水場の一覧 */
-export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); }
+export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
+// 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
+let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
+function waterSdfAt(x, z) {   // 一番近い「よける」水場の岸までの距離（負が水の中）。無ければ大きな値
+  let best = 1e9;
+  for (const w of WATER_AVOID) {
+    let d = 1e5;
+    for (const [cx, cz, r] of w.cs) {
+      const di = Math.hypot(x - cx, z - cz) - r, h = Math.max(0, Math.min(1, 0.5 + 0.5 * (di - d) / w.k));
+      d = di * (1 - h) + d * h - w.k * h * (1 - h);
+    }
+    best = Math.min(best, d);
+  }
+  return best;
+}
 /** 水の時刻を進める（毎フレーム、実時間の経過秒で） */
 export function tickWater(dt) { WATER_U.uWT.value += Math.max(0, Math.min(0.1, dt || 0)); }
 const c3 = (h) => { const c = new THREE.Color(h); return `vec3( ${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)} )`; };
 function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
-    uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
+    uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 } };
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
-    Object.assign(shader.uniforms, WATER_U, WATER_SKY, WIND_U, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
+    Object.assign(shader.uniforms, WATER_U, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
     // pxoVV：視点から見た座標で、この点からカメラへの向き（2026-10-03：r128 は Lambert に cameraPosition を渡さないので自分で持つ）
     shader.vertexShader = 'varying vec3 pxoWW, pxoVV;\n' + shader.vertexShader
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoVV = -( modelViewMatrix * vec4( transformed, 1.0 ) ).xyz;');
     shader.fragmentShader = `varying vec3 pxoWW, pxoVV;
 uniform vec4 uC[ ${WATER_MAX_C} ];
 uniform int uN;
-uniform float uK, uDeep, uDepth, uJag, uGlit, uWindK, uSpeed, uHL, uWT;
+uniform float uK, uDeep, uDepth, uJag, uGlit, uWindK, uAvoidPl, uSpeed, uHL, uWT;
+uniform vec3 uPl[ ${WATER_MAX_PL} ];   // 奏者の位置（x, z, 半径）
+uniform int uPlN;
 uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U を共有。2026-10-03）
 uniform vec2 vdDirection;
 uniform vec2 uFlow;
@@ -2164,6 +2198,19 @@ float pxoWaterSDF0( vec2 p ) {   // 円をなめらかにくっつけた形（�
     float di = length( p - uC[ i ].xy ) - uC[ i ].z;
     float h = clamp( 0.5 + 0.5 * ( di - d ) / uK, 0.0, 1.0 );
     d = mix( di, d, h ) - uK * h * ( 1.0 - h );
+  }
+  // 奏者をよける（2026-10-03 ユーザー指定）：奏者のまわりを陸地とみなし（近くの奏者どうしはなめらかにつないで楽団全体をひとかたまりの陸に）、
+  // 水はその手前で岸になる。岸の泡・打ち寄せ・濡れた跡も、この新しい岸に沿う
+  if ( uAvoidPl > 0.5 && uPlN > 0 ) {
+    float l = 1e5;
+    for ( int i = 0; i < ${WATER_MAX_PL}; i ++ ) {
+      if ( i >= uPlN ) break;
+      float li = length( p - uPl[ i ].xy ) - uPl[ i ].z;
+      float h = clamp( 0.5 + 0.5 * ( li - l ) / 1.2, 0.0, 1.0 );
+      l = mix( li, l, h ) - 1.2 * h * ( 1.0 - h );
+    }
+    float h2 = clamp( 0.5 - 0.5 * ( -l - d ) / 0.3, 0.0, 1.0 );   // なめらかな max( d, −l )
+    d = mix( -l, d, h2 ) + 0.3 * h2 * ( 1.0 - h2 );
   }
   return d;
 }
@@ -2209,10 +2256,12 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.015 || sdc < -0.25 ) continue;
         if ( f1 > min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 ) ) continue;   // きわほど多い
-        float surge = 0.5 + 0.5 * sin( uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283 );
-        float r = mix( 0.22, 0.5, f2 ) * 0.07 * mix( 0.6, 1.2, surge ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, f5 ) + f5 * 6.283 ) );
+        float th = uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
+        // 押し寄せている間（cos θ ≥ 0）だけ見え、引き始めると薄く縮みながら消える（波打ち際の泡。2026-10-03 ユーザー指定）
+        float vis = smoothstep( -0.5, 0.15, cos( th ) );
+        float r = mix( 0.22, 0.5, f2 ) * 0.07 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, f5 ) + f5 * 6.283 ) );
         float d = length( p - ( cw + gn * sa * surge ) );
-        dotF = max( dotF, ( 1.0 - smoothstep( r - 0.0056, r, d ) ) * mix( 0.6, 1.0, f3 ) );
+        dotF = max( dotF, ( 1.0 - smoothstep( r - 0.0056, r, d ) ) * mix( 0.6, 1.0, f3 ) * vis );
       }
     }
     {   // 大きい粒：16cm ます目（直径 7〜14cm ほど）。元の中心が内側 30cm〜きわのすぐ外（3cm）の間（2026-10-03：約 1.6 倍に増やした）
@@ -2224,10 +2273,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.03 || sdc < -0.3 ) continue;
         if ( b1 > pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8 ) continue;
-        float surge = 0.5 + 0.5 * sin( uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283 );
-        float r = mix( 0.22, 0.44, b2 ) * 0.16 * mix( 0.6, 1.2, surge ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, b5 ) + b5 * 6.283 ) );
+        float th = uWT * 1.2 + pxoWN( cw * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
+        float vis = smoothstep( -0.5, 0.15, cos( th ) );   // 押し寄せている間だけ
+        float r = mix( 0.22, 0.44, b2 ) * 0.16 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, b5 ) + b5 * 6.283 ) );
         float d = length( p - ( cw + gn * sa * surge ) );
-        dotB = max( dotB, ( 1.0 - smoothstep( r - 0.0096, r, d ) ) * mix( 0.7, 1.0, b3 ) );
+        dotB = max( dotB, ( 1.0 - smoothstep( r - 0.0096, r, d ) ) * mix( 0.7, 1.0, b3 ) * vis );
       }
     }
   }
@@ -2338,7 +2388,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-water-v28';
+  m.customProgramCacheKey = () => 'pxo-water-v30';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）
@@ -2373,6 +2423,7 @@ function buildWater() {
   const g = stageCtx.water;
   for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
   g.clear();
+  WATER_AVOID = [];
   waterList.forEach((st, ci) => {
     if (st.show === false) return;
     const cs = waterCircles(st);
@@ -2380,6 +2431,7 @@ function buildWater() {
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
     for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
     const pad = WATER_WET + 0.2;
+    if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
     const mat = waterMaterial(), u = mat.userData.u;
     cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
     u.uN.value = cs.length;
@@ -2389,6 +2441,7 @@ function buildWater() {
     u.uJag.value = 1;   // 岸のギザギザ：最大で固定（2026-10-03 ユーザー指定。スライダーは外した）
     u.uGlit.value = Math.max(0, st.glitter ?? 1);   // きらめき（2026-10-03）
     u.uWindK.value = Math.max(0, Math.min(1, st.windK ?? 1));   // 風の影響（2026-10-03）
+    u.uAvoidPl.value = st.avoidPlayers === false ? 0 : 1;   // 奏者をよける（2026-10-03）
     u.uFlow.value.set(Math.cos(deg(st.dir ?? 0)), -Math.sin(deg(st.dir ?? 0)));
     u.uSpeed.value = Math.max(0, st.flow ?? 1);
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);

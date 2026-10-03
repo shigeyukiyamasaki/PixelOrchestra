@@ -165,6 +165,8 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen.gen .stoneBtns .del { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
 #screenBar .screen.gen .stoneBtns .del:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 #screenBar .screen.gen .note { color: var(--muted); font-size: 11px; }
+#screenBar .screen.gen .sld { grid-template-columns: 7.4em minmax(0, 1fr) auto; }   /* 「縁のなめらかさ」「大きさのばらつき」など長い名前が入る幅（5.4em ではスライダーに重なった。2026-10-03） */
+#screenBar .screen.gen .genChecks { flex-wrap: wrap; gap: 4px 12px; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
 #modelSec .modelBody { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 8px; }
 #modelSec .modelBody > #modelRows { flex: 1 1 0; min-width: 0; }

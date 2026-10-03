@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -459,7 +459,7 @@ function grassRow(st, i) {
   return box;
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。長さ 0 で湖、細く長くで川、分かれを増やすと水たまりが散らばる
-const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, glitter: 1, windK: 1, seed: 1, show: true };   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, glitter: 1, windK: 1, avoid: true, avoidPlayers: true, seed: 1, show: true };   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 const waterDefaults = (o) => ({ ...WATER_BASE, ...o });
 let water = (() => {
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); if (Array.isArray(a)) return a.map(waterDefaults); } catch (e) { console.warn('水の設定の読込失敗:', e); }
@@ -485,6 +485,13 @@ function waterRow(st, i) {
   const show = put(top, '<label title="この水場を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
+  const checks = put(box, '<div class="stoneTop genChecks"></div>');   // よけるチェックは名前の下の段（上の段だと名前の欄がつぶれた。2026-10-03）
+  const avoid = put(checks, '<label title="この水場の上に、石と草のジェネレーターの石・草を置かない（水を動かすと自動で並べ直す）。石は少しでも重なると除き、草は株の中心が水に近いものを除く"><input type="checkbox"><span>草・石をよける</span></label>').querySelector('input');
+  avoid.checked = st.avoid !== false;
+  avoid.onchange = () => { st.avoid = avoid.checked; changed(); };
+  const avoidPl = put(checks, '<label title="奏者（指揮者・指揮台も）のいる所に水をかけない。楽団のまわりを陸地とみなして、その手前で岸になる"><input type="checkbox"><span>奏者をよける</span></label>').querySelector('input');
+  avoidPl.checked = st.avoidPlayers !== false;
+  avoidPl.onchange = () => { st.avoidPlayers = avoidPl.checked; changed(); };
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
@@ -2308,7 +2315,9 @@ function animate() {
     setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
       outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く
       metalPix: !!sc.players, roots }); }
-  setModelShadowReceivers([...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])]);   // 木などの 3D モデルの影を奏者に落とす（2026-10-03）
+  const playerRoots = [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])];
+  setModelShadowReceivers(playerRoots);
+  setWaterPlayers(playerRoots, conductor?.root);   // 水の「奏者をよける」（2026-10-03）
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
   undoShake();
 }
