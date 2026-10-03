@@ -459,7 +459,7 @@ function grassRow(st, i) {
   return box;
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。長さ 0 で湖、細く長くで川、分かれを増やすと水たまりが散らばる
-const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, glitter: 1, seed: 1, show: true };   // depth：深さ、glitter：きらめき（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, glitter: 1, windK: 1, seed: 1, show: true };   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 const waterDefaults = (o) => ({ ...WATER_BASE, ...o });
 let water = (() => {
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); if (Array.isArray(a)) return a.map(waterDefaults); } catch (e) { console.warn('水の設定の読込失敗:', e); }
@@ -505,6 +505,7 @@ function waterRow(st, i) {
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ');
   slider('深さ', 'depth', 0.1, 3, 0.05, 2, '水の深さ。深くするほど色が濃くなり、床が透けて見えるのは岸のきわだけになる。浅くすると水全体が透けて、水底のゆらめく光が広く出る');
   slider('きらめき', 'glitter', 0, 2, 0.05, 2, '水面のきらめき。さざ波の山のところどころで小さな光の点が瞬く（どの角度からでも見える演出）。0 で無し、上げるほど多く明るい。太陽・月の光に合わせて明るさが変わる');
+  slider('風の影響', 'windK', 0, 1, 0.05, 2, '3D モデル欄の「風」をどれだけ受けるか。1 で風どおりに波立ち（向き・速さ・突風の風紋・風下の岸の打ち寄せ・強風の白波）、0 で風を受けない静かな水面');
   slider('流れ', 'flow', 0, 3, 0.05, 2, '波の流れる速さ（向きに沿って流れる）。0 で止まって、ときどききらめくだけ（湖・水たまり向き）');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（蛇行・岸・水たまりの位置）だけ変える">作り直し</button>');
