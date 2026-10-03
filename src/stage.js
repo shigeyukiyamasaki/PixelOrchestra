@@ -1068,6 +1068,7 @@ function renderMainWithPixels(renderer, scene, camera) {
 
 export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.7) {
   updateModelShadow(renderer, scene);   // 3D モデルの影（奏者に落とす分）を先に描く
+  updateHighlight(renderer);            // カードのホバーで輪郭（2026-10-03）
   const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
   const pixOn = pixelPass(renderer, scene, camera);
   if (!sunPass && bloomAll <= 0.001) {
@@ -1904,6 +1905,7 @@ function buildStones() {
   if (!stageCtx) return;
   const g = stageCtx.stones;
   g.clear();   // プールの InstancedMesh は捨てずに使い回す
+  HL_VER++;
   for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
   const stoneShapes = stonePatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
@@ -1911,7 +1913,7 @@ function buildStones() {
   if (!stoneShapes.length) return;
   const shapes = [...stoneShapes, ...rockShapes];   // per[] の添字：石が先、岩が後
   const stoneW = stoneShapes.reduce((a, p) => a + p.s.r * 2, 0) / stoneShapes.length;   // 石の形の平均の幅 [m]（大きさ 1 のとき）
-  stoneList.forEach((st, k) => {
+  stoneList.forEach((st, ci) => {
     if (st.show === false) return;
     const r = rng32(st.seed ?? 1);
     const count = Math.max(0, Math.min(STONE_MAX, Math.round(st.count ?? 20)));
@@ -1941,14 +1943,14 @@ function buildStones() {
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
         const shade = shadeOf();
-        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
+        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
         break;
       }
     }
     shapes.forEach((p, pi) => {
       if (!per[pi].length) return;
-      const key = `${k}:${p.url}`;
+      const key = `${ci}:${p.url}`;
       let im = STONE_POOL.get(key);
       if (!im || im.geometry !== p.s.geometry) {
         im = new THREE.InstancedMesh(p.s.geometry, p.s.material, STONE_MAX);
@@ -1961,9 +1963,112 @@ function buildStones() {
       im.count = per[pi].length;
       per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setScalar(perShade[pi][i])); });
       im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
+      im.userData.pxoCard = ci;
       g.add(im);
     });
   });
+}
+// ---- カードのホバーで、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）----
+// 3D モデル・石：形を画面上で少し太らせた複製の裏側だけを単色で描く（一回り大きい裏面。手前の本体からはみ出た分が輪郭になる）。
+//   太らせる向きは、角で割れないよう同じ位置の頂点の法線をならしたもの。風で揺れる植物は輪郭も同じに揺らす。手前の物に隠れる所は出ない
+// スクリーン・スカイドーム：厚みの無い 1 枚の面（絵の透明部分を抜いて見せる）なので、面の外周の線を描く（奥に隠れても見えるよう手前に描く）
+const HL_COLOR = new THREE.Color('#e2b348');   // 画面の強調色（style.css の --accent）
+const HL_PX = 3;                               // 輪郭の太さ [画素]
+const HL_U = { pxoHlW: { value: HL_PX }, pxoHlRes: { value: new THREE.Vector2(1, 1) } };
+let HL_VER = 0, hlTarget = null, hlBuilt = '', hlObjs = [];
+/** ホバー中のカード（{ kind: 'model' | 'stone' | 'screen' | 'dome', index }。null で消す） */
+export function setHighlight(t) { hlTarget = t ? { kind: t.kind, index: t.index } : null; }
+const HULL_GEO = new WeakMap(), HULL_MAT = new Map();
+function hullGeometry(g) {   // 位置が同じ頂点の法線をならした向き（pxoHullN）を足した複製。位置・面は元と共有
+  if (HULL_GEO.has(g)) return HULL_GEO.get(g);
+  const pa = g.attributes.position, na = g.attributes.normal, sum = new Map(), keyOf = [], v = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < pa.count; i++) {
+    v.fromBufferAttribute(pa, i);
+    const k = `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`; keyOf.push(k);
+    if (na) n.fromBufferAttribute(na, i); else n.set(0, 1, 0);
+    (sum.get(k) || sum.set(k, new THREE.Vector3()).get(k)).add(n);
+  }
+  const hn = new Float32Array(pa.count * 3);
+  for (let i = 0; i < pa.count; i++) { const s = sum.get(keyOf[i]).clone().normalize(); hn.set([s.x, s.y, s.z], i * 3); }
+  const h = new THREE.BufferGeometry();
+  h.setAttribute('position', pa); if (g.index) h.setIndex(g.index);
+  if (na) h.setAttribute('normal', na);
+  h.setAttribute('pxoHullN', new THREE.BufferAttribute(hn, 3));
+  HULL_GEO.set(g, h);
+  return h;
+}
+function hullMaterial(w) {   // w：風の揺れ方（植物）。null で揺らさない
+  const key = w ? w.key : '-';
+  if (HULL_MAT.has(key)) return HULL_MAT.get(key);
+  const m = new THREE.MeshBasicMaterial({ color: HL_COLOR, side: THREE.BackSide });
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, HL_U);
+    let vs = 'attribute vec3 pxoHullN;\nuniform float pxoHlW;\nuniform vec2 pxoHlRes;\n' + shader.vertexShader;
+    if (w) {
+      Object.assign(shader.uniforms, WIND_U, { vdHeight: { value: w.H }, vdFlex: { value: w.flex }, vdFreq: { value: w.freq }, vdLag: { value: w.lag } });
+      vs = WIND_GLSL + '\n' + vs.replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat vdSlope; transformed = verdantBend(transformed, verdantRoot(), verdantDirection(), vdSlope);');
+    }
+    shader.vertexShader = vs.replace('#include <project_vertex>', `#include <project_vertex>
+{ vec3 hn = pxoHullN;
+#ifdef USE_INSTANCING
+  hn = mat3( instanceMatrix ) * hn;
+#endif
+  vec2 cn = ( projectionMatrix * vec4( normalize( mat3( modelViewMatrix ) * hn ), 0.0 ) ).xy;
+  if ( length( cn ) > 1e-6 ) gl_Position.xy += normalize( cn ) * pxoHlW * gl_Position.w * 2.0 / pxoHlRes; }`);
+  };
+  m.customProgramCacheKey = () => `pxo-hull-v1:${key}`;
+  HULL_MAT.set(key, m);
+  return m;
+}
+const HL_LINE_MAT = new THREE.LineBasicMaterial({ color: HL_COLOR, depthTest: false, transparent: true, toneMapped: false });
+// 面全体にうっすら重ねる色（線は WebGL では 1 画素より太くできず、それだけでは見えにくかった）
+const HL_TINT_MAT = new THREE.MeshBasicMaterial({ color: HL_COLOR, side: THREE.DoubleSide, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+function borderLines(mesh) {   // 面の外周（1 つの三角形にしか使われていない辺）の線と、面に重ねる色
+  const g = mesh.geometry, pa = g.attributes.position, idx = g.index, cnt = new Map();
+  const n = idx ? idx.count : pa.count, at = (i) => (idx ? idx.getX(i) : i);
+  for (let i = 0; i < n; i += 3) for (const [a, b] of [[at(i), at(i + 1)], [at(i + 1), at(i + 2)], [at(i + 2), at(i)]]) {
+    const k = a < b ? `${a},${b}` : `${b},${a}`; cnt.set(k, (cnt.get(k) || 0) + 1);
+  }
+  const pts = [];
+  for (const [k, c] of cnt) if (c === 1) { const [a, b] = k.split(',').map(Number); pts.push(new THREE.Vector3().fromBufferAttribute(pa, a), new THREE.Vector3().fromBufferAttribute(pa, b)); }
+  const clip = mesh.material?.clippingPlanes || null;   // スクリーンは面と同じ所で切る
+  const grp = new THREE.Group();
+  const lm = HL_LINE_MAT.clone(); lm.clippingPlanes = clip;
+  const l = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lm); l.renderOrder = 9999;
+  const tm = HL_TINT_MAT.clone(); tm.clippingPlanes = clip;
+  const t = new THREE.Mesh(mesh.geometry, tm); t.renderOrder = 9998;   // 形は面と共有（捨てない）
+  grp.add(t, l);
+  grp.userData.pxoHlDispose = () => { l.geometry.dispose(); lm.dispose(); tm.dispose(); };
+  return grp;
+}
+function updateHighlight(renderer) {
+  renderer.getDrawingBufferSize(HL_U.pxoHlRes.value);
+  const key = hlTarget ? `${hlTarget.kind}:${hlTarget.index}:${HL_VER}` : '';
+  if (key === hlBuilt) return;
+  hlBuilt = key;
+  for (const o of hlObjs) { o.parent?.remove(o); o.userData.pxoHlDispose?.(); }
+  hlObjs = [];
+  if (!hlTarget || !stageCtx) return;
+  const { kind, index } = hlTarget;
+  const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
+  if (kind === 'model' || kind === 'stone') {
+    const g = kind === 'model' ? stageCtx.models : stageCtx.stones;
+    for (const root of g.children) {
+      if (root.userData.pxoCard !== index) continue;
+      root.traverse((n) => {
+        if (!n.isMesh || hlObjs.includes(n)) return;
+        const w = n.customDepthMaterial?.onBeforeCompile && kind === 'model' ? (root.userData.pxoWind || null) : null;
+        if (n.isInstancedMesh) {
+          const h = new THREE.InstancedMesh(hullGeometry(n.geometry), hullMaterial(null), STONE_MAX);
+          h.instanceMatrix = n.instanceMatrix; h.count = n.count; h.frustumCulled = false;
+          add(n, h);
+        } else add(n, new THREE.Mesh(hullGeometry(n.geometry), hullMaterial(w)));
+      });
+    }
+  } else {
+    const g = kind === 'screen' ? stageCtx.screens : stageCtx.domes;
+    for (const m of g.children) if (m.isMesh && m.name === `${kind}:${index}`) add(m, borderLines(m));
+  }
 }
 // GLB のサムネイル（2026-10-02 ユーザー指定：カードに何も出なかった）。読み込んだモデルだけを斜め上から 1 回描いて画像（dataURL）にする。
 // 舞台の renderer の状態（影・クリッピング・大きさ）を乱さないよう、専用の小さな renderer で描く。結果は url ごとに使い回す
@@ -2034,20 +2139,22 @@ function buildModels() {
   if (!stageCtx) return;
   const g = stageCtx.models;
   g.clear();   // 形と材質は GLB の読み込み結果を使い回すので捨てない
-  for (const m of modelList) {
-    if (m.show === false || !m.src) continue;
+  HL_VER++;   // 作り直すと輪郭（カードのホバー）の付け先が変わる
+  modelList.forEach((m, ci) => {
+    if (m.show === false || !m.src) return;
     const e = loadGlb(m.src);
-    if (!e.scene) continue;   // 読み込み中・失敗（読み終わったら組み直される）
+    if (!e.scene) return;   // 読み込み中・失敗（読み終わったら組み直される）
     const o = e.scene.clone(true);
+    o.userData.pxoCard = ci;   // どのカードの物か（ホバーの輪郭）
     o.position.set(m.x ?? 0, m.y ?? 0, m.z ?? 0);
     o.rotation.y = deg(m.rot ?? 0);
     o.scale.setScalar(MODEL_M * (m.scale > 0 ? m.scale : 1));
     const ps = texPixSize(m.texPix ?? 0);
     if (ps) o.traverse((n) => { if (n.isMesh) n.material = Array.isArray(n.material) ? n.material.map((x) => pixMaterial(x, ps)) : pixMaterial(n.material, ps); });
-    if (e.wind) applyWind(o, e.wind);   // 植物（VERDANT の GLB）だけ風で揺らす。粗さの材質（複製）にも当て直す
+    if (e.wind) { applyWind(o, e.wind); o.userData.pxoWind = e.wind; }   // 植物（VERDANT の GLB）だけ風で揺らす。粗さの材質（複製）にも当て直す
     o.traverse((n) => { if (n.isMesh) n.layers.enable(MODEL_SHADOW_LAYER); });   // 奏者に落とす影の元（updateModelShadow で太陽から描く）
     g.add(o);
-  }
+  });
 }
 
 export function setDomes(list) {
@@ -2057,6 +2164,7 @@ export function setDomes(list) {
 
 function buildDomes() {
   if (!stageCtx) return;
+  HL_VER++;
   const g = stageCtx.domes;
   g.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });   // 素材のテクスチャは使い回すので捨てない
   g.clear();
@@ -2362,6 +2470,7 @@ export function updateWeather(t) {
  */
 function buildScreens() {
   if (!stageCtx || !stageCtx.screenBase) return;
+  HL_VER++;
   const { screens } = stageCtx;
   screens.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });   // 素材のテクスチャは MEDIA で使い回すので捨てない
   screens.clear();

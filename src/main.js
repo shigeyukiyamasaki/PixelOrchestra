@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -329,8 +329,14 @@ async function refreshStonePatterns() {
   for (const el of document.querySelectorAll('#stoneRows .note')) el.textContent = stoneNote();
 }
 const stoneNote = () => (stonePatternCount ? `形：石1〜${stonePatternCount}${rockPatternCount ? `、大きい物は岩1〜${rockPatternCount}` : ''}（${STONE_DIR}）` : `形が見つかりません（${STONE_DIR} に 石1.glb などを置いてください）`);
+// カードにマウスが乗っている間、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）
+function hoverHighlight(box, kind, i) {
+  box.addEventListener('mouseenter', () => setHighlight({ kind, index: i }));
+  box.addEventListener('mouseleave', () => setHighlight(null));
+}
 function stoneRow(st, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen stone' });
+  hoverHighlight(box, 'stone', i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
   const changed = () => { setStones(stones); saveStones(); };   // 動かしている間もその場で並べ直す（保存だけ遅らせる）
   const top = put(box, '<div class="stoneTop"></div>');
@@ -613,6 +619,7 @@ function flowCheck(row, o, changed) {
 // 値をいじったら即座に 3D へ反映し、保存は遅らせる
 function screenRow(sc, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen' });
+  hoverHighlight(box, 'screen', i);
   const put = (parent, html) => { const d = document.createElement('div'); d.innerHTML = html; return parent.appendChild(d.firstElementChild); };
   const changed = () => { setScreens(screens); saveScreens(); };
 
@@ -735,6 +742,7 @@ async function loadModelList() {
 }
 function modelRow(m, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen model' });
+  hoverHighlight(box, 'model', i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
   const changed = () => { setModels(models); saveModels(); };
   const top = put(box, '<div class="top"></div>');
@@ -794,6 +802,7 @@ function modelRow(m, i) {
 }
 function domeRow(d, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen dome' });
+  hoverHighlight(box, 'dome', i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
   const changed = () => { setDomes(domes); saveDomes(); };
 
@@ -855,6 +864,7 @@ function domeRow(d, i) {
 }
 
 function renderScreens() {
+  setHighlight(null);   // カードを作り直すと、乗っていたカードの mouseleave が来ないことがある
   const box = $('screenRows'), dbox = $('domeRows'), mbox = $('modelRows'), sbox = $('stoneRows');
   if (!box || !dbox) return;
   box.textContent = ''; dbox.textContent = '';
