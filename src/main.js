@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -1955,6 +1955,7 @@ function animate() {
   // 3D モデルの風（2026-10-02 ユーザー指定）：曲と関係なく実時間で揺らす。値は毎フレーム入力欄から読む（プリセットの読み込みにもそのまま追従）
   const wv = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
   setModelWind({ on: $('modelWindOn').checked, amp: wv('modelWindAmp', 1), rate: wv('modelWindRate', 1), dirDeg: wv('modelWindDir', 0), gust: wv('modelWindGust', 0.25) });
+  setPlantBrightness(wv('plantBright', 1));   // 植物の明るさ（2026-10-03。変わった時だけ材質の色を入れ直す）
   tickModelWind(dt * wv('modelWindRate', 1));   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();

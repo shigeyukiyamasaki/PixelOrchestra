@@ -161,6 +161,7 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #modelWind .sub { font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
 #modelWind:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は中身を薄く（見出しのチェックは通常表示。グレーアウト法則） */
 #modelWind .ctl { margin: 4px 0; }
+#modelWind .plantSub { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }   /* 風の下に植物の明るさ（2026-10-03） */
 #domeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 /* 更新ボタンは「スクリーン」の見出しの右端に置く（2026-09-16 ユーザー指定）。灰背景に合わせて濃い色 */
 #screenBar .hd > button { margin-left: auto; flex: none; white-space: nowrap; border-color: #0b1020; color: #0b1020; font-weight: 400; }

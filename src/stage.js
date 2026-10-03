@@ -1533,6 +1533,7 @@ function loadGlb(url) {
           transparent: !!m.transparent, opacity: m.opacity ?? 1, alphaTest: m.alphaTest || 0, side: m.side ?? THREE.FrontSide,
         }));
         conv.get(m).userData = { ...m.userData };   // GLB の印（verdantMaterial：幹・葉など）を風の判定に使う
+        plantMat(conv.get(m));
         return conv.get(m);
       };
       o.material = Array.isArray(o.material) ? o.material.map(toLambert) : toLambert(o.material);
@@ -1542,6 +1543,27 @@ function loadGlb(url) {
     e.waiters?.splice(0).forEach((f) => f());
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
+}
+// ---- 植物の明るさ（2026-10-03 ユーザー指定）----
+// 植物（VERDANT の印のある幹・葉など。岩は含まない）の色に倍率を掛ける。葉は向きがばらばらで、樹冠の内側は葉どうしの影に入り、
+// 裏から透ける光も無いので、同じ太陽の下でも岩より暗く見える。その分を持ち上げるための倍率。
+// 材質は粗さ・風で複製されるので、作った複製を全部控えておき、元の色 × 倍率を入れ直す（色だけなので作り直しは要らない）
+const PLANT_MATS = new Set();
+let plantK = 1;
+function plantMat(m) {
+  const kind = m?.userData?.verdantMaterial;
+  if (!kind || WIND_STATIC.has(kind) || !m.color) return m;
+  m.userData.pxoBase ??= m.color.toArray();   // 複製は元の色（倍率を掛ける前）を userData ごと引き継ぐ
+  m.color.fromArray(m.userData.pxoBase).multiplyScalar(plantK);
+  PLANT_MATS.add(m);
+  return m;
+}
+/** 植物の明るさの倍率（1 で GLB のまま） */
+export function setPlantBrightness(k) {
+  k = Number.isFinite(k) ? Math.max(0, k) : 1;
+  if (k === plantK) return;
+  plantK = k;
+  for (const m of PLANT_MATS) m.color.fromArray(m.userData.pxoBase).multiplyScalar(k);
 }
 // ---- 3D モデルの風（2026-10-02 ユーザー指定）----
 // FABOTANIC（VERDANT）の書き出し ZIP に付く src/VerdantVegetation.js（MIT。AMIX｜トミナガハルキ）の「高さで曲げる」風を r128 用に移した。
@@ -1616,7 +1638,7 @@ function windPatch(material, w) {
 const WIND_MAT = new Map(), WIND_DEPTH = new Map();
 function windMaterial(m, w) {
   const key = `${m.uuid}:${w.key}`;
-  if (!WIND_MAT.has(key)) WIND_MAT.set(key, windPatch(m.clone(), w));
+  if (!WIND_MAT.has(key)) WIND_MAT.set(key, plantMat(windPatch(m.clone(), w)));
   return WIND_MAT.get(key);
 }
 function windDepth(w, m) {   // 影（太陽などの平行光）用。揺れていない影が残らないよう、同じずらしを入れる
@@ -1648,8 +1670,9 @@ function applyWind(o, w) {
 const MODEL_SHADOW_LAYER = 5;   // 1：太陽の円盤、2：天気、3：金属、4：奏者のドット化（各 const の定義を参照）
 const MODEL_SHADOW_PX = 2048;   // 奥行きの画像の 1 辺（太陽の影の地図と同じ）
 const MODEL_SHADOW_BIAS = 0.002;   // 奥行きの比較の余裕（奥行き 149 unit に対して 0.3 unit ほど）
+const MODEL_SHADOW_EVERY = 1;   // 何フレームに 1 回描き直すか。1 ＝毎フレーム（2026-10-03：4 に減らしても fps はほぼ変わらず（重さの原因は奏者の部品数）、影のカクつきだけが目立ったので戻した）
 const TS_U = { pxoTsMap: { value: null }, pxoTsMatrix: { value: new THREE.Matrix4() }, pxoTsOn: { value: 0 }, pxoTsBias: { value: MODEL_SHADOW_BIAS } };
-const MSH = { rt: null, cam: new THREE.OrthographicCamera(-34, 34, 34, -34, 1, 150), roots: [] };
+const MSH = { rt: null, cam: new THREE.OrthographicCamera(-34, 34, 34, -34, 1, 150), roots: [], frame: 0 };
 MSH.cam.layers.set(MODEL_SHADOW_LAYER);
 const TS_DONE = new WeakSet();
 /** 3D モデルの影を受ける奏者（体・楽器・椅子）。毎フレーム呼んでよい（材質は 1 度だけ書き換える。持ち替えで増えた部品も拾う） */
@@ -1680,7 +1703,9 @@ function updateModelShadow(renderer, scene) {
   for (const r of MSH.roots) r?.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) patchModelShadow(m); });
   const on = !!(sun && sun.visible && sun.castShadow && stageCtx.models.children.length);
   TS_U.pxoTsOn.value = on ? 1 : 0;
-  if (!on) return;
+  if (!on) { MSH.frame = 0; return; }   // 次にオンになった時はすぐ描く
+  const first = !MSH.rt;
+  if (!first && (MSH.frame++ % MODEL_SHADOW_EVERY) !== 0) return;   // 間のフレームは前の奥行きと位置合わせをそのまま使う（両方そろって古いのでずれない）
   if (!MSH.rt) {
     MSH.rt = new THREE.WebGLRenderTarget(MODEL_SHADOW_PX, MODEL_SHADOW_PX, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
     MSH.rt.depthTexture = new THREE.DepthTexture(MODEL_SHADOW_PX, MODEL_SHADOW_PX);
@@ -1757,7 +1782,7 @@ function pixTexture(tex, size) {
 function pixMaterial(m, size) {
   const key = `${m.uuid}:${size}`;
   if (PIX_MAT.has(key)) return PIX_MAT.get(key);
-  const c = m.clone();
+  const c = plantMat(m.clone());
   if (m.map) c.map = pixTexture(m.map, size);
   if (m.emissiveMap) c.emissiveMap = pixTexture(m.emissiveMap, size);
   PIX_MAT.set(key, c);
