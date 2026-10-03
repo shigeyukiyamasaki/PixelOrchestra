@@ -114,6 +114,7 @@
         <button data-sec="domeSec">スカイドーム</button>
         <button data-sec="screenSec">スクリーン</button>
         <button data-sec="modelSec">3Dモデル</button>
+        <button data-sec="stoneSec">石</button>
       </div>
       <!-- 左：スカイドーム（3 層固定）／右：スクリーン。2026-09-16 ユーザー指定で別セクションに分けた。
            スカイドームは一時上段へ移したが、上段を無くしてここへ戻した（2026-09-17 ユーザー指定） -->
@@ -144,6 +145,11 @@
           </div>
           <div id="modelRows"></div>
         </div>
+      </section>
+      <!-- 石のジェネレーター（2026-10-03 ユーザー指定）。石の GLB（3Dモデル フォルダの 石1・石2…）をばらまく。カード 1 枚 = 石の群れ 1 つ -->
+      <section id="stoneSec">
+        <div class="hd">石</div>
+        <div id="stoneRows"></div>
       </section>
     </div>
   </div>

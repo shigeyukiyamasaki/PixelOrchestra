@@ -548,13 +548,14 @@ export function createStage(container) {
   scene.add(screens);
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   const models = new THREE.Group(); models.name = 'models';   // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
+  const stones = new THREE.Group(); stones.name = 'stones'; scene.add(stones);   // 石のジェネレーター（2026-10-03 ユーザー指定）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -927,7 +928,7 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -1540,6 +1541,7 @@ function loadGlb(url) {
     });
     e.wind = windInfo(e.scene);
     buildModels();
+    buildStones();
     e.waiters?.splice(0).forEach((f) => f());
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
@@ -1701,7 +1703,7 @@ function patchModelShadow(mat) {
 function updateModelShadow(renderer, scene) {
   const sun = stageCtx?.sun;
   for (const r of MSH.roots) r?.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) patchModelShadow(m); });
-  const on = !!(sun && sun.visible && sun.castShadow && stageCtx.models.children.length);
+  const on = !!(sun && sun.visible && sun.castShadow && (stageCtx.models.children.length || stageCtx.stones.children.length));
   TS_U.pxoTsOn.value = on ? 1 : 0;
   if (!on) { MSH.frame = 0; return; }   // 次にオンになった時はすぐ描く
   const first = !MSH.rt;
@@ -1722,6 +1724,234 @@ function updateModelShadow(renderer, scene) {
   renderer.shadowMap.autoUpdate = false;   // この描画で太陽の影の地図まで作り直さない
   renderer.setRenderTarget(MSH.rt); renderer.clear(); renderer.render(scene, c);
   renderer.setRenderTarget(prevRT); renderer.shadowMap.autoUpdate = autoShadow;
+}
+// ---- 石のジェネレーター（2026-10-03 ユーザー指定）----
+// 石の GLB（石1・石2…）を形のもととして、個数・ばらけ具合・大きさ・大きさのばらつきから並べ方を決め、形ごとにまとめて 1 回で描く
+// （InstancedMesh。このアプリの重さは描画の回数で決まるので、数百個でも軽い）。並べ方は種から決まるので、同じ値なら同じ並び。
+// 1 群れ = { x, z, y（中心と高さ [unit]）, spread（ばらけ具合 [unit]）, count, size（大きさの倍率）, sizeVar（0〜1）, seed, show }
+const STONE_MAX = 400;          // 1 群れ・1 形あたりの上限（個数スライダーの最大と同じ）
+const STONE_TRIES = 30;         // 重ならない場所を探す回数（見つからなければその石は置かない）
+const STONE_GAP = 0.85;         // 重なりの判定の甘さ（外接円の半径の和 × これ未満なら重なりとみなす。1 未満で少し寄り添える）
+// 大きい石は岩の形に替える（2026-10-03 ユーザー指定：引き伸ばした小石は粗く、点々も大きくなるため）。
+// 幅 ROCK_FROM〜ROCK_TO [m] の間は、大きいほど岩になる確率を上げて混ぜる（境目で形の種類が急に変わらないように。真ん中の約 60cm で半々）
+const ROCK_FROM = 0.45, ROCK_TO = 0.8;
+let stonePatterns = [], rockPatterns = [], stoneList = [];
+const STONE_POOL = new Map();   // `${群れ}:${url}` → InstancedMesh（作り直さず個数と並びだけ変える）
+/** 石の形のもと（GLB の URL の一覧） */
+export function setStonePatterns(urls, rockUrls = []) { stonePatterns = [...(urls || [])]; rockPatterns = [...(rockUrls || [])]; buildStones(); }
+/** 石の群れの一覧 */
+export function setStones(list) { stoneList = (list || []).map((o) => ({ ...o })); buildStones(); }
+function stoneShape(url) {   // GLB の最初の形を、ノードの位置・向きごと焼き込んで使う
+  const e = loadGlb(url);
+  if (!e.scene) return null;
+  if (!e.stone) {
+    let mesh = null;
+    e.scene.updateMatrixWorld(true);
+    e.scene.traverse((o) => { if (!mesh && o.isMesh) mesh = o; });
+    if (!mesh) return null;
+    const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+    geometry.computeBoundingBox();
+    const b = geometry.boundingBox;
+    const pa = geometry.attributes.position; let rc = 0;
+    for (let i = 0; i < pa.count; i++) rc = Math.max(rc, Math.hypot(pa.getX(i), pa.getZ(i)));
+    // r：並べる時の大きさの目安 [m]、rc：原点（底面の中央）から一番遠い点までの横の距離 [m]（床の縁にかかるかの判定）
+    e.stone = { geometry, material: mesh.material, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, rc };
+  }
+  return e.stone;
+}
+// 床の外に出た部分を切る（2026-10-03 ユーザー指定：床の縁でスパッと切れて断面が見える）。
+// 床の縁にかかった石だけ、形のデータを床の縁で実際に切り、切り口に面を張って閉じた立体にする（本物の断面。影も光も正しく当たる）。
+// 床の形は insideFloor と同じ（手前・左右は直線、奥は弧）。弧は石 1 個の幅ではほぼ直線なので、その石の位置での接線の平面で切る。
+// ※ 最初は裏側の面を断面の色で塗って断面に見せていたが、角では奥の裏側の面も消えて向こうが透け、空洞に見えたのでやめた
+const STONE_CAP = new THREE.Color(0.70, 0.68, 0.64);       // 断面の地の色（石の地の色と同じ）
+const STONE_CAP_DOT = new THREE.Color(0.10, 0.10, 0.10);   // 点の色（make_rock.py・make_stone.py の DOT）
+const STONE_DOTS_PER_M = 46;   // 点の間隔（1m あたりのます目の数。Blender の焼き込みと同じ）
+// 断面の材質：石の表面と同じ四角い点々（ます目ごとに点 1 つ、半分ほど間引き、大きさ・濃さ 30〜70% をばらつかせる）を、
+// 断面の平面上の座標で並べる。ます目の大きさは石ごとの倍率（頂点の pxoScale）に合わせ、表面の焼き込みと同じ実寸にする
+const STONE_CAP_MAT = (() => {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+  const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'attribute float pxoScale;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale;');
+    shader.fragmentShader = `varying vec3 pxoCapW, pxoCapN;
+varying float pxoCapS;
+float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 n = normalize( pxoCapN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
+  vec2 g = vec2( dot( pxoCapW, t ), dot( pxoCapW, bt ) ) / max( 1e-4, pxoCapS / ${STONE_DOTS_PER_M.toFixed(1)} ), id = floor( g ), f = fract( g ) - 0.5;
+  float h1 = pxoHash( id ), h2 = pxoHash( id + 17.31 ), h3 = pxoHash( id + 53.77 );
+  float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );   // 点の半分の幅（ます目に対する割合。焼き込みのボロノイと同じ値）
+  vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
+  float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
+  diffuseColor.rgb = mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ); }`);
+  };
+  m.customProgramCacheKey = () => 'pxo-stonecap-v1';
+  return m;
+})();
+// 床の縁の平面（外向きの法線 n・n·p ≤ d が床の側）のうち、中心 (x, z)・半径 rc の円にかかるもの。全部外なら null
+function floorPlanesFor(x, z, rc) {
+  const X = FLOOR_X_HALF, F = FLOOR_Z_FRONT, R = FLOOR_BACK_R, cz = SEAT_SHIFT_Z;
+  const dc = Math.hypot(x, z - cz);
+  if (z - rc > F || Math.abs(x) - rc > X || dc - rc > R) return null;   // 丸ごと床の外
+  const planes = [];
+  if (z + rc > F) planes.push({ n: new THREE.Vector3(0, 0, 1), d: F });
+  if (x + rc > X) planes.push({ n: new THREE.Vector3(1, 0, 0), d: X });
+  if (x - rc < -X) planes.push({ n: new THREE.Vector3(-1, 0, 0), d: X });
+  if (dc + rc > R && dc > 1e-6) { const n = new THREE.Vector3(x / dc, 0, (z - cz) / dc); planes.push({ n, d: R + n.z * cz }); }   // 弧：その位置での接線の平面
+  return planes;
+}
+// 閉じた三角形の集まり（頂点 = { p, n, uv }、三角形 = [v0, v1, v2, cap?]）を平面で切り、床の側だけ残して切り口に面を張る
+function clipClosed(tris, pl) {
+  const out = [], segs = [], EPS = 1e-6;
+  const sd = (v) => pl.n.dot(v.p) - pl.d;
+  const cut = (a, b) => {   // 辺 a-b と平面の交点。どちらの三角形から求めても同じ点になるよう、端の順を座標で決める
+    if (a.p.x > b.p.x || (a.p.x === b.p.x && (a.p.y > b.p.y || (a.p.y === b.p.y && a.p.z > b.p.z)))) [a, b] = [b, a];
+    const sa = sd(a), sb = sd(b), t = sa / (sa - sb);
+    return { p: a.p.clone().lerp(b.p, t), n: a.n.clone().lerp(b.n, t).normalize(), uv: a.uv && b.uv ? a.uv.clone().lerp(b.uv, t) : null };
+  };
+  for (const tri of tris) {
+    const v = tri.slice(0, 3), cap = tri[3], s3 = v.map(sd), inn = s3.map((x) => x <= EPS);
+    const ni = inn.filter(Boolean).length;
+    if (ni === 3) { out.push(tri); continue; }
+    if (ni === 0) continue;
+    if (ni === 1) {   // 中の 1 点を先頭に回してから切る（向きを保つ）
+      const i = inn.indexOf(true), a = v[i], b = v[(i + 1) % 3], c = v[(i + 2) % 3];
+      const ab = cut(a, b), ac = cut(a, c);
+      out.push([a, ab, ac, cap]); segs.push([ab.p, ac.p]);
+    } else {          // 外の 1 点を最後に回してから切る
+      const i = inn.indexOf(false), c = v[i], a = v[(i + 1) % 3], b = v[(i + 2) % 3];
+      const bc = cut(b, c), ac = cut(a, c);
+      out.push([a, b, bc, cap], [a, bc, ac, cap]); segs.push([bc.p, ac.p]);
+    }
+  }
+  // 切り口の線分を輪につなぎ、平面上で三角形に分けて蓋をする
+  const key = (p) => `${Math.round(p.x * 1e5)},${Math.round(p.y * 1e5)},${Math.round(p.z * 1e5)}`;
+  const adj = new Map();
+  for (const [a, b] of segs) {
+    const ka = key(a), kb = key(b);
+    if (ka === kb) continue;
+    if (!adj.has(ka)) adj.set(ka, { p: a, nb: [] });
+    if (!adj.has(kb)) adj.set(kb, { p: b, nb: [] });
+    adj.get(ka).nb.push(kb); adj.get(kb).nb.push(ka);
+  }
+  const t1 = new THREE.Vector3(0, 1, 0).cross(pl.n).normalize(), t2 = pl.n.clone().cross(t1);
+  const used = new Set();
+  for (const [k0] of adj) {
+    if (used.has(k0)) continue;
+    const loop = []; let prev = null, cur = k0;
+    for (let guard = 0; guard < 100000; guard++) {   // 途切れた輪は捨てる（上限で必ず止める）
+      used.add(cur); loop.push(adj.get(cur).p);
+      const next = adj.get(cur).nb.find((x) => x !== prev && !used.has(x)) ?? (adj.get(cur).nb.includes(k0) && loop.length > 2 ? k0 : null);
+      if (next == null || next === k0) break;
+      prev = cur; cur = next;
+    }
+    if (loop.length < 3) continue;
+    const c2 = loop.map((p) => new THREE.Vector2(p.dot(t1), p.dot(t2)));
+    const faces = THREE.ShapeUtils.triangulateShape(c2, []);
+    const mk = (p) => ({ p, n: pl.n.clone(), uv: null });
+    for (const [i, j, l] of faces) {
+      let a = loop[i], b = loop[j], c = loop[l];
+      if (b.clone().sub(a).cross(c.clone().sub(a)).dot(pl.n) < 0) [b, c] = [c, b];   // 外（床の外）を向くように
+      out.push([mk(a), mk(b), mk(c), true]);
+    }
+  }
+  return out;
+}
+// 1 個の石を世界の座標に置いて、床の縁で切った 2 つの形（表面・断面）にする
+function cutStoneMeshes(shape, matrix, planes, scale) {
+  const g = shape.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
+  const nm = new THREE.Matrix3().getNormalMatrix(matrix);
+  const vert = (i) => ({ p: new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(matrix), n: na ? new THREE.Vector3().fromBufferAttribute(na, i).applyMatrix3(nm).normalize() : new THREE.Vector3(0, 1, 0), uv: ua ? new THREE.Vector2().fromBufferAttribute(ua, i) : null });
+  const verts = []; for (let i = 0; i < pa.count; i++) verts.push(vert(i));
+  let tris = [];
+  const n3 = idx ? idx.count : pa.count;
+  for (let i = 0; i < n3; i += 3) { const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2; tris.push([verts[a], verts[b], verts[c], false]); }
+  for (const pl of planes) tris = clipClosed(tris, pl);
+  const build = (list, withUv) => {
+    const pos = new Float32Array(list.length * 9), nor = new Float32Array(list.length * 9), uv = withUv ? new Float32Array(list.length * 6) : null;
+    list.forEach((t, i) => t.slice(0, 3).forEach((v, j) => {
+      pos.set([v.p.x, v.p.y, v.p.z], i * 9 + j * 3); nor.set([v.n.x, v.n.y, v.n.z], i * 9 + j * 3);
+      if (uv) uv.set(v.uv ? [v.uv.x, v.uv.y] : [0, 0], i * 6 + j * 2);
+    }));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (uv) geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    else geo.setAttribute('pxoScale', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(scale), 1));
+    return geo;
+  };
+  const surf = tris.filter((t) => !t[3]), caps = tris.filter((t) => t[3]);
+  const meshes = [];
+  if (surf.length) meshes.push(new THREE.Mesh(build(surf, true), shape.material));
+  if (caps.length) meshes.push(new THREE.Mesh(build(caps, false), STONE_CAP_MAT));
+  for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; m.layers.enable(MODEL_SHADOW_LAYER); }
+  return meshes;
+}
+let STONE_EDGE = [];   // 縁で切った石の形（組み直すたびに作り直して、前のは捨てる）
+function rng32(seed) {   // mulberry32（種から決まる乱数）
+  let a = (seed >>> 0) || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function gauss(r) { return Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r()); }
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
+function buildStones() {
+  if (!stageCtx) return;
+  const g = stageCtx.stones;
+  g.clear();   // プールの InstancedMesh は捨てずに使い回す
+  for (const m of STONE_EDGE) m.geometry.dispose();   // 縁で切った形は毎回作り直す（材質は共有なので捨てない）
+  STONE_EDGE = [];
+  const stoneShapes = stonePatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
+  const rockShapes = rockPatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
+  if (!stoneShapes.length) return;
+  const shapes = [...stoneShapes, ...rockShapes];   // per[] の添字：石が先、岩が後
+  const stoneW = stoneShapes.reduce((a, p) => a + p.s.r * 2, 0) / stoneShapes.length;   // 石の形の平均の幅 [m]（大きさ 1 のとき）
+  stoneList.forEach((st, k) => {
+    if (st.show === false) return;
+    const r = rng32(st.seed ?? 1);
+    const count = Math.max(0, Math.min(STONE_MAX, Math.round(st.count ?? 20)));
+    const spread = Math.max(0, st.spread ?? 3), size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.4));
+    const placed = [];   // { x, z, rad }
+    const per = shapes.map(() => []);
+    for (let i = 0; i < count; i++) {
+      for (let t = 0; t < STONE_TRIES; t++) {
+        // 中心ほど多く、外ほどまばら（正規分布。σ = ばらけ具合の半分、外れすぎはばらけ具合の 1.5 倍で止める）
+        const rad0 = Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;
+        const x = (st.x ?? 0) + Math.cos(a) * rad0, z = (st.z ?? 0) + Math.sin(a) * rad0;
+        const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar * 1.5);   // 大きさのばらつき：1 で 1/8〜8 倍（±2σ まで）
+        const w = stoneW * sc;   // この石の幅 [m]
+        const u = Math.max(0, Math.min(1, (w - ROCK_FROM) / (ROCK_TO - ROCK_FROM))), pRock = u * u * (3 - 2 * u);
+        const useRock = rockShapes.length > 0 && r() < pRock;
+        const pi = useRock ? stoneShapes.length + (Math.floor(r() * rockShapes.length) % rockShapes.length) : Math.floor(r() * stoneShapes.length) % stoneShapes.length;
+        const rot = r() * Math.PI * 2;
+        const k = useRock ? w / (shapes[pi].s.r * 2) : sc;   // 岩は同じ幅になるように縮める
+        const rad = shapes[pi].s.r * k * MODEL_M;
+        if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < (q.rad + rad) * STONE_GAP)) continue;
+        placed.push({ x, z, rad });
+        const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
+        const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
+        if (!planes) break;                                    // 丸ごと床の外：置かない
+        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M)) { STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
+        per[pi].push(mat);                                     // 床の中：まとめて描く
+        break;
+      }
+    }
+    shapes.forEach((p, pi) => {
+      if (!per[pi].length) return;
+      const key = `${k}:${p.url}`;
+      let im = STONE_POOL.get(key);
+      if (!im || im.geometry !== p.s.geometry) {
+        im = new THREE.InstancedMesh(p.s.geometry, p.s.material, STONE_MAX);
+        im.castShadow = true; im.receiveShadow = true;
+        im.frustumCulled = false;   // 境界は元の形 1 個分しか無いので、画面外と誤判定させない
+        im.layers.enable(MODEL_SHADOW_LAYER);   // 奏者に落とす影の元
+        STONE_POOL.set(key, im);
+      }
+      im.count = per[pi].length;
+      per[pi].forEach((m, i) => im.setMatrixAt(i, m));
+      im.instanceMatrix.needsUpdate = true;
+      g.add(im);
+    });
+  });
 }
 // GLB のサムネイル（2026-10-02 ユーザー指定：カードに何も出なかった）。読み込んだモデルだけを斜め上から 1 回描いて画像（dataURL）にする。
 // 舞台の renderer の状態（影・クリッピング・大きさ）を乱さないよう、専用の小さな renderer で描く。結果は url ごとに使い回す
