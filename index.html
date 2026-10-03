@@ -221,13 +221,15 @@
     <!-- 2 段：上＝プロジェクト（MIDI・音声もまるごと）／下＝プリセット（見た目の設定だけ）。2026-09-18 ユーザー指定で分けた -->
     <div class="slots">
     <div class="preset" title="プロジェクト：いまの設定に加えて、読み込んでいる MIDI・音声・スクリーンとスカイドームの素材をまるごと、名前を付けてフォルダ（projects/名前/）に保存する。素材はコピーを保存するので、原本を動かしても消しても戻る（原本を直したら、保存し直すと取り直す）">
-      <select id="projectList" title="選ぶとそのプロジェクト（曲・音声・設定）に切り替わる"><option value="">プロジェクト…</option></select>
+      <select id="projectList" title="切り替えるプロジェクトを選ぶ（右の「適用」で切り替わる）"><option value="">プロジェクト…</option></select>
+      <button id="projectApply" class="slotApply" title="選んだプロジェクト（曲・音声・設定）に切り替える">適用</button>
       <input id="projectName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
       <button id="projectSave" class="slotSave" title="いまの曲・音声・設定をこの名前で保存（同じ名前なら上書き）">保存</button>
       <button id="projectDel" class="slotDel" title="選んでいるプロジェクトを削除（手元のフォルダ。公開済みのものは消えない）">削除</button>
     </div>
     <div class="preset" title="プリセット：いまの見た目の設定（スライダー・スクリーン・スカイドーム・楽器の割当など）だけに名前を付けて覚える。曲と音声は変えないので、別の曲に当てはめて使い回せる">
-      <select id="presetList" title="選ぶとその設定に切り替わる（曲・音声はそのまま）"><option value="">プリセット…</option></select>
+      <select id="presetList" title="切り替えるプリセットを選ぶ（右の「適用」で切り替わる。曲・音声はそのまま）"><option value="">プリセット…</option></select>
+      <button id="presetApply" class="slotApply" title="選んだプリセットの設定に切り替える（曲・音声はそのまま）">適用</button>
       <input id="presetName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
       <button id="presetSave" class="slotSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
       <button id="presetDel" class="slotDel" title="選んでいるプリセットを削除">削除</button>

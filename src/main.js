@@ -2295,7 +2295,7 @@ const projectBackend = {
 };
 
 /** 保存欄 1 組。ids：[一覧, 名前, 保存, 削除] の id、backend：保存先、confirmDelete：削除の前に確認するか */
-function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confirmDelete = false }) {
+function makeSlot({ ids: [listId, nameId, saveId, delId, applyId], label, backend, confirmDelete = false }) {
   let timer = null;
   const flash = (msg, ms = 2500) => { const el = $(nameId); clearTimeout(timer); el.placeholder = msg; timer = setTimeout(() => { el.placeholder = '名前'; }, ms); };
   const fail = (what, e) => { console.error(e); flash(`✗ ${what}できませんでした：${e.message}`, 6000); };
@@ -2303,8 +2303,8 @@ function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confir
   const run = async (fn) => {   // 保存中に二重に押されないように
     if (busy) return;
     busy = true;
-    for (const id of [listId, saveId, delId]) $(id).disabled = true;
-    try { await fn(); } finally { busy = false; for (const id of [listId, saveId, delId]) $(id).disabled = false; }
+    for (const id of [listId, saveId, delId, applyId]) $(id).disabled = true;
+    try { await fn(); } finally { busy = false; for (const id of [listId, saveId, delId, applyId]) $(id).disabled = false; }
   };
   const render = async (sel = '') => {
     const list = $(listId);
@@ -2315,10 +2315,16 @@ function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confir
     for (const n of names) list.appendChild(new Option(n, n));
     list.value = names.includes(sel) ? sel : '';
   };
+  // 選んだだけでは切り替えない。名前欄に入れて（上書き保存・削除の対象）、「適用」で切り替える（2026-10-03 ユーザー指定）
   $(listId).addEventListener('change', (e) => {
     const name = e.target.value;
     if (!name) return;
     $(nameId).value = name;
+    flash(`「適用」で「${name}」に切り替わります`);
+  });
+  $(applyId).addEventListener('click', () => {
+    const name = $(listId).value;
+    if (!name) { flash('適用するものを選んでください'); return; }
     run(async () => {
       flash(`「${name}」を読み込んでいます…`);
       try { await backend.apply(name); flash(`「${name}」を読み込みました`); } catch (err) { fail('読み込み', err); }
@@ -2344,8 +2350,8 @@ function makeSlot({ ids: [listId, nameId, saveId, delId], label, backend, confir
   $(nameId).addEventListener('keydown', (e) => e.stopPropagation());   // Space 等をショートカットに取られない
   return { render };
 }
-const projectSlot = makeSlot({ ids: ['projectList', 'projectName', 'projectSave', 'projectDel'], label: 'プロジェクト', backend: projectBackend, confirmDelete: true });
-const presetSlot = makeSlot({ ids: ['presetList', 'presetName', 'presetSave', 'presetDel'], label: 'プリセット', backend: presetBackend });
+const projectSlot = makeSlot({ ids: ['projectList', 'projectName', 'projectSave', 'projectDel', 'projectApply'], label: 'プロジェクト', backend: projectBackend, confirmDelete: true });
+const presetSlot = makeSlot({ ids: ['presetList', 'presetName', 'presetSave', 'presetDel', 'presetApply'], label: 'プリセット', backend: presetBackend });
 
 // ---------- 箱ごとのプリセット（2026-09-19 ユーザー指定：天気・光源など細かい単位でも保存・呼び出し） ----------
 // 各箱の見出しの ▾ から、その箱の設定だけを名前を付けて保存・適用・削除する。全体のプリセットとは別の保存領域（SECTION_PRESETS_KEY）。
@@ -2425,7 +2431,8 @@ const secPop = document.createElement('div');
 secPop.id = 'secPresetPop'; secPop.hidden = true;
 secPop.innerHTML = `<div class="spHd"></div>
   <div class="preset">
-    <select id="secPresetList" title="選ぶとその設定に切り替わる"></select>
+    <select id="secPresetList" title="切り替えるプリセットを選ぶ（右の「適用」で切り替わる）"></select>
+    <button id="secPresetApply" class="slotApply" title="選んだプリセットの設定に切り替える">適用</button>
     <input id="secPresetName" type="text" placeholder="名前" title="保存する名前。既にある名前なら上書き">
     <button id="secPresetSave" class="slotSave" title="いまの設定をこの名前で保存（同じ名前なら上書き）">保存</button>
     <button id="secPresetDel" class="slotDel" title="選んでいるプリセットを削除">削除</button>
@@ -2450,7 +2457,7 @@ const secBackend = {   // 小窓を開いている箱（secPopFor）の欄を読
     if (secSelLoad()[k] === name) secSelSet(k, null);
   },
 };
-const secSlot = makeSlot({ ids: ['secPresetList', 'secPresetName', 'secPresetSave', 'secPresetDel'], label: 'プリセット', backend: secBackend });
+const secSlot = makeSlot({ ids: ['secPresetList', 'secPresetName', 'secPresetSave', 'secPresetDel', 'secPresetApply'], label: 'プリセット', backend: secBackend });
 async function openSecPop(sec, btn) {
   secPopFor = sec;
   secPop.querySelector('.spHd').textContent = `${sec.label}のプリセット`;
@@ -2483,7 +2490,7 @@ if (!VIEW_NAME) {
 const PUBLISH_URL = 'https://romashige.com/pixel-orchestra/';
 $('projectPublish').addEventListener('click', async () => {
   const name = $('projectName').value.trim() || $('projectList').value;
-  const nameEl = $('projectName'), btns = ['projectList', 'projectSave', 'projectPublish', 'projectDel'];
+  const nameEl = $('projectName'), btns = ['projectList', 'projectApply', 'projectSave', 'projectPublish', 'projectDel'];
   const say = (msg) => { nameEl.placeholder = msg; };
   if (!name) { nameEl.focus(); say('公開する名前を入れてください'); return; }
   if (!confirm(`「${name}」を保存してから、公開します。\n\n${PUBLISH_URL}?view=${encodeURIComponent(name)}\n\n公開ページは誰でも見られます（音声も聞けます）。よろしいですか？`)) return;

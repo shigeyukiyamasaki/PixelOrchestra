@@ -392,6 +392,10 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 #topbar .preset input, #secPresetPop .preset input { width: 160px; background: none; color: var(--text);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; }
 #topbar .preset button, #secPresetPop .preset button { padding: 4px 8px; font-size: 12px; }
+/* 上のバーのプロジェクト・プリセットは名前が長いので広げる（2026-10-03 ユーザー指定。広げた分は再生バー .seek が縮む）。箱ごとのプリセットの小窓は元の幅 */
+#topbar .preset select { width: 260px; flex-shrink: 0; }
+#topbar .preset input { width: 240px; flex-shrink: 0; }
+#topbar .preset button { flex-shrink: 0; white-space: nowrap; }   /* ボタンは押しつぶさない（文字が縦に折り返していた） */
 /* 「設定」：プリセットの左のボタンで、クレジット・テンポ・拍子のポップアップを開閉（2026-09-18 ユーザー指定）。ボタンの真下・右揃えに出す */
 #topbar .settingsWrap { position: relative; margin-right: 10px; }
 #topbar #settingsBtn { padding: 4px 10px; font-size: 12px; }
@@ -407,6 +411,9 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 /* 保存＝青・白文字（2026-09-18 ユーザー指定）。削除の赤（#8e2f2f 等）と彩度・明度をそろえ、色相だけ 215° に回した色。プロジェクト・プリセット共通 */
 #topbar .slotSave, #secPresetPop .slotSave { background: #2f568e; border-color: #4a75b0; color: #fff; font-weight: 600; }
 #topbar .slotSave:hover, #secPresetPop .slotSave:hover { background: #3a6bb0; border-color: #6a9be0; color: #fff; }
+/* 適用（2026-10-03 ユーザー指定：選んだだけでは切り替えず、このボタンで切り替える）。役割の色：成功＝緑系 */
+#topbar .slotApply, #secPresetPop .slotApply { background: #2f7a46; border-color: #4a9e66; color: #fff; font-weight: 600; }
+#topbar .slotApply:hover, #secPresetPop .slotApply:hover { background: #3a9457; border-color: #6ac08a; color: #fff; }
 #topbar .slotDel, #secPresetPop .slotDel { background: #8e2f2f; border-color: #b04a4a; color: #fff; }
 #topbar .slotDel:hover, #secPresetPop .slotDel:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
 /* 公開（プロジェクトの行だけ）：外へ出す操作なので、保存とは別の色（橙）。公開したらその右にページへのリンク（2026-09-18） */
@@ -421,7 +428,7 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 #topbar .dly input.num:focus { outline: none; border-color: var(--accent); }
 #topbar .dly input.num::-webkit-inner-spin-button, #topbar .dly input.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #topbar .spacer { flex: 0 0 8px; }
-#topbar .seek { flex: 1 1 160px; min-width: 120px; margin: 0; }
+#topbar .seek { flex: 1 1 160px; min-width: 60px; margin: 0; }   /* 下限 120 → 60（2026-10-03：プロジェクト・プリセット欄を広げた分、縮んでよい） */
 #topbar .time { margin-left: 0; }
 .filebtn { position: relative; display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
   padding: 6px 10px; cursor: pointer; white-space: nowrap; }
