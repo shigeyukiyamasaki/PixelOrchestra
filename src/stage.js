@@ -549,13 +549,14 @@ export function createStage(container) {
   const domes = new THREE.Group();     // スカイドーム（遠景。3 層固定）
   const models = new THREE.Group(); models.name = 'models';   // 床に置く 3D モデル（GLB。2026-10-01 ユーザー指定）
   const stones = new THREE.Group(); stones.name = 'stones'; scene.add(stones);   // 石のジェネレーター（2026-10-03 ユーザー指定）
+  const grass = new THREE.Group(); grass.name = 'grass'; scene.add(grass);       // 草のジェネレーター（2026-10-03 ユーザー指定）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -928,7 +929,7 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -1543,6 +1544,7 @@ function loadGlb(url) {
     e.wind = windInfo(e.scene);
     buildModels();
     buildStones();
+    buildGrass();
     e.waiters?.splice(0).forEach((f) => f());
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
@@ -1624,9 +1626,20 @@ const WIND_GLSL = [
   '  slope = (p.y > 0. && p.y < H) ? strength * (2. * h * w + h * h * dh) : 0.;',
   '  p.xz += direction * d; return p; }',
   // 風向きを物体の中の向きに直す：回転＋等倍の拡大なので、逆行列の代わりに転置（各軸との内積）でよい（向きは正規化する）
-  'vec2 verdantDirection() { mat3 m = mat3(modelMatrix); vec3 v = vec3(vdDirection.x, 0., vdDirection.y);',
+  // まとめて描く時（草のジェネレーター。2026-10-03）は 1 本ずつの置き方（instanceMatrix）も含める（元のコードと同じ）
+  'vec2 verdantDirection() { mat3 m = mat3(modelMatrix);',
+  '#ifdef USE_INSTANCING',
+  '  m = m * mat3(instanceMatrix);',
+  '#endif',
+  '  vec3 v = vec3(vdDirection.x, 0., vdDirection.y);',
   '  vec3 d = vec3(dot(m[0], v), dot(m[1], v), dot(m[2], v)); float len = length(d.xz); return len > 1.e-8 ? d.xz / len : vec2(1., 0.); }',
-  'vec3 verdantRoot() { return modelMatrix[3].xyz; }',
+  'vec3 verdantRoot() {',
+  '#ifdef USE_INSTANCING',
+  '  return (modelMatrix * instanceMatrix * vec4(0., 0., 0., 1.)).xyz;',
+  '#else',
+  '  return modelMatrix[3].xyz;',
+  '#endif',
+  '}',
 ].join('\n');
 function windPatch(material, w) {
   material.onBeforeCompile = (shader) => {
@@ -1968,6 +1981,115 @@ function buildStones() {
     });
   });
 }
+// ---- 草のジェネレーター（2026-10-03 ユーザー指定）----
+// FABOTANIC の「野草パッチ」の GLB（草1・草2…）を形のもととして、個数・ばらけ具合・群生のまとまり・大きさ・色からばらまく。
+// 石と違って重なってよい（隙間を空ける判定はしない）。部品（葉・茎・花・穂）ごとにまとめて 1 回で描き、3D モデル欄の風で揺らす。
+// 床の外に出た部分は描かない（薄い草なので断面は要らない）。中心が床の外になる株は置かない。
+// 1 群れ = { x, z, y, spread, count, clump（群生のまとまり 0〜1）, size, sizeVar, shade, shadeVar, seed, show }
+const GRASS_MAX = 600;          // 1 群れ・1 部品あたりの上限（個数スライダーの最大と同じ）
+let grassPatterns = [], grassList = [];
+const GRASS_POOL = new Map();   // `${群れ}:${url}:${部品}` → InstancedMesh
+/** 草の形のもと（[{ url, name }]。name は割合の鍵：「草1」など） */
+export function setGrassPatterns(list) { grassPatterns = [...(list || [])]; buildGrass(); }
+/** 草の群れの一覧 */
+export function setGrass(list) { grassList = (list || []).map((o) => ({ ...o })); buildGrass(); }
+const FLOOR_GLSL = `bool pxoOutsideFloor( vec3 w ) {
+  if ( abs( w.x ) > ${FLOOR_X_HALF.toFixed(4)} || w.z > ${FLOOR_Z_FRONT.toFixed(4)} ) return true;
+  float dz = w.z - ( ${SEAT_SHIFT_Z.toFixed(4)} );
+  return w.x * w.x + dz * dz > ${(FLOOR_BACK_R * FLOOR_BACK_R).toFixed(4)};
+}`;
+function grassPatch(m, w) {   // 風で揺らし（w があれば）、床の外を描かない
+  m.onBeforeCompile = (shader) => {
+    if (w) Object.assign(shader.uniforms, WIND_U, { vdHeight: { value: w.H }, vdFlex: { value: w.flex }, vdFreq: { value: w.freq }, vdLag: { value: w.lag } });
+    let vs = 'varying vec3 pxoGrassW;\n' + shader.vertexShader;
+    if (w) vs = WIND_GLSL + '\n' + vs.replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat vdSlope; transformed = verdantBend(transformed, verdantRoot(), verdantDirection(), vdSlope);');
+    shader.vertexShader = vs.replace('#include <project_vertex>', `#include <project_vertex>
+{ vec4 gp = vec4( transformed, 1.0 );
+#ifdef USE_INSTANCING
+  gp = instanceMatrix * gp;
+#endif
+  pxoGrassW = ( modelMatrix * gp ).xyz; }`);
+    shader.fragmentShader = 'varying vec3 pxoGrassW;\n' + FLOOR_GLSL + '\n' + shader.fragmentShader
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif ( pxoOutsideFloor( pxoGrassW ) ) discard;');
+  };
+  m.customProgramCacheKey = () => `pxo-grass-v1:${w ? w.key : '-'}:${m.isMeshDepthMaterial ? 'd' : 'c'}`;
+  return m;
+}
+function grassShape(url) {   // GLB の部品ごとの形（ノードの位置・向きを焼き込む）と材質。風の揺れ方は GLB の印から
+  const e = loadGlb(url);
+  if (!e.scene) return null;
+  if (!e.grass) {
+    const parts = [];
+    e.scene.updateMatrixWorld(true);
+    e.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      const src = Array.isArray(o.material) ? o.material[0] : o.material;
+      parts.push({ name: o.name, geometry, material: plantMat(grassPatch(src.clone(), e.wind)),   // plantMat：植物の明るさ（3D モデル欄）も効かせる
+         depth: grassPatch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }), e.wind) });
+    });
+    e.grass = { parts, wind: e.wind };
+  }
+  return e.grass;
+}
+function buildGrass() {
+  if (!stageCtx) return;
+  HL_VER++;
+  const g = stageCtx.grass;
+  g.clear();
+  const shapes = grassPatterns.map((p) => ({ url: p.url, name: p.name, s: grassShape(p.url) })).filter((p) => p.s && p.s.parts.length);
+  if (!shapes.length) return;
+  grassList.forEach((st, ci) => {
+    if (st.show === false) return;
+    const r = rng32(st.seed ?? 1), rc = rng32(((st.seed ?? 1) ^ 0x9e3779b9) >>> 0);
+    const count = Math.max(0, Math.min(GRASS_MAX, Math.round(st.count ?? 60)));
+    const spread = Math.max(0, st.spread ?? 4), clump = Math.max(0, Math.min(1, st.clump ?? 0.4));
+    const size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.3));
+    // 群生：まとまりの中心を いくつか決め、株はそのどれかの周りに生える。まとまり 0 で中心 1 つ（石と同じ散らばり方）、
+    // 1 で 10 株に 1 つほどの小さな塊に分かれる
+    const nC = 1 + Math.round((count / 10) * clump);
+    const centers = [];
+    for (let i = 0; i < nC; i++) {
+      const a = r() * Math.PI * 2, d = Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2) * (nC > 1 ? 1 : 0);
+      centers.push([(st.x ?? 0) + Math.cos(a) * d, (st.z ?? 0) + Math.sin(a) * d]);
+    }
+    const sigma = (spread / 2) * (1 - 0.85 * clump);
+    // 使う草の割合（2026-10-03 ユーザー指定）。名前ごとの重み（無ければ 1）の比で選ぶ。全部 0 なら何も置かない。
+    // 乱数は今まで通り 1 回だけ引くので、割合を変えても株の位置は変わらない
+    const wts = shapes.map((p) => Math.max(0, st.mix?.[p.name] ?? 1)), wSum = wts.reduce((a, b) => a + b, 0);
+    const pickShape = (u) => { let t = u * wSum; for (let k = 0; k < wts.length; k++) { if (wts[k] > 0 && t < wts[k]) return k; t -= wts[k]; } return wts.findLastIndex((w) => w > 0); };
+    const per = shapes.map(() => []);
+    for (let i = 0; i < count; i++) {
+      const c = centers[Math.floor(r() * nC) % nC], a = r() * Math.PI * 2, d = Math.min(1.5 * spread, Math.abs(gauss(r)) * sigma);
+      const x = c[0] + Math.cos(a) * d, z = c[1] + Math.sin(a) * d;
+      const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar);   // 大きさのばらつき：1 で 1/4〜4 倍（±2σ まで）
+      const pi = pickShape(r()), rot = r() * Math.PI * 2;
+      const shade = Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
+      if (pi < 0 || !insideFloor(x, z)) continue;   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
+      per[pi].push([_sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
+    }
+    shapes.forEach((p, pi) => {
+      if (!per[pi].length) return;
+      p.s.parts.forEach((part, k) => {
+        const key = `${ci}:${p.url}:${k}`;
+        let im = GRASS_POOL.get(key);
+        if (!im || im.geometry !== part.geometry) {
+          im = new THREE.InstancedMesh(part.geometry, part.material, GRASS_MAX);
+          im.setColorAt(0, new THREE.Color(1, 1, 1));   // 色の入れ物を上限ぶん先に作る
+          im.customDepthMaterial = part.depth;          // 影も揺らし、床の外は落とさない
+          im.castShadow = true; im.receiveShadow = true;
+          im.frustumCulled = false;
+          GRASS_POOL.set(key, im);
+        }
+        im.userData.pxoCard = ci; im.userData.pxoWind = p.s.wind || null;
+        im.count = per[pi].length;
+        per[pi].forEach(([m, shade], i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setScalar(shade)); });
+        im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
+        g.add(im);
+      });
+    });
+  });
+}
 // ---- カードのホバーで、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）----
 // 3D モデル・石：形を画面上で少し太らせた複製の裏側だけを単色で描く（一回り大きい裏面。手前の本体からはみ出た分が輪郭になる）。
 //   太らせる向きは、角で割れないよう同じ位置の頂点の法線をならしたもの。風で揺れる植物は輪郭も同じに揺らす。手前の物に隠れる所は出ない
@@ -2051,15 +2173,15 @@ function updateHighlight(renderer) {
   if (!hlTarget || !stageCtx) return;
   const { kind, index } = hlTarget;
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
-  if (kind === 'model' || kind === 'stone') {
-    const g = kind === 'model' ? stageCtx.models : stageCtx.stones;
+  if (kind === 'model' || kind === 'stone' || kind === 'grass') {
+    const g = kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : stageCtx.grass;
     for (const root of g.children) {
       if (root.userData.pxoCard !== index) continue;
       root.traverse((n) => {
         if (!n.isMesh || hlObjs.includes(n)) return;
         const w = n.customDepthMaterial?.onBeforeCompile && kind === 'model' ? (root.userData.pxoWind || null) : null;
         if (n.isInstancedMesh) {
-          const h = new THREE.InstancedMesh(hullGeometry(n.geometry), hullMaterial(null), STONE_MAX);
+          const h = new THREE.InstancedMesh(hullGeometry(n.geometry), hullMaterial(n.userData.pxoWind || null), n.instanceMatrix.count);   // 草は輪郭も一緒に揺らす
           h.instanceMatrix = n.instanceMatrix; h.count = n.count; h.frustumCulled = false;
           add(n, h);
         } else add(n, new THREE.Mesh(hullGeometry(n.geometry), hullMaterial(w)));

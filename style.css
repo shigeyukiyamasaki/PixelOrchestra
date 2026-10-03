@@ -148,6 +148,7 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenSec { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 #modelSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 3D モデル（カード 1 枚＋＋。2026-10-01） */
 #stoneSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 石のジェネレーター（2026-10-03） */
+#grassSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 草のジェネレーター（2026-10-03） */
 /* 縦タブ（2026-10-01 ユーザー指定）：選んだ欄だけ出し、その欄が段の幅いっぱいを使う */
 #screenBar .barTabs { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
 #screenBar .barTabs button { text-align: left; white-space: nowrap; color: var(--muted); }
@@ -155,14 +156,14 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar > section.tabOff { display: none; }
 #screenBar > section.tabOn { flex: 1 1 0; }
 #modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-#stoneRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-#screenBar .screen.stone .stoneTop { display: flex; align-items: center; gap: 6px; }
-#screenBar .screen.stone .stoneTop .name { flex: 1 1 0; min-width: 0; }
-#screenBar .screen.stone .stoneTop label { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
-#screenBar .screen.stone .stoneBtns { display: flex; gap: 6px; }
-#screenBar .screen.stone .stoneBtns .del { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
-#screenBar .screen.stone .stoneBtns .del:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
-#screenBar .screen.stone .note { color: var(--muted); font-size: 11px; }
+#stoneRows, #grassRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+#screenBar .screen.gen .stoneTop { display: flex; align-items: center; gap: 6px; }
+#screenBar .screen.gen .stoneTop .name { flex: 1 1 0; min-width: 0; }
+#screenBar .screen.gen .stoneTop label { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
+#screenBar .screen.gen .stoneBtns { display: flex; gap: 6px; }
+#screenBar .screen.gen .stoneBtns .del { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
+#screenBar .screen.gen .stoneBtns .del:hover { background: #b03a3a; border-color: #e06a6a; color: #fff; }
+#screenBar .screen.gen .note { color: var(--muted); font-size: 11px; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
 #modelSec .modelBody { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 8px; }
 #modelSec .modelBody > #modelRows { flex: 1 1 0; min-width: 0; }
