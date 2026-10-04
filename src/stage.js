@@ -2022,7 +2022,22 @@ const GRASS_MAX = 600;          // 1 群れ・1 部品あたりの上限（個�
 let grassPatterns = [], grassList = [];
 const GRASS_POOL = new Map();   // `${群れ}:${url}:${部品}` → InstancedMesh
 /** 草の形のもと（[{ url, name }]。name は割合の鍵：「草1」など） */
-export function setGrassPatterns(list) { grassPatterns = [...(list || [])]; buildGrass(); }
+export function setGrassPatterns(list) { grassPatterns = [...(list || [])]; applyGrassStem(); buildGrass(); }
+// 茎の高さ（2026-10-04 ユーザー指定）：草の種類（名前）ごとの倍率。全部の群れで共通。形を作り直さず、材質の値を変えるだけ
+const GRASS_STEM = new Map();   // GLB の URL → { stem：茎の高さ, head：花・穂の大きさ, thick：茎の太さ }（倍率）
+let grassStemByName = {};
+function applyGrassStem() {
+  GRASS_STEM.clear();
+  for (const p of grassPatterns) {
+    const v = grassStemByName[p.name] || {};
+    const k = { stem: Math.max(0.05, v.stem ?? 1), head: Math.max(0.05, v.head ?? 1), thick: Math.max(0.05, v.thick ?? 1) };
+    GRASS_STEM.set(p.url, k);
+    const e = GLB.get(p.url);
+    if (e?.grass) { e.grass.stemU.uStemK.value = k.stem; e.grass.stemU.uHeadK.value = k.head; e.grass.stemU.uThickK.value = k.thick; }
+  }
+}
+/** 草の種類ごとの茎・花の形（{ 草2: { stem: 0.7, head: 1.5, thick: 1.5 }, … }。無い値は 1） */
+export function setGrassStem(map) { grassStemByName = { ...(map || {}) }; applyGrassStem(); }
 /** 草の群れの一覧 */
 export function setGrass(list) { grassList = (list || []).map((o) => ({ ...o })); buildGrass(); }
 const FLOOR_GLSL = `bool pxoOutsideFloor( vec3 w ) {
@@ -2036,8 +2051,28 @@ const FLOOR_GLSL = `bool pxoOutsideFloor( vec3 w ) {
 const BLADE_GLSL = `attribute vec3 aBladeRoot;
 attribute float aBladeRand;
 attribute float aInstVar;
+attribute float aStemKind, aStemTop;
+attribute vec2 aTopXZ;
+uniform float uStemK, uHeadK, uThickK;
 float pxoBH( float n ) { return fract( sin( n ) * 43758.5453 ); }
+// 茎・花の形（2026-10-04 ユーザー指定：草の種類ごとの固定値）。aStemKind：0 葉など／1 茎／2 花・穂。aStemTop・aTopXZ：茎の先（花・穂は付いている茎の先）
+//   茎：太さ uThickK 倍（根元と先を結ぶ線を中心線とみなし、そこからの横の距離を広げる）、高さ uStemK 倍（根元を中心に縦だけ）
+//   花・穂：茎の先を中心に大きさ uHeadK 倍、茎が縮んだ分だけ下げる
+vec3 pxoStem( vec3 p ) {
+  float span = max( 1e-4, aStemTop - aBladeRoot.y );
+  if ( aStemKind > 1.5 ) {
+    vec3 tip = vec3( aTopXZ.x, aStemTop, aTopXZ.y );
+    p = tip + ( p - tip ) * uHeadK;
+    p.y += ( uStemK - 1.0 ) * span;
+  } else if ( aStemKind > 0.5 ) {
+    vec2 c = mix( aBladeRoot.xz, aTopXZ, clamp( ( p.y - aBladeRoot.y ) / span, 0.0, 1.0 ) );   // その高さでの中心線
+    p.xz = c + ( p.xz - c ) * uThickK;
+    p.y = aBladeRoot.y + ( p.y - aBladeRoot.y ) * uStemK;
+  }
+  return p;
+}
 vec3 pxoBlade( vec3 p ) {
+  p = pxoStem( p );
   float seed = aBladeRand * 91.7;
 #ifdef USE_INSTANCING
   seed += dot( instanceMatrix[ 3 ].xz, vec2( 12.9898, 78.233 ) );
@@ -2045,8 +2080,9 @@ vec3 pxoBlade( vec3 p ) {
   float g = ( pxoBH( seed ) + pxoBH( seed + 1.7 ) + pxoBH( seed + 3.1 ) - 1.5 ) * 2.0;   // 一様乱数 3 つの和で正規分布に近づける
   return aBladeRoot + ( p - aBladeRoot ) * exp2( clamp( g, -2.0, 2.0 ) * aInstVar );
 }`;
-function grassPatch(m, w) {   // 1 本ずつの大きさを変え、風で揺らし（w があれば）、床の外を描かない
+function grassPatch(m, w, gu) {   // 茎・花の形と 1 本ずつの大きさを変え、風で揺らし（w があれば）、床の外を描かない。gu：種類ごとの茎・花の値
   m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, gu || { uStemK: { value: 1 }, uHeadK: { value: 1 }, uThickK: { value: 1 } });
     if (w) Object.assign(shader.uniforms, WIND_U, { vdHeight: { value: w.H }, vdFlex: { value: w.flex }, vdFreq: { value: w.freq }, vdLag: { value: w.lag } });
     let vs = BLADE_GLSL + '\nvarying vec3 pxoGrassW;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = pxoBlade( transformed );');
     if (w) vs = WIND_GLSL + '\n' + vs.replace('transformed = pxoBlade( transformed );', 'transformed = pxoBlade( transformed );\nfloat vdSlope; transformed = verdantBend(transformed, verdantRoot(), verdantDirection(), vdSlope);');
@@ -2059,14 +2095,14 @@ function grassPatch(m, w) {   // 1 本ずつの大きさを変え、風で揺ら
     shader.fragmentShader = 'varying vec3 pxoGrassW;\n' + FLOOR_GLSL + '\n' + shader.fragmentShader
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif ( pxoOutsideFloor( pxoGrassW ) ) discard;');
   };
-  m.customProgramCacheKey = () => `pxo-grass-v2:${w ? w.key : '-'}:${m.isMeshDepthMaterial ? 'd' : 'c'}`;
+  m.customProgramCacheKey = () => `pxo-grass-v4:${w ? w.key : '-'}:${m.isMeshDepthMaterial ? 'd' : 'c'}`;
   return m;
 }
 // 草の形を 1 本ずつに見分け、頂点ごとに根元（aBladeRoot：その 1 本の一番低い頂点）と乱数（aBladeRand）を持たせる（2026-10-04）。
 // 1 本＝三角形でつながった部分。UV の継ぎ目などで同じ位置に分かれた頂点もつなぐ。
 // stems を渡すと（花・穂の部品）、1 本ずつ「一番低い所が一番近い茎の先」に付いているものとして、その茎の根元と乱数を使う
 // （別々の大きさにすると、花が茎の先から離れて浮く）。戻り値は 1 本ずつの { root, top, rand }
-function bladeAttrs(geo, stems = null) {
+function bladeAttrs(geo, stems = null, kind = 0) {   // kind：0 葉など／1 茎／2 花・穂
   const pos = geo.attributes.position, n = pos.count, par = new Int32Array(n);
   for (let i = 0; i < n; i++) par[i] = i;
   const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
@@ -2093,17 +2129,21 @@ function bladeAttrs(geo, stems = null) {
     if (stems?.length) {   // 花・穂：一番近い茎の先に付ける
       const lo = b.root; let best = null, bd = Infinity;
       for (const st of stems) { const d = (st.top[0] - lo[0]) ** 2 + (st.top[1] - lo[1]) ** 2 + (st.top[2] - lo[2]) ** 2; if (d < bd) { bd = d; best = st; } }
-      b = { ...b, root: best.root, rand: best.rand };
+      b = { ...b, root: best.root, rand: best.rand, stemTop: best.top[1], topXZ: [best.top[0], best.top[2]] };
     }
     info.set(r, b);
   }
-  const root = new Float32Array(n * 3), rnd = new Float32Array(n);
+  const root = new Float32Array(n * 3), rnd = new Float32Array(n), knd = new Float32Array(n), top = new Float32Array(n), txz = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) {
     const b = info.get(find(i));
-    root.set(b.root, 3 * i); rnd[i] = b.rand;
+    root.set(b.root, 3 * i); rnd[i] = b.rand; knd[i] = kind; top[i] = b.stemTop ?? b.top[1];
+    txz.set(b.topXZ ?? [b.top[0], b.top[2]], 2 * i);
   }
+  geo.setAttribute('aTopXZ', new THREE.BufferAttribute(txz, 2));   // 茎の先の位置（茎の太さ・花の大きさ。2026-10-04）
   geo.setAttribute('aBladeRoot', new THREE.BufferAttribute(root, 3));
   geo.setAttribute('aBladeRand', new THREE.BufferAttribute(rnd, 1));
+  geo.setAttribute('aStemKind', new THREE.BufferAttribute(knd, 1));   // 茎の高さ（2026-10-04）
+  geo.setAttribute('aStemTop', new THREE.BufferAttribute(top, 1));
   return [...info.values()];
 }
 function grassShape(url) {   // GLB の部品ごとの形（ノードの位置・向きを焼き込む）と材質。風の揺れ方は GLB の印から
@@ -2117,16 +2157,18 @@ function grassShape(url) {   // GLB の部品ごとの形（ノードの位置�
     const geos = new Map(meshes.map((o) => [o, o.geometry.clone().applyMatrix4(o.matrixWorld)]));
     const isStem = (o) => /stem/i.test(o.name), isHead = (o) => /flower|seed|head/i.test(o.name);
     const stems = [];
-    for (const o of meshes) if (isStem(o)) stems.push(...bladeAttrs(geos.get(o)));
-    for (const o of meshes) if (!isStem(o)) bladeAttrs(geos.get(o), isHead(o) ? stems : null);
+    for (const o of meshes) if (isStem(o)) stems.push(...bladeAttrs(geos.get(o), null, 1));
+    for (const o of meshes) if (!isStem(o)) bladeAttrs(geos.get(o), isHead(o) ? stems : null, isHead(o) && stems.length ? 2 : 0);
+    const gs = GRASS_STEM.get(url) || {};   // 茎・花の形（種類ごと。setGrassStem で変わる）
+    const stemU = { uStemK: { value: gs.stem ?? 1 }, uHeadK: { value: gs.head ?? 1 }, uThickK: { value: gs.thick ?? 1 } };
     meshes.forEach((o) => {
       const geometry = geos.get(o);
       const src = Array.isArray(o.material) ? o.material[0] : o.material;
-      parts.push({ name: o.name, geometry, material: plantMat(grassPatch(src.clone(), e.wind)),   // plantMat：植物の明るさ（3D モデル欄）も効かせる
-         depth: grassPatch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }), e.wind) });
+      parts.push({ name: o.name, geometry, material: plantMat(grassPatch(src.clone(), e.wind, stemU)),   // plantMat：植物の明るさ（3D モデル欄）も効かせる
+         depth: grassPatch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }), e.wind, stemU) });
     });
     const bb = new THREE.Box3(); for (const p of parts) { p.geometry.computeBoundingBox(); bb.union(p.geometry.boundingBox); }
-    e.grass = { parts, wind: e.wind, r: Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 };   // r：株の半径 [m]
+    e.grass = { parts, wind: e.wind, stemU, r: Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2 };   // r：株の半径 [m]
   }
   return e.grass;
 }
@@ -2150,18 +2192,18 @@ function buildGrass() {
     const rk = rng32(((st.seed ?? 1) ^ 0x85ebca6b) >>> 0);
     const nC = Math.max(2, Math.round(count / 12)), centers = [];
     for (let i = 0; i < nC; i++) {
-      const a = rk() * Math.PI * 2, d = Math.min(1.5 * spread, Math.abs(gauss(rk)) * spread / 2);
+      const a = rk() * Math.PI * 2, d = spread * Math.sqrt(rk()); rk();   // 範囲（半径 spread）の中に均一に（乱数は以前と同じ数だけ引く）
       centers.push([(st.x ?? 0) + Math.cos(a) * d, (st.z ?? 0) + Math.sin(a) * d]);
     }
     const pull = 1 - 0.88 * clump;   // 中心からの距離に掛ける倍率
-    const sigma = spread / 2;
+    // 株も範囲（中心から半径 spread）の中に均一に散らばる（2026-10-04 ユーザー指定：以前は中心ほど濃い正規分布で、広げても真ん中に集まって見えた）
     // 使う草の割合（2026-10-03 ユーザー指定）。名前ごとの重み（無ければ 1）の比で選ぶ。全部 0 なら何も置かない。
     // 乱数は今まで通り 1 回だけ引くので、割合を変えても株の位置は変わらない
     const wts = shapes.map((p) => Math.max(0, st.mix?.[p.name] ?? 1)), wSum = wts.reduce((a, b) => a + b, 0);
     const pickShape = (u) => { let t = u * wSum; for (let k = 0; k < wts.length; k++) { if (wts[k] > 0 && t < wts[k]) return k; t -= wts[k]; } return wts.findLastIndex((w) => w > 0); };
     const per = shapes.map(() => []);
     for (let i = 0; i < count; i++) {
-      const a = r() * Math.PI * 2, d = Math.min(1.5 * spread, Math.abs(gauss(r)) * sigma);
+      const a = r() * Math.PI * 2, d = spread * Math.sqrt(r()); r();   // 円の中に均一（面積あたりの数を揃えるため √）。乱数は以前と同じ数だけ引く
       const x0 = (st.x ?? 0) + Math.cos(a) * d, z0 = (st.z ?? 0) + Math.sin(a) * d;   // 群生 0 の時の位置
       let c = centers[0], best = Infinity;
       for (const q of centers) { const dd = (q[0] - x0) ** 2 + (q[1] - z0) ** 2; if (dd < best) { best = dd; c = q; } }
@@ -2190,8 +2232,8 @@ function buildGrass() {
           im = new THREE.InstancedMesh(geo, part.material, GRASS_MAX);
           im.userData.srcGeo = part.geometry;
           im.setColorAt(0, new THREE.Color(1, 1, 1));   // 色の入れ物を上限ぶん先に作る
-          im.customDepthMaterial = part.depth;          // 影も揺らし、床の外は落とさない
-          im.castShadow = true; im.receiveShadow = true;
+          im.customDepthMaterial = part.depth;          // （影を落とす時用：揺らし、床の外は落とさない）
+          im.castShadow = false; im.receiveShadow = true;   // 影は落とさない（2026-10-04 ユーザー指定：細かすぎてちらついた）。ほかの物の影は受ける
           im.frustumCulled = false;
           GRASS_POOL.set(key, im);
         }

@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -366,6 +366,9 @@ let grass = (() => {
   try { const a = JSON.parse(LS.getItem(GRASS_KEY) || 'null'); if (Array.isArray(a)) return a.map(grassDefaults); } catch (e) { console.warn('草の設定の読込失敗:', e); }
   return [];
 })();
+// 草の種類ごとの茎・花の形（2026-10-04 ユーザー指定。スライダーは付けない固定値）。草2：花の茎が草に対して高かったので茎を 0.7 倍に低く、
+// 花を 1.5 倍に大きく、茎を 6 倍に太く（1.5 倍・3 倍ではまだ細かった）。草3：穂の大きさと茎の太さを草2 と同じ倍率に（茎の高さは元のまま）
+setGrassStem({ 草2: { stem: 0.7, head: 1.5, thick: 6 }, 草3: { head: 1.5, thick: 6 } });
 let grassSaveTimer = null;
 function saveGrass() {
   clearTimeout(grassSaveTimer);
@@ -404,7 +407,7 @@ function grassRow(st, i) {
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
   slider('個数', 'count', 1, 600, 1, 0, '草の株の数。中心が床の外になる株は置かない（はみ出した分は床の縁で消える）');
-  slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '生える範囲の広さ [unit]。中心ほど多く、外ほどまばら');
+  slider('ばらけ具合', 'spread', 0, 40, 0.1, 1, '生える範囲の広さ（中心からの半径）[unit]。範囲の中に均一に散らばる（2026-10-04 ユーザー指定）。床の外になる株は置かない');
   slider('群生', 'clump', 0, 1, 0.05, 2, '群生のまとまり。0 で全体にまんべんなく、1 でところどころ小さな塊になって生える');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '草の大きさの倍率。1 で 3D モデルと同じ（書き出した大きさの 1.25 倍）');
   slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/4〜4 倍）');
