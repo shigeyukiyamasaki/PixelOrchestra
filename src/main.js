@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setWater, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -430,7 +430,7 @@ function grassRow(st, i) {
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
 const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
-  rapids: 0.2, foam: 1, reach: 1, coast: 0.5, waveH: 1, period: 7, swell: 0.3, white: 0.3,   // 海：岸線のうねり・波の高さ・波の周期 [秒]・うねり [unit]・白波（2026-10-04）
+  rapids: 0.2, foam: 1, reach: 1, ripple: 'real', coast: 0.5, waveH: 1, period: 7, swell: 0.3, white: 0.3,   // 海：岸線のうねり・波の高さ・波の周期 [秒]・うねり [unit]・白波（2026-10-04）
   lakeSize: 10, aspect: 1, pools: 1 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池・水たまり。水たまり puddle は 2026-10-04 に統合）。rapids：川の瀬、foam：岸の泡、lakeSize・aspect・pools：湖の大きさ・縦横比・数。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 // 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
 // 水たまり（puddle）は湖・池・水たまり（lake）にまとめた（2026-10-04 ユーザー指定）：数・大きさを引き継ぎ、泡なし（統合前の水たまりは泡を出さなかった）。
@@ -482,6 +482,12 @@ function waterRow(st, i) {
   const showTyped = () => { for (const [lab, ts] of typed) lab.style.display = ts.includes(st.type || 'river') ? '' : 'none'; };
   const refreshers = [];   // 同じ値を種類ごとの欄で持つもの（散らばり）があるので、切り替えたら表示を値に合わせ直す
   typeSel.onchange = () => { st.type = typeSel.value; for (const f of refreshers) f(); showTyped(); changed(); };
+  // さざ波の描き方（2026-10-04 ユーザー指定）：写実＝なめらかな明暗と細かい凹凸／粒＝地は平らにして、波の山を明るい横線・谷を暗い横線の粒で
+  const ripRow = put(box, '<label class="sld" title="さざ波の描き方。写実：なめらかな明暗と細かい凹凸。粒：水面の地は平らにして、さざ波の山を明るい横線の粒、谷を暗い横線の粒で描く（照り返しの光の粒と揃う）"><span>さざ波</span><select><option value="real">写実</option><option value="dots">粒</option></select><b></b></label>');
+  const ripSel = ripRow.querySelector('select');
+  ripSel.value = st.ripple || 'real';
+  ripSel.onkeydown = (e) => e.stopPropagation();
+  ripSel.onchange = () => { st.ripple = ripSel.value; changed(); };
   const slider = (label, key, min, max, step, digits, title, types = null) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
@@ -1480,7 +1486,8 @@ function settings() {
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
     // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
     pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), pixelLevels: num('pixelLevels', 32), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
-    metalThrPct: num('metalThrPct', 65),   // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
+    metalThrPct: num('metalThrPct', 65), waterThrPct: num('waterThrPct', 100),   // 水の白だけのブルーム閾値（%。2026-10-04）
+      // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
     shakeOn: $('shakeOn').checked, shakeMode: $('shakeMode').value || 'v',
     shakeAmt: num('shakeAmt', 1), shakeDecay: num('shakeDecay', 1), shakeDots: $('shakeDots').checked, // 楽器のフラッシュの強さ（0 = 光らない / 1 = 従来。2026-09-17 ユーザー指定）
@@ -2272,6 +2279,7 @@ function animate() {
     // レンズ側を動かしたら金属側も追随する必要があるので、bloomThr も変化の判定に入れる
     const metalThr = Math.max(0, s.bloomThr * Math.min(100, s.metalThrPct) / 100);
     if (metalThr !== lastMetalThr) { lastMetalThr = metalThr; setMetalThreshold(metalThr); }
+    setWaterBloomThreshold(s.waterThrPct >= 100 ? 1 : Math.max(0, s.bloomThr * s.waterThrPct / 100));   // 水の白（100 % で描き足さない＝他と同じ閾値）
     applyToneMapping(s.exposure); lastBloomAll = s.bloomAll; lastBloomThr = s.bloomThr;
     // 屋外オフ（屋内＝ホールの想定）の時は背景を真っ暗に（2026-09-23 ユーザー指定）。空の球は stage.js 側で消えるが、
     // その後ろの #view のグラデーションが空の色のまま残っていた
