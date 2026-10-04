@@ -2484,7 +2484,24 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
   float n1 = pxoDirtN( w * 0.9 ), n2 = pxoDirtN( w * 3.7 + 7.3 ), n3 = pxoWN( q * 12.0 + 1.9 );
   // 境目はくっきりめに（2026-10-05 ユーザー指定：ぼやけて見えた。しきい値の幅を狭めた）
   vec3 col = mix( ${c3('#5b402a')}, ${c3('#7d5d3f')}, smoothstep( 0.4, 0.6, n1 ) );   // 地の色（乾いた所ほど明るい）
-  col = mix( col, ${c3('#3d2a1a')}, smoothstep( 0.6, 0.67, n2 ) * 0.75 );           // 湿った暗い所
+  col = mix( col, ${c3('#3d2a1a')}, smoothstep( 0.5, 0.75, n2 ) * 0.22 );           // 湿った所（ごく薄く）
+  // 一番濃い模様は点の集まりで描く（2026-10-05 ユーザー指定：塊に見えた）。5cm ごとに点の候補を置き（位置はばらつかせる）、
+  // 点の中心での濃さ（湿った所のノイズ）が濃いほど点が密で大きい。点を置くかどうかは中心で決め、丸ごと描く
+  {
+    const float DC = 0.05;
+    vec2 db = floor( q / DC );
+    float dots = 0.0;
+    for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
+      vec2 id = db + vec2( float( i ), float( j ) );
+      float h1 = pxoWH( id + 3.1 ), h2 = pxoWH( id + 17.9 ), h3 = pxoWH( id + 43.7 ), h4 = pxoWH( id + 71.3 );
+      vec2 c = ( id + vec2( h1, h2 ) ) * DC;
+      float m = smoothstep( 0.52, 0.72, pxoDirtN( c * 3.7 + 7.3 ) );
+      if ( h3 > m * 1.3 ) continue;
+      float r = DC * mix( 0.22, 0.42, h4 ) * ( 0.6 + 0.4 * m );
+      dots = max( dots, 1.0 - smoothstep( r - 0.004, r, length( q - c ) ) );
+    }
+    col = mix( col, ${c3('#2f2014')}, dots * 0.85 );
+  }
   col *= 1.0 + ( n3 - 0.5 ) * 0.25;                                       // 細かいざらつき
   col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
   col *= 1.0 - uEdge * ( 1.0 - smoothstep( 0.03, 0.3, -sd ) );   // 縁を濃く（2026-10-05 ユーザー指定）：縁から 30cm ほど内側にかけて暗くしていく。uEdge：縁の濃さ（0 で暗くしない）
@@ -2501,7 +2518,7 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
     if ( gl_FragColor.a <= 0.0 ) discard;
   }`);
   };
-  m.customProgramCacheKey = () => 'pxo-dirt-v6';
+  m.customProgramCacheKey = () => 'pxo-dirt-v7';
   return m;
 }
 function buildDirt() {
