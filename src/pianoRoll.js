@@ -17,26 +17,36 @@ const DEFAULT_OVERHEAD_HEIGHT = 7;
 const DEFAULT_SEMITONE_W = 0.22;
 const COLUMN_EXTRA_MAX = 5;   // 列幅の上限 = 奏者の並び幅 + これ [unit]。超える音域は半音幅を詰めて収める
 
-// グロー用のぼけた板（中心が明るく縁へ向かって透明）。ノートの形に沿った矩形のぼかし
-let _haloTex = null;
-function haloTexture() {
-  if (_haloTex) return _haloTex;
-  const N = 64;
-  const c = document.createElement('canvas');
-  c.width = N; c.height = N;
-  const g = c.getContext('2d');
-  const img = g.createImageData(N, N);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const dx = Math.abs(x + 0.5 - N / 2) / (N / 2), dy = Math.abs(y + 0.5 - N / 2) / (N / 2); // 0..1
-    const d = Math.max(dx, dy);                        // 矩形距離（ノートの形に沿う）
-    const a = Math.pow(Math.max(0, 1 - d), 2);         // 中心 1 → 縁 0（二乗で中心寄りに集める）
-    const k = (y * N + x) * 4;
-    img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * a);
-  }
-  g.putImageData(img, 0, 0);
-  _haloTex = new THREE.CanvasTexture(c);
-  _haloTex.minFilter = THREE.LinearFilter; _haloTex.magFilter = THREE.LinearFilter;
-  return _haloTex;
+// グロー（2026-10-05 作り直し。ユーザー指定：ノートの縁が光るように）：ノートより一回り大きい光の板の各点で、ノートの四角の縁からの距離を
+// 実際の長さで求め、縁で一番明るく、外へは光の広がり（pad）でなめらかに、内へはノートの幅の 15% ほどで素早く薄れる。
+// 以前は中心が明るい絵を板に貼っていて、ノートの内側（中心）が一番光り、長いノートでは光が縦に引き伸ばされた
+const GLOW_U = { uGlow: { value: 0 } };
+function glowMaterial() {
+  const m = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, GLOW_U);
+    // 板は底辺が基準の 1×1（x −0.5〜0.5、y 0〜1）。1 枚ずつの拡大（instanceMatrix の列の長さ）から、板とノートの大きさを実際の長さで出す
+    shader.vertexShader = 'uniform float uGlow;\nvarying vec2 vGL, vGS;\nvarying float vGP;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+  float gsx = length( instanceMatrix[ 0 ].xyz ), gsy = length( instanceMatrix[ 1 ].xyz );
+#else
+  float gsx = 1.0, gsy = 1.0;
+#endif
+  float gw = gsx / ( 1.0 + 3.0 * uGlow );   // 板の幅 ＝ ノートの幅 × (1 + 2 × 1.5 × グロー)
+  vGP = gw * 1.5 * uGlow;                     // 光の広がり
+  vGS = vec2( gw, max( 0.0, gsy - 2.0 * vGP ) );   // ノートの幅・高さ
+  vGL = vec2( position.x * gsx, position.y * gsy - vGP );   // ノートの底辺の真ん中から見た位置`);
+    shader.fragmentShader = 'varying vec2 vGL, vGS;\nvarying float vGP;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec2 gq = abs( vec2( vGL.x, vGL.y - vGS.y * 0.5 ) ) - vGS * 0.5;
+  float gd = length( max( gq, 0.0 ) ) + min( max( gq.x, gq.y ), 0.0 );   // ノートの縁からの距離（外が正）
+  float ga = gd > 0.0 ? pow( max( 0.0, 1.0 - gd / max( 1e-4, vGP ) ), 2.0 )   // 外：広がりの端で 0
+                      : exp( gd / max( 1e-4, vGS.x * 0.15 ) );               // 内：縁から幅の 15% ほどで薄れる
+  diffuseColor.a *= ga;
+}`);
+  };
+  m.customProgramCacheKey = () => 'pxo-roll-glow-v2';
+  return m;
 }
 
 export class PianoRoll {
@@ -56,8 +66,8 @@ export class PianoRoll {
     this.mesh = new THREE.InstancedMesh(geo, mat, this.notes.length);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.group.add(this.mesh);
-    // グロー（2026-09-10）：各ノートの周りに、ぼけた光の板を加算合成で重ねる（ノートより一回り大きい・後処理のブルームは使わない）
-    this.haloMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: haloTexture(), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), this.notes.length);
+    // グロー（2026-09-10）：各ノートの周りに光の板を加算合成で重ねる（ノートより一回り大きい・後処理のブルームは使わない。縁が光る：glowMaterial）
+    this.haloMesh = new THREE.InstancedMesh(geo, glowMaterial(), this.notes.length);
     this.haloMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.haloMesh.renderOrder = 5;
     this.group.add(this.haloMesh);
@@ -225,7 +235,7 @@ export class PianoRoll {
   setVisible(v) { this.group.visible = v; }
   setOpacity(v) { this.mesh.material.opacity = Math.max(0, Math.min(1, v)); }
   /** グローの強さ（0 で無し。1 で幅の 1.5 倍の広がり・不透明度 0.5、2 で広がり 3 倍・0.75） */
-  setGlow(g) { this.glow = Math.max(0, g); this.haloMesh.material.opacity = Math.min(1, 0.5 * Math.min(this.glow, 1) + 0.25 * Math.max(0, this.glow - 1)); }
+  setGlow(g) { this.glow = Math.max(0, g); GLOW_U.uGlow.value = this.glow; this.haloMesh.material.opacity = Math.min(1, 0.5 * Math.min(this.glow, 1) + 0.25 * Math.max(0, this.glow - 1)); }
 
   dispose() {
     this.scene.remove(this.group);

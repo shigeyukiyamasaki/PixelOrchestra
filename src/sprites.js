@@ -2179,7 +2179,10 @@ function getGlowTexture() {
 /** 足元の光（トラック色）。AdditiveBlending・opacity は baseOpacity × エネルギー × 濃度で制御 */
 export function glowDisc(color) {
   const geo = new THREE.PlaneGeometry(2.6, 2.6);
-  const mat = new THREE.MeshBasicMaterial({ map: getGlowTexture(), color, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+  // 奥行きの判定だけ大きく手前に寄せる（2026-10-05 ユーザー指摘：舞台をドット化すると横線が走った）。ドット化した床は奥行きがドット 1 つの中で一定なので、
+  // 斜めの床ではドットの奥側の画素で光が床より奥と判定され、ドットの列ごとに描かれなかった。見た目の位置は動かない
+  const mat = new THREE.MeshBasicMaterial({ map: getGlowTexture(), color, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -10 });
   const m = new THREE.Mesh(geo, mat);
   m.rotation.x = -Math.PI / 2;
   m.userData.baseOpacity = mat.opacity;
