@@ -2194,7 +2194,7 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 } };   // uType：0 川／1 湖・池／2 水たまり、uRapid：川の瀬（2026-10-04）
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 } };   // uType：0 川／1 湖・池／2 水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
     Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
@@ -2211,7 +2211,7 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid;   // 種類（0 川／1 湖・池／2 水たまり）と川の瀬（2026-10-04）
+uniform float uType, uRapid, uFoam;   // 種類（0 川／1 湖・池／2 水たまり）、川の瀬、岸の泡の濃さ（2026-10-04）
 ${PIX_QUANT_GLSL}
 uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
 uniform float uSkyMid, uSkyFlip, glowAmt, spread;
@@ -2236,6 +2236,29 @@ float pxoWH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3
 float pxoWN( vec2 p ) {   // なめらかな値ノイズ（0〜1）
   vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
   return mix( mix( pxoWH( i ), pxoWH( i + vec2( 1.0, 0.0 ) ), f.x ), mix( pxoWH( i + vec2( 0.0, 1.0 ) ), pxoWH( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+}
+// 川の中心線に沿った座標（2026-10-04 ユーザー指定：流れが常に一方向で、曲がった所で岸から岸へ流れていた）。
+// 川の円は上流から順に並び、w に中心線に沿った長さを持つ（次の円の w が大きければ同じ流れの続き）。各区間（円 i → i+1）に点を下ろし、
+// 上流からの長さ s と、中心線からの横のずれ n、区間の向きを、近い区間ほど重く混ぜる。円の中心は岸をゴツゴツさせるため横へ少しずらして
+// あるので、重みは川の幅ぐらいの範囲（区間の円の半径）でなだらかにして、そのずれを均す。戻り値 (s, n)、fl に下流への向き
+vec2 pxoRiverUV( vec2 p, out vec2 fl ) {
+  float ws = 0.0; vec2 acc = vec2( 0.0 ), fa = vec2( 0.0 );
+  for ( int i = 0; i < ${WATER_MAX_C} - 1; i ++ ) {
+    if ( i >= uN - 1 ) break;
+    vec4 c0 = uC[ i ], c1 = uC[ i + 1 ];
+    if ( c1.w <= c0.w ) continue;   // 切れ端の境目（次の切れ端は 0 から）
+    vec2 ab = c1.xy - c0.xy;
+    float L2 = dot( ab, ab );
+    if ( L2 < 1e-6 ) continue;
+    float t = clamp( dot( p - c0.xy, ab ) / L2, 0.0, 1.0 );
+    vec2 d = p - ( c0.xy + ab * t ), dir = ab * inversesqrt( L2 );
+    float w = 1.0 / pow( length( d ) + c0.z, 3.0 );
+    acc += w * vec2( mix( c0.w, c1.w, t ), dir.x * d.y - dir.y * d.x );
+    fa += w * dir; ws += w;
+  }
+  if ( ws <= 0.0 || length( fa ) < 1e-6 ) { fl = normalize( uFlow ); return vec2( dot( p, fl ), dot( p, vec2( -fl.y, fl.x ) ) ); }
+  fl = normalize( fa );
+  return acc / ws;
 }
 // さざ波の高さ（3 重のなめらかなノイズ）。q：流れの座標、T：流れ方向にずらす量（一定の速さなら uWT × 速さ）
 float pxoRip( vec2 q, float T ) {
@@ -2313,14 +2336,14 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 風下の岸（岸の外向き gn が風下を向く）ほど強く、風上の岸ほど穏やかに打ち寄せる
     float dw = dot( gn, wD );
     sa *= clamp( 1.0 + 0.8 * Wc * max( dw, 0.0 ) - 0.5 * Wc * max( -dw, 0.0 ), 0.3, 2.0 );
-    vec2 p = pxoP.xz, p0 = p - gn * sa * 0.5;
-    vec2 drift = uType < 0.5 ? normalize( uFlow ) * uWT * uSpeed * 0.3 : vec2( 0.0 );   // 川：泡が下流へ流れる（2026-10-04）   // 押し出しの真ん中に戻した位置の周りのます目を調べる
+    vec2 p = pxoP.xz, p0 = p - gn * sa * 0.5;   // 押し出しの真ん中に戻した位置の周りのます目を調べる
+    // 泡は川でも流さない（2026-10-04 ユーザー指定）。流れの向きが場所ごとに変わると、ます目ごとずらす量の差が時間とともにたまり、粒がちぎれるため
     {   // 小さい粒：7cm ます目。元の中心が内側 25cm〜きわのすぐ外（1.5cm）の間（2026-10-03：内側の小さい泡を減らした。40cm → 25cm、内側ほど急に減る）
-      vec2 fb = floor( ( p0 - drift ) / 0.07 );
+      vec2 fb = floor( p0 / 0.07 );
       for ( int j = -2; j <= 2; j ++ ) for ( int i = -2; i <= 2; i ++ ) {
         vec2 fid = fb + vec2( float( i ), float( j ) );
         float f1 = pxoWH( fid ), f2 = pxoWH( fid + 41.7 ), f3 = pxoWH( fid + 83.3 ), f4 = pxoWH( fid + 29.9 ), f5 = pxoWH( fid + 7.7 );
-        vec2 cs = ( fid + vec2( f4, f3 ) ) * 0.07, cw = cs + drift;   // 元の中心（世界の座標）
+        vec2 cs = ( fid + vec2( f4, f3 ) ) * 0.07, cw = cs;   // 元の中心（世界の座標）
         float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.015 || sdc < -0.25 ) continue;
         if ( f1 > min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 ) ) continue;   // きわほど多い
@@ -2333,11 +2356,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       }
     }
     {   // 大きい粒：16cm ます目（直径 7〜14cm ほど）。元の中心が内側 30cm〜きわのすぐ外（3cm）の間（2026-10-03：約 1.6 倍に増やした）
-      vec2 bb = floor( ( p0 - drift + 0.37 ) / 0.16 );
+      vec2 bb = floor( ( p0 + 0.37 ) / 0.16 );
       for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
         vec2 bid = bb + vec2( float( i ), float( j ) );
         float b1 = pxoWH( bid + 3.3 ), b2 = pxoWH( bid + 61.1 ), b3 = pxoWH( bid + 97.7 ), b4 = pxoWH( bid + 11.3 ), b5 = pxoWH( bid + 19.9 );
-        vec2 cs = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37, cw = cs + drift;
+        vec2 cs = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37, cw = cs;
         float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.03 || sdc < -0.3 ) continue;
         if ( b1 > pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8 ) continue;
@@ -2349,7 +2372,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       }
     }
   }
-  float foam = max( dotF, dotB );
+  float foam = max( dotF, dotB ) * uFoam;   // 岸の泡の濃さ（0 で無し。瀬・白波は別。2026-10-04 ユーザー指定）
   if ( sd > 0.0 ) {   // 岸の外：はみ出した・打ち寄せた泡の粒と、引いた後の濡れた跡
     // 濡れた跡（2026-10-03 ユーザー指定）：泡の先がこの点まで届いていた時から経った時間で、暗さを薄くしていく（約 1.5 秒で乾く）。
     // 泡の先の位置は SURGE_A × surge（＋粒の大きさぶん）。surge = 0.5 + 0.5 sin θ なので、届いているのは sin θ > k の間。
@@ -2379,6 +2402,8 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     float alpha = mix( 0.5, 0.96, smoothstep( 0.0, 0.3, t ) );   // 浅い所は床が透ける
     // さざ波：流れに沿って動く 3 重のなめらかなノイズ（2026-10-03 さらにリアル寄りに：2 重 → 3 重）。止まった水はゆっくり漂うだけ
     vec2 f = normalize( uFlow ), pp = vec2( -f.y, f.x );
+    vec2 rUV = vec2( 0.0 );   // 川：中心線に沿った座標（上流からの長さ, 横のずれ）。f・pp もその地点の下流の向きにする（2026-10-04）
+    if ( uType < 0.5 ) { rUV = pxoRiverUV( pxoP.xz, f ); pp = vec2( -f.y, f.x ); }
     float sp = max( uSpeed, 0.12 );
     // 風下へさざ波を流す（湖・水たまりでも。川は流れと合わさる）。速さは「揺れの速さ」で進む風の時刻 wT と強さで
     vec2 pR = pxoP.xz - wD * wT * 0.55 * Wc;
@@ -2387,6 +2412,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     float ampW = ( 0.15 + 0.85 * Wc ) * ( 1.0 + 1.2 * gustP );   // 波立ちの強さ（無風でほぼ鏡）
     if ( uType > 1.5 ) ampW *= 0.4;   // 水たまりは浅いので波立ちが小さい
     vec2 q = vec2( dot( pR, f ), dot( pR, pp ) );
+    if ( uType < 0.5 ) q = rUV - vec2( dot( wD, f ), dot( wD, pp ) ) * wT * 0.55 * Wc;   // 川：中心線に沿った座標で（風のずれもその向きで）
     float e = 0.04;
     vec2 ex = vec2( e / 2.2, 0.0 ), ey = vec2( 0.0, e / 3.4 );   // 傾きを取るずらし（流れの座標で。どの重なりでも 1 段目の e と同じ量）
     // 川（2026-10-04 ユーザー指定）：流れの速さを岸からの距離で変える（中央が速く、岸際は 3 割）。場所ごとに速さが違うと模様が
@@ -2433,7 +2459,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     }
     // 瀬（2026-10-04 ユーザー指定）：川の中央寄り（流れの速い所）に、流れに沿って伸びた白い筋が立って下流へ流れる
     if ( uType < 0.5 && uRapid > 0.0 ) {
-      vec2 rq = vec2( ( dot( pxoP.xz, f ) - uWT * sp * 0.6 ) * 0.9, dot( pxoP.xz, pp ) * 4.5 );
+      vec2 rq = vec2( ( rUV.x - uWT * sp * 0.6 ) * 0.9, rUV.y * 4.5 );   // 中心線に沿って伸び、下流へ流れる
       float rs = smoothstep( 0.66, 0.9, pxoWN( rq ) ) * smoothstep( 0.45, 0.75, pxoWN( rq * vec2( 0.35, 0.5 ) + 9.1 ) );
       foam = max( foam, rs * smoothstep( 0.45, 0.9, prof ) * clamp( uRapid * ( 0.4 + 0.6 * min( sp, 2.0 ) ), 0.0, 1.0 ) * 0.9 );
     }
@@ -2471,7 +2497,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
 }`);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v35';
+  m.customProgramCacheKey = () => 'pxo-water-v37';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -2535,7 +2561,7 @@ function riverCircles(st) {   // 川（2026-10-03 から の形の決め方。�
       ang = dir + mean * 1.2 * Math.sin(t * Math.PI * 2 * fr + ph);   // 蛇行：向きを波打たせる
       const rr = (W / 2) * (1 + rough * (r() - 0.5) * 0.8);
       const j = rough * W * 0.35 * (r() - 0.5);   // 横へのゆがみ（縁がゴツゴツ）
-      out.push([x + Math.sin(ang) * j, z + Math.cos(ang) * j, rr]);
+      out.push([x + Math.sin(ang) * j, z + Math.cos(ang) * j, rr, (L / Math.max(1, n - 1)) * i]);   // 4 つ目：中心線に沿った上流からの長さ（川の流れの向き・座標に使う。切れ端ごとに 0 から。2026-10-04）
       x += Math.cos(ang) * (L / Math.max(1, n - 1)); z -= Math.sin(ang) * (L / Math.max(1, n - 1));   // 0° で客席から見て右（+x）、プラスで奥（−z）
     }
   }
@@ -2560,7 +2586,7 @@ function buildWater() {
     const pad = WATER_WET + 0.2 + Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) * 0.75 + 0.12;
     if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
     const mat = waterMaterial(), u = mat.userData.u;
-    cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
+    cs.forEach(([x, z, rr, sl], i) => u.uC.value[i].set(x, z, rr, sl ?? 0));   // w：川の中心線に沿った長さ（湖・水たまりは 0）
     u.uN.value = cs.length;
     u.uK.value = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
     u.uDeep.value = Math.max(0.1, rMax);
@@ -2573,6 +2599,7 @@ function buildWater() {
     const type = st.type === 'lake' ? 1 : st.type === 'puddle' ? 2 : 0;   // 種類（2026-10-04）
     u.uType.value = type;
     u.uRapid.value = type === 0 ? Math.max(0, Math.min(1, st.rapids ?? 0)) : 0;
+    u.uFoam.value = Math.max(0, Math.min(1, st.foam ?? 1));   // 岸の泡の濃さ
     u.uSpeed.value = type === 0 ? Math.max(0, st.flow ?? 1) : 0;   // 湖・水たまりは流れない
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
     geo.rotateX(-Math.PI / 2);

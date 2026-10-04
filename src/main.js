@@ -430,7 +430,7 @@ function grassRow(st, i) {
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
 const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
-  rapids: 0.2, lakeSize: 10, aspect: 1, puddles: 6, puddleSize: 0.8 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池）／puddle（水たまり）。rapids：川の瀬、lakeSize・aspect：湖の大きさ・縦横比、puddles・puddleSize：水たまりの数・大きさ。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+  rapids: 0.2, foam: 1, lakeSize: 10, aspect: 1, puddles: 6, puddleSize: 0.8 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池）／puddle（水たまり）。rapids：川の瀬、lakeSize・aspect：湖の大きさ・縦横比、puddles・puddleSize：水たまりの数・大きさ。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 // 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
 const waterDefaults = (o) => ({ ...WATER_BASE, ...(o && !o.type ? { type: (o.flow ?? 1) <= 0 ? 'lake' : 'river', rapids: 0 } : {}), ...o });
 let water = (() => {
@@ -504,6 +504,7 @@ function waterRow(st, i) {
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ');
   slider('流れ', 'flow', 0, 3, 0.05, 2, '流れの速さ（「向き」に沿って流れる）。中央ほど速く、岸際は遅い', R);
   slider('瀬', 'rapids', 0, 1, 0.05, 2, '瀬（流れの速い所に立つ白い筋）の多さ。0 で無し。流れが速いほど強く出る', R);
+  slider('岸の泡', 'foam', 0, 1, 0.05, 2, '岸に沿った泡の粒の濃さ。0 で泡なし、1 でいちばん濃い（今までの見た目）。瀬の筋・強風の白波は別（2026-10-04 ユーザー指定）', ['river', 'lake']);
   slider('深さ', 'depth', 0.1, 3, 0.05, 2, '水の深さ。深くするほど色が濃くなり、床が透けて見えるのは岸のきわだけになる。浅くすると水全体が透けて、水底のゆらめく光が広く出る');
   slider('きらめき', 'glitter', 0, 2, 0.05, 2, '水面のきらめき。さざ波の山のところどころで小さな光の点が瞬く（どの角度からでも見える演出）。0 で無し、上げるほど多く明るい。太陽・月の光に合わせて明るさが変わる');
   slider('風の影響', 'windK', 0, 1, 0.05, 2, '「風・植物」の風をどれだけ受けるか。1 で風どおりに波立ち（向き・速さ・突風の風紋・風下の岸の打ち寄せ・強風の白波）、0 で風を受けない静かな水面');
