@@ -368,7 +368,8 @@ let grass = (() => {
 })();
 // 草の種類ごとの茎・花の形（2026-10-04 ユーザー指定。スライダーは付けない固定値）。草2：花の茎が草に対して高かったので茎を 0.7 倍に低く、
 // 花を 1.5 倍に大きく、茎を 6 倍に太く（1.5 倍・3 倍ではまだ細かった）。草3：穂の大きさと茎の太さを草2 と同じ倍率に（茎の高さは元のまま）
-setGrassStem({ 草2: { stem: 0.7, head: 1.5, thick: 6 }, 草3: { head: 1.5, thick: 6 } });
+// 葉の幅は 3 種類とも 1.5 倍（2026-10-04 ユーザー指定）
+setGrassStem({ 草1: { leaf: 1.5 }, 草2: { stem: 0.7, head: 1.5, thick: 6, leaf: 1.5 }, 草3: { head: 1.5, thick: 6, leaf: 1.5 } });
 let grassSaveTimer = null;
 function saveGrass() {
   clearTimeout(grassSaveTimer);

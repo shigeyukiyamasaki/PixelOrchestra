@@ -2024,19 +2024,19 @@ const GRASS_POOL = new Map();   // `${群れ}:${url}:${部品}` → InstancedMes
 /** 草の形のもと（[{ url, name }]。name は割合の鍵：「草1」など） */
 export function setGrassPatterns(list) { grassPatterns = [...(list || [])]; applyGrassStem(); buildGrass(); }
 // 茎の高さ（2026-10-04 ユーザー指定）：草の種類（名前）ごとの倍率。全部の群れで共通。形を作り直さず、材質の値を変えるだけ
-const GRASS_STEM = new Map();   // GLB の URL → { stem：茎の高さ, head：花・穂の大きさ, thick：茎の太さ }（倍率）
+const GRASS_STEM = new Map();   // GLB の URL → { stem：茎の高さ, head：花・穂の大きさ, thick：茎の太さ, leaf：葉の幅 }（倍率）
 let grassStemByName = {};
 function applyGrassStem() {
   GRASS_STEM.clear();
   for (const p of grassPatterns) {
     const v = grassStemByName[p.name] || {};
-    const k = { stem: Math.max(0.05, v.stem ?? 1), head: Math.max(0.05, v.head ?? 1), thick: Math.max(0.05, v.thick ?? 1) };
+    const k = { stem: Math.max(0.05, v.stem ?? 1), head: Math.max(0.05, v.head ?? 1), thick: Math.max(0.05, v.thick ?? 1), leaf: Math.max(0.05, v.leaf ?? 1) };
     GRASS_STEM.set(p.url, k);
     const e = GLB.get(p.url);
-    if (e?.grass) { e.grass.stemU.uStemK.value = k.stem; e.grass.stemU.uHeadK.value = k.head; e.grass.stemU.uThickK.value = k.thick; }
+    if (e?.grass) { e.grass.stemU.uStemK.value = k.stem; e.grass.stemU.uHeadK.value = k.head; e.grass.stemU.uThickK.value = k.thick; e.grass.stemU.uLeafK.value = k.leaf; }
   }
 }
-/** 草の種類ごとの茎・花の形（{ 草2: { stem: 0.7, head: 1.5, thick: 1.5 }, … }。無い値は 1） */
+/** 草の種類ごとの茎・花・葉の形（{ 草2: { stem: 0.7, head: 1.5, thick: 1.5, leaf: 1.5 }, … }。無い値は 1） */
 export function setGrassStem(map) { grassStemByName = { ...(map || {}) }; applyGrassStem(); }
 /** 草の群れの一覧 */
 export function setGrass(list) { grassList = (list || []).map((o) => ({ ...o })); buildGrass(); }
@@ -2048,17 +2048,24 @@ const FLOOR_GLSL = `bool pxoOutsideFloor( vec3 w ) {
 // 草の大きさのばらつき（2026-10-04 ユーザー指定：株＝草のまとまり単位ではなく、1 本ずつに）。読み込み時に 1 本ずつ見分けた根元 aBladeRoot と
 // 乱数 aBladeRand（bladeAttrs）、株ごとのばらつきの値 aInstVar（カードの「大きさのばらつき」）から、根元を中心に大きさを変える。
 // 乱数は「1 本 × 株の位置」で決めるので、同じ草を何株置いても 1 本ずつ違う。分布は以前の株ごとと同じ（1 で 1/4〜4 倍、±2σ まで）
-const BLADE_GLSL = `attribute vec3 aBladeRoot;
-attribute float aBladeRand;
+// 頂点に持たせる値は上限（16 個。草は配置・色などで多く使う）に収まるよう、まとめて持つ（2026-10-04：葉の向きを足した時に溢れた）
+//   aBladeR：xyz 根元の位置、w 茎の先の高さ／aBladeI：x 乱数、y 種類（0 葉など・1 茎・2 花穂）、zw 茎の先の xz
+const BLADE_GLSL = `attribute vec4 aBladeR, aBladeI;
 attribute float aInstVar;
-attribute float aStemKind, aStemTop;
-attribute vec2 aTopXZ;
-uniform float uStemK, uHeadK, uThickK;
+attribute vec3 aLeafC, aLeafT;
+#define aBladeRoot aBladeR.xyz
+#define aStemTop aBladeR.w
+#define aBladeRand aBladeI.x
+#define aStemKind aBladeI.y
+#define aTopXZ aBladeI.zw
+uniform float uStemK, uHeadK, uThickK, uLeafK;
 float pxoBH( float n ) { return fract( sin( n ) * 43758.5453 ); }
 // 茎・花の形（2026-10-04 ユーザー指定：草の種類ごとの固定値）。aStemKind：0 葉など／1 茎／2 花・穂。aStemTop・aTopXZ：茎の先（花・穂は付いている茎の先）
 //   茎：太さ uThickK 倍（根元と先を結ぶ線を中心線とみなし、そこからの横の距離を広げる）、高さ uStemK 倍（根元を中心に縦だけ）
 //   花・穂：茎の先を中心に大きさ uHeadK 倍、茎が縮んだ分だけ下げる
+//   葉など：幅 uLeafK 倍（aLeafC＝その高さでの葉の中心、aLeafT＝その所の葉の向き。曲がり方と長さは変えず、向きと直角な成分だけ広げる）
 vec3 pxoStem( vec3 p ) {
+  if ( aStemKind < 0.5 ) { vec3 d = p - aLeafC, al = dot( d, aLeafT ) * aLeafT; return aLeafC + al + ( d - al ) * uLeafK; }
   float span = max( 1e-4, aStemTop - aBladeRoot.y );
   if ( aStemKind > 1.5 ) {
     vec3 tip = vec3( aTopXZ.x, aStemTop, aTopXZ.y );
@@ -2082,7 +2089,7 @@ vec3 pxoBlade( vec3 p ) {
 }`;
 function grassPatch(m, w, gu) {   // 茎・花の形と 1 本ずつの大きさを変え、風で揺らし（w があれば）、床の外を描かない。gu：種類ごとの茎・花の値
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, gu || { uStemK: { value: 1 }, uHeadK: { value: 1 }, uThickK: { value: 1 } });
+    Object.assign(shader.uniforms, gu || { uStemK: { value: 1 }, uHeadK: { value: 1 }, uThickK: { value: 1 }, uLeafK: { value: 1 } });
     if (w) Object.assign(shader.uniforms, WIND_U, { vdHeight: { value: w.H }, vdFlex: { value: w.flex }, vdFreq: { value: w.freq }, vdLag: { value: w.lag } });
     let vs = BLADE_GLSL + '\nvarying vec3 pxoGrassW;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = pxoBlade( transformed );');
     if (w) vs = WIND_GLSL + '\n' + vs.replace('transformed = pxoBlade( transformed );', 'transformed = pxoBlade( transformed );\nfloat vdSlope; transformed = verdantBend(transformed, verdantRoot(), verdantDirection(), vdSlope);');
@@ -2095,7 +2102,7 @@ function grassPatch(m, w, gu) {   // 茎・花の形と 1 本ずつの大きさ�
     shader.fragmentShader = 'varying vec3 pxoGrassW;\n' + FLOOR_GLSL + '\n' + shader.fragmentShader
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif ( pxoOutsideFloor( pxoGrassW ) ) discard;');
   };
-  m.customProgramCacheKey = () => `pxo-grass-v4:${w ? w.key : '-'}:${m.isMeshDepthMaterial ? 'd' : 'c'}`;
+  m.customProgramCacheKey = () => `pxo-grass-v7:${w ? w.key : '-'}:${m.isMeshDepthMaterial ? 'd' : 'c'}`;
   return m;
 }
 // 草の形を 1 本ずつに見分け、頂点ごとに根元（aBladeRoot：その 1 本の一番低い頂点）と乱数（aBladeRand）を持たせる（2026-10-04）。
@@ -2133,17 +2140,38 @@ function bladeAttrs(geo, stems = null, kind = 0) {   // kind：0 葉など／1 �
     }
     info.set(r, b);
   }
-  const root = new Float32Array(n * 3), rnd = new Float32Array(n), knd = new Float32Array(n), top = new Float32Array(n), txz = new Float32Array(n * 2);
+  const bR = new Float32Array(n * 4), bI = new Float32Array(n * 4);   // まとめて持つ（BLADE_GLSL の aBladeR・aBladeI）
   for (let i = 0; i < n; i++) {
-    const b = info.get(find(i));
-    root.set(b.root, 3 * i); rnd[i] = b.rand; knd[i] = kind; top[i] = b.stemTop ?? b.top[1];
-    txz.set(b.topXZ ?? [b.top[0], b.top[2]], 2 * i);
+    const b = info.get(find(i)), t = b.topXZ ?? [b.top[0], b.top[2]];
+    bR.set([b.root[0], b.root[1], b.root[2], b.stemTop ?? b.top[1]], 4 * i);
+    bI.set([b.rand, kind, t[0], t[1]], 4 * i);
   }
-  geo.setAttribute('aTopXZ', new THREE.BufferAttribute(txz, 2));   // 茎の先の位置（茎の太さ・花の大きさ。2026-10-04）
-  geo.setAttribute('aBladeRoot', new THREE.BufferAttribute(root, 3));
-  geo.setAttribute('aBladeRand', new THREE.BufferAttribute(rnd, 1));
-  geo.setAttribute('aStemKind', new THREE.BufferAttribute(knd, 1));   // 茎の高さ（2026-10-04）
-  geo.setAttribute('aStemTop', new THREE.BufferAttribute(top, 1));
+  geo.setAttribute('aBladeR', new THREE.BufferAttribute(bR, 4));
+  geo.setAttribute('aBladeI', new THREE.BufferAttribute(bI, 4));
+  // 葉の幅（2026-10-04）：1 本ずつ根元からの距離で 12 段に輪切りし、段ごとの頂点の平均を「その高さでの葉の中心」にする
+  const members = new Map();
+  for (let i = 0; i < n; i++) { const r = find(i); if (!members.has(r)) members.set(r, []); members.get(r).push(i); }
+  const cen = new Float32Array(n * 3), tng = new Float32Array(n * 3), SL = 12;
+  for (const [r, list] of members) {
+    const rt = info.get(r).root, dist = list.map((i) => Math.hypot(pos.getX(i) - rt[0], pos.getY(i) - rt[1], pos.getZ(i) - rt[2]));
+    const dMax = Math.max(1e-6, ...dist), sum = Array.from({ length: SL }, () => [0, 0, 0, 0]);
+    const bin = dist.map((d) => Math.min(SL - 1, Math.floor((d / dMax) * SL)));
+    list.forEach((i, k) => { const s = sum[bin[k]]; s[0] += pos.getX(i); s[1] += pos.getY(i); s[2] += pos.getZ(i); s[3]++; });
+    list.forEach((i, k) => { const s = sum[bin[k]]; cen[3 * i] = s[0] / s[3]; cen[3 * i + 1] = s[1] / s[3]; cen[3 * i + 2] = s[2] / s[3]; });
+    // 段ごとの葉の向き：前後の段の中心を結ぶ向き（端の段は片側だけ。頂点の無い段は飛ばす）
+    const C = sum.map((s) => (s[3] ? [s[0] / s[3], s[1] / s[3], s[2] / s[3]] : null));
+    const tan = C.map((c, b) => {
+      let lo = b - 1; while (lo >= 0 && !C[lo]) lo--;
+      let hi = b + 1; while (hi < SL && !C[hi]) hi++;
+      const A = lo >= 0 ? C[lo] : C[b], B = hi < SL ? C[hi] : C[b];
+      if (!A || !B) return [0, 1, 0];
+      const v = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], L = Math.hypot(...v);
+      return L > 1e-6 ? v.map((x) => x / L) : [0, 1, 0];
+    });
+    list.forEach((i, k) => tng.set(tan[bin[k]], 3 * i));
+  }
+  geo.setAttribute('aLeafC', new THREE.BufferAttribute(cen, 3));
+  geo.setAttribute('aLeafT', new THREE.BufferAttribute(tng, 3));
   return [...info.values()];
 }
 function grassShape(url) {   // GLB の部品ごとの形（ノードの位置・向きを焼き込む）と材質。風の揺れ方は GLB の印から
@@ -2160,7 +2188,7 @@ function grassShape(url) {   // GLB の部品ごとの形（ノードの位置�
     for (const o of meshes) if (isStem(o)) stems.push(...bladeAttrs(geos.get(o), null, 1));
     for (const o of meshes) if (!isStem(o)) bladeAttrs(geos.get(o), isHead(o) ? stems : null, isHead(o) && stems.length ? 2 : 0);
     const gs = GRASS_STEM.get(url) || {};   // 茎・花の形（種類ごと。setGrassStem で変わる）
-    const stemU = { uStemK: { value: gs.stem ?? 1 }, uHeadK: { value: gs.head ?? 1 }, uThickK: { value: gs.thick ?? 1 } };
+    const stemU = { uStemK: { value: gs.stem ?? 1 }, uHeadK: { value: gs.head ?? 1 }, uThickK: { value: gs.thick ?? 1 }, uLeafK: { value: gs.leaf ?? 1 } };
     meshes.forEach((o) => {
       const geometry = geos.get(o);
       const src = Array.isArray(o.material) ? o.material[0] : o.material;
