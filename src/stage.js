@@ -1429,10 +1429,24 @@ export function buildFloorSkirt() {
   back.position.set(0, -h / 2, SEAT_SHIFT_Z); add(back);
 }
 
+// ひな壇の段ごとの範囲 { rIn, rOut, thMin, thMax, h, clipX }（buildRisers が控える）と、ある位置の天面の高さ（ひな壇の外は 0）。
+// 草をひな壇の上に生やすのに使う（2026-10-04 ユーザー指定：ひな壇の高さを 0 m として生やす）。角度は buildRisers と同じく −z から測る
+let RISER_FOOT = [];
+function riserTopAt(x, z) {
+  const dz = z - SEAT_SHIFT_Z, r = Math.hypot(x, dz), th = Math.atan2(x, -dz);
+  let h = 0;
+  for (const f of RISER_FOOT) {
+    if (r < f.rIn || r > f.rOut || th < f.thMin || th > f.thMax || (f.clipX && Math.abs(x) > f.clipX)) continue;
+    h = Math.max(h, f.h);
+  }
+  return h;
+}
 export function buildRisers(seats) {
   if (!stageCtx) return;
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { groundTex, stageMat, risers } = stageCtx;
+  RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
+  queueMicrotask(() => { if (grassList.length) buildGrass(); });   // 組み終わったら、草をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -1460,6 +1474,7 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）。ただし木管を右へずらした時（seats.asym）は奏者の範囲そのまま
     if (fam && seats.asym?.has(fam)) { thMin -= RISER_MARGIN; thMax += RISER_MARGIN; }
     else { const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN; thMin = -half; thMax = half; }
+    RISER_FOOT.push({ rIn, rOut, thMin, thMax, h: row.h, clipX: row.clipX });
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
     // clipX 指定の段は x = ±clipX の垂直面で切る。扇の弧は clipX の外まで作っておき、はみ出しをクリップで落とす
     const cx = row.clipX;
@@ -2018,7 +2033,7 @@ function buildStones() {
 // 石と違って重なってよい（隙間を空ける判定はしない）。部品（葉・茎・花・穂）ごとにまとめて 1 回で描き、3D モデル欄の風で揺らす。
 // 床の外に出た部分は描かない（薄い草なので断面は要らない）。中心が床の外になる株は置かない。
 // 1 群れ = { x, z, y, spread, count, clump（群生のまとまり 0〜1）, size, sizeVar, shade, shadeVar, seed, show }
-const GRASS_MAX = 600;          // 1 群れ・1 部品あたりの上限（個数スライダーの最大と同じ）
+const GRASS_MAX = 1000;         // 1 群れ・1 部品あたりの上限（個数スライダーの最大と同じ。600 → 1000：2026-10-04 ユーザー指定）
 let grassPatterns = [], grassList = [];
 const GRASS_POOL = new Map();   // `${群れ}:${url}:${部品}` → InstancedMesh
 /** 草の形のもと（[{ url, name }]。name は割合の鍵：「草1」など） */
@@ -2211,7 +2226,7 @@ function buildGrass() {
     if (st.show === false) return;
     const r = rng32(st.seed ?? 1), rc = rng32(((st.seed ?? 1) ^ 0x9e3779b9) >>> 0);
     const count = Math.max(0, Math.min(GRASS_MAX, Math.round(st.count ?? 60)));
-    const spread = Math.max(0, st.spread ?? 4), clump = Math.max(0, Math.min(1, st.clump ?? 0.4));
+    const spread = Math.max(0, Math.min(30, st.spread ?? 4)), clump = Math.max(0, Math.min(1, st.clump ?? 0.4));   // ばらけ具合は欄と同じ 30 まで（2026-10-04）
     const size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.3));
     // 群生（2026-10-04 作り直し。ユーザー指摘：並べ直したようにしか見えない）：塊の中心は株の数から決めて（12 株に 1 つ）、群生の値では変えない。
     // 株はまず一様に散らばった位置を持ち、群生を上げるほど一番近い塊の中心へ引き寄せる（1 で中心からの距離が 12%）。
@@ -2244,7 +2259,8 @@ function buildGrass() {
       // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
       if (WATER_AVOID.length && waterSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
       if (st.avoidPlayers && playersSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 「奏者をよける」：株の中心が奏者のまわりの陸地に近いものは置かない（2026-10-04）   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
-      per[pi].push([_sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
+      per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + riserTopAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
+         _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
     }
     shapes.forEach((p, pi) => {
       if (!per[pi].length) return;
