@@ -2519,7 +2519,7 @@ function riverCircles(st) {   // 川（2026-10-03 から の形の決め方。�
   const r = rng32(st.seed ?? 1);
   const pieces = Math.max(1, Math.min(4, Math.round(st.pieces ?? 1)));   // 分かれは 4 まで（2026-10-04 ユーザー指定）
   const len = Math.max(0, st.len ?? 12), wid = Math.max(0.1, Math.min(5, st.width ?? 2)), mean = Math.max(0, Math.min(1, st.meander ?? 0.4));
-  const scatter = Math.max(0, st.scatter ?? 6), dir0 = deg(st.dir ?? 0), rough = 1 - Math.max(0, Math.min(1, st.smooth ?? 0.5));
+  const scatter = Math.max(0, Math.min(20, st.scatter ?? 6)), dir0 = deg(st.dir ?? 0), rough = 1 - Math.max(0, Math.min(1, st.smooth ?? 0.5));   // 川の散らばりは欄と同じ 20 まで（水たまりの欄は 40 まで。2026-10-04）
   const perPiece = Math.floor(WATER_MAX_C / pieces), out = [];
   for (let k = 0; k < pieces; k++) {
     // 分かれ：1 つ目は中心、ほかは散らばりの範囲に。分かれた分だけ小さく（水たまり）
@@ -2554,7 +2554,10 @@ function buildWater() {
     if (!cs.length) return;
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
     for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
-    const pad = WATER_WET + 0.2;
+    // 板の余白：泡のはみ出し（WATER_WET）＋円をなめらかにつないだ時のふくらみ＋岸のギザギザ（0.12）。
+    // ふくらみは 1 回のつなぎで最大 k/4 だが、何度も重ねると積み重なる（湖・川をいろいろな種で調べて最大 0.58k）ので 0.75k を見る。
+    // ふくらみの分が無かった時は、大きな湖で岸が板からはみ出し、直線で切れた（2026-10-04 ユーザー指摘）
+    const pad = WATER_WET + 0.2 + Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) * 0.75 + 0.12;
     if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
     const mat = waterMaterial(), u = mat.userData.u;
     cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
