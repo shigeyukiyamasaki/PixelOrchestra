@@ -961,7 +961,7 @@ function pixelPass(renderer, scene, camera) {
     pix.rt.depthTexture.type = THREE.UnsignedIntType;
   }
   WATER_PIX.uPixLv.value = pix.on ? (pix.levels ?? 32) : 32;
-  if (pix.on && stageCtx && pix.roots.includes(stageCtx.models)) WATER_PIX.uPixDot.value.set(size.x / lw, size.y / lh);   // 水も同じます目のドットに（範囲に 3D モデルがある時）
+  if (pix.on && stageCtx && pix.roots.includes(stageCtx.risers)) WATER_PIX.uPixDot.value.set(size.x / lw, size.y / lh);   // 水も同じます目のドットに（範囲に「舞台」がある時。2026-10-04 ユーザー指定で 3D モデルから舞台へ）
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
@@ -2373,6 +2373,14 @@ ${SEA_SHAPE_GLSL}// 白い波の泡の粒の群れ（2026-10-04 ユーザー指�
 // wdt＝群れの幅、dens＝粒の多さ、grow＝大きさ（0〜1）、seed＝群れごとの並びの違い。ます目は群れの中心と一緒に動かすので、粒が群れに乗って進む。
 // 粒は群れから少しずつ遅れて沖側へずれ（DRIFT unit/秒）離れると消える。1 粒ずつ違う周期で生まれて弾け（大きさ 0→1→0）、位置も小さく揺れる
 // （同じ大きさ・同じ並びのまま進んで見えたので動きを付けた）
+// 白波・瀬の粒 1 つの白さ（2026-10-04 ユーザー指定：丸の集合体で）。m＝この点、c＝粒の中心（どちらも筋と一緒に動く座標・世界の長さ）、
+// v＝筋の濃さ（0〜1、濃いほど大きい）、k2〜k4＝粒ごとの乱数。砕ける波の泡と同じく、生まれて弾け（大きさ 0→1→0）、小さく揺れる
+float pxoStreakDot( vec2 m, vec2 c, float v, float k2, float k3, float k4 ) {
+  float life = fract( uWT * mix( 0.6, 1.4, k4 ) + k3 );
+  c += vec2( sin( uWT * mix( 1.5, 3.5, k2 ) + k3 * 6.283 ), cos( uWT * mix( 1.3, 3.1, k4 ) + k2 * 6.283 ) ) * 0.012;
+  float r = 0.07 * mix( 0.3, 0.55, k2 ) * ( 0.6 + 0.4 * sqrt( v ) ) * sin( 3.14159 * life );
+  return 1.0 - smoothstep( r - 0.005, r, length( m - c ) );
+}
 float pxoBreakDots( vec2 uv, float cg, float wdt, float dens, float grow, float seed ) {
   const float CS = 0.12, DRIFT = 0.3;   // 12cm ます目
   float dc = 0.0;
@@ -2668,15 +2676,43 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       // 筋は岸と平行に伸び、うねりと同じ速さ（波長 7 unit ÷ 周期）で岸へ進む
       vec2 wd = wD, wp = pR; float wtm = wT * 0.8;
       if ( uType > 1.5 ) { wd = -normalize( uFlow ); wp = pxoP.xz; wtm = uWT * 7.0 / max( 1.0, uSea.z ) * 2.5; }
-      vec2 wq = vec2( dot( wp, wd ) * 2.5, dot( wp, vec2( -wd.y, wd.x ) ) * 0.7 );
-      float ws = smoothstep( 0.72, 0.9, pxoWN( wq - vec2( wtm, 0.0 ) ) ) * smoothstep( 0.55, 0.85, h0 );
-      foam = max( foam, ws * wcap * 0.85 );
+      // 丸の集合体で描く（2026-10-04 ユーザー指定）：筋と一緒に動く座標 m（世界の長さ）に 7cm ごとの粒を置き、粒の中心での筋の濃さ
+      // （筋のノイズ × さざ波の山）で粒の多さと大きさを決める。筋が動くと粒も一緒に流れる
+      vec2 wdp = vec2( -wd.y, wd.x );
+      vec2 m = vec2( dot( wp, wd ) - wtm / 2.5, dot( wp, wdp ) );
+      const float WC = 0.07;
+      vec2 mb = floor( m / WC );
+      float wsd = 0.0;
+      for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
+        vec2 id = mb + vec2( float( i ), float( j ) );
+        float k1 = pxoWH( id + 2.9 ), k2 = pxoWH( id + 17.3 ), k3 = pxoWH( id + 39.1 ), k4 = pxoWH( id + 63.7 ), k5 = pxoWH( id + 88.1 );
+        vec2 c = ( id + vec2( k1, k2 ) ) * WC;
+        float v = smoothstep( 0.72, 0.9, pxoWN( vec2( c.x * 2.5, c.y * 0.7 ) ) );
+        if ( v < 0.01 ) continue;
+        vec2 dW = wd * ( c.x - m.x ) + wdp * ( c.y - m.y );   // 粒の中心までのずれ（世界の xz）
+        v *= smoothstep( 0.5, 0.8, PXO_R2( q + vec2( dot( dW, f ), dot( dW, pp ) ) ) ) * wcap;   // さざ波の山に立つ
+        if ( k5 > v * 1.6 ) continue;
+        wsd = max( wsd, pxoStreakDot( m, c, v, k2, k3, k4 ) );
+      }
+      foam = max( foam, wsd * 0.9 );
     }
     // 瀬（2026-10-04 ユーザー指定）：川の中央寄り（流れの速い所）に、流れに沿って伸びた白い筋が立って下流へ流れる
-    if ( uType < 0.5 && uRapid > 0.0 ) {
-      vec2 rq = vec2( ( rUV.x - uWT * sp * 0.6 ) * 0.9, rUV.y * 4.5 );   // 中心線に沿って伸び、下流へ流れる
-      float rs = smoothstep( 0.66, 0.9, pxoWN( rq ) ) * smoothstep( 0.45, 0.75, pxoWN( rq * vec2( 0.35, 0.5 ) + 9.1 ) );
-      foam = max( foam, rs * smoothstep( 0.45, 0.9, prof ) * clamp( uRapid * ( 0.4 + 0.6 * min( sp, 2.0 ) ), 0.0, 1.0 ) * 0.9 );
+    // 丸の集合体で描く（2026-10-04 ユーザー指定）：中心線に沿って下流へ動く座標 m に 7cm ごとの粒を置き、粒の中心での筋の濃さで多さと大きさを決める
+    float rpk = uType < 0.5 ? smoothstep( 0.45, 0.9, prof ) * clamp( uRapid * ( 0.4 + 0.6 * min( sp, 2.0 ) ), 0.0, 1.0 ) : 0.0;
+    if ( rpk > 0.0 ) {
+      vec2 m = vec2( rUV.x - uWT * sp * 0.6, rUV.y );   // 中心線に沿って下流へ流れる座標
+      const float RC = 0.07;
+      vec2 mb = floor( m / RC );
+      float rsd = 0.0;
+      for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
+        vec2 id = mb + vec2( float( i ), float( j ) );
+        float k1 = pxoWH( id + 4.3 ), k2 = pxoWH( id + 21.7 ), k3 = pxoWH( id + 43.9 ), k4 = pxoWH( id + 69.1 ), k5 = pxoWH( id + 93.7 );
+        vec2 c = ( id + vec2( k1, k2 ) ) * RC, rq = vec2( c.x * 0.9, c.y * 4.5 );   // 粒の中心の筋の座標（中心線に沿って伸びる）
+        float v = smoothstep( 0.66, 0.9, pxoWN( rq ) ) * smoothstep( 0.45, 0.75, pxoWN( rq * vec2( 0.35, 0.5 ) + 9.1 ) ) * rpk;
+        if ( v < 0.01 || k5 > v * 1.6 ) continue;
+        rsd = max( rsd, pxoStreakDot( m, c, v, k2, k3, k4 ) );
+      }
+      foam = max( foam, rsd * 0.9 );
     }
     col = mix( col, vec3( 0.95, 0.98, 1.0 ), foam );   // 泡（上で計算）
     pxoWhite = foam;
@@ -2738,7 +2774,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
 }`);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v52';
+  m.customProgramCacheKey = () => 'pxo-water-v53';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
