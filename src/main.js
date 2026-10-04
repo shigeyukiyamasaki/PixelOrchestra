@@ -430,9 +430,17 @@ function grassRow(st, i) {
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
 const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
-  rapids: 0.2, foam: 1, lakeSize: 10, aspect: 1, puddles: 6, puddleSize: 0.8 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池）／puddle（水たまり）。rapids：川の瀬、lakeSize・aspect：湖の大きさ・縦横比、puddles・puddleSize：水たまりの数・大きさ。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+  rapids: 0.2, foam: 1, lakeSize: 10, aspect: 1, pools: 1 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池・水たまり。水たまり puddle は 2026-10-04 に統合）。rapids：川の瀬、foam：岸の泡、lakeSize・aspect・pools：湖の大きさ・縦横比・数。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 // 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
-const waterDefaults = (o) => ({ ...WATER_BASE, ...(o && !o.type ? { type: (o.flow ?? 1) <= 0 ? 'lake' : 'river', rapids: 0 } : {}), ...o });
+// 水たまり（puddle）は湖・池・水たまり（lake）にまとめた（2026-10-04 ユーザー指定）：数・大きさを引き継ぎ、泡なし（統合前の水たまりは泡を出さなかった）。
+// それまでの湖・池と川は数 1
+const waterDefaults = (o = {}) => {
+  const w = { ...WATER_BASE, ...(!o.type ? { type: (o.flow ?? 1) <= 0 ? 'lake' : 'river', rapids: 0 } : {}), ...o };
+  if (w.type === 'puddle') Object.assign(w, { type: 'lake', pools: o.pools ?? o.puddles ?? 6, lakeSize: o.puddleSize ?? 0.8, aspect: 1, foam: 0 });
+  else if (o.pools == null) w.pools = 1;
+  delete w.puddles; delete w.puddleSize;
+  return w;
+};
 let water = (() => {
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); if (Array.isArray(a)) return a.map(waterDefaults); } catch (e) { console.warn('水の設定の読込失敗:', e); }
   return [];
@@ -465,7 +473,7 @@ function waterRow(st, i) {
   avoidPl.checked = st.avoidPlayers !== false;
   avoidPl.onchange = () => { st.avoidPlayers = avoidPl.checked; changed(); };
   // 種類（2026-10-04 ユーザー指定）：種類ごとに出すスライダーと水面の動きが変わる。隠したスライダーの値は残す
-  const typeRow = put(box, '<label class="sld" title="水場の種類。川：流れて、中央ほど速く岸際は遅い。速い所に白い筋（瀬）が立ち、岸の泡は下流へ流れる。湖・池：流れず、波は風だけで立つ。無風なら鏡のように空が映る。水たまり：浅く、泡や打ち寄せが無い"><span>種類</span><select><option value="river">川</option><option value="lake">湖・池</option><option value="puddle">水たまり</option></select><b></b></label>');
+  const typeRow = put(box, '<label class="sld" title="水場の種類。川：流れて、中央ほど速く岸際は遅い。速い所に白い筋（瀬）が立ち、岸の泡は下流へ流れる。湖・池・水たまり：流れず、波は風だけで立つ。無風なら鏡のように空が映る。数を増やして小さくすると水たまり"><span>種類</span><select><option value="river">川</option><option value="lake">湖・池・水たまり</option></select><b></b></label>');
   const typeSel = typeRow.querySelector('select');
   typeSel.value = st.type || 'river';
   typeSel.onkeydown = (e) => e.stopPropagation();
@@ -483,7 +491,7 @@ function waterRow(st, i) {
     if (types) typed.push([lab, types]);
     return lab;
   };
-  const R = ['river'], L = ['lake'], P = ['puddle'];
+  const R = ['river'], L = ['lake'];
   slider('横位置', 'x', -30, 30, 0.1, 1, '水場の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '水場の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床の上に張る');
@@ -491,16 +499,14 @@ function waterRow(st, i) {
   slider('長さ', 'len', 0, 60, 0.1, 1, '川の長さ [unit]', R);
   slider('太さ', 'width', 0.2, 5, 0.05, 2, '川の幅 [unit]。細くすれば小川、太くすれば大河（5 まで。それより太いと川に見えない。2026-10-04 ユーザー指定）', R);
   slider('蛇行', 'meander', 0, 1, 0.05, 2, '川の曲がり具合。0 でまっすぐ', R);
-  // 湖・池
-  slider('大きさ', 'lakeSize', 0.5, 20, 0.05, 2, '湖・池の大きさ（長い方の半径）[unit]', L);
-  slider('縦横比', 'aspect', 1, 4, 0.05, 2, '湖・池の細長さ。1 で丸く、大きいほど「向き」の方へ細長い', L);
-  // 水たまり
-  slider('数', 'puddles', 1, 16, 1, 0, '水たまりの数', P);
-  slider('大きさ', 'puddleSize', 0.1, 6, 0.05, 2, '水たまり 1 つの大きさ（半径の目安）[unit]。1 つずつ大きさは少しばらつく（上限 6。2026-10-04 ユーザー指定）', P);
-  slider('向き', 'dir', -180, 180, 1, 0, '川：流れる向き [度]。湖・池：細長い向き。0 で客席から見て右へ、90 で奥へ', ['river', 'lake']);
+  // 湖・池・水たまり（2026-10-04 統合）
+  slider('数', 'pools', 1, 16, 1, 0, '湖・池の数。1 で 1 つ。増やして「大きさ」を小さくすると水たまりが散らばる（2 つ以上の時は 1 つずつ大きさ・向き・位置がばらつく）', L);
+  slider('大きさ', 'lakeSize', 0.1, 20, 0.05, 2, '湖・池 1 つの大きさ（長い方の半径）[unit]。小さくすると水たまり', L);
+  slider('縦横比', 'aspect', 1, 4, 0.05, 2, '細長さ。1 で丸く、大きいほど「向き」の方へ細長い', L);
+  slider('向き', 'dir', -180, 180, 1, 0, '川：流れる向き [度]。湖・池・水たまり：細長い向き。0 で客席から見て右へ、90 で奥へ', ['river', 'lake']);
   slider('分かれ', 'pieces', 1, 4, 1, 0, '水のかたまりの数。1 で 1 本の川。増やすと、川の小さな切れ端（水たまり）が散らばる（4 まで。2026-10-04 ユーザー指定）', R);
   slider('散らばり', 'scatter', 0, 20, 0.1, 1, '分かれた切れ端（水たまり）が散らばる広さ [unit]（「分かれ」が 2 以上の時）', R);
-  slider('散らばり', 'scatter', 0, 40, 0.1, 1, '水たまりが散らばる広さ [unit]。中心ほど多い。40 で床いっぱいに散らばる（2026-10-04 ユーザー指定で上限を 20 → 40）', P);
+  slider('散らばり', 'scatter', 0, 40, 0.1, 1, '湖・池・水たまりが散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い。40 で床いっぱいに散らばる', L);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ');
   slider('流れ', 'flow', 0, 3, 0.05, 2, '流れの速さ（「向き」に沿って流れる）。中央ほど速く、岸際は遅い', R);
   slider('瀬', 'rapids', 0, 1, 0.05, 2, '瀬（流れの速い所に立つ白い筋）の多さ。0 で無し。流れが速いほど強く出る', R);
