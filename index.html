@@ -284,13 +284,13 @@
           <div>
           <label class="ctl" title="露出（全体の明るさ）。明るい部分（輝度 0.8 以上）は白飛びしないよう自動で圧縮される（色・彩度は保つ）"><span>露出 <b data-value-for="exposure">1</b></span><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1"></label>
           <label class="ctl" title="画面全体のブルーム（カメラ側の処理）。閾値より明るい部分がにじむ。0 で無し（後処理なし）"><span>ブルーム <b data-value-for="bloomAll">0</b></span><input type="range" id="bloomAll" min="0" max="1" step="0.05" value="0"></label>
+          <!-- 水の白のブルーム（2026-10-04 ユーザー指定：金属と同じく感度を上げたい。左の列の 3 段目＝金属の左） -->
+          <label class="ctl" title="水の白い要素（泡・砕ける波・白波・瀬・照り返しの光の粒・きらめき）だけに使うブルームの閾値を、「ブルーム閾値」に対する割合で指定する。100 ＝ 他と同じ。下げるほど水の白がにじみやすい。水面の地の色はにじまない。「ブルーム」が 0 の時は効かない"><span>水のﾌﾞﾙｰﾑ閾値（%） <b data-value-for="waterThrPct">100</b></span><input type="range" id="waterThrPct" min="0" max="100" step="5" value="100"></label>
           </div>
           <div>
           <label class="ctl" title="太陽（と月）の眩しさ（レンズと目のグレア）。ブルーム（光のにじみ）・光のかぶり・光条の強さと広がり。0 で無し、2 で最大"><span>太陽の眩しさ <b data-value-for="sunBloom">1.5</b></span><input type="range" id="sunBloom" min="0" max="2" step="0.05" value="1.5"></label>
           <label class="ctl" title="ブルームの閾値。この明るさ（最大チャンネル）を超えた部分だけがにじむ。低いほど広い範囲がにじむ"><span>ブルーム閾値 <b data-value-for="bloomThr">0.7</b></span><input type="range" id="bloomThr" min="0" max="1" step="0.01" value="0.7"></label>
           <label class="ctl" title="金属（金管・シンバル類・フルート等）だけに使うブルームの閾値を、すぐ上の「ブルーム閾値」に対する割合で指定する。上限は 100 ＝ 他の素材と同じ閾値で、金属だけ光りにくくなることはない。下げるほど金属が乗りやすい。上の閾値を動かすと金属側も追随する。金属は専用レイヤーで別に抜くので、上の閾値を下げた時のように画面全体が光ることはない"><span>金属のﾌﾞﾙｰﾑ閾値（%） <b data-value-for="metalThrPct">65</b></span><input type="range" id="metalThrPct" min="0" max="100" step="5" value="65"></label>
-          <!-- 水の白のブルーム（2026-10-04 ユーザー指定：金属と同じく感度を上げたい） -->
-          <label class="ctl" title="水の白い要素（泡・砕ける波・白波・瀬・照り返しの光の粒・きらめき）だけに使うブルームの閾値を、「ブルーム閾値」に対する割合で指定する。100 ＝ 他と同じ。下げるほど水の白がにじみやすい。水面の地の色はにじまない。「ブルーム」が 0 の時は効かない"><span>水の白のﾌﾞﾙｰﾑ閾値（%） <b data-value-for="waterThrPct">100</b></span><input type="range" id="waterThrPct" min="0" max="100" step="5" value="100"></label>
           </div>
         </div>
       </div>
