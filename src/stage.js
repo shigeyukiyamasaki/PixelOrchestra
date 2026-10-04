@@ -934,7 +934,7 @@ float pxoQuantA( float a, float lv ) {
 }`;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
-const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1 };
+const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, ss: 1, hi: null, down: null };   // ss：ちらつき抑えの細かさ（1＝そのまま）
 /** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
  *  輪郭線はドット化の画像から引く（ドット化とセットで使う。単独ではかけない。2026-09-30 ユーザー指定）。
  *  roots：ドットにする物（奏者・舞台・スクリーン等をチェックで選ぶ。2026-10-01 ユーザー指定）。選ばなかった物は本編で等倍に描く */
@@ -948,6 +948,42 @@ export function pixelGroups() {
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
+// 細かく描いた絵（pix.hi）を、ss×ss の画素ごとに 1 つのドット（pix.rt）へまとめる（2026-10-04）。
+// 半分以上に物がかかっていれば、かかっている画素の平均の色（透明度の掛かった値のまま）と平均の透明度、一番手前の奥行きをドットにする。
+// 半分未満なら描かない（後ろの物が見える）。半透明の物（スカイドーム等）は透明度の平均を保つ
+function pixDownsample(renderer, ss) {
+  if (!pix.down) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { tex: { value: null }, dep: { value: null }, texel: { value: new THREE.Vector2() }, ss: { value: 2 } },
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D dep; uniform vec2 texel; uniform float ss;
+        void main() {
+          vec2 o = floor( gl_FragCoord.xy ) * ss;
+          vec4 sum = vec4( 0.0 ); float cnt = 0.0, dmin = 1.0;
+          for ( int j = 0; j < 4; j ++ ) for ( int i = 0; i < 4; i ++ ) {
+            if ( float( i ) >= ss || float( j ) >= ss ) continue;
+            vec2 uv = ( o + vec2( float( i ), float( j ) ) + 0.5 ) * texel;
+            vec4 c = texture2D( tex, uv );
+            if ( c.a <= 0.01 ) continue;
+            sum += c; cnt += 1.0; dmin = min( dmin, texture2D( dep, uv ).r );
+          }
+          if ( cnt < ss * ss * 0.5 ) discard;
+          gl_FragColor = sum / cnt;
+          gl_FragDepthEXT = dmin;
+        }`,
+      extensions: { fragDepth: true },
+      depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth, blending: THREE.NoBlending, toneMapped: false,
+    });
+    const scn = new THREE.Scene(), mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    mesh.frustumCulled = false; scn.add(mesh);
+    pix.down = { scene: scn, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat };
+  }
+  const u = pix.down.mat.uniforms;
+  u.tex.value = pix.hi.texture; u.dep.value = pix.hi.depthTexture; u.texel.value.set(1 / pix.hi.width, 1 / pix.hi.height); u.ss.value = ss;
+  renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(pix.down.scene, pix.down.cam);
+  u.dep.value = null;   // 次のフレームで pix.hi に描く時に同時読みにならないよう外す
+}
 function pixelPass(renderer, scene, camera) {
   WATER_PIX.uPixDot.value.set(0, 0);
   if (!(pix.on || pix.outline) || !pix.roots.length) return false;
@@ -1045,7 +1081,21 @@ function pixelPass(renderer, scene, camera) {
   // 奏者の部品を PLAYER_LAYER に。pixSkip（足元の光）は入れず本編に残す
   for (const r of pix.roots) r.traverse((o) => { if (o.userData.pixSkip) o.traverse((c) => { c.userData.pixSkipChild = true; c.layers.disable(PLAYER_LAYER); }); else if (!o.userData.pixSkipChild) o.layers.enable(PLAYER_LAYER); });   // 毎フレーム（持ち物の付け替え等で増えた部品にも）
   renderer.getClearColor(_pixClear); const ca = renderer.getClearAlpha();
-  renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
+  // ちらつき抑え（2026-10-04 ユーザー指定：物やカメラが動いた時のちらつきを弱めたい）：ドットの解像度の ss 倍の細かさで描き、
+  // ss×ss の画素を 1 つのドットにまとめる（pixDownsample）。1 点だけで決めると、細い物や縁が 1 点を出入りするたびに色がパッと切り替わってちらついた
+  const ss = pix.on ? Math.max(1, Math.min(4, Math.round(pix.ss || 1))) : 1;
+  let target = pix.rt;
+  if (ss > 1) {
+    const hw = lw * ss, hh = lh * ss;
+    if (!pix.hi || pix.hi.width !== hw || pix.hi.height !== hh) {
+      pix.hi?.dispose();
+      pix.hi = new THREE.WebGLRenderTarget(hw, hh, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
+      pix.hi.depthTexture = new THREE.DepthTexture(hw, hh);
+      pix.hi.depthTexture.type = THREE.UnsignedIntType;
+    }
+    target = pix.hi;
+  }
+  renderer.setRenderTarget(target); renderer.setClearColor(0x000000, 0); renderer.clear();
   // 影はここでは作らない（前のフレームの本編で作った物を使う）。three.js は影を落とす物もこの時の層で選ぶので、
   // ここで作ると範囲から外した物（奏者をオフにした時の奏者など）の影が消えた（2026-10-01 ユーザー指摘）
   camera.layers.set(PLAYER_LAYER);
@@ -1053,6 +1103,7 @@ function pixelPass(renderer, scene, camera) {
   renderer.render(scene, camera);
   renderer.shadowMap.autoUpdate = autoShadow0;
   camera.layers.set(0);
+  if (ss > 1) pixDownsample(renderer, ss);
   renderer.setClearColor(_pixClear, ca);
   // 本編では奏者の部品を層 0 から外して描かない（root ごと隠すと足元の光まで消えた。2026-10-01）
   // 本編ではドットにした物の色を書かない（層から外すと影も落とさなくなるので、色だけ止める。奥行きもドットの画像のものを使うので書かない）

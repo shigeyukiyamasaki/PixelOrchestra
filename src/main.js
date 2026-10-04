@@ -1489,7 +1489,7 @@ function settings() {
     metalFres: num('metalFres', 2),   // 金属の照り返し（2026-10-01 ユーザー指定）
     bowShortSec: num('bowShortSec', 0.3), bowShortEase: num('bowShortEase', 4),
     // ドットの細かさ 0〜100 → 画面の短い方のドット数 120〜720（2026-09-30 ユーザー指定：直感的な 0〜100 に。既定 35 ＝ 330 ドット）
-    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), pixelLevels: num('pixelLevels', 32), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
+    pixelOn: $('pixelOn').checked, pixelRows: 120 + 6 * num('pixelFine', 35), pixelLevels: num('pixelLevels', 32), pixelSmooth: num('pixelSmooth', 2), outlineOn: $('outlineOn').checked, pixelScope: Object.fromEntries(['players', 'stage', 'models', 'screens', 'domes', 'weather', 'labels', 'roll'].map((k) => [k, $('pix_' + k).checked])), outlineAmt: num('outlineAmt', 1), outlineDark: num('outlineDark', 0.35), outlineRing: $('outlineRing').checked, outlineRingAmt: num('outlineRingAmt', 0.5), outlineOuterOff: $('outlineOuterOff').checked,   // 輪郭の明るさ（物の色をどこまで暗くするか。2026-10-01 ユーザー指定）   // 奏者のドット化（2026-09-30 ユーザー指定）   // 弦のショート系の弓（2026-09-28 ユーザー指定）
     metalThrPct: num('metalThrPct', 65), waterThrPct: num('waterThrPct', 100),   // 水の白だけのブルーム閾値（%。2026-10-04）
       // 金属だけのブルーム閾値（レンズ欄の閾値に対する %）。ツヤ・ハイライトの鋭さは固定値にしてスライダーは廃止（2026-09-23 ユーザー指定）
     // 画面の揺れ（2026-09-18 ユーザー指定）
@@ -2326,7 +2326,7 @@ function animate() {
       if (sc.labels) roots.push(labels);
       if (sc.roll && roll) roots.push(roll.group);
     }
-    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, levels: s2.pixelLevels, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
+    setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, levels: s2.pixelLevels, ss: 1 + s2.pixelSmooth, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
       outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く
       metalPix: !!sc.players, roots }); }
   const playerRoots = [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])];

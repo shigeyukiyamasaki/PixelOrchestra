@@ -314,6 +314,8 @@
           <div>
       <!-- 奏者のドット化（トゥーンのドット絵版の 1 段目。2026-09-30 ユーザー指定：奏者だけ） -->
       <label class="ctl" title="ドット化の細かさ。0 で一番粗く、100 で一番細かい（画面の短い方を 120〜720 ドットに分ける）。PC でもスマホでも同じ細かさになる"><span>ドットの細かさ <b data-value-for="pixelFine">35</b></span><input type="range" id="pixelFine" min="0" max="100" step="1" value="35"></label>
+      <!-- ちらつき抑え（2026-10-04 ユーザー指定） -->
+      <label class="ctl" title="物やカメラが動いた時のちらつきを抑える。ドットを、その範囲を細かく描いた色の平均で決める（0 で今まで通り＝ドットの真ん中の 1 点で決める）。上げるほどちらつきにくく、縁は少し柔らかくなり、重くなる（1〜3 でドットの 2〜4 倍の細かさで描く）"><span>ちらつき抑え <b data-value-for="pixelSmooth">2</b></span><input type="range" id="pixelSmooth" min="0" max="3" step="1" value="2"></label>
       <!-- 階調の細かさ（2026-10-04 ユーザー指定） -->
       <label class="ctl" title="色の階調の細かさ。色の成分ごとに何段に分けるか。小さいほど色数が減り、昔のゲーム機のような段のついた色になる。一番右の 256 で丸めない（今までどおり）。ドットにした物（範囲でチェックした物）だけに掛かる"><span>階調の細かさ <b data-value-for="pixelLevels">256</b></span><input type="range" id="pixelLevels" min="2" max="32" step="1" value="32"></label>
           </div>
