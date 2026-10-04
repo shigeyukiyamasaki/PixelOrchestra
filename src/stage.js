@@ -2194,7 +2194,7 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 } };   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 } };   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
     Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
@@ -2211,7 +2211,7 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid, uFoam;   // 種類（0 川／1 湖・池・水たまり）、川の瀬、岸の泡の濃さ（2026-10-04）
+uniform float uType, uRapid, uFoam, uReach;   // 種類（0 川／1 湖・池・水たまり）、川の瀬、岸の泡の濃さ（2026-10-04）
 ${PIX_QUANT_GLSL}
 uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
 uniform float uSkyMid, uSkyFlip, glowAmt, spread;
@@ -2395,7 +2395,8 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 2026-10-03 リアル寄りに作り直し（ユーザー指摘：野草や石に比べて大味）。色の段・大きなドットの波をやめ、
     // なめらかな深さの色、細かいさざ波（2 重）、照り返しのきらめき、斜めから見た空の映り込み、細い泡の線にした
     // 岸からの深さ（0：岸 … 1：一番深い所の目安）に「深さ」スライダー（uDepth）を掛ける。1 を超えた分はさらに濃い紺へ（2026-10-03 ユーザー指定）
-    float t = clamp( -sd / max( 0.05, uDeep ) * uDepth, 0.0, 3.0 );
+    // 深くなる距離（2026-10-04 ユーザー指定）：岸から「一番大きい円の半径 × uReach」の所で深さ uDepth に届き、その奥は同じ深さ。uReach 1 で以前と同じ（中心で届く）
+    float t = clamp( -sd / ( max( 0.05, uDeep ) * uReach ), 0.0, 1.0 ) * uDepth;
     vec3 col = mix( ${c3('#6fc2d6')}, ${c3('#2c78ad')}, smoothstep( 0.0, 0.45, t ) );
     col = mix( col, ${c3('#1b4a82')}, smoothstep( 0.45, 1.0, t ) );
     col = mix( col, ${c3('#081a33')}, smoothstep( 1.0, 2.6, t ) * 0.85 );
@@ -2496,7 +2497,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
 }`);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v38';
+  m.customProgramCacheKey = () => 'pxo-water-v39';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -2586,6 +2587,7 @@ function buildWater() {
     u.uK.value = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
     u.uDeep.value = Math.max(0.1, rMax);
     u.uDepth.value = Math.max(0.05, st.depth ?? 1);   // 深さ（2026-10-03）
+    u.uReach.value = Math.max(0.05, st.reach ?? 1);   // 深くなる距離（2026-10-04）
     u.uJag.value = 1;   // 岸のギザギザ：最大で固定（2026-10-03 ユーザー指定。スライダーは外した）
     u.uGlit.value = Math.max(0, st.glitter ?? 1);   // きらめき（2026-10-03）
     u.uWindK.value = Math.max(0, Math.min(1, st.windK ?? 1));   // 風の影響（2026-10-03）
