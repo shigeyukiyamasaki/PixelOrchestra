@@ -551,13 +551,14 @@ export function createStage(container) {
   const stones = new THREE.Group(); stones.name = 'stones'; scene.add(stones);   // 石のジェネレーター（2026-10-03 ユーザー指定）
   const grass = new THREE.Group(); grass.name = 'grass'; scene.add(grass);       // 草のジェネレーター（2026-10-03 ユーザー指定）
   const water = new THREE.Group(); water.name = 'water'; scene.add(water);       // 水のジェネレーター（2026-10-03 ユーザー指定）
+  const dirt = new THREE.Group(); dirt.name = 'dirt'; scene.add(dirt);           // 土のジェネレーター（2026-10-05 ユーザー指定）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -941,35 +942,63 @@ const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: fa
 /** ドット化で選べる舞台側のまとまり（main.js が範囲のチェックに合わせて roots に入れる） */
 export function pixelGroups() {
   if (!stageCtx) return {};
-  // 水はドット化の対象に入れない（2026-10-04 ユーザー指摘：ドット絵と 3D モデルをオンにすると水が消えた）。水は半透明で奥行きを書かないので、
-  // 粗い画像に描くと「一番奥」扱いになり、あとから等倍で描く床に上から塗られて消えた。代わりに水のシェーダーが同じます目でドットにする（WATER_PIX）
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  // 経緯：2026-10-04 に水を「3Dモデル」に入れた時は、床が入っていない絵に水だけ描かれ、半透明で奥行きを書かない水が「一番奥」扱いになり、
+  // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
+  // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
+  // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
 const _pixClear = new THREE.Color();
 // 細かく描いた絵（pix.hi）を、ss×ss の画素ごとに 1 つのドット（pix.rt）へまとめる（2026-10-04）。
-// 半分以上に物がかかっていれば、かかっている画素の平均の色（透明度の掛かった値のまま）と平均の透明度、一番手前の奥行きをドットにする。
+// 半分以上に物がかかっていれば、手前の面と奥の面のうち数の多い方の、平均の色（透明度の掛かった値のまま）・透明度・奥行きをドットにする。
 // 半分未満なら描かない（後ろの物が見える）。半透明の物（スカイドーム等）は透明度の平均を保つ
-function pixDownsample(renderer, ss) {
+function pixDownsample(renderer, ss, camera) {
   if (!pix.down) {
     const mat = new THREE.ShaderMaterial({
-      uniforms: { tex: { value: null }, dep: { value: null }, texel: { value: new THREE.Vector2() }, ss: { value: 2 } },
+      uniforms: { tex: { value: null }, dep: { value: null }, texel: { value: new THREE.Vector2() }, ss: { value: 2 }, near: { value: 0.1 }, far: { value: 200 } },
       vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `uniform sampler2D tex; uniform sampler2D dep; uniform vec2 texel; uniform float ss;
+      // 手前の面（一番手前の画素から近い奥行きのもの）と奥の面に分け、数の多い方だけで色と奥行きを決める（2026-10-05 ユーザー指摘：
+      // 石の縁のドットが下の床の草の色と混ざり、本編で描く土が上に乗らず、石の縁に緑が付いた）。同じ面の中の平均は残すので、ちらつき抑えの効果は同じ
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D dep; uniform vec2 texel; uniform float ss; uniform float near; uniform float far;
+        float lin( float d ) { float z = d * 2.0 - 1.0; return 2.0 * near * far / ( far + near - z * ( far - near ) ); }
+        // ドットの真ん中での奥行き：選んだ面の画素の奥行きに平らな面（d = a + b·u + c·v。u, v はドットの真ん中からのずれ）を当てはめ、a を返す。
+        // 奥行きの値は平らな面なら画面上で一次式なので、画素がドットの片側にしか無くても真ん中の値が正しく出る（2026-10-05 ユーザー指摘：
+        // 平均にしていた時は、石の縁で床の画素が片側に寄って奥行きが手前にずれ、本編の土が負けて下の草の色が細い線で出た）。当てはめられなければ平均
+        float fitD( float n, float su, float sv, float suu, float svv, float suv, float sd, float sud, float svd ) {
+          float A = n * ( suu * svv - suv * suv ) - su * ( su * svv - suv * sv ) + sv * ( su * suv - suu * sv );
+          if ( abs( A ) < 1e-4 ) return sd / n;
+          float Aa = sd * ( suu * svv - suv * suv ) - su * ( sud * svv - suv * svd ) + sv * ( sud * suv - suu * svd );
+          return Aa / A;
+        }
         void main() {
           vec2 o = floor( gl_FragCoord.xy ) * ss;
-          vec4 sum = vec4( 0.0 ); float cnt = 0.0, dmin = 1.0;
+          float lmin = 1e9;
+          for ( int j = 0; j < 4; j ++ ) for ( int i = 0; i < 4; i ++ ) {   // 一番手前の奥行き
+            if ( float( i ) >= ss || float( j ) >= ss ) continue;
+            vec2 uv = ( o + vec2( float( i ), float( j ) ) + 0.5 ) * texel;
+            if ( texture2D( tex, uv ).a <= 0.01 ) continue;
+            lmin = min( lmin, lin( texture2D( dep, uv ).r ) );
+          }
+          float tol = 0.15 + lmin * 0.03;   // 同じ面とみなす奥行きの差 [unit]
+          vec4 sN = vec4( 0.0 ), sF = vec4( 0.0 ); float cN = 0.0, cF = 0.0, dN = 0.0, dF = 0.0;
+          vec3 pN1 = vec3( 0.0 ), pN2 = vec3( 0.0 ), pN3 = vec3( 0.0 ), pF1 = vec3( 0.0 ), pF2 = vec3( 0.0 ), pF3 = vec3( 0.0 );   // 当てはめ用の和：(Σu, Σv, Σuv)・(Σuu, Σvv, ‥)・(Σud, Σvd, ‥)
           for ( int j = 0; j < 4; j ++ ) for ( int i = 0; i < 4; i ++ ) {
             if ( float( i ) >= ss || float( j ) >= ss ) continue;
             vec2 uv = ( o + vec2( float( i ), float( j ) ) + 0.5 ) * texel;
             vec4 c = texture2D( tex, uv );
             if ( c.a <= 0.01 ) continue;
-            sum += c; cnt += 1.0; dmin = min( dmin, texture2D( dep, uv ).r );
+            float d = texture2D( dep, uv ).r;
+            float pu = float( i ) + 0.5 - ss * 0.5, pv = float( j ) + 0.5 - ss * 0.5;   // ドットの真ん中からのずれ
+            if ( lin( d ) < lmin + tol ) { sN += c; cN += 1.0; dN += d; pN1 += vec3( pu, pv, pu * pv ); pN2 += vec3( pu * pu, pv * pv, 0.0 ); pN3 += vec3( pu * d, pv * d, 0.0 ); }
+            else { sF += c; cF += 1.0; dF += d; pF1 += vec3( pu, pv, pu * pv ); pF2 += vec3( pu * pu, pv * pv, 0.0 ); pF3 += vec3( pu * d, pv * d, 0.0 ); }
           }
-          if ( cnt < ss * ss * 0.5 ) discard;
-          gl_FragColor = sum / cnt;
-          gl_FragDepthEXT = dmin;
+          if ( cN + cF < ss * ss * 0.5 ) discard;   // 物がかかっているのが半分未満なら描かない
+          bool useN = cN >= cF;
+          gl_FragColor = useN ? sN / cN : sF / cF;
+          gl_FragDepthEXT = useN ? fitD( cN, pN1.x, pN1.y, pN2.x, pN2.y, pN1.z, dN, pN3.x, pN3.y )
+                                 : fitD( cF, pF1.x, pF1.y, pF2.x, pF2.y, pF1.z, dF, pF3.x, pF3.y );   // その面のドットの真ん中での奥行き
         }`,
       extensions: { fragDepth: true },
       depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth, blending: THREE.NoBlending, toneMapped: false,
@@ -980,6 +1009,7 @@ function pixDownsample(renderer, ss) {
   }
   const u = pix.down.mat.uniforms;
   u.tex.value = pix.hi.texture; u.dep.value = pix.hi.depthTexture; u.texel.value.set(1 / pix.hi.width, 1 / pix.hi.height); u.ss.value = ss;
+  u.near.value = camera.near; u.far.value = camera.far;
   renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
   renderer.render(pix.down.scene, pix.down.cam);
   u.dep.value = null;   // 次のフレームで pix.hi に描く時に同時読みにならないよう外す
@@ -997,7 +1027,7 @@ function pixelPass(renderer, scene, camera) {
     pix.rt.depthTexture.type = THREE.UnsignedIntType;
   }
   WATER_PIX.uPixLv.value = pix.on ? (pix.levels ?? 32) : 32;
-  if (pix.on && stageCtx && pix.roots.includes(stageCtx.risers)) WATER_PIX.uPixDot.value.set(size.x / lw, size.y / lh);   // 水も同じます目のドットに（範囲に「舞台」がある時。2026-10-04 ユーザー指定で 3D モデルから舞台へ）
+  // 水・土が自分でドットのます目に揃える処理（uPixDot）は使わない（2026-10-05：舞台と一緒にドット化用の絵に描くようにしたため）
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
@@ -1103,7 +1133,7 @@ function pixelPass(renderer, scene, camera) {
   renderer.render(scene, camera);
   renderer.shadowMap.autoUpdate = autoShadow0;
   camera.layers.set(0);
-  if (ss > 1) pixDownsample(renderer, ss);
+  if (ss > 1) pixDownsample(renderer, ss, camera);
   renderer.setClearColor(_pixClear, ca);
   // 本編では奏者の部品を層 0 から外して描かない（root ごと隠すと足元の光まで消えた。2026-10-01）
   // 本編ではドットにした物の色を書かない（層から外すと影も落とさなくなるので、色だけ止める。奥行きもドットの画像のものを使うので書かない）
@@ -2052,7 +2082,7 @@ function buildStones() {
         const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
-        if (WATER_AVOID.length && waterSdfAt(x, z) < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
+        if ((WATER_AVOID.length || DIRT_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
         if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
@@ -2308,7 +2338,7 @@ function buildGrass() {
       const shade = Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
       if (pi < 0 || !insideFloor(x, z)) continue;
       // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
-      if (WATER_AVOID.length && waterSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
+      if ((WATER_AVOID.length || DIRT_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
       if (st.avoidPlayers && playersSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 「奏者をよける」：株の中心が奏者のまわりの陸地に近いものは置かない（2026-10-04）   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
       per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + riserTopAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
          _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
@@ -2401,9 +2431,116 @@ export function setWaterSky(top, bottom, mid, flip) {
 }
 let waterList = [];
 /** 水場の一覧 */
+// ---- 土のジェネレーター（2026-10-05 ユーザー指定：草の生えていない、土の地肌が見えている所。砂ではない）----
+// 形は湖・池・水たまりと同じ（lakeCircles：数・大きさ・縦横比・向き・散らばり・縁のなめらかさ）。床のすぐ上に半透明の面で描き（水より下）、
+// 床が板目でも描く。色は土（こげ茶〜茶）に大小のむら（乾いた所・湿った所）と細かいざらつき、小石の粒。縁はむらで崩しながら床に溶かす。
+// ドット化は水と同じく範囲の「舞台」で、自分でます目・階調に揃える
+let dirtList = [];
+export function setDirt(list) { dirtList = (list || []).map((o) => ({ ...o })); buildDirt(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
+const DIRT_LIFT = 0.008;   // 床からの浮かせ [unit]（水 0.02 より下）
+const DIRT_MAX_C = 160;    // 土の円の数の上限（水の 64 より多い：奏者をよけないので配列に余裕がある。2026-10-05：数が多いと細長い形が分裂した）
+function dirtMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  m.userData.u = { uC: { value: Array.from({ length: DIRT_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
+    uHL: { value: 0 }, uShade: { value: 1 }, uEdge: { value: 0.5 }, uSeed: { value: 0 }, uRot: { value: new THREE.Vector4(1, 0, 0, 0) } };   // uRot：(cos 向き, sin 向き, 中心 x, 中心 z)
+  m.extensions = { derivatives: true };
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
+    shader.vertexShader = 'varying vec3 pxoWW;\n' + shader.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = `varying vec3 pxoWW;
+uniform vec4 uC[ ${DIRT_MAX_C} ];
+uniform int uN;
+uniform float uK, uHL, uShade, uEdge, uSeed, uPixLv;
+uniform vec4 uRot;
+uniform vec2 uPixDot;
+${WATER_NOISE_GLSL}
+${circlesSdfGlsl(DIRT_MAX_C)}
+${PIX_QUANT_GLSL}
+${FLOOR_GLSL}
+float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ（0〜1。格子の向きが見えない）
+  float v = 0.0, a = 0.5;
+  for ( int i = 0; i < 3; i ++ ) { v += a * pxoWN( p ); p = mat2( 0.8, -0.6, 0.6, 0.8 ) * p * 2.03 + 1.7; a *= 0.5; }
+  return v / 0.875;
+}
+` + shader.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 P = pxoWW;
+  if ( uPixDot.x > 0.0 ) {   // ドット絵：水と同じます目の真ん中の値で
+    vec2 dc = ( floor( gl_FragCoord.xy / uPixDot ) + 0.5 ) * uPixDot - gl_FragCoord.xy;
+    P += dFdx( pxoWW ) * dc.x + dFdy( pxoWW ) * dc.y;
+  }
+  if ( pxoOutsideFloor( P ) ) discard;
+  // 模様・縁のむらは、中心のまわりに「向き」の分だけ回した座標で描く（地肌と一緒に回る。2026-10-05）
+  vec2 rel = P.xz - uRot.zw;
+  vec2 q = vec2( rel.x * uRot.x - rel.y * uRot.y, rel.x * uRot.y + rel.y * uRot.x ) + uSeed;
+  // 形（水たまりと同じ）に、縁を崩す大小のむらを足す
+  float sd = pxoCirclesSDF( P.xz ) + 0.18 * ( pxoWN( q * 3.0 ) * 2.0 - 1.0 ) + 0.06 * ( pxoWN( q * 11.0 + 4.1 ) * 2.0 - 1.0 );
+  if ( sd > 0.0 ) discard;
+  // まだらは、向きを回しながら 3 段重ねたノイズを、さらに座標をゆがめて使う（2026-10-05 ユーザー指摘：1 段の値ノイズを
+  // しきい値で切っていて、格子の縦横の筋が規則正しい模様に見えた）
+  vec2 w = q + 0.6 * vec2( pxoDirtN( q * 0.7 ), pxoDirtN( q * 0.7 + 5.2 ) );
+  float n1 = pxoDirtN( w * 0.9 ), n2 = pxoDirtN( w * 3.7 + 7.3 ), n3 = pxoWN( q * 12.0 + 1.9 );
+  // 境目はくっきりめに（2026-10-05 ユーザー指定：ぼやけて見えた。しきい値の幅を狭めた）
+  vec3 col = mix( ${c3('#5b402a')}, ${c3('#7d5d3f')}, smoothstep( 0.4, 0.6, n1 ) );   // 地の色（乾いた所ほど明るい）
+  col = mix( col, ${c3('#3d2a1a')}, smoothstep( 0.6, 0.67, n2 ) * 0.75 );           // 湿った暗い所
+  col *= 1.0 + ( n3 - 0.5 ) * 0.25;                                       // 細かいざらつき
+  col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
+  col *= 1.0 - uEdge * ( 1.0 - smoothstep( 0.03, 0.3, -sd ) );   // 縁を濃く（2026-10-05 ユーザー指定）：縁から 30cm ほど内側にかけて暗くしていく。uEdge：縁の濃さ（0 で暗くしない）
+  // 縁は、内側ほど地肌がはっきり出て、むらで崩しながら床に溶ける
+  float a = smoothstep( 0.05, 0.6, clamp( smoothstep( 0.0, -0.35, sd ) * 1.4 - ( 1.0 - n2 ) * 0.5, 0.0, 1.0 ) );
+  if ( a < 0.01 ) discard;
+  if ( uHL > 0.5 && sd > -0.1 ) { col = ${c3('#e2b348')}; a = 1.0; }   // カードのホバー：縁を金色に
+  diffuseColor = vec4( col, a );
+}`)
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if ( uPixDot.x > 0.0 ) {   // 階調の細かさ（水と同じ）
+    gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );
+    gl_FragColor.a = pxoQuantA( gl_FragColor.a, uPixLv );
+    if ( gl_FragColor.a <= 0.0 ) discard;
+  }`);
+  };
+  m.customProgramCacheKey = () => 'pxo-dirt-v6';
+  return m;
+}
+function buildDirt() {
+  if (!stageCtx) return;
+  HL_VER++;
+  const g = stageCtx.dirt;
+  for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
+  g.clear();
+  DIRT_AVOID = [];
+  dirtList.forEach((st, ci) => {
+    if (st.show === false) return;
+    const cs = lakeCircles(st, true, DIRT_MAX_C);   // 散らばる位置も向きで回す。円は 160 個まで
+    if (!cs.length) return;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
+    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
+    const k = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
+    const pad = 0.2 + k * 0.75 + 0.25;   // 円のつなぎのふくらみ（水と同じく 0.75k）＋縁のむら（最大 0.24）
+    const only = { grass: st.avoidGrass ?? st.avoid ?? true, stone: st.avoidStones ?? st.avoid ?? true };   // 草・石を別々によける（以前の「草・石をよける」は両方に引き継ぐ）
+    if (only.grass || only.stone) DIRT_AVOID.push({ cs, k, only });
+    const mat = dirtMaterial(), u = mat.userData.u;
+    cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
+    u.uN.value = cs.length; u.uK.value = k;
+    u.uShade.value = Math.max(0, st.shade ?? 1);
+    u.uEdge.value = Math.max(0, Math.min(1, st.edgeDark ?? 0.5));
+    u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
+    u.uRot.value.set(Math.cos(deg(st.dir ?? 0)), Math.sin(deg(st.dir ?? 0)), st.x ?? 0, st.z ?? 0);
+    const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
+    geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + DIRT_LIFT, (z0 + z1) / 2);
+    mesh.receiveShadow = true; mesh.renderOrder = -11;   // 水（-10）より先に描く＝水が上
+    mesh.userData.pxoCard = ci;
+    g.add(mesh);
+  });
+}
 export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
+let DIRT_AVOID = [];    // 土の「草・石をよける」（形は水と同じ持ち方。2026-10-05）
 // シェーダーの pxoWH / pxoWN と同じ式（海の岸線を JS でも同じ形にする。2026-10-04）
 const fract = (v) => v - Math.floor(v);
 function wHash(x, y) {
@@ -2422,9 +2559,10 @@ function seaDAt(sea, x, z) {   // 海の静かな時の岸線からの距離（�
   const wig = sea.coast * ((wNoise(along * 0.08, 3.7) * 2 - 1) * 3 + (wNoise(along * 0.3, 8.1) * 2 - 1) * 0.8);
   return -((rx * sea.nx + rz * sea.nz) - wig);
 }
-function waterSdfAt(x, z) {   // 一番近い「よける」水場の岸までの距離（負が水の中）。無ければ大きな値
+function waterSdfAt(x, z, kind = null) {   // 一番近い「よける」水場・土の縁までの距離（負が中）。無ければ大きな値。kind：'grass' / 'stone'（土は草・石を別々によける。2026-10-05）
   let best = 1e9;
-  for (const w of WATER_AVOID) {
+  for (const w of [...WATER_AVOID, ...DIRT_AVOID]) {   // 水と土（2026-10-05）
+    if (w.only && kind && !w.only[kind]) continue;   // 土：その種類をよけない設定なら見ない
     if (w.sea) { best = Math.min(best, seaDAt(w.sea, x, z) - w.sea.run); continue; }   // 海は波が駆け上がる所まで水とみなす
     let d = 1e5;
     for (const [cx, cz, r] of w.cs) {
@@ -2478,6 +2616,17 @@ float pxoSeaPh( vec2 p ) {
 float pxoSeaRun() { return 0.3 + 1.2 * uSea.y; }   // 波が砂浜を駆け上がる距離 [unit]（波の高さで決まる）
 float pxoSeaUp( float ph ) { return sin( 3.14159 * pow( ph, 0.6 ) ); }   // 駆け上がり 0→1→0（速く上がって、ゆっくり引く）
 `;
+// 円をなめらかにつないだ形（多項式の smooth min。負が中）。水（川・湖・水たまり）と土で共有（2026-10-05 切り出し）。uC：(x, z, 半径, ‥)、uN：数、uK：つなぎの強さ
+const circlesSdfGlsl = (maxC) => `float pxoCirclesSDF( vec2 p ) {   // maxC：円の配列の大きさ（水 64・土 160）
+  float d = 1e5;
+  for ( int i = 0; i < ${maxC}; i ++ ) {
+    if ( i >= uN ) break;
+    float di = length( p - uC[ i ].xy ) - uC[ i ].z;
+    float h = clamp( 0.5 + 0.5 * ( di - d ) / uK, 0.0, 1.0 );
+    d = mix( di, d, h ) - uK * h * ( 1.0 - h );
+  }
+  return d;
+}`;
 const SWELL_GLSL = `
 // 海のうねり（2026-10-04 ユーザー指定）：沖から岸へ進む 2 つの波（岸に平行な長い波と、少し斜めの短い波）で水面を持ち上げる。
 // 岸線のうねりより外（沖）で立ち上がり、波打ち際では平らに戻す。床より下には下げない（0 以上）。g に高さの傾き（世界の xz）
@@ -2608,15 +2757,11 @@ float pxoBreakDots( vec2 uv, float cg, float wdt, float dens, float grow, float 
   }
   return dc;
 }
+${circlesSdfGlsl(WATER_MAX_C)}
 float pxoWaterSDF0( vec2 p ) {   // 円をなめらかにくっつけた形（多項式の smooth min）。負が水の中。ギザギザ抜き
   float d = 1e5;
   if ( uType > 1.5 ) d = pxoSeaD( p ) - pxoSeaRun() * pxoSeaUp( pxoSeaPh( p ) );   // 海：岸線から、波の駆け上がりの分だけ水が陸へ出る
-  else for ( int i = 0; i < ${WATER_MAX_C}; i ++ ) {
-    if ( i >= uN ) break;
-    float di = length( p - uC[ i ].xy ) - uC[ i ].z;
-    float h = clamp( 0.5 + 0.5 * ( di - d ) / uK, 0.0, 1.0 );
-    d = mix( di, d, h ) - uK * h * ( 1.0 - h );
-  }
+  else d = pxoCirclesSDF( p );
   // 奏者をよける（2026-10-03 ユーザー指定）：奏者のまわりを陸地とみなし（近くの奏者どうしはなめらかにつないで楽団全体をひとかたまりの陸に）、
   // 水はその手前で岸になる。岸の泡・打ち寄せ・濡れた跡も、この新しい岸に沿う
   if ( uAvoidPl > 0.5 && uPlN > 0 ) {
@@ -2984,7 +3129,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
 }`);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v53';
+  m.customProgramCacheKey = () => 'pxo-water-v54';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -2993,32 +3138,39 @@ function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類�
 }
 // 湖・池・水たまり（2026-10-04 ユーザー指定で湖・池と水たまりを統合）：湖の形（楕円の芯＋ふくらみ）を「数」個、「散らばり」の範囲（中心ほど多い）に置く。
 // 数 1 で湖・池、数を増やして小さくすると水たまり。数 1 の時は位置・大きさ・向きのばらつきを引かない（統合前の湖と同じ形のまま）
-function lakeCircles(st) {
+// rotLayout：散らばる位置も「向き」の分だけ中心のまわりに回す（土で使う。2026-10-05 ユーザー指摘：向きを変えても全体が回らなかった。
+// 湖・池・水たまりは今ある水場の位置が動かないよう回さない）
+function lakeCircles(st, rotLayout = false, maxC = WATER_MAX_C) {   // maxC：円の数の上限（土は 160）
   const r = rng32(st.seed ?? 1), out = [];
-  const n = Math.max(1, Math.min(16, Math.round(st.pools ?? 1))), budget = Math.floor(WATER_MAX_C / n);   // 1 つに使える円の数
+  const n = Math.max(1, Math.min(16, Math.round(st.pools ?? 1))), budget = Math.floor(maxC / n);   // 1 つに使える円の数
   const a0 = Math.max(0.1, st.lakeSize ?? 5), asp = Math.max(1, st.aspect ?? 1.5), scatter = Math.max(0, Math.min(40, st.scatter ?? 6));
   const rough = 1 - Math.max(0, Math.min(1, st.smooth ?? 0.5));
   for (let k = 0; k < n; k++) {
     let cx = st.x ?? 0, cz = st.z ?? 0, a = a0, dir = deg(st.dir ?? 0);
     if (n > 1) {   // 散らばり・大きさ（0.6〜1.4 倍）・向き（±20°）のばらつき
       const t = r() * Math.PI * 2, d = Math.min(1.5 * scatter, Math.abs(gauss(r)) * scatter / 2);
-      cx += Math.cos(t) * d; cz += Math.sin(t) * d; a *= 0.6 + 0.8 * r(); dir += (r() - 0.5) * 0.7;
+      let ox = Math.cos(t) * d, oz = Math.sin(t) * d;
+      if (rotLayout) { const c = Math.cos(dir), sn = Math.sin(dir); [ox, oz] = [ox * c + oz * sn, -ox * sn + oz * c]; }   // 向きの分だけ回す（向き 0°＝回さない）
+      cx += ox; cz += oz; a *= 0.6 + 0.8 * r(); dir += (r() - 0.5) * 0.7;
     }
-    lakeBody(r, out, cx, cz, a, asp, dir, rough, budget);
+    lakeBody(r, out, cx, cz, a, asp, dir, rough, budget, maxC);
   }
   return out;
 }
-// 湖 1 つ：長い方の半径 a、細長さ asp、長い向き dir の楕円の芯に円を並べ、そのまわりに小さめの円（ふくらみ）を足す。円は budget 個まで
-function lakeBody(r, out, cx, cz, a, asp, dir, rough, budget) {
-  const b = a / asp, start = out.length;
+// 湖 1 つ：大きさ s（丸い時の半径）、細長さ asp、長い向き dir の楕円の芯に円を並べ、そのまわりに小さめの円（ふくらみ）を足す。円は budget 個まで。
+// 長い方の半径 a = s√asp、短い方 b = s/√asp で、細長くしても面積はほぼ同じ（2026-10-05 ユーザー指摘：以前は a = s 固定で、縦横比を上げると
+// 細く小さくなるだけだった。円の数が足りず間隔が開いて分裂もした → 芯の円を間隔に合わせて太らせ、つながったままにする）
+function lakeBody(r, out, cx, cz, s, asp, dir, rough, budget, maxC = WATER_MAX_C) {
+  const a = s * Math.sqrt(asp), b = s / Math.sqrt(asp), start = out.length;
   const ux = Math.cos(dir), uz = -Math.sin(dir), vx = Math.sin(dir), vz = Math.cos(dir);   // 長い向き（川の向きと同じ取り方）とその直角
   const at = (u, v, rr) => out.push([cx + ux * u + vx * v, cz + uz * u + vz * v, rr]);
   const core = a - b, m = Math.min(budget, core > 0.01 ? Math.max(2, Math.ceil((2 * core) / (b * 0.6)) + 1) : 1);
-  for (let i = 0; i < m; i++) {   // 芯：長い向きに半径 b の円を並べる（両端の円の外側がちょうど a）
+  const bc = m > 1 ? Math.max(b, ((2 * core) / (m - 1)) * 0.6) : b;   // 芯の円の半径（円が足りず間隔が開く時は太らせてつなぐ）
+  for (let i = 0; i < m; i++) {   // 芯：長い向きに半径 bc の円を並べる（両端の円の外側がほぼ a）
     const u = m > 1 ? -core + (2 * core * i) / (m - 1) : 0;
-    at(u, 0, b * (0.92 + 0.08 * r()) * (1 + rough * (r() - 0.5) * 0.5));
+    at(u, 0, bc * (0.92 + 0.08 * r()) * (1 + rough * (r() - 0.5) * 0.5));
   }
-  const lobes = Math.min(budget - (out.length - start), WATER_MAX_C - out.length, 5 + Math.round(3 * asp));
+  const lobes = Math.min(budget - (out.length - start), maxC - out.length, 5 + Math.round(3 * asp));
   for (let i = 0; i < lobes; i++) {   // ふくらみ：芯の縁の近くに小さめの円。ゴツゴツほど大小と出入りが大きい
     const t = r() * Math.PI * 2, u = Math.cos(t) * (core + b * 0.55), v = Math.sin(t) * b * 0.55;
     at(u, v, b * (0.3 + 0.25 * r()) * (1 + rough * (r() - 0.3)));
@@ -3295,9 +3447,10 @@ function updateHighlight(renderer) {
   hlBuilt = key;
   for (const o of hlObjs) { o.parent?.remove(o); o.userData.pxoHlDispose?.(); }
   hlObjs = [];
-  if (stageCtx) for (const m of stageCtx.water.children) m.material.userData.u.uHL.value = 0;   // 水は材質の岸の線で示す
+  if (stageCtx) for (const m of [...stageCtx.water.children, ...stageCtx.dirt.children]) m.material.userData.u.uHL.value = 0;   // 水・土は材質の縁の線で示す   // 水は材質の岸の線で示す
   if (!hlTarget || !stageCtx) return;
   const { kind, index } = hlTarget;
+  if (kind === 'dirt') { for (const m of stageCtx.dirt.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
   if (kind === 'model' || kind === 'stone' || kind === 'grass') {
