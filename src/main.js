@@ -18,6 +18,8 @@ import { AutoCamera } from './autoCam.js';
 // 操作パネルを隠して映像だけを出し、projects/<名前>/ を読んで再生する。romashige.com へ公開した時の見せ方。
 // 設定はその場限りの保存領域に入れる：手元で ?view= を開いても、編集画面の localStorage と settings.json を書き換えないように
 const VIEW_NAME = new URLSearchParams(location.search).get('view') || '';
+// 視聴モードでもカメラを操作できるようにする（?view=…&cam=1。2026-10-05 ユーザー指定：外出先の確認で回したり拡大したりしたい）。付けない時は今まで通り保存したカメラで見せる
+const VIEW_CAM = VIEW_NAME && new URLSearchParams(location.search).get('cam') === '1';
 const COSTUME = new URLSearchParams(location.search).get('costume') || '';   // 衣装の試作：?costume=cecil で全員に着せる（2026-09-20 ユーザー指定）
 const LS = VIEW_NAME ? memoryStorage() : window.localStorage;
 function memoryStorage() {
@@ -2363,7 +2365,7 @@ function animate() {
     else applyBackground('#000000', '#000000', s.bgMid, s.bgFlip, 1);
     setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
-    controls.enabled = !s.autoCam && !VIEW_NAME;   // 自動の間はマウス操作を止める。視聴モードも止める（保存したカメラで見せる）
+    controls.enabled = !s.autoCam && (!VIEW_NAME || VIEW_CAM);   // 自動の間はマウス操作を止める。視聴モードも止める（保存したカメラで見せる。&cam=1 の時だけ操作できる）
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
     setWeather({ type: s.weatherType, amount: s.weatherAmount, wind: s.weatherWind, thunder: s.weatherThunder, speed: s.weatherSpeed * (s.weatherType === 'rain' ? RAIN_SPEED_SCALE : 1), fps: s.weatherFps, width: s.weatherWidth,
                  pos: s.weatherPos, height: s.weatherHeight, glint: s.weatherGlint });
