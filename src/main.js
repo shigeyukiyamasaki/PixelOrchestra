@@ -359,7 +359,8 @@ function stoneRow(st, i) {
   return box;
 }
 // 草のジェネレーター（2026-10-03 ユーザー指定）。石と同じ作りで、clump（群生のまとまり 0〜1）を足し、重なりは許す
-const GRASS_BASE = { name: '', x: 0, z: 0, y: 0, spread: 4, count: 60, clump: 0.4, size: 1, sizeVar: 0.3, shade: 1, shadeVar: 0.3, seed: 1, show: true };
+const GRASS_BASE = { name: '', x: 0, z: 0, y: 0, spread: 20, count: 600, clump: 0, size: 1, sizeVar: 0.5, shade: 1, shadeVar: 0.5, seed: 1, show: true, avoidPlayers: false };   // avoidPlayers：奏者をよける（2026-10-04）。初期値はユーザーの草3 に合わせた（2026-10-04 ユーザー指定）。
+// 奏者をよけるは、新しく足す草だけオン（＋のボタンで渡す）。ここをオンにすると、保存に値の無い今の草までオンになるため
 const grassDefaults = (o) => ({ ...GRASS_BASE, ...o });
 let grass = (() => {
   try { const a = JSON.parse(LS.getItem(GRASS_KEY) || 'null'); if (Array.isArray(a)) return a.map(grassDefaults); } catch (e) { console.warn('草の設定の読込失敗:', e); }
@@ -386,6 +387,11 @@ function grassRow(st, i) {
   const show = put(top, '<label title="この群れを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
+  // 奏者をよける（2026-10-04 ユーザー指定）：水と同じく、名前の下の段に置く
+  const checks = put(box, '<div class="stoneTop genChecks"></div>');
+  const avoidPl = put(checks, '<label title="奏者（指揮者・指揮台も）のいる所に草を生やさない。楽団のまわりを陸地とみなし（水の「奏者をよける」と同じ範囲）、株の中心がそこにかかる株を除く"><input type="checkbox"><span>奏者をよける</span></label>').querySelector('input');
+  avoidPl.checked = !!st.avoidPlayers;
+  avoidPl.onchange = () => { st.avoidPlayers = avoidPl.checked; changed(); };
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
@@ -422,9 +428,11 @@ function grassRow(st, i) {
   put(box, `<div class="note">${grassNote()}</div>`);
   return box;
 }
-// 水のジェネレーター（2026-10-03 ユーザー指定）。長さ 0 で湖、細く長くで川、分かれを増やすと水たまりが散らばる
-const WATER_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 2, meander: 0.4, dir: 0, pieces: 1, scatter: 6, smooth: 0.5, flow: 1, depth: 1, glitter: 1, windK: 1, avoid: true, avoidPlayers: true, seed: 1, show: true };   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
-const waterDefaults = (o) => ({ ...WATER_BASE, ...o });
+// 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
+const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
+  rapids: 0.2, lakeSize: 5, aspect: 1.5, puddles: 6, puddleSize: 0.8 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池）／puddle（水たまり）。rapids：川の瀬、lakeSize・aspect：湖の大きさ・縦横比、puddles・puddleSize：水たまりの数・大きさ。川の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+// 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
+const waterDefaults = (o) => ({ ...WATER_BASE, ...(o && !o.type ? { type: (o.flow ?? 1) <= 0 ? 'lake' : 'river', rapids: 0 } : {}), ...o });
 let water = (() => {
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); if (Array.isArray(a)) return a.map(waterDefaults); } catch (e) { console.warn('水の設定の読込失敗:', e); }
   return [];
@@ -456,28 +464,47 @@ function waterRow(st, i) {
   const avoidPl = put(checks, '<label title="奏者（指揮者・指揮台も）のいる所に水をかけない。楽団のまわりを陸地とみなして、その手前で岸になる"><input type="checkbox"><span>奏者をよける</span></label>').querySelector('input');
   avoidPl.checked = st.avoidPlayers !== false;
   avoidPl.onchange = () => { st.avoidPlayers = avoidPl.checked; changed(); };
-  const slider = (label, key, min, max, step, digits, title) => {
+  // 種類（2026-10-04 ユーザー指定）：種類ごとに出すスライダーと水面の動きが変わる。隠したスライダーの値は残す
+  const typeRow = put(box, '<label class="sld" title="水場の種類。川：流れて、中央ほど速く岸際は遅い。速い所に白い筋（瀬）が立ち、岸の泡は下流へ流れる。湖・池：流れず、波は風だけで立つ。無風なら鏡のように空が映る。水たまり：浅く、泡や打ち寄せが無い"><span>種類</span><select><option value="river">川</option><option value="lake">湖・池</option><option value="puddle">水たまり</option></select><b></b></label>');
+  const typeSel = typeRow.querySelector('select');
+  typeSel.value = st.type || 'river';
+  typeSel.onkeydown = (e) => e.stopPropagation();
+  const typed = [];   // [label, 出す種類の配列]
+  const showTyped = () => { for (const [lab, ts] of typed) lab.style.display = ts.includes(st.type || 'river') ? '' : 'none'; };
+  typeSel.onchange = () => { st.type = typeSel.value; showTyped(); changed(); };
+  const slider = (label, key, min, max, step, digits, title, types = null) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
     el.value = st[key] ?? WATER_BASE[key] ?? +min;
     const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
     el.oninput = () => { st[key] = +el.value; box2.show(); changed(); };
+    if (types) typed.push([lab, types]);
     return lab;
   };
+  const R = ['river'], L = ['lake'], P = ['puddle'];
   slider('横位置', 'x', -30, 30, 0.1, 1, '水場の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '水場の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床の上に張る');
-  slider('長さ', 'len', 0, 60, 0.1, 1, '水の線の長さ [unit]。0 で 1 か所にまとまって湖、長くすると川');
-  slider('太さ', 'width', 0.2, 20, 0.05, 2, '水の幅 [unit]。細くすれば小川、太くすれば大河・大きな湖');
-  slider('蛇行', 'meander', 0, 1, 0.05, 2, '川の曲がり具合。0 でまっすぐ');
-  slider('向き', 'dir', -180, 180, 1, 0, '川の向き・流れる向き [度]。0 で客席から見て右へ、90 で奥へ');
-  slider('分かれ', 'pieces', 1, 8, 1, 0, '水のかたまりの数。1 で 1 つの川・湖。増やすと、小さな水たまりが散らばる');
-  slider('散らばり', 'scatter', 0, 20, 0.1, 1, '分かれた水たまりが散らばる広さ [unit]（分かれが 2 以上の時）');
+  // 川
+  slider('長さ', 'len', 0, 60, 0.1, 1, '川の長さ [unit]', R);
+  slider('太さ', 'width', 0.2, 5, 0.05, 2, '川の幅 [unit]。細くすれば小川、太くすれば大河（5 まで。それより太いと川に見えない。2026-10-04 ユーザー指定）', R);
+  slider('蛇行', 'meander', 0, 1, 0.05, 2, '川の曲がり具合。0 でまっすぐ', R);
+  // 湖・池
+  slider('大きさ', 'lakeSize', 0.5, 20, 0.05, 2, '湖・池の大きさ（長い方の半径）[unit]', L);
+  slider('縦横比', 'aspect', 1, 4, 0.05, 2, '湖・池の細長さ。1 で丸く、大きいほど「向き」の方へ細長い', L);
+  // 水たまり
+  slider('数', 'puddles', 1, 16, 1, 0, '水たまりの数', P);
+  slider('大きさ', 'puddleSize', 0.1, 4, 0.05, 2, '水たまり 1 つの大きさ（半径の目安）[unit]。1 つずつ大きさは少しばらつく', P);
+  slider('向き', 'dir', -180, 180, 1, 0, '川：流れる向き [度]。湖・池：細長い向き。0 で客席から見て右へ、90 で奥へ', ['river', 'lake']);
+  slider('分かれ', 'pieces', 1, 4, 1, 0, '水のかたまりの数。1 で 1 本の川。増やすと、川の小さな切れ端（水たまり）が散らばる（4 まで。2026-10-04 ユーザー指定）', R);
+  slider('散らばり', 'scatter', 0, 20, 0.1, 1, '散らばる広さ [unit]。川は「分かれ」が 2 以上の時の切れ端、水たまりは全体の広がり', ['river', 'puddle']);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ');
+  slider('流れ', 'flow', 0, 3, 0.05, 2, '流れの速さ（「向き」に沿って流れる）。中央ほど速く、岸際は遅い', R);
+  slider('瀬', 'rapids', 0, 1, 0.05, 2, '瀬（流れの速い所に立つ白い筋）の多さ。0 で無し。流れが速いほど強く出る', R);
   slider('深さ', 'depth', 0.1, 3, 0.05, 2, '水の深さ。深くするほど色が濃くなり、床が透けて見えるのは岸のきわだけになる。浅くすると水全体が透けて、水底のゆらめく光が広く出る');
   slider('きらめき', 'glitter', 0, 2, 0.05, 2, '水面のきらめき。さざ波の山のところどころで小さな光の点が瞬く（どの角度からでも見える演出）。0 で無し、上げるほど多く明るい。太陽・月の光に合わせて明るさが変わる');
-  slider('風の影響', 'windK', 0, 1, 0.05, 2, '3D モデル欄の「風」をどれだけ受けるか。1 で風どおりに波立ち（向き・速さ・突風の風紋・風下の岸の打ち寄せ・強風の白波）、0 で風を受けない静かな水面');
-  slider('流れ', 'flow', 0, 3, 0.05, 2, '波の流れる速さ（向きに沿って流れる）。0 で止まって、ときどききらめくだけ（湖・水たまり向き）');
+  slider('風の影響', 'windK', 0, 1, 0.05, 2, '「風・植物」の風をどれだけ受けるか。1 で風どおりに波立ち（向き・速さ・突風の風紋・風下の岸の打ち寄せ・強風の白波）、0 で風を受けない静かな水面');
+  showTyped();
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（蛇行・岸・水たまりの位置）だけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
@@ -1000,7 +1027,7 @@ function renderScreens() {
     gbox.textContent = '';
     grass.forEach((st, i) => gbox.appendChild(grassRow(st, i)));
     const addG = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '草の群れを 1 つ増やす' });
-    addG.onclick = () => { grass.push(grassDefaults({ name: `草${grass.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setGrass(grass); saveGrass(); };
+    addG.onclick = () => { grass.push(grassDefaults({ name: `草${grass.length + 1}`, avoidPlayers: true, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setGrass(grass); saveGrass(); };
     gbox.appendChild(addG);
   }
   const wbox = $('waterRows');
@@ -1008,7 +1035,7 @@ function renderScreens() {
     wbox.textContent = '';
     water.forEach((st, i) => wbox.appendChild(waterRow(st, i)));
     const addW = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '水場を 1 つ増やす' });
-    addW.onclick = () => { water.push(waterDefaults({ name: `水${water.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setWater(water); saveWater(); };
+    addW.onclick = () => { water.push(waterDefaults({ name: `水${water.length + 1}`, type: WATER_BASE.type, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setWater(water); saveWater(); };
     wbox.appendChild(addW);
   }
   domes.forEach((d, i) => dbox.appendChild(domeRow(d, i)));    // 遠景（3 層固定）は左のセクションへ
