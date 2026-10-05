@@ -2567,6 +2567,9 @@ const projectBackend = {
     const settings = mapAssetSrcs(p.settings || {}, (u) => copies[u]);   // 素材は保存したコピーを使う
     if (VIEW_NAME) {   // 公開ページ：石・草の形はプロジェクトに保存したコピーから（2026-10-05）
       try { applyGenPatterns(JSON.parse(settings[PATTERNS_KEY] || '[]')); } catch (e) { console.warn('石・草の形を読めませんでした:', e); }
+      // 床の絵は MIDI を取りに行く前に当てる（2026-10-05 ユーザー指定：「読み込んでいます…」の間、板目が見えていた。
+      // 設定全体は下の applySnapshot で MIDI を読んだ後に当たる。床の欄は毎フレーム animate が絵に反映する）
+      try { const fs = JSON.parse(settings[SETTINGS_KEY] || '{}').floorStyle; if (fs) $('floorStyle').value = fs; } catch (e) { console.warn('床の設定を読めませんでした:', e); }
     }
     const src = { midi: null, audio: null };
     if (p.midi?.file) src.midi = { name: p.midi.name, bytes: new Uint8Array(await (await api(projectUrl(name, p.midi.file))).arrayBuffer()) };
