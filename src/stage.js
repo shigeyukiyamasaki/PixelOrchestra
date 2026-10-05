@@ -2581,6 +2581,8 @@ let ROAD_AVOID = [];   // 石畳の「草・石をよける」（中心線に沿
 export function setRoad(list) { roadList = (list || []).map((o) => ({ ...o })); buildRoad(); buildStones(); buildGrass(); }
 const ROAD_LIFT = 0.01;    // 床からの浮かせ [unit]（土 0.008 より上、水 0.02 より下）
 const ROAD_MAX_P = 64;     // 中心線の点の数の上限
+// 色味（2026-10-05 ユーザー指定）：グレーに掛ける RGB の係数。グレーの範囲に収まる強さ（明るさはほぼ同じ）
+const ROAD_TINT = { gray: [1, 1, 1], red: [1.1, 0.95, 0.92], blue: [0.92, 0.98, 1.1], yellow: [1.07, 1.03, 0.84] };
 function roadPoints(st) {   // 中心線の点 [x, z, 始点からの長さ]。0° で客席から見て右（+x）、プラスで奥（−z）。曲がりは向きを 1 回ゆるく波打たせる
   const r = rng32(st.seed ?? 1);
   const L = Math.max(0.5, st.len ?? 12), mean = Math.max(0, Math.min(1, st.meander ?? 0.2)), dir = deg(st.dir ?? 0);
@@ -2598,7 +2600,7 @@ function roadPoints(st) {   // 中心線の点 [x, z, 始点からの長さ]。0
 function roadMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   m.userData.u = { uP: { value: Array.from({ length: ROAD_MAX_P }, () => new THREE.Vector4()) }, uPN: { value: 0 }, uW: { value: 1.5 }, uStone: { value: 1 },
-    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 }, uPat: { value: 0 }, uRound: { value: 0.4 } };   // uRound：石の角の丸み（0〜1）   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）、uPat：並べ方（0 四角い石を列に／1 多角形を不規則に）
+    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 }, uPat: { value: 0 }, uRound: { value: 0.4 }, uTint: { value: new THREE.Vector3(1, 1, 1) } };   // uRound：石の角の丸み（0〜1）、uTint：色味（グレーに掛ける RGB の係数）   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）、uPat：並べ方（0 四角い石を列に／1 多角形を不規則に）
   m.extensions = { derivatives: true };
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
@@ -2608,6 +2610,7 @@ function roadMaterial() {
 uniform vec4 uP[ ${ROAD_MAX_P} ];
 uniform int uPN;
 uniform float uW, uStone, uShade, uCurb, uHL, uSeed, uPixLv, uPat, uRound;
+uniform vec3 uTint;
 uniform vec2 uPixDot;
 ${WATER_NOISE_GLSL}
 ${PIX_QUANT_GLSL}
@@ -2717,6 +2720,7 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
     else if ( e < 0.035 * uStone ) col *= ( f.x < 0.5 || f.y > 0.5 ) ? 1.13 : 0.8;   // 石の縁：片側を明るく、反対側を暗く
     col *= 1.0 + ( pxoWN( sp * 9.0 ) - 0.5 ) * 0.14;                        // 石の表面の細かいむら
   }
+  col *= uTint;                      // 色味（2026-10-05 ユーザー指定：グレーの中で赤め・青め・黄色め）
   col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
   if ( uHL > 0.5 && sd > -0.1 ) col = ${c3('#e2b348')};   // カードのホバー：縁を金色に
   diffuseColor = vec4( col, 1.0 );
@@ -2724,7 +2728,7 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   if ( uPixDot.x > 0.0 ) gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );   // 階調の細かさ（水と同じ）`);
   };
-  m.customProgramCacheKey = () => 'pxo-road-v3';
+  m.customProgramCacheKey = () => 'pxo-road-v4';
   return m;
 }
 function buildRoad() {
@@ -2754,6 +2758,7 @@ function buildRoad() {
     u.uCurb.value = st.curb === false ? 0 : 1;
     u.uPat.value = st.pattern === 'poly' ? 1 : 0;
     u.uRound.value = Math.max(0, Math.min(1, st.round ?? 0.4));
+    u.uTint.value.fromArray(ROAD_TINT[st.tint] || ROAD_TINT.gray);
     u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }

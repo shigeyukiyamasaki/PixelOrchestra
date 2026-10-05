@@ -555,7 +555,7 @@ function dirtRow(st, i, kind = 'dirt') {
   return box;
 }
 // 石畳の道（2026-10-05 ユーザー指定：街の道路になる石畳。グレー系）：中心線から幅一定の帯に、四角い石を道の向きにそろえて並べる
-const ROAD_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 3, meander: 0.2, dir: 0, stone: 1, round: 0.4, shade: 1, curb: true, pattern: 'rect', avoidGrass: true, avoidStones: true, seed: 1, show: true };
+const ROAD_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 3, meander: 0.2, dir: 0, stone: 1, round: 0.4, shade: 1, curb: true, pattern: 'rect', tint: 'gray', avoidGrass: true, avoidStones: true, seed: 1, show: true };
 const roadDefaults = (o) => ({ ...ROAD_BASE, ...o });
 let road = (() => {
   try { const a = JSON.parse(LS.getItem(ROAD_KEY) || 'null'); if (Array.isArray(a)) return a.map(roadDefaults); } catch (e) { console.warn('石畳の設定の読込失敗:', e); }
@@ -591,6 +591,10 @@ function roadRow(st, i) {
   const pat = put(box, '<label class="sld" title="石の並べ方。四角：四角い石を道を横切る列に並べ、1 列ごとに半分ずらす。多角形：大きさの違う多角形の石を不規則に敷き詰める"><span>並べ方</span><select><option value="rect">四角（列）</option><option value="poly">多角形（不規則）</option></select></label>').querySelector('select');
   pat.value = st.pattern ?? ROAD_BASE.pattern;
   pat.onchange = () => { st.pattern = pat.value; changed(); };
+  // 色味（2026-10-05 ユーザー指定）：グレーの中で赤め・青め・黄色め
+  const tint = put(box, '<label class="sld" title="石の色味。グレーのまま、少し赤み・青み・黄みを帯びさせる"><span>色味</span><select><option value="gray">グレー</option><option value="red">赤め</option><option value="blue">青め</option><option value="yellow">黄色め</option></select></label>').querySelector('select');
+  tint.value = st.tint ?? ROAD_BASE.tint;
+  tint.onchange = () => { st.tint = tint.value; changed(); };
   check('縁石', 'curb', '道の両端に、細長い縁石を並べる');
   check('草をよける', 'avoidGrass', 'この石畳の上に、草のジェネレーターの草を生やさない（石畳を動かすと自動で並べ直す）');
   check('石をよける', 'avoidStones', 'この石畳の上に、石のジェネレーターの石を置かない（石畳を動かすと自動で並べ直す）');
