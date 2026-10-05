@@ -4270,18 +4270,24 @@ function buildProcTrees(root, st, placed) {
         // 小葉は先の尖った細長い楕円（根元から 45% の所が一番太いひし形）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
         const LL = 0.065 * H, LW = 0.017 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
         const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる
-        const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3();
+        const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3(), md = new THREE.Vector3();
+        // 指の角度 [rad] と長さ：中指 1、人差し指・薬指 ±35° で 0.85、親指・小指 ±75° で 0.6（7 枚の時はさらに ±105° に 0.35）
+        const FINGERS5 = [[0, 1], [0.61, 0.85], [-0.61, 0.85], [1.31, 0.6], [-1.31, 0.6]], FINGERS7 = [...FINGERS5, [1.83, 0.35], [-1.83, 0.35]];
         const card = (pos, shade, along = null) => {   // 関数名は前のまま（葉 1 つ＝手のひら形の小葉の集まり）
           fn.set((r() - 0.5) * 0.7, 1, (r() - 0.5) * 0.7).normalize();   // ほぼ水平
           ax.set(r() - 0.5, 0, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax);
           nn.copy(fn).multiplyScalar(0.4).add(new THREE.Vector3(0, 0.6, 0)).normalize();
-          const nl = 5 + Math.floor(r() * 3), a0 = r() * Math.PI * 2, s0 = 0.75 + 0.5 * r();
-          for (let q = 0; q < nl; q++) {
-            const ang = a0 + (q / nl) * Math.PI * 2 + (r() - 0.5) * 0.3;
-            dv.copy(ax).multiplyScalar(Math.cos(ang)).addScaledVector(ay, Math.sin(ang));   // 小葉の向き（葉の面の中）
+          // 楓・人の手のような並び（2026-10-05 ユーザー指定：均等な星形ではなく 5 本指のように）：片側へ約 180° の扇に開き、
+          // 真ん中（中指）が一番長く外側ほど短い。指先は枝の外向き（along。無ければばらばら）に向ける
+          const s0 = 0.75 + 0.5 * r();
+          if (along) md.copy(along).addScaledVector(fn, -along.dot(fn)).normalize().applyAxisAngle(fn, (r() - 0.5) * 0.8);
+          else md.copy(ax).applyAxisAngle(fn, r() * Math.PI * 2);
+          const mp = new THREE.Vector3().crossVectors(fn, md);
+          for (const [fa, fl] of r() < 0.4 ? FINGERS7 : FINGERS5) {
+            const ang = fa + (r() - 0.5) * 0.16;
+            dv.copy(md).multiplyScalar(Math.cos(ang)).addScaledVector(mp, Math.sin(ang));   // 小葉の向き（葉の面の中）
             pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
-            const out = along ? 0.85 + 0.3 * Math.max(0, dv.dot(along)) : 1;               // 外向きの小葉を少し長く
-            const L = LL * s0 * out * (0.8 + 0.3 * r()), W = LW * s0;
+            const L = LL * s0 * fl * (0.9 + 0.2 * r()), W = LW * s0 * (0.7 + 0.3 * fl);
             const P = [pos.clone(), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, -W / 2)];
             c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
             for (const tri of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) for (const k of tri) {   // 両面
@@ -4307,7 +4313,7 @@ function buildProcTrees(root, st, placed) {
           for (let k = 0; k < pads; k++) {
             const f = 0.35 + 0.65 * (k + r() * 0.5) / pads;
             const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
-            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(10 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
+            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(13 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ（片側に開く形にして透けた分、10 → 13）
             pc.addScaledVector(fz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
             for (let j = 0; j < nl; j++) {
               const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;   // 層の厚み 0.04H
