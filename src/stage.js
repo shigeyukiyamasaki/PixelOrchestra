@@ -4267,7 +4267,7 @@ function buildProcTrees(root, st, placed) {
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
-        // 小葉は先の尖った細長い楕円（根元から 45% の所が一番太いひし形）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
+        // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
         const LL = 0.065 * H, LW = 0.017 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
         const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる
         const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3(), md = new THREE.Vector3();
@@ -4288,9 +4288,10 @@ function buildProcTrees(root, st, placed) {
             dv.copy(md).multiplyScalar(Math.cos(ang)).addScaledVector(mp, Math.sin(ang));   // 小葉の向き（葉の面の中）
             pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
             const L = LL * s0 * fl * (0.9 + 0.2 * r()), W = LW * s0 * (0.7 + 0.3 * fl);
-            const P = [pos.clone(), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, -W / 2)];
+            // 小葉は五角形（2026-10-05 ユーザー指定：見本はひし形ではなく五角形に近い）：根元に幅 35%、根元から 55% の所が一番太く、先が尖る
+            const P = [pos.clone().addScaledVector(pv, -W * 0.175), pos.clone().addScaledVector(dv, L * 0.55).addScaledVector(pv, -W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.55).addScaledVector(pv, W / 2), pos.clone().addScaledVector(pv, W * 0.175)];
             c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
-            for (const tri of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) for (const k of tri) {   // 両面
+            for (const tri of [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 2, 1], [0, 3, 2], [0, 4, 3]]) for (const k of tri) {   // 両面（五角形＝三角形 3 つ）
               const p = P[k];
               leaf.pos.push(p.x, p.y, p.z); leaf.nrm.push(nn.x, nn.y, nn.z); leaf.col.push(c.r, c.g, c.b);
               const hh = Math.max(0, (p.y - baseY) / curH); leaf.sw.push(hh * hh);
