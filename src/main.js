@@ -2318,6 +2318,8 @@ function animate() {
   setPlantBrightness(wv('plantBright', 1));   // 植物の明るさ（2026-10-03。変わった時だけ材質の色を入れ直す）
   tickModelWind(dt * wv('modelWindRate', 1));
   tickWater(dt);   // 水の波（2026-10-03。曲と関係なく実時間で）   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
+  // 床の絵も MIDI と関係なく当てる（2026-10-05 ユーザー指定：下の曲の処理の中だけで当てていて、MIDI を読むまで板目のままだった）
+  setFloorStyle(['grass', 'grassDark'].includes($('floorStyle')?.value) ? $('floorStyle').value : 'plank');   // 変わった時だけ作り直す
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();
 
@@ -2377,7 +2379,6 @@ function animate() {
     // その後ろの #view のグラデーションが空の色のまま残っていた
     if (s.lightMode === 'sun') applyBackground(s.bgTop, s.bgBottom, s.bgMid, s.bgFlip, s.exposure);   // 空にも露出を掛ける
     else applyBackground('#000000', '#000000', s.bgMid, s.bgFlip, 1);
-    setFloorStyle(s.floorStyle);   // 変わった時だけ作り直す（中で同じなら何もしない）
     if (s.autoCam) updateAutoCam(s, tm);     // 自動カメラ（手動操作より先に。切り替えは小節の頭）
     controls.enabled = !s.autoCam;   // 自動の間はマウス操作を止める。視聴モードでも回せる（2026-10-05 ユーザー指定：以前 Claude が視聴モードだけ止めていたのを外した）
     updateScreens(t);      // 流れるスクリーン（雲など）は時刻から位置を決める
