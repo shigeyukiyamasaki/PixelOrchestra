@@ -488,6 +488,8 @@ export function createStage(container) {
   controls.minPolarAngle = deg(12);
   controls.maxPolarAngle = deg(170); // 床の高さまで下り、さらに見上げられる（太陽を画面に入れるため。2026-09-16 ユーザー指定）。カメラ Y の下限 0.5 で床には潜らない
   // 水平方向の制限なし（ボクセル化で全周から見られる。2026-09-09）
+  // スマホ・タブレット（指で操作する端末）は回転の感度を 4 割に（2026-10-05 ユーザー指定：回転しすぎる）。マウスは今まで通り
+  if (window.matchMedia?.('(pointer: coarse)').matches) controls.rotateSpeed = 0.4;
   controls.update();
   // ホイールで限界に当たらないようにする（2026-09-25 ユーザー指定）。OrbitControls のホイールは「中心点までの距離」を伸縮するだけなので、
   // 中心点から minDistance より近く・maxDistance より遠くへは行けず、その先の場所に届かなかった。
