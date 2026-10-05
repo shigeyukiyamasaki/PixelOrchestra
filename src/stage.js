@@ -555,14 +555,15 @@ export function createStage(container) {
   const sand = new THREE.Group(); sand.name = 'sand'; scene.add(sand);
   const road = new THREE.Group(); road.name = 'road'; scene.add(road);           // 石畳の道（2026-10-05 ユーザー指定）
   const pillars = new THREE.Group(); pillars.name = 'pillars'; scene.add(pillars);   // 石の柱（2026-10-05 ユーザー指定。石畳と同じテイスト）
-  const masonry = new THREE.Group(); masonry.name = 'masonry'; scene.add(masonry);   // 石組み：階段・壁・屋根・がれき（2026-10-05 ユーザー指定）           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
+  const masonry = new THREE.Group(); masonry.name = 'masonry'; scene.add(masonry);
+  const trees = new THREE.Group(); trees.name = 'trees'; scene.add(trees);   // 木のジェネレーター（2026-10-05 ユーザー指定：木の GLB を範囲に散らす）   // 石組み：階段・壁・屋根・がれき（2026-10-05 ユーザー指定）           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, masonry, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, masonry, trees, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -937,7 +938,7 @@ export function pixelGroups() {
   // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
   // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
   // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars, stageCtx.masonry], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars, stageCtx.masonry, stageCtx.trees], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -1667,6 +1668,7 @@ function loadGlb(url) {
     buildModels();
     buildStones();
     buildGrass();
+    buildTrees();
     e.waiters?.splice(0).forEach((f) => f());
   }, undefined, (err) => { e.err = err?.message || String(err); e.loading = false; e.waiters = null; console.warn('[models] GLB を読めません:', url, e.err); });
   return e;
@@ -2404,7 +2406,7 @@ export function setWaterPlayers(roots, conductorRoot = null) {
   // 草の「奏者をよける」（2026-10-04 ユーザー指定）：奏者の位置が変わった時（MIDI の読み込み・並びの変更）だけ草を並べ直す
   let sig = '';
   for (let i = 0; i < n; i++) { const v = WATER_PL.uPl.value[i]; sig += `${v.x.toFixed(1)},${v.y.toFixed(1)};`; }
-  if (sig !== plSig) { plSig = sig; if (grassList.some((g) => g.avoidPlayers && g.show !== false)) buildGrass(); }
+  if (sig !== plSig) { plSig = sig; if (grassList.some((g) => g.avoidPlayers && g.show !== false)) buildGrass(); if (treeList.some((t) => t.avoidPlayers !== false && t.show !== false)) buildTrees(); }
 }
 let plSig = '';
 // 奏者のまわりの陸地までの距離（負が陸地の中）。水のシェーダー（pxoWaterSDF0 の「奏者をよける」）と同じ半径・同じなめらかなつなぎ方
@@ -3926,13 +3928,13 @@ function updateHighlight(renderer) {
   if (kind === 'dirt' || kind === 'sand' || kind === 'road') { for (const m of stageCtx[kind].children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
-  if (kind === 'model' || kind === 'stone' || kind === 'grass' || kind === 'pillar' || kind === 'masonry') {
-    const g = kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : kind === 'pillar' ? stageCtx.pillars : kind === 'masonry' ? stageCtx.masonry : stageCtx.grass;
+  if (kind === 'model' || kind === 'stone' || kind === 'grass' || kind === 'pillar' || kind === 'masonry' || kind === 'tree') {
+    const g = kind === 'tree' ? stageCtx.trees : kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : kind === 'pillar' ? stageCtx.pillars : kind === 'masonry' ? stageCtx.masonry : stageCtx.grass;
     for (const root of g.children) {
       if (root.userData.pxoCard !== index) continue;
       root.traverse((n) => {
         if (!n.isMesh || hlObjs.includes(n)) return;
-        const w = n.customDepthMaterial?.onBeforeCompile && kind === 'model' ? (root.userData.pxoWind || null) : null;
+        const w = n.customDepthMaterial?.onBeforeCompile && (kind === 'model' || kind === 'tree') ? (root.userData.pxoWind || null) : null;
         if (n.isInstancedMesh) {
           const h = new THREE.InstancedMesh(hullGeometry(n.geometry), hullMaterial(n.userData.pxoWind || null), n.instanceMatrix.count);   // 草は輪郭も一緒に揺らす
           h.instanceMatrix = n.instanceMatrix; h.count = n.count; h.frustumCulled = false;
@@ -4029,6 +4031,51 @@ function buildModels() {
     if (e.wind) { applyWind(o, e.wind); o.userData.pxoWind = e.wind; }   // 植物（VERDANT の GLB）だけ風で揺らす。粗さの材質（複製）にも当て直す
     o.traverse((n) => { if (n.isMesh) n.layers.enable(MODEL_SHADOW_LAYER); });   // 奏者に落とす影の元（updateModelShadow で太陽から描く）
     g.add(o);
+  });
+}
+
+// ---- 木のジェネレーター（2026-10-05 ユーザー指定）----
+// 選んだ木の GLB（1 カード 1 種類。混ぜる時はカードを分ける）を、中心から半径「広がり」の円の中に一様に散らす。
+// 木どうしは「間隔」より近づけない。床の外・よける設定のある水・土・道・柱・石組み・（チェック時）奏者のまわりには置かない。
+// 置けなかった分は本数より少なくなる。大きさは「大きさ」を中心に ±「ばらつき」、向きはランダム。風・影は 3D モデルと同じ
+let treeList = [];
+export function setTrees(list) { treeList = (list || []).map((o) => ({ ...o })); buildTrees(); }
+function buildTrees() {
+  if (!stageCtx) return;
+  const g = stageCtx.trees;
+  g.clear();   // 形と材質は GLB の読み込み結果を使い回すので捨てない
+  HL_VER++;
+  treeList.forEach((st, ci) => {
+    if (st.show === false || !st.src) return;
+    const e = loadGlb(st.src);
+    if (!e.scene) return;   // 読み込み中・失敗（読み終わったら組み直される）
+    const r = rng32(st.seed ?? 1);
+    const n = Math.max(1, Math.min(60, Math.round(st.count ?? 8))), spread = Math.max(0, Math.min(40, st.spread ?? 8));
+    const gap = Math.max(0, st.gap ?? 2.5), size = Math.max(0.05, st.scale ?? 1), sv = Math.max(0, Math.min(1, st.scaleVar ?? 0.3));
+    // 枝葉の広がり（GLB の水平方向の半径。読み込んだ GLB ごとに 1 回だけ測る）。奏者よけは枝葉の 6 割が奏者にかからない所まで離す
+    //（2026-10-05：幹から 0.6 unit だけ離していたら、奏者のすき間に木が入り、枝葉が奏者を覆った）
+    if (e.treeR == null) { const b = new THREE.Box3().setFromObject(e.scene); e.treeR = Math.max(0.1, Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2); }
+    const placed = [];
+    const avoidAny = WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length;
+    for (let tries = 0; placed.length < n && tries < n * 40; tries++) {
+      const a = r() * Math.PI * 2, d = spread * Math.sqrt(r()), x = (st.x ?? 0) + Math.cos(a) * d, z = (st.z ?? 0) + Math.sin(a) * d;
+      const sc = size * (1 + (r() * 2 - 1) * sv), rot = r() * Math.PI * 2;
+      if (!insideFloor(x, z)) continue;
+      if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < gap)) continue;
+      if (avoidAny && waterSdfAt(x, z, 'stone') < 0.4) continue;                     // 幹のまわり 0.4 unit
+      if (st.avoidPlayers !== false && playersSdfAt(x, z) < Math.max(0.6, 0.6 * e.treeR * MODEL_M * sc)) continue;   // 奏者のまわりの陸地に枝葉がかかる
+      placed.push({ x, z, sc, rot });
+    }
+    const root = new THREE.Group(); root.userData.pxoCard = ci;
+    if (e.wind) root.userData.pxoWind = e.wind;
+    for (const p of placed) {
+      const o = e.scene.clone(true);
+      o.position.set(p.x, st.y ?? 0, p.z); o.rotation.y = p.rot; o.scale.setScalar(MODEL_M * p.sc);
+      if (e.wind) { applyWind(o, e.wind); o.userData.pxoWind = e.wind; }
+      o.traverse((nn) => { if (nn.isMesh) nn.layers.enable(MODEL_SHADOW_LAYER); });   // 奏者に落とす影の元
+      root.add(o);
+    }
+    g.add(root);
   });
 }
 

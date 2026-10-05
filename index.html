@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261005e">
+  <link rel="stylesheet" href="style.css?v=20261005f">
 </head>
 <body>
   <div id="stageArea">
@@ -123,6 +123,7 @@
         <button data-sec="roadSec">石畳</button>
         <button data-sec="pillarSec">柱</button>
         <button data-sec="masonrySec">石組み</button>
+        <button data-sec="treeSec">木</button>
       </div>
       <!-- 左：スカイドーム（3 層固定）／右：スクリーン。2026-09-16 ユーザー指定で別セクションに分けた。
            スカイドームは一時上段へ移したが、上段を無くしてここへ戻した（2026-09-17 ユーザー指定） -->
@@ -185,6 +186,11 @@
       <section id="masonrySec">
         <div class="hd">石組み</div>
         <div id="masonryRows"></div>
+      </section>
+      <!-- 木のジェネレーター（2026-10-05 ユーザー指定）。選んだ木の GLB を範囲に散らす -->
+      <section id="treeSec">
+        <div class="hd">木</div>
+        <div id="treeRows"></div>
       </section>
     </div>
   </div>
@@ -483,6 +489,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>   <!-- 床に置く 3D モデル（GLB。2026-10-01） -->
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20261005q"></script>
+  <script type="module" src="src/main.js?v=20261005r"></script>
 </body>
 </html>

@@ -158,6 +158,7 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #roadSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 石畳の道（2026-10-05） */
 #pillarSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 石の柱（2026-10-05） */
 #masonrySec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 石組み（2026-10-05） */
+#treeSec { flex: 0 1 330px; min-width: 0; display: flex; flex-direction: column; }   /* 木のジェネレーター（2026-10-05） */
 /* 縦タブ（2026-10-01 ユーザー指定）：選んだ欄だけ出し、その欄が段の幅いっぱいを使う */
 #screenBar .barTabs { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
 #screenBar .barTabs button { text-align: left; white-space: nowrap; color: var(--muted); }
@@ -165,7 +166,7 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar > section.tabOff { display: none; }
 #screenBar > section.tabOn { flex: 1 1 0; }
 #modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-#stoneRows, #grassRows, #waterRows, #dirtRows, #sandRows, #roadRows, #pillarRows, #masonryRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+#stoneRows, #grassRows, #waterRows, #dirtRows, #sandRows, #roadRows, #pillarRows, #masonryRows, #treeRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 #screenBar .screen.gen .stoneTop { display: flex; align-items: center; gap: 6px; }
 #screenBar .screen.gen .stoneTop .name { flex: 1 1 0; min-width: 0; }
 #screenBar .screen.gen .stoneTop label { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }

@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSand, setRoad, setPillars, setMasonry, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSand, setRoad, setPillars, setMasonry, setTrees, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -43,6 +43,7 @@ const GRASS_KEY = 'pixelOrchestra.grass.v1';           // 草のジェネレー�
 const WATER_KEY = 'pixelOrchestra.water.v1';           // 水のジェネレーター（2026-10-03 ユーザー指定）
 const PATTERNS_KEY = 'pixelOrchestra.genPatterns.v1';   // 石・草のジェネレーターの形のもと（GLB）。プロジェクトにだけ保存し、公開ページはこれで形を読む（2026-10-05）
 const DIRT_KEY = 'pixelOrchestra.dirt.v1';             // 土のジェネレーター（2026-10-05 ユーザー指定）
+const TREES_KEY = 'pixelOrchestra.trees.v1';           // 木のジェネレーター（2026-10-05 ユーザー指定）
 const MASONRY_KEY = 'pixelOrchestra.masonry.v1';       // 石組み：階段・壁・屋根・がれき（2026-10-05 ユーザー指定）
 const PILLAR_KEY = 'pixelOrchestra.pillars.v1';        // 石の柱（2026-10-05 ユーザー指定）
 const ROAD_KEY = 'pixelOrchestra.road.v1';             // 石畳の道（2026-10-05 ユーザー指定）
@@ -58,7 +59,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SAND_KEY, ROAD_KEY, PILLAR_KEY, MASONRY_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SAND_KEY, ROAD_KEY, PILLAR_KEY, MASONRY_KEY, TREES_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -1231,6 +1232,84 @@ async function loadModelList() {
   try { const r = await fetch('media-models.json', { cache: 'no-store' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); modelFileList = (await r.json()) || {}; }
   catch (e) { console.warn('3D モデルの一覧を取得できませんでした:', e.message); setStatus('✗ 3D モデルの一覧を取れません（開発サーバー tools/serve.py を再起動してください）'); }
 }
+// 木のジェネレーター（2026-10-05 ユーザー指定）：選んだ木の GLB を範囲に散らす。1 カード 1 種類（混ぜる時はカードを分ける）
+const TREE_BASE = { name: '', src: '', srcRaw: '', x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };
+const treeDefaults = (o) => ({ ...TREE_BASE, ...o });
+let trees = (() => {
+  try { const a = JSON.parse(LS.getItem(TREES_KEY) || 'null'); if (Array.isArray(a)) return a.map(treeDefaults); } catch (e) { console.warn('木の設定の読込失敗:', e); }
+  return [];
+})();
+let treeSaveTimer = null;
+function saveTrees() {
+  clearTimeout(treeSaveTimer);
+  treeSaveTimer = setTimeout(() => {
+    try { LS.setItem(TREES_KEY, JSON.stringify(trees)); pushSettings(); } catch (e) { console.warn('木の設定の保存失敗:', e); }
+  }, 400);
+}
+function treeRow(m, i) {
+  const box = Object.assign(document.createElement('div'), { className: 'screen model tree gen' });
+  hoverHighlight(box, 'tree', i);
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setTrees(trees); saveTrees(); };
+  const top = put(box, '<div class="top"></div>');
+  const thumb = top.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
+  put(top, '<div class="side"></div>');
+  const drawThumb = () => {   // 3D モデルのカードと同じ（読み込めたらモデルを描いた画像に差し替える）
+    thumb.textContent = '';
+    const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = m.src ? 'GLB' : '木'; thumb.appendChild(ph);
+    const src = m.src;
+    if (src) modelThumb(src, (url) => {
+      if (m.src !== src || !ph.parentNode) return;
+      ph.replaceWith(Object.assign(document.createElement('img'), { src: url, draggable: false }));
+    });
+    const cap = document.createElement('span'); cap.className = 'cap';
+    cap.textContent = m.src ? (srcParts(m)?.name || m.srcRaw || '') : '木を選ぶ';
+    thumb.appendChild(cap);
+    thumb.title = m.srcRaw || m.src || '押すとフォルダを辿って木の 3D モデル（.glb）を選べる。ファイルをこのカードへドロップしてもよい';
+  };
+  drawThumb();
+  const pick = (dir, name) => {
+    if (dir !== undefined) { m.src = mediaUrlOf(dir, name); m.srcRaw = `${dir}/${name}`; }
+    drawThumb(); changed();
+  };
+  thumb.onclick = async () => { await loadModelList(); openPicker(thumb, m, pick, modelFileList); };
+  acceptFileDrop(box, pick);
+  const row = put(box, '<div class="stoneTop"></div>');
+  const name = row.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
+  name.value = m.name || `木${i + 1}`;
+  name.oninput = () => { m.name = name.value; saveTrees(); };
+  name.onkeydown = (e) => e.stopPropagation();
+  const show = put(row, '<label title="この木を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = m.show !== false;
+  show.onchange = () => { m.show = show.checked; changed(); };
+  const checks = put(box, '<div class="stoneTop genChecks"></div>');
+  const avoidP = put(checks, '<label title="奏者のまわりには木を置かない（奏者の並びが変わると自動で並べ直す）"><input type="checkbox"><span>奏者をよける</span></label>').querySelector('input');
+  avoidP.checked = m.avoidPlayers !== false;
+  avoidP.onchange = () => { m.avoidPlayers = avoidP.checked; changed(); };
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input');
+    el.value = m[key] ?? TREE_BASE[key] ?? +min;
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { m[key] = +el.value; box2.show(); changed(); };
+    return lab;
+  };
+  slider('横位置', 'x', -30, 30, 0.1, 1, '範囲の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
+  slider('奥行き', 'z', -36, 8, 0.1, 1, '範囲の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  slider('本数', 'count', 1, 60, 1, 0, '木の本数（間隔や床の外・よける物のせいで置けない分は少なくなる）');
+  slider('広がり', 'spread', 0, 40, 0.1, 1, '木を散らす範囲の半径 [unit]');
+  slider('間隔', 'gap', 0, 10, 0.05, 2, '木どうしをこれより近づけない [unit]（幹の中心どうし）');
+  slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）');
+  slider('ばらつき', 'scaleVar', 0, 1, 0.05, 2, '大きさのばらつき。0.3 で ±30%');
+  const btns = put(box, '<div class="stoneBtns"></div>');
+  const again = put(btns, '<button title="同じ設定のまま、木の位置・向き・大きさのばらつきだけ変える">作り直し</button>');
+  again.onclick = () => { m.seed = ((m.seed ?? 1) % 1000000) + 1; changed(); };
+  const dup = put(btns, '<button title="この木を複製する（設定ごと。右隣に入る）。別の木を選べば種類を混ぜられる">複製</button>');
+  dup.onclick = () => { const c = treeDefaults(JSON.parse(JSON.stringify(m))); c.name = `${m.name || `木${i + 1}`}のコピー`; trees.splice(i + 1, 0, c); renderScreens(); changed(); };
+  const del = put(btns, '<button class="del" title="この木を削除する">削除</button>');
+  del.onclick = () => { trees.splice(i, 1); renderScreens(); changed(); };
+  return box;
+}
 function modelRow(m, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen model' });
   hoverHighlight(box, 'model', i);
@@ -1397,6 +1476,14 @@ function renderScreens() {
     addD.onclick = () => { dirt.push(dirtDefaults({ name: `土${dirt.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setDirt(dirt); saveDirt(); };
     dtbox.appendChild(addD);
   }
+  const trbox = $('treeRows');
+  if (trbox) {   // 木のジェネレーター（2026-10-05）
+    trbox.textContent = '';
+    trees.forEach((st, i) => trbox.appendChild(treeRow(st, i)));
+    const addT = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '木のまとまりを 1 つ増やす（木の 3D モデルはカードで選ぶ）' });
+    addT.onclick = () => { trees.push(treeDefaults({ name: `木${trees.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setTrees(trees); saveTrees(); };
+    trbox.appendChild(addT);
+  }
   const msbox = $('masonryRows');
   if (msbox) {   // 石組み（2026-10-05）
     msbox.textContent = '';
@@ -1466,7 +1553,7 @@ function showBarTab(id) {
 // 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
 // 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
 function equalizeBarTabs() {
-  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec', 'sandSec', 'roadSec', 'pillarSec', 'masonrySec'].map((id) => $(id)).filter(Boolean);
+  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec', 'sandSec', 'roadSec', 'pillarSec', 'masonrySec', 'treeSec'].map((id) => $(id)).filter(Boolean);
   if (!secs.length) return;
   const off = secs.filter((el) => el.classList.contains('tabOff'));
   for (const el of secs) el.style.minHeight = '';
@@ -2755,7 +2842,7 @@ function snapshotSettings() {
 // 集めるだけなら fn の中で控えて undefined を返す
 function mapAssetSrcs(snap, fn) {
   const out = { ...snap };
-  for (const k of [SCREENS_KEY, DOMES_KEY, MODELS_KEY, PATTERNS_KEY]) {
+  for (const k of [SCREENS_KEY, DOMES_KEY, MODELS_KEY, PATTERNS_KEY, TREES_KEY]) {
     if (out[k] == null) continue;
     try {
       const a = JSON.parse(out[k]);
@@ -2785,7 +2872,8 @@ function applySnapshot(p, src) {
   try { const a = JSON.parse(LS.getItem(ROAD_KEY) || 'null'); road = Array.isArray(a) ? a.map(roadDefaults) : []; } catch (e) { console.warn('石畳の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(PILLAR_KEY) || 'null'); pillars = Array.isArray(a) ? a.map(pillarDefaults) : []; } catch (e) { console.warn('柱の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(MASONRY_KEY) || 'null'); masonry = Array.isArray(a) ? a.map(masonryDefaults) : []; } catch (e) { console.warn('石組みの復元失敗:', e); }
-  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road); setPillars(pillars); setMasonry(masonry);
+  try { const a = JSON.parse(LS.getItem(TREES_KEY) || 'null'); trees = Array.isArray(a) ? a.map(treeDefaults) : []; } catch (e) { console.warn('木の復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road); setPillars(pillars); setMasonry(masonry); setTrees(trees);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
@@ -2956,6 +3044,7 @@ const SECTIONS = [
   { key: 'road', label: '石畳', sec: 'roadSec' },
   { key: 'pillar', label: '柱', sec: 'pillarSec' },
   { key: 'masonry', label: '石組み', sec: 'masonrySec' },
+  { key: 'tree', label: '木', sec: 'treeSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
   { key: 'env', label: '環境', group: ['sky', 'weather', 'light', 'wind'], hdId: 'envHd' },
 ];
@@ -2969,7 +3058,7 @@ const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
 function sectionSnap(sec) {
   if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
-  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : sec.key === 'sand' ? sand : sec.key === 'road' ? road : sec.key === 'pillar' ? pillars : sec.key === 'masonry' ? masonry : screens)) };
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : sec.key === 'sand' ? sand : sec.key === 'road' ? road : sec.key === 'pillar' ? pillars : sec.key === 'masonry' ? masonry : sec.key === 'tree' ? trees : screens)) };
   const v = {}, r = {};
   for (const el of sectionInputs(sec)) {
     if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2993,8 +3082,9 @@ function applySection(sec, d) {
     else if (sec.key === 'road') { road = d.list.map(roadDefaults); saveRoad(); }
     else if (sec.key === 'pillar') { pillars = d.list.map(pillarDefaults); savePillars(); }
     else if (sec.key === 'masonry') { masonry = d.list.map(masonryDefaults); saveMasonry(); }
+    else if (sec.key === 'tree') { trees = d.list.map(treeDefaults); saveTrees(); }
     else { screens = d.list.map(withDefaults); saveScreens(); }
-    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road); setPillars(pillars); setMasonry(masonry);
+    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road); setPillars(pillars); setMasonry(masonry); setTrees(trees);
     return;
   }
   for (const [id, val] of Object.entries(d.v || {})) {
@@ -3110,6 +3200,7 @@ setSand(sand);        // 砂のジェネレーター（2026-10-05）
 setRoad(road);        // 石畳の道（2026-10-05）
 setPillars(pillars);  // 石の柱（2026-10-05）
 setMasonry(masonry);  // 石組み（2026-10-05）
+setTrees(trees);      // 木のジェネレーター（2026-10-05）
 refreshStonePatterns();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
