@@ -4266,21 +4266,29 @@ function buildProcTrees(root, st, placed) {
         const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
-        const lw = 0.025 * H, lh = 0.07 * H;   // 細長く尖った葉（GLB の木の層のふちのトゲトゲに寄せる）
-        const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3();
-        const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる   // GLB の木に寄せて暗く落ち着いた緑に
-        const card = (pos, shade, along = null) => {   // along：葉の長い向き（枝の外向き。null でばらばら）
-          fn.set((r() - 0.5) * 0.9, 1, (r() - 0.5) * 0.9).normalize();   // ほぼ水平な葉
-          if (along) { ay.copy(along).addScaledVector(fn, -along.dot(fn)).add(new THREE.Vector3((r() - 0.5) * 0.8, 0, (r() - 0.5) * 0.8)).normalize(); ax.crossVectors(ay, fn).normalize(); }
-          else { ax.set(r() - 0.5, 0, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax); }
-          const s0 = 0.7 + 0.6 * r(), w = lw * s0, h = lh * s0;
-          const P = [pos.clone().addScaledVector(ay, -h / 2), pos.clone().addScaledVector(ax, w / 2), pos.clone().addScaledVector(ay, h / 2), pos.clone().addScaledVector(ax, -w / 2)];
+        // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
+        // 小葉は先の尖った細長い楕円（根元から 45% の所が一番太いひし形）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
+        const LL = 0.065 * H, LW = 0.017 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
+        const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる
+        const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3();
+        const card = (pos, shade, along = null) => {   // 関数名は前のまま（葉 1 つ＝手のひら形の小葉の集まり）
+          fn.set((r() - 0.5) * 0.7, 1, (r() - 0.5) * 0.7).normalize();   // ほぼ水平
+          ax.set(r() - 0.5, 0, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax);
           nn.copy(fn).multiplyScalar(0.4).add(new THREE.Vector3(0, 0.6, 0)).normalize();
-          c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.18));
-          for (const tri of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) for (const k of tri) {   // 両面
-            const p = P[k];
-            leaf.pos.push(p.x, p.y, p.z); leaf.nrm.push(nn.x, nn.y, nn.z); leaf.col.push(c.r, c.g, c.b);
-            const hh = Math.max(0, (p.y - baseY) / curH); leaf.sw.push(hh * hh);
+          const nl = 5 + Math.floor(r() * 3), a0 = r() * Math.PI * 2, s0 = 0.75 + 0.5 * r();
+          for (let q = 0; q < nl; q++) {
+            const ang = a0 + (q / nl) * Math.PI * 2 + (r() - 0.5) * 0.3;
+            dv.copy(ax).multiplyScalar(Math.cos(ang)).addScaledVector(ay, Math.sin(ang));   // 小葉の向き（葉の面の中）
+            pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
+            const out = along ? 0.85 + 0.3 * Math.max(0, dv.dot(along)) : 1;               // 外向きの小葉を少し長く
+            const L = LL * s0 * out * (0.8 + 0.3 * r()), W = LW * s0;
+            const P = [pos.clone(), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.45).addScaledVector(pv, -W / 2)];
+            c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
+            for (const tri of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) for (const k of tri) {   // 両面
+              const p = P[k];
+              leaf.pos.push(p.x, p.y, p.z); leaf.nrm.push(nn.x, nn.y, nn.z); leaf.col.push(c.r, c.g, c.b);
+              const hh = Math.max(0, (p.y - baseY) / curH); leaf.sw.push(hh * hh);
+            }
           }
         };
         const nb = 22;
@@ -4299,7 +4307,7 @@ function buildProcTrees(root, st, placed) {
           for (let k = 0; k < pads; k++) {
             const f = 0.35 + 0.65 * (k + r() * 0.5) / pads;
             const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
-            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(45 * amt);
+            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(10 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
             pc.addScaledVector(fz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
             for (let j = 0; j < nl; j++) {
               const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;   // 層の厚み 0.04H
@@ -4312,7 +4320,7 @@ function buildProcTrees(root, st, placed) {
         }
         for (let k = 0; k < 3; k++) {   // てっぺんの小さな層
           const pc = at((r() - 0.5) * 0.06 * H, (0.9 + 0.05 * k) * H, (r() - 0.5) * 0.06 * H);
-          for (let j = 0; j < Math.round(30 * amt); j++) { const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()); card(pc.clone().add(new THREE.Vector3(Math.cos(a2) * d2 * 0.07 * H, (r() - 0.5) * 0.03 * H, Math.sin(a2) * d2 * 0.07 * H)), 1.08); }
+          for (let j = 0; j < Math.round(7 * amt); j++) { const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()); card(pc.clone().add(new THREE.Vector3(Math.cos(a2) * d2 * 0.07 * H, (r() - 0.5) * 0.03 * H, Math.sin(a2) * d2 * 0.07 * H)), 1.08); }
         }
       }
     }
