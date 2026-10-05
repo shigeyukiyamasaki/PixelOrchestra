@@ -4268,11 +4268,12 @@ function buildProcTrees(root, st, placed) {
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
-        const LL = 0.065 * H, LW = 0.021 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
+        const LL = 0.065 * H, LW = 0.014 * H;   // 見本の小葉は長さ：幅がおよそ 5：1   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
         const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる
         const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3(), md = new THREE.Vector3();
         // 指の角度 [rad] と長さ：中指 1、人差し指・薬指 ±35° で 0.85、親指・小指 ±75° で 0.6（7 枚の時はさらに ±105° に 0.35）
-        const FINGERS5 = [[0, 1], [0.61, 0.85], [-0.61, 0.85], [1.31, 0.6], [-1.31, 0.6]], FINGERS7 = [...FINGERS5, [1.83, 0.35], [-1.83, 0.35]];
+        // 見本（広葉樹E の葉ポリゴンを取り出して確かめた。2026-10-06）：小葉 7 枚が約 200° の扇に開き、真ん中が一番長い（角度の順に並べる）
+        const FINGERS = [[-1.7, 0.6], [-1.1, 0.8], [-0.55, 0.95], [0, 1], [0.55, 0.95], [1.1, 0.8], [1.7, 0.6]];
         const card = (pos, shade, along = null) => {   // 関数名は前のまま（葉 1 つ＝手のひら形の小葉の集まり）
           fn.set((r() - 0.5) * 0.7, 1, (r() - 0.5) * 0.7).normalize();   // ほぼ水平
           ax.set(r() - 0.5, 0, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax);
@@ -4283,20 +4284,27 @@ function buildProcTrees(root, st, placed) {
           if (along) md.copy(along).addScaledVector(fn, -along.dot(fn)).normalize().applyAxisAngle(fn, (r() - 0.5) * 0.8);
           else md.copy(ax).applyAxisAngle(fn, r() * Math.PI * 2);
           const mp = new THREE.Vector3().crossVectors(fn, md);
-          for (const [fa, fl] of r() < 0.4 ? FINGERS7 : FINGERS5) {
-            const ang = fa + (r() - 0.5) * 0.16;
-            dv.copy(md).multiplyScalar(Math.cos(ang)).addScaledVector(mp, Math.sin(ang));   // 小葉の向き（葉の面の中）
-            pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
-            const L = LL * s0 * fl * (0.9 + 0.2 * r()), W = LW * s0 * (0.7 + 0.3 * fl);
-            // 小葉は五角形（2026-10-06 ユーザー指定：見本はひし形ではなく五角形）：ホームベースの形。根元の幅 70%、根元から 6 割まで両側ほぼまっすぐ、先だけ尖る
-            //（根元 35% ではドット化でひし形と見分けがつかなかった）
-            const P = [pos.clone().addScaledVector(pv, -W * 0.35), pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, -W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, W / 2), pos.clone().addScaledVector(pv, W * 0.35)];
-            c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
-            for (const tri of [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 2, 1], [0, 3, 2], [0, 4, 3]]) for (const k of tri) {   // 両面（五角形＝三角形 3 つ）
-              const p = P[k];
+          // 小葉は凧形（根元が尖り、根元から 6 割の所が一番太く、先が尖る）。隣り合う小葉の付け根 2.5 割までは水かきのようにつなぐ（見本の葉と同じ。
+          // これで小葉の根元が広く見え、五角形に近くなる。2026-10-06 ユーザー指定：まだひし形に見えた）
+          const tipDir = [], len = [];
+          c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
+          const pushTri = (A, B, C) => {
+            for (const tri of [[A, B, C], [A, C, B]]) for (const p of tri) {   // 両面
               leaf.pos.push(p.x, p.y, p.z); leaf.nrm.push(nn.x, nn.y, nn.z); leaf.col.push(c.r, c.g, c.b);
               const hh = Math.max(0, (p.y - baseY) / curH); leaf.sw.push(hh * hh);
             }
+          };
+          for (const [fa, fl] of FINGERS) {
+            const ang = fa + (r() - 0.5) * 0.12;
+            dv.copy(md).multiplyScalar(Math.cos(ang)).addScaledVector(mp, Math.sin(ang));   // 小葉の向き（葉の面の中）
+            pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
+            const L = LL * s0 * fl * (0.92 + 0.16 * r()), W = LW * s0 * (0.8 + 0.2 * fl);
+            const tip = pos.clone().addScaledVector(dv, L), wl = pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, -W / 2), wr = pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, W / 2);
+            pushTri(pos, wl, tip); pushTri(pos, tip, wr);
+            tipDir.push(dv.clone()); len.push(L);
+          }
+          for (let q = 0; q < tipDir.length - 1; q++) {   // 水かき：付け根 2.5 割どうしをつなぐ
+            pushTri(pos, pos.clone().addScaledVector(tipDir[q], len[q] * 0.25), pos.clone().addScaledVector(tipDir[q + 1], len[q + 1] * 0.25));
           }
         };
         const nb = 22;
