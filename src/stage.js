@@ -554,14 +554,15 @@ export function createStage(container) {
   const dirt = new THREE.Group(); dirt.name = 'dirt'; scene.add(dirt);           // 土のジェネレーター（2026-10-05 ユーザー指定）
   const sand = new THREE.Group(); sand.name = 'sand'; scene.add(sand);
   const road = new THREE.Group(); road.name = 'road'; scene.add(road);           // 石畳の道（2026-10-05 ユーザー指定）
-  const pillars = new THREE.Group(); pillars.name = 'pillars'; scene.add(pillars);   // 石の柱（2026-10-05 ユーザー指定。石畳と同じテイスト）           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
+  const pillars = new THREE.Group(); pillars.name = 'pillars'; scene.add(pillars);   // 石の柱（2026-10-05 ユーザー指定。石畳と同じテイスト）
+  const masonry = new THREE.Group(); masonry.name = 'masonry'; scene.add(masonry);   // 石組み：階段・壁・屋根・がれき（2026-10-05 ユーザー指定）           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, masonry, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -936,7 +937,7 @@ export function pixelGroups() {
   // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
   // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
   // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars, stageCtx.masonry], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -2076,7 +2077,7 @@ function buildStones() {
         const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
-        if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
+        if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
         if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
@@ -2332,7 +2333,7 @@ function buildGrass() {
       const shade = Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
       if (pi < 0 || !insideFloor(x, z)) continue;
       // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
-      if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
+      if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
       if (st.avoidPlayers && playersSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 「奏者をよける」：株の中心が奏者のまわりの陸地に近いものは置かない（2026-10-04）   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
       per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + riserTopAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
          _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
@@ -2782,7 +2783,7 @@ function buildRoad() {
 let pillarList = [];
 let PILLAR_AVOID = [];
 export function setPillars(list) { pillarList = (list || []).map((o) => ({ ...o })); buildPillars(); buildStones(); buildGrass(); }
-function pillarMaterial(kind, o) {   // kind：0 円柱の胴／1 角柱の胴／2 柱礎・柱頭の板
+function pillarMaterial(kind, o) {   // kind：0 円柱の胴／1 角柱の胴・壁／2 柱礎・柱頭の板・階段・がれき／3 屋根（破風）。石組み（2026-10-05）とも共有
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
   m.userData.u = { uKind: { value: kind }, uR: { value: o.r }, uStone: { value: o.stone }, uShade: { value: o.shade }, uTint: { value: new THREE.Vector3().fromArray(o.tint) },
     uRound: { value: o.round }, uFlute: { value: o.flute ? 1 : 0 }, uSeed: { value: o.seed } };
@@ -2807,19 +2808,35 @@ ${STONE_D_GLSL}
   if ( uKind < 0.5 ) u = atan( L.z, L.x ) * uR;   // 円柱：周りの長さ
   else if ( abs( N.x ) > 0.5 ) u = L.z * sign( N.x ) + ( N.x > 0.0 ? 0.0 : 20.0 );
   else u = -L.x * sign( N.z ) + ( N.z > 0.0 ? 10.0 : 30.0 );
-  if ( abs( N.y ) > 0.7 ) {
-    // 上下の面：1 枚の石（縁だけ明暗）
-    vec2 hw = vec2( uR * ( uKind > 1.5 ? 1.0 : 1.0 ) );
-    id = vec2( 91.0, sign( N.y ) );
-    e = 1.0;
+  if ( uKind > 2.5 && N.y > 0.2 && N.y < 0.98 ) {
+    // 屋根の斜めの面（2026-10-05）：屋根石を、軒から棟へ段に重ねる（幅 0.5・段 0.35、段ごとに半分ずらす）。各段の下の縁を暗く（重なりの影）
+    float sl = L.y / max( 0.2, length( N.xz ) ), ux = L.x;
+    vec2 sz = vec2( 0.5, 0.35 ) * uStone;
+    float row = floor( sl / sz.y ), off = mod( row, 2.0 ) * 0.5 * sz.x;
+    vec2 f = vec2( fract( ( ux + off ) / sz.x ), fract( sl / sz.y ) );
+    id = vec2( floor( ( ux + off ) / sz.x ), row + 300.0 );
+    e = pxoStoneD( f, sz, g, uRound * 0.1 * uStone );
+    up = 1.0;
+    if ( f.y < 0.22 && e >= 0.0 ) { up = 0.0; e = min( e, BV * 0.5 ); }   // 段の下の縁：重なりの影として暗く（下の縁の明暗で 0.8 倍）
+  } else if ( abs( N.y ) > 0.7 ) {
+    // 上下の面：柱の胴は 1 枚の石。板・壁・階段・がれきの上の面は板石（1.0 × 0.6 を列ごとに半分ずらす。2026-10-05）
+    if ( uKind < 0.5 ) { id = vec2( 91.0, sign( N.y ) ); e = 1.0; }
+    else {
+      vec2 sz = vec2( 1.0, 0.6 ) * uStone;
+      float row = floor( L.z / sz.y ), off = mod( row, 2.0 ) * 0.5 * sz.x;
+      vec2 f = vec2( fract( ( L.x + off ) / sz.x ), fract( L.z / sz.y ) );
+      id = vec2( floor( ( L.x + off ) / sz.x ), row + 500.0 * sign( N.y ) );
+      e = pxoStoneD( f, sz, g, uRound * 0.13 * uStone );
+      up = ( f.y > 0.5 || f.x < 0.5 ) ? 1.0 : 0.0;
+    }
   } else if ( uKind < 0.5 ) {
     // 円柱：高さ 0.9 ごとの輪切りの石（ドラム）。目地は水平だけ
     float dh = 0.9 * uStone, fy = fract( v / dh );
     id = vec2( floor( v / dh ), 0.0 );
     e = min( fy, 1.0 - fy ) * dh - g;
     up = step( 0.5, fy );
-  } else if ( uKind < 1.5 ) {
-    // 角柱：高さ 0.45・幅 0.7 のブロックを段ごとに半分ずらして積む
+  } else if ( uKind < 1.5 || uKind > 2.5 ) {
+    // 角柱・壁・破風の三角の面：高さ 0.45・幅 0.7 のブロックを段ごとに半分ずらして積む
     vec2 sz = vec2( 0.7, 0.45 ) * uStone;
     float row = floor( v / sz.y ), off = mod( row, 2.0 ) * 0.5 * sz.x;
     vec2 f = vec2( fract( ( u + off ) / sz.x ), fract( v / sz.y ) );
@@ -2850,7 +2867,7 @@ ${STONE_D_GLSL}
   diffuseColor.rgb = col;
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-pillar-v1';
+  m.customProgramCacheKey = () => 'pxo-pillar-v2';
   return m;
 }
 function buildPillars() {
@@ -2895,6 +2912,104 @@ function buildPillars() {
     PILLAR_AVOID.push({ cs: avoid, k: 0.02, only: { grass: true, stone: true } });
   });
 }
+// ---- 石組み（2026-10-05 ユーザー指定：神殿・城向けに、柱と同じ石の 階段・壁・屋根（破風）・がれき）----
+// 材質は柱と同じ（pillarMaterial）。形は箱・三角柱・円柱の組み合わせで、石の段・目地・縁の明暗はシェーダが面の位置から塗り分ける。
+// 置く物ごとに、ローカル座標（x：向きの方向、z：その直角、y：上）で組んだ形をグループごと「向き」に回す。
+// 形のジオメトリは置く物のローカル座標のまま平行移動して作る（壁を区切っても石の並びが途切れない）
+let masonryList = [];
+let MASONRY_AVOID = [];
+export function setMasonry(list) { masonryList = (list || []).map((o) => ({ ...o })); buildMasonry(); buildStones(); buildGrass(); }
+function buildMasonry() {
+  if (!stageCtx) return;
+  HL_VER++;
+  const g = stageCtx.masonry;
+  g.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  g.clear();
+  MASONRY_AVOID = [];
+  masonryList.forEach((st, ci) => {
+    if (st.show === false) return;
+    const r = rng32(st.seed ?? 1), dir = deg(st.dir ?? 0);
+    const root = new THREE.Group(); root.userData.pxoCard = ci;
+    root.position.set(st.x ?? 0, st.y ?? 0, st.z ?? 0); root.rotation.y = dir; g.add(root);
+    const stone = Math.max(0.3, Math.min(3, st.stone ?? 1));
+    const o = { r: 1, stone, shade: Math.max(0, st.shade ?? 1), tint: ROAD_TINT[st.tint] || ROAD_TINT.gray, round: Math.max(0, Math.min(1, st.round ?? 0.4)), flute: true, seed: ((st.seed ?? 1) % 997) * 0.37 };
+    const mk = (geo, kind, oo = o) => {
+      const m = new THREE.Mesh(geo, pillarMaterial(kind, oo));
+      m.castShadow = true; m.receiveShadow = true; root.add(m); return m;
+    };
+    const box = (w, h, d, x, y, z, kind = 2) => { const geo = new THREE.BoxGeometry(w, h, d); geo.translate(x, y, z); return mk(geo, kind); };
+    // よける形：ローカルの長方形（中心 cx・cz、半分の大きさ hx・hz）を、短い辺の半分の円で埋める（床の上にある物だけ）
+    const avoid = [];
+    const rectAvoid = (cx, cz, hx, hz) => {
+      if ((st.y ?? 0) > 0.5) return;
+      const c = Math.cos(dir), sn = Math.sin(dir), rr = Math.min(hx, hz), n = Math.max(1, Math.ceil(Math.max(hx, hz) / rr));
+      for (let i = 0; i <= n; i++) {
+        const t = n ? -1 + (2 * i) / n : 0, lx = hx > hz ? cx + t * (hx - rr) : cx, lz = hx > hz ? cz : cz + t * (hz - rr);
+        avoid.push([(st.x ?? 0) + lx * c + lz * sn, (st.z ?? 0) - lx * sn + lz * c, rr]);
+      }
+    };
+    const type = st.type ?? 'stairs';
+    if (type === 'stairs') {
+      // 階段：手前（+z）から奥（−z）へ上る。段 i は奥の端までの箱（下の段ほど奥行きが長い）
+      const W = Math.max(0.3, st.width ?? 6), n = Math.max(1, Math.min(30, Math.round(st.steps ?? 5)));
+      const sh = Math.max(0.05, st.stepH ?? 0.3), sd = Math.max(0.1, st.stepD ?? 0.7), back = -(n * sd) / 2;
+      for (let i = 0; i < n; i++) {
+        const zf = (n * sd) / 2 - i * sd;
+        box(W, sh, zf - back, 0, i * sh + sh / 2, (zf + back) / 2);
+      }
+      rectAvoid(0, 0, W / 2, (n * sd) / 2);
+    } else if (type === 'wall') {
+      // 壁：ブロックを段ごとに半分ずらして積む。崩れ：0.7 幅ごとに区切り、上端を段の高さ（0.45）単位で崩す
+      const L = Math.max(0.3, st.len ?? 10), H = Math.max(0.1, st.height ?? 4), T = Math.max(0.1, st.thick ?? 0.8), ruin = Math.max(0, Math.min(1, st.ruin ?? 0));
+      if (ruin <= 0) box(L, H, T, 0, H / 2, 0, 1);
+      else {
+        const bw = 0.7 * stone, course = 0.45 * stone, n = Math.max(1, Math.ceil(L / bw)), w = L / n, ph = r() * 6.28, fr = 0.25 + r() * 0.35;
+        for (let i = 0; i < n; i++) {
+          const v = 0.6 * (0.5 + 0.5 * Math.sin(i * fr + ph)) + 0.4 * r();   // なだらかな崩れ＋ばらつき
+          const h = Math.max(course, Math.round((H * (1 - ruin * v)) / course) * course);
+          box(w, h, T, -L / 2 + w * (i + 0.5), h / 2, 0, 1);
+        }
+      }
+      rectAvoid(0, 0, L / 2, T / 2);
+    } else if (type === 'roof') {
+      // 屋根（破風）：梁（エンタブラチュア）の上に三角の破風。棟は「向き」の方向に通り、三角の面は両端。高さ位置を柱の高さに合わせて柱の上に乗せる
+      const W = Math.max(0.3, st.width ?? 10), D = Math.max(0.3, st.depth ?? 6), bh = Math.max(0.05, st.beamH ?? 0.9), gh = Math.max(0, st.gableH ?? 2.2);
+      box(W, bh, D, 0, bh / 2, 0, 2);
+      if (gh > 0.01) {
+        const ov = 0.25, sh = new THREE.Shape();   // 軒の出
+        sh.moveTo(-(D / 2 + ov), 0); sh.lineTo(D / 2 + ov, 0); sh.lineTo(0, gh); sh.closePath();
+        const geo = new THREE.ExtrudeGeometry(sh, { depth: W + ov * 2, bevelEnabled: false });
+        geo.translate(0, 0, -(W + ov * 2) / 2); geo.rotateY(Math.PI / 2); geo.translate(0, bh, 0);
+        mk(geo, 3);
+      }
+    } else {
+      // がれき：崩れた石のブロック（ときどき前のブロックの上に重なる）と、倒れた円柱の輪切り。範囲（半径「広がり」）の中に一様に散らす
+      const n = Math.max(1, Math.min(80, Math.round(st.count ?? 16))), spread = Math.max(0, st.spread ?? 3), sz = Math.max(0.1, st.size ?? 0.6);
+      let prev = null;
+      for (let i = 0; i < n; i++) {
+        const a = r() * Math.PI * 2, d = spread * Math.sqrt(r()), s0 = sz * (0.5 + 0.8 * r());
+        let x = Math.cos(a) * d, z = Math.sin(a) * d, y = 0;
+        const oo = { ...o, seed: o.seed + i * 1.7, r: s0 * 0.5 };
+        if (r() < 0.15) {   // 倒れた円柱の輪切り
+          const rad = s0 * 0.5, len = s0 * (0.7 + 0.6 * r());
+          const geo = new THREE.CylinderGeometry(rad, rad, len, 16, 1);
+          const m = mk(geo, 0, oo); m.rotation.set(0, r() * Math.PI, Math.PI / 2); m.position.set(x, rad, z);
+          avoid.push([(st.x ?? 0) + x * Math.cos(dir) + z * Math.sin(dir), (st.z ?? 0) - x * Math.sin(dir) + z * Math.cos(dir), rad]);
+          continue;
+        }
+        const w = s0 * (1 + 0.8 * r()), h = s0 * (0.5 + 0.5 * r()), dd = s0 * (0.7 + 0.5 * r());
+        if (prev && r() < 0.2) { x = prev.x + (r() - 0.5) * prev.w * 0.5; z = prev.z + (r() - 0.5) * prev.d * 0.5; y = prev.top; }   // 前のブロックの上に重ねる
+        const geo = new THREE.BoxGeometry(w, h, dd);
+        const m = mk(geo, 2, oo);
+        m.position.set(x, y + h / 2, z); m.rotation.set((r() - 0.5) * 0.3, r() * Math.PI, (r() - 0.5) * 0.3);
+        prev = { x, z, w, d: dd, top: y + h * 0.9 };
+        if (y === 0) avoid.push([(st.x ?? 0) + x * Math.cos(dir) + z * Math.sin(dir), (st.z ?? 0) - x * Math.sin(dir) + z * Math.cos(dir), Math.max(w, dd) * 0.5]);
+      }
+      if ((st.y ?? 0) > 0.5) avoid.length = 0;
+    }
+    if (avoid.length) MASONRY_AVOID.push({ cs: avoid, k: 0.02, only: { grass: true, stone: true } });
+  });
+}
 export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
@@ -2919,7 +3034,7 @@ function seaDAt(sea, x, z) {   // 海の静かな時の岸線からの距離（�
 }
 function waterSdfAt(x, z, kind = null) {   // 一番近い「よける」水場・土の縁までの距離（負が中）。無ければ大きな値。kind：'grass' / 'stone'（土は草・石を別々によける。2026-10-05）
   let best = 1e9;
-  for (const w of [...WATER_AVOID, ...DIRT_AVOID, ...ROAD_AVOID, ...PILLAR_AVOID]) {   // 水と土・砂と石畳・柱の足元（2026-10-05）
+  for (const w of [...WATER_AVOID, ...DIRT_AVOID, ...ROAD_AVOID, ...PILLAR_AVOID, ...MASONRY_AVOID]) {   // 水と土・砂と石畳・柱の足元（2026-10-05）
     if (w.only && kind && !w.only[kind]) continue;   // 土：その種類をよけない設定なら見ない
     if (w.sea) { best = Math.min(best, seaDAt(w.sea, x, z) - w.sea.run); continue; }   // 海は波が駆け上がる所まで水とみなす
     let d = 1e5;
@@ -3811,8 +3926,8 @@ function updateHighlight(renderer) {
   if (kind === 'dirt' || kind === 'sand' || kind === 'road') { for (const m of stageCtx[kind].children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
-  if (kind === 'model' || kind === 'stone' || kind === 'grass' || kind === 'pillar') {
-    const g = kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : kind === 'pillar' ? stageCtx.pillars : stageCtx.grass;
+  if (kind === 'model' || kind === 'stone' || kind === 'grass' || kind === 'pillar' || kind === 'masonry') {
+    const g = kind === 'model' ? stageCtx.models : kind === 'stone' ? stageCtx.stones : kind === 'pillar' ? stageCtx.pillars : kind === 'masonry' ? stageCtx.masonry : stageCtx.grass;
     for (const root of g.children) {
       if (root.userData.pxoCard !== index) continue;
       root.traverse((n) => {
