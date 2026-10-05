@@ -1272,6 +1272,12 @@ let tempoKey = '';
 // 端末ごとの文字の倍率。スマホは画面が小さいぶん、クレジットとテンポ・拍子を小さくする
 // （スマホ横 0.7 / スマホ縦 0.5。2026-09-14 ユーザー指定）
 function deviceTextScale() {
+  // 公開ページ（視聴モード）は本物の画面で判断する（2026-10-05 ユーザー指摘：スマホで曲名・拍子が大きかった。プレビューの端末の印は
+  // 編集画面にしか付かず、いつも 1 倍になっていた）。プレビューのスマホ枠は論理サイズ 390×844 なので、短い辺 500 以下をスマホとみなし、向きで決める
+  if (VIEW_NAME) {
+    const w = innerWidth, h = innerHeight;
+    return Math.min(w, h) <= 500 ? (h > w ? 0.5 : 0.7) : 1;
+  }
   const c = $('viewWrap').classList;
   return c.contains('phoneV') ? 0.5 : c.contains('phoneH') ? 0.7 : 1;
 }
