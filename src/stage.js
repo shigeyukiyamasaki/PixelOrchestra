@@ -729,19 +729,6 @@ function floorMapOf(tex) {
   return m;
 }
 
-// ひな壇の天面用のテクスチャ。RingGeometry の UV は外径の正方形を [0,1] に写すので、
-// そのまま貼ると段の半径によって粒の大きさが変わってしまう（2026-09-13 ユーザー指摘）。
-// 床と同じ「40×32 unit に 1 枚」の実寸になるよう繰り返しを設定し、原点も床に合わせる
-function ringMapOf(tex, rOut) {
-  const m = tex.clone(); m.needsUpdate = true;
-  m.wrapS = m.wrapT = THREE.RepeatWrapping;
-  const k = tex.tileScale || 1;
-  m.repeat.set(k * 2 * rOut / 40, k * 2 * rOut / 32);
-  m.offset.set(-k * rOut / 40, -k * rOut / 32);
-  m.__disposable = true;            // 作り直しのたびに捨てる（元の共有テクスチャは触らない）
-  return m;
-}
-
 /** 床とひな壇の天面の見た目を切り替える（'plank' = 板目 / 'grass' = 草原 / 'grassDark' = 草原（深緑））。2026-09-13 ユーザー指定 */
 export function setFloorStyle(style) {
   if (!stageCtx) return;
@@ -1525,7 +1512,7 @@ function riserTopAt(x, z) {
 export function buildRisers(seats) {
   if (!stageCtx) return;
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
-  const { groundTex, stageMat, risers } = stageCtx;
+  const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
   queueMicrotask(() => { if (grassList.length) buildGrass(); });   // 組み終わったら、草をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
@@ -1563,7 +1550,11 @@ export function buildRisers(seats) {
     const matC = (o) => { const m = stageMat(o); if (clip) m.clippingPlanes = clip; return m; };
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
-    const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin), matC({ map: ringMapOf(groundTex, rOut), color: col }));
+    // 絵は床の物をそのまま使う（2026-10-05：段ごとに複製すると、2048 ドットの草原の絵がその数だけグラフィックのメモリを食い、スマホで木が出なくなった）。
+    // そのため UV を床（ShapeGeometry：UV＝座標そのもの）と同じく座標そのものにする
+    const topGeo = new THREE.RingGeometry(rIn, rOut, segs, 1, Math.PI / 2 - thMax, thMax - thMin);
+    { const P = topGeo.attributes.position, U = topGeo.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i), P.getY(i)); U.needsUpdate = true; }
+    const top = new THREE.Mesh(topGeo, matC({ map: stageCtx.floorMat.map, color: col }));
     top.rotation.x = -Math.PI / 2;
     top.position.y = row.h;
     top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
