@@ -2474,24 +2474,24 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
   float sd = pxoCirclesSDF( P.xz ) + 0.18 * ( pxoWN( q * 3.0 ) * 2.0 - 1.0 ) + 0.06 * ( pxoWN( q * 11.0 + 4.1 ) * 2.0 - 1.0 );
   if ( sd > 0.0 ) discard;
 ${kind === 'sand' ? `  // 砂（2026-10-05 ユーザー指定）：明るいベージュの地に、大きなむら・風紋・細かい砂粒。
-  // 風紋は「向き」の方向に並ぶ筋（波長 約 17cm）。風下側の斜面を明るく、風上側の谷を暗くし、むらで途切れさせる
+  // 風紋は「向き」の方向に並ぶ筋（波長 0.5 unit ≒ 25cm）。風下側の斜面を明るく、風上側の谷を暗くし、むらで途切れさせる
   vec2 w = q + 0.5 * vec2( pxoDirtN( q * 0.5 ), pxoDirtN( q * 0.5 + 5.2 ) );
   float n1 = pxoDirtN( w * 0.8 ), n2 = pxoDirtN( w * 3.1 + 7.3 ), n3 = pxoWN( q * 14.0 + 1.9 );
-  vec3 col = mix( ${c3('#c9a874')}, ${c3('#e3cb98')}, smoothstep( 0.35, 0.65, n1 ) );   // 地の色（乾いて明るい所／少し湿って濃い所）
-  col = mix( col, ${c3('#b39363')}, smoothstep( 0.55, 0.8, n2 ) * 0.35 );             // 湿った所（薄く）
+  vec3 col = mix( ${c3('#8a6c43')}, ${c3('#a68759')}, smoothstep( 0.35, 0.65, n1 ) );   // 地の色（乾いて明るい所／少し湿って濃い所）。日なたで白く飛ばないよう、見た目より一段暗くしてある
+  col = mix( col, ${c3('#735637')}, smoothstep( 0.55, 0.8, n2 ) * 0.35 );             // 湿った所（薄く）
   {
-    float ph = ( q.x + 0.35 * ( pxoDirtN( q * 0.9 + 3.3 ) - 0.5 ) * 2.0 ) / 0.35;   // 筋をゆがめる
+    float ph = ( q.x + 0.5 * ( pxoDirtN( q * 0.9 + 3.3 ) - 0.5 ) * 2.0 ) / 0.5;   // 筋をゆがめる
     float f = fract( ph );
     float crest = smoothstep( 0.0, 0.2, f ) * ( 1.0 - smoothstep( 0.45, 0.6, f ) );   // 明るい斜面
     float trough = smoothstep( 0.62, 0.8, f ) * ( 1.0 - smoothstep( 0.9, 1.0, f ) );  // 暗い谷
     float k = uRipple * smoothstep( 0.3, 0.6, pxoDirtN( q * 0.4 + 9.1 ) );            // 風紋が出る所と消える所
-    col *= 1.0 + k * ( 0.10 * crest - 0.22 * trough );
+    col *= 1.0 + k * ( 0.2 * crest - 0.45 * trough );
   }
   {   // 砂粒：2cm ごとに、ときどき暗い粒・明るい粒
     vec2 gc = floor( q / 0.02 );
     float h = pxoWH( gc + 5.7 );
-    if ( h < 0.05 ) col = mix( col, ${c3('#8f7650')}, 0.7 );
-    else if ( h > 0.96 ) col = mix( col, ${c3('#f6ead0')}, 0.7 );
+    if ( h < 0.05 ) col = mix( col, ${c3('#55402a')}, 0.7 );
+    else if ( h > 0.96 ) col = mix( col, ${c3('#c0a674')}, 0.7 );
   }
 ` : `  // まだらは、向きを回しながら 3 段重ねたノイズを、さらに座標をゆがめて使う（2026-10-05 ユーザー指摘：1 段の値ノイズを
   // しきい値で切っていて、格子の縦横の筋が規則正しい模様に見えた）
