@@ -552,14 +552,15 @@ export function createStage(container) {
   const grass = new THREE.Group(); grass.name = 'grass'; scene.add(grass);       // 草のジェネレーター（2026-10-03 ユーザー指定）
   const water = new THREE.Group(); water.name = 'water'; scene.add(water);       // 水のジェネレーター（2026-10-03 ユーザー指定）
   const dirt = new THREE.Group(); dirt.name = 'dirt'; scene.add(dirt);           // 土のジェネレーター（2026-10-05 ユーザー指定）
-  const sand = new THREE.Group(); sand.name = 'sand'; scene.add(sand);           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
+  const sand = new THREE.Group(); sand.name = 'sand'; scene.add(sand);
+  const road = new THREE.Group(); road.name = 'road'; scene.add(road);           // 石畳の道（2026-10-05 ユーザー指定）           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, dirt, sand, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, sand, road, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -934,7 +935,7 @@ export function pixelGroups() {
   // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
   // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
   // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -2074,7 +2075,7 @@ function buildStones() {
         const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
-        if ((WATER_AVOID.length || DIRT_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
+        if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
         if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
@@ -2330,7 +2331,7 @@ function buildGrass() {
       const shade = Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
       if (pi < 0 || !insideFloor(x, z)) continue;
       // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
-      if ((WATER_AVOID.length || DIRT_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
+      if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
       if (st.avoidPlayers && playersSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 「奏者をよける」：株の中心が奏者のまわりの陸地に近いものは置かない（2026-10-04）   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
       per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + riserTopAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
          _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
@@ -2571,6 +2572,157 @@ function buildDirt() {   // 土と砂（2026-10-05）
     });
   }
 }
+// ---- 石畳の道（2026-10-05 ユーザー指定：街の道路になる石畳。グレー系）----
+// 形は中心線（ゆるく曲げられる）から幅一定の帯。縁はまっすぐ、端は四角く切る。石は道に沿った座標（長さ s・横 n）で、
+// 角の丸い四角い石を道を横切る列に並べ、1 列ごとに半分ずらす。石ごとに明るさを変え、縁に明暗を付けて立体に見せる。両端は細長い縁石。
+// 床のすぐ上に描き（土・砂より上、水より下）、ドット化は土と同じく範囲の「舞台」で自分でます目・階調に揃える
+let roadList = [];
+let ROAD_AVOID = [];   // 石畳の「草・石をよける」（中心線に沿って道幅の円を並べた形で持つ）
+export function setRoad(list) { roadList = (list || []).map((o) => ({ ...o })); buildRoad(); buildStones(); buildGrass(); }
+const ROAD_LIFT = 0.01;    // 床からの浮かせ [unit]（土 0.008 より上、水 0.02 より下）
+const ROAD_MAX_P = 64;     // 中心線の点の数の上限
+function roadPoints(st) {   // 中心線の点 [x, z, 始点からの長さ]。0° で客席から見て右（+x）、プラスで奥（−z）。曲がりは向きを 1 回ゆるく波打たせる
+  const r = rng32(st.seed ?? 1);
+  const L = Math.max(0.5, st.len ?? 12), mean = Math.max(0, Math.min(1, st.meander ?? 0.2)), dir = deg(st.dir ?? 0);
+  const n = Math.max(2, Math.min(ROAD_MAX_P, Math.ceil(L / 0.5) + 1)), step = L / (n - 1);
+  const ph = r() * Math.PI * 2, fr = 0.4 + r() * 0.6;
+  let x = (st.x ?? 0) - Math.cos(dir) * L / 2, z = (st.z ?? 0) + Math.sin(dir) * L / 2;   // 線の真ん中が中心に来るよう、半分戻ってから歩く
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push([x, z, step * i]);
+    const ang = dir + mean * 0.9 * Math.sin((i / (n - 1)) * Math.PI * 2 * fr + ph);
+    x += Math.cos(ang) * step; z -= Math.sin(ang) * step;
+  }
+  return out;
+}
+function roadMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  m.userData.u = { uP: { value: Array.from({ length: ROAD_MAX_P }, () => new THREE.Vector4()) }, uPN: { value: 0 }, uW: { value: 1.5 }, uStone: { value: 1 },
+    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 } };   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）
+  m.extensions = { derivatives: true };
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
+    shader.vertexShader = 'varying vec3 pxoWW;\n' + shader.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = `varying vec3 pxoWW;
+uniform vec4 uP[ ${ROAD_MAX_P} ];
+uniform int uPN;
+uniform float uW, uStone, uShade, uCurb, uHL, uSeed, uPixLv;
+uniform vec2 uPixDot;
+${WATER_NOISE_GLSL}
+${PIX_QUANT_GLSL}
+${FLOOR_GLSL}
+// 角の丸い四角い石 1 つ。f：ます目の中の位置（0〜1）、sz：ます目の大きさ [unit]、g：目地の幅の半分、rc：角の丸み。
+// 戻り値：石の内側なら縁までの距離（正）、目地なら負
+float pxoStoneD( vec2 f, vec2 sz, float g, float rc ) {
+  vec2 e = min( f, 1.0 - f ) * sz;                     // 4 辺のうち近い辺までの距離
+  vec2 k = max( vec2( g + rc ) - e, 0.0 );
+  return min( min( e.x, e.y ) - g, rc - length( k ) );
+}
+` + shader.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 P = pxoWW;
+  if ( uPixDot.x > 0.0 ) {   // ドット絵：水と同じます目の真ん中の値で
+    vec2 dc = ( floor( gl_FragCoord.xy / uPixDot ) + 0.5 ) * uPixDot - gl_FragCoord.xy;
+    P += dFdx( pxoWW ) * dc.x + dFdy( pxoWW ) * dc.y;
+  }
+  if ( pxoOutsideFloor( P ) ) discard;
+  // 一番近い中心線の区間に点を下ろし、道に沿った長さ s と横のずれ n を出す
+  float best = 1e9, s = 0.0, n = 0.0;
+  bool cut = false;
+  for ( int i = 0; i < ${ROAD_MAX_P} - 1; i ++ ) {
+    if ( i >= uPN - 1 ) break;
+    vec4 a = uP[ i ], b = uP[ i + 1 ];
+    vec2 ab = b.xy - a.xy;
+    float L2 = max( dot( ab, ab ), 1e-6 ), tr = dot( P.xz - a.xy, ab ) / L2, t = clamp( tr, 0.0, 1.0 );
+    vec2 d = P.xz - ( a.xy + ab * t ), dir = ab * inversesqrt( L2 );
+    float dl = length( d );
+    if ( dl < best ) {
+      best = dl; s = mix( a.z, b.z, tr ); n = dir.x * d.y - dir.y * d.x;
+      cut = ( i == 0 && tr < 0.0 ) || ( i == uPN - 2 && tr > 1.0 );   // 端は四角く切る
+    }
+  }
+  if ( cut || best > uW ) discard;
+  float sd = best - uW;   // 縁までの距離（負が中）
+  vec2 sp = vec2( s, n + uW ) + uSeed;   // 石を並べる座標（横は道の片側の縁を 0 に）
+  vec3 col;
+  float CURB = 0.28 * uStone;   // 縁石の幅
+  if ( uCurb > 0.5 && -sd < CURB ) {
+    // 縁石：道に沿って細長い石（長さ 0.75）。外側の角を明るく、内側（道の側）を暗く
+    vec2 sz = vec2( 0.75 * uStone, CURB );
+    vec2 f = vec2( fract( sp.x / sz.x ), -sd / CURB );
+    float id = floor( sp.x / sz.x ) + ( n > 0.0 ? 51.0 : 0.0 );
+    float e = pxoStoneD( f, sz, 0.018, 0.03 );
+    float h = pxoWH( vec2( id, 7.7 ) );
+    col = mix( ${c3('#6f7175')}, ${c3('#84868a')}, h );
+    if ( e < 0.0 ) col = ${c3('#3d3e42')};
+    else if ( e < 0.04 ) col *= f.y < 0.5 ? 1.15 : 0.78;
+  } else {
+    // 石：道を横切る列（長さ 0.3）に、幅 0.36 の石を並べ、1 列ごとに半分ずらす（列ごとに少しだけ乱す）
+    vec2 sz = vec2( 0.3, 0.36 ) * uStone;
+    float row = floor( sp.x / sz.x );
+    float off = ( mod( row, 2.0 ) * 0.5 + ( pxoWH( vec2( row, 3.3 ) ) - 0.5 ) * 0.3 ) * sz.y;
+    float col_ = floor( ( sp.y + off ) / sz.y );
+    vec2 f = vec2( fract( sp.x / sz.x ), fract( ( sp.y + off ) / sz.y ) );
+    vec2 id = vec2( row, col_ );
+    float e = pxoStoneD( f, sz, 0.022 * uStone, 0.05 * uStone );
+    float h = pxoWH( id + 1.7 ), h2 = pxoWH( id + 9.3 );
+    col = mix( ${c3('#55585d')}, ${c3('#72757a')}, h );                    // 石ごとの明るさ（日なたで白く飛ばないよう、見た目より暗め）
+    col = mix( col, col * vec3( 1.04, 1.0, 0.94 ), step( 0.7, h2 ) );      // ときどき少し暖かいグレー
+    col = mix( col, col * vec3( 0.95, 0.98, 1.05 ), step( h2, 0.2 ) );     // ときどき少し冷たいグレー
+    if ( e < 0.0 ) col = ${c3('#3a3b3f')};                                   // 目地
+    else if ( e < 0.035 * uStone ) col *= ( f.x < 0.5 || f.y > 0.5 ) ? 1.13 : 0.8;   // 石の縁：片側を明るく、反対側を暗く
+    col *= 1.0 + ( pxoWN( sp * 9.0 ) - 0.5 ) * 0.14;                        // 石の表面の細かいむら
+  }
+  col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
+  if ( uHL > 0.5 && sd > -0.1 ) col = ${c3('#e2b348')};   // カードのホバー：縁を金色に
+  diffuseColor = vec4( col, 1.0 );
+}`)
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if ( uPixDot.x > 0.0 ) gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );   // 階調の細かさ（水と同じ）`);
+  };
+  m.customProgramCacheKey = () => 'pxo-road-v1';
+  return m;
+}
+function buildRoad() {
+  if (!stageCtx) return;
+  HL_VER++;
+  const g = stageCtx.road;
+  for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
+  g.clear();
+  ROAD_AVOID = [];
+  roadList.forEach((st, ci) => {
+    if (st.show === false) return;
+    const pts = roadPoints(st), W = Math.max(0.2, Math.min(8, st.width ?? 3)) / 2;
+    const only = { grass: st.avoidGrass ?? true, stone: st.avoidStones ?? true };
+    if (only.grass || only.stone) {   // よける形：中心線に沿って、道幅の円を細かく並べる
+      const cs = [];
+      for (let i = 0; i < pts.length - 1; i++) for (let k = 0; k < 4; k++) {
+        const t = k / 4; cs.push([pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, W]);
+      }
+      cs.push([pts.at(-1)[0], pts.at(-1)[1], W]);
+      ROAD_AVOID.push({ cs, k: 0.02, only });
+    }
+    const mat = roadMaterial(), u = mat.userData.u;
+    pts.forEach(([x, z, sl], i) => u.uP.value[i].set(x, z, sl, 0));
+    u.uPN.value = pts.length; u.uW.value = W;
+    u.uStone.value = Math.max(0.3, Math.min(3, st.stone ?? 1));
+    u.uShade.value = Math.max(0, st.shade ?? 1);
+    u.uCurb.value = st.curb === false ? 0 : 1;
+    u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    const pad = W + 0.1;
+    const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
+    geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + ROAD_LIFT, (z0 + z1) / 2);
+    mesh.receiveShadow = true; mesh.renderOrder = -10.5;   // 土（-11）より後、水（-10）より先＝水が上
+    mesh.userData.pxoCard = ci;
+    g.add(mesh);
+  });
+}
 export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
@@ -2595,7 +2747,7 @@ function seaDAt(sea, x, z) {   // 海の静かな時の岸線からの距離（�
 }
 function waterSdfAt(x, z, kind = null) {   // 一番近い「よける」水場・土の縁までの距離（負が中）。無ければ大きな値。kind：'grass' / 'stone'（土は草・石を別々によける。2026-10-05）
   let best = 1e9;
-  for (const w of [...WATER_AVOID, ...DIRT_AVOID]) {   // 水と土（2026-10-05）
+  for (const w of [...WATER_AVOID, ...DIRT_AVOID, ...ROAD_AVOID]) {   // 水と土・砂と石畳（2026-10-05）
     if (w.only && kind && !w.only[kind]) continue;   // 土：その種類をよけない設定なら見ない
     if (w.sea) { best = Math.min(best, seaDAt(w.sea, x, z) - w.sea.run); continue; }   // 海は波が駆け上がる所まで水とみなす
     let d = 1e5;
@@ -3481,10 +3633,10 @@ function updateHighlight(renderer) {
   hlBuilt = key;
   for (const o of hlObjs) { o.parent?.remove(o); o.userData.pxoHlDispose?.(); }
   hlObjs = [];
-  if (stageCtx) for (const m of [...stageCtx.water.children, ...stageCtx.dirt.children, ...stageCtx.sand.children]) m.material.userData.u.uHL.value = 0;   // 水・土は材質の縁の線で示す   // 水は材質の岸の線で示す
+  if (stageCtx) for (const m of [...stageCtx.water.children, ...stageCtx.dirt.children, ...stageCtx.sand.children, ...stageCtx.road.children]) m.material.userData.u.uHL.value = 0;   // 水・土は材質の縁の線で示す   // 水は材質の岸の線で示す
   if (!hlTarget || !stageCtx) return;
   const { kind, index } = hlTarget;
-  if (kind === 'dirt' || kind === 'sand') { for (const m of stageCtx[kind].children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
+  if (kind === 'dirt' || kind === 'sand' || kind === 'road') { for (const m of stageCtx[kind].children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
   if (kind === 'model' || kind === 'stone' || kind === 'grass') {

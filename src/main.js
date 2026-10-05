@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSand, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSand, setRoad, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -43,6 +43,7 @@ const GRASS_KEY = 'pixelOrchestra.grass.v1';           // 草のジェネレー�
 const WATER_KEY = 'pixelOrchestra.water.v1';           // 水のジェネレーター（2026-10-03 ユーザー指定）
 const PATTERNS_KEY = 'pixelOrchestra.genPatterns.v1';   // 石・草のジェネレーターの形のもと（GLB）。プロジェクトにだけ保存し、公開ページはこれで形を読む（2026-10-05）
 const DIRT_KEY = 'pixelOrchestra.dirt.v1';             // 土のジェネレーター（2026-10-05 ユーザー指定）
+const ROAD_KEY = 'pixelOrchestra.road.v1';             // 石畳の道（2026-10-05 ユーザー指定）
 const SAND_KEY = 'pixelOrchestra.sand.v1';             // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
@@ -55,7 +56,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SAND_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SAND_KEY, ROAD_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -551,6 +552,67 @@ function dirtRow(st, i, kind = 'dirt') {
   dup.onclick = () => { const c = G.defaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `${G.label}${i + 1}`}のコピー`; G.list.splice(i + 1, 0, c); renderScreens(); changed(); };
   const del = put(btns, `<button class="del" title="この${G.label}を削除する">削除</button>`);
   del.onclick = () => { G.list.splice(i, 1); renderScreens(); changed(); };
+  return box;
+}
+// 石畳の道（2026-10-05 ユーザー指定：街の道路になる石畳。グレー系）：中心線から幅一定の帯に、四角い石を道の向きにそろえて並べる
+const ROAD_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 3, meander: 0.2, dir: 0, stone: 1, shade: 1, curb: true, avoidGrass: true, avoidStones: true, seed: 1, show: true };
+const roadDefaults = (o) => ({ ...ROAD_BASE, ...o });
+let road = (() => {
+  try { const a = JSON.parse(LS.getItem(ROAD_KEY) || 'null'); if (Array.isArray(a)) return a.map(roadDefaults); } catch (e) { console.warn('石畳の設定の読込失敗:', e); }
+  return [];
+})();
+let roadSaveTimer = null;
+function saveRoad() {
+  clearTimeout(roadSaveTimer);
+  roadSaveTimer = setTimeout(() => {
+    try { LS.setItem(ROAD_KEY, JSON.stringify(road)); pushSettings(); } catch (e) { console.warn('石畳の設定の保存失敗:', e); }
+  }, 400);
+}
+function roadRow(st, i) {
+  const box = Object.assign(document.createElement('div'), { className: 'screen road gen' });
+  hoverHighlight(box, 'road', i);
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setRoad(road); saveRoad(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）
+  const top = put(box, '<div class="stoneTop"></div>');
+  const name = top.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
+  name.value = st.name || `石畳${i + 1}`;
+  name.oninput = () => { st.name = name.value; saveRoad(); };
+  name.onkeydown = (e) => e.stopPropagation();
+  const show = put(top, '<label title="この石畳を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  show.checked = st.show !== false;
+  show.onchange = () => { st.show = show.checked; changed(); };
+  const checks = put(box, '<div class="stoneTop genChecks"></div>');
+  const check = (label, key, title) => {
+    const el = put(checks, `<label title="${title}"><input type="checkbox"><span>${label}</span></label>`).querySelector('input');
+    el.checked = st[key] ?? ROAD_BASE[key];
+    el.onchange = () => { st[key] = el.checked; changed(); };
+  };
+  check('縁石', 'curb', '道の両端に、細長い縁石を並べる');
+  check('草をよける', 'avoidGrass', 'この石畳の上に、草のジェネレーターの草を生やさない（石畳を動かすと自動で並べ直す）');
+  check('石をよける', 'avoidStones', 'この石畳の上に、石のジェネレーターの石を置かない（石畳を動かすと自動で並べ直す）');
+  const slider = (label, key, min, max, step, digits, title) => {
+    const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input');
+    el.value = st[key] ?? ROAD_BASE[key] ?? +min;
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { st[key] = +el.value; box2.show(); changed(); };
+    return lab;
+  };
+  slider('横位置', 'x', -30, 30, 0.1, 1, '道の真ん中の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
+  slider('奥行き', 'z', -36, 8, 0.1, 1, '道の真ん中の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  slider('長さ', 'len', 0.5, 60, 0.1, 1, '道の長さ [unit]（1 unit ≒ 50cm）。床の外にはみ出した所は描かない');
+  slider('幅', 'width', 0.5, 8, 0.05, 2, '道の幅 [unit]（縁石を含む）');
+  slider('曲がり', 'meander', 0, 1, 0.05, 2, '道のゆるい曲がり。0 でまっすぐ。「作り直し」で曲がり方が変わる');
+  slider('向き', 'dir', -180, 180, 1, 0, '道の向き [度]。0 で客席から見て左右、90 で奥へ');
+  slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '石 1 つの大きさの倍率。1 で 15〜18cm ほど');
+  slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色（グレー）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
+  const btns = put(box, '<div class="stoneBtns"></div>');
+  const again = put(btns, '<button title="同じ設定のまま、曲がり方と石の並び・明るさのばらつきだけ変える">作り直し</button>');
+  again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
+  const dup = put(btns, '<button title="この石畳を複製する（設定ごと。右隣に入る）">複製</button>');
+  dup.onclick = () => { const c = roadDefaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `石畳${i + 1}`}のコピー`; road.splice(i + 1, 0, c); renderScreens(); changed(); };
+  const del = put(btns, '<button class="del" title="この石畳を削除する">削除</button>');
+  del.onclick = () => { road.splice(i, 1); renderScreens(); changed(); };
   return box;
 }
 function waterRow(st, i) {
@@ -1170,6 +1232,14 @@ function renderScreens() {
     addD.onclick = () => { dirt.push(dirtDefaults({ name: `土${dirt.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setDirt(dirt); saveDirt(); };
     dtbox.appendChild(addD);
   }
+  const rdbox = $('roadRows');
+  if (rdbox) {   // 石畳の道（2026-10-05）
+    rdbox.textContent = '';
+    road.forEach((st, i) => rdbox.appendChild(roadRow(st, i)));
+    const addR = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '石畳の道を 1 本増やす' });
+    addR.onclick = () => { road.push(roadDefaults({ name: `石畳${road.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setRoad(road); saveRoad(); };
+    rdbox.appendChild(addR);
+  }
   const sdbox = $('sandRows');
   if (sdbox) {   // 砂のジェネレーター（2026-10-05）
     sdbox.textContent = '';
@@ -1215,7 +1285,7 @@ function showBarTab(id) {
 // 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
 // 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
 function equalizeBarTabs() {
-  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec', 'sandSec'].map((id) => $(id)).filter(Boolean);
+  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec', 'sandSec', 'roadSec'].map((id) => $(id)).filter(Boolean);
   if (!secs.length) return;
   const off = secs.filter((el) => el.classList.contains('tabOff'));
   for (const el of secs) el.style.minHeight = '';
@@ -2531,7 +2601,8 @@ function applySnapshot(p, src) {
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); water = Array.isArray(a) ? a.map(waterDefaults) : []; } catch (e) { console.warn('水の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(DIRT_KEY) || 'null'); dirt = Array.isArray(a) ? a.map(dirtDefaults) : []; } catch (e) { console.warn('土の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(SAND_KEY) || 'null'); sand = Array.isArray(a) ? a.map(sandDefaults) : []; } catch (e) { console.warn('砂の復元失敗:', e); }
-  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand);
+  try { const a = JSON.parse(LS.getItem(ROAD_KEY) || 'null'); road = Array.isArray(a) ? a.map(roadDefaults) : []; } catch (e) { console.warn('石畳の復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
@@ -2699,6 +2770,7 @@ const SECTIONS = [
   { key: 'water', label: '水', sec: 'waterSec' },
   { key: 'dirt', label: '土', sec: 'dirtSec' },
   { key: 'sand', label: '砂', sec: 'sandSec' },
+  { key: 'road', label: '石畳', sec: 'roadSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
   { key: 'env', label: '環境', group: ['sky', 'weather', 'light', 'wind'], hdId: 'envHd' },
 ];
@@ -2712,7 +2784,7 @@ const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
 function sectionSnap(sec) {
   if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
-  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : sec.key === 'sand' ? sand : screens)) };
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : sec.key === 'sand' ? sand : sec.key === 'road' ? road : screens)) };
   const v = {}, r = {};
   for (const el of sectionInputs(sec)) {
     if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2733,8 +2805,9 @@ function applySection(sec, d) {
     else if (sec.key === 'water') { water = d.list.map(waterDefaults); saveWater(); }
     else if (sec.key === 'dirt') { dirt = d.list.map(dirtDefaults); saveDirt(); }
     else if (sec.key === 'sand') { sand = d.list.map(sandDefaults); saveSand(); }
+    else if (sec.key === 'road') { road = d.list.map(roadDefaults); saveRoad(); }
     else { screens = d.list.map(withDefaults); saveScreens(); }
-    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand);
+    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand); setRoad(road);
     return;
   }
   for (const [id, val] of Object.entries(d.v || {})) {
@@ -2847,6 +2920,7 @@ setGrass(grass);      // 草のジェネレーター（2026-10-03）。形のも
 setWater(water);      // 水のジェネレーター（2026-10-03）
 setDirt(dirt);        // 土のジェネレーター（2026-10-05）
 setSand(sand);        // 砂のジェネレーター（2026-10-05）
+setRoad(road);        // 石畳の道（2026-10-05）
 refreshStonePatterns();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
