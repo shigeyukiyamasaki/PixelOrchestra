@@ -1627,6 +1627,8 @@ let domeList = DOME_DEFAULT.map((o) => ({ ...o }));
 const MODEL_M = 2.5;
 let modelList = [];
 const GLB = new Map();   // url → { scene, err, loading }
+/** 診断用（公開ページの &dbg=1。2026-10-05）：GLB ごとの読み込み状況 [名前, 'ok'|'…'|エラー文] */
+export function glbStatus() { return [...GLB].map(([u, e]) => [decodeURIComponent(u.split('/').pop()), e.loading ? '…' : e.err ? `✗ ${e.err}` : 'ok']); }
 export function setModels(list) { modelList = (list || []).map((o) => ({ ...o })); buildModels(); }
 function loadGlb(url) {
   let e = GLB.get(url);
