@@ -1233,7 +1233,7 @@ async function loadModelList() {
   catch (e) { console.warn('3D モデルの一覧を取得できませんでした:', e.message); setStatus('✗ 3D モデルの一覧を取れません（開発サーバー tools/serve.py を再起動してください）'); }
 }
 // 木のジェネレーター（2026-10-05 ユーザー指定）：選んだ木の GLB を範囲に散らす。1 カード 1 種類（混ぜる時はカードを分ける）
-const TREE_BASE = { name: '', src: '', srcRaw: '', x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };
+const TREE_BASE = { name: '', kind: 'glb', src: '', srcRaw: '', species: 'broad', season: 'fresh', height: 9, leaf: 1, x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };   // kind：'glb'（GLB を散らす）／'proc'（コードで作る。2026-10-05）
 const treeDefaults = (o) => ({ ...TREE_BASE, ...o });
 let trees = (() => {
   try { const a = JSON.parse(LS.getItem(TREES_KEY) || 'null'); if (Array.isArray(a)) return a.map(treeDefaults); } catch (e) { console.warn('木の設定の読込失敗:', e); }
@@ -1251,7 +1251,13 @@ function treeRow(m, i) {
   hoverHighlight(box, 'tree', i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
   const changed = () => { setTrees(trees); saveTrees(); };
+  const proc = m.kind === 'proc';
+  // 作り方（2026-10-05 ユーザー指定：木のジェネレーターのもう 1 つの案）。変えたらカードの項目を作り直す
+  const kindSel = put(box, '<label class="sld" title="GLB：選んだ木の 3D モデルを散らす。コード：幹・枝・葉の塊を形の組み合わせで作る（種類・葉の色・高さを選べる）"><span>作り方</span><select><option value="glb">GLB（3D モデル）</option><option value="proc">コードで作る</option></select></label>').querySelector('select');
+  kindSel.value = proc ? 'proc' : 'glb';
+  kindSel.onchange = () => { m.kind = kindSel.value; changed(); renderScreens(); };
   const top = put(box, '<div class="top"></div>');
+  if (proc) top.style.display = 'none';
   const thumb = top.appendChild(Object.assign(document.createElement('button'), { className: 'thumb' }));
   put(top, '<div class="side"></div>');
   const drawThumb = () => {   // 3D モデルのカードと同じ（読み込めたらモデルを描いた画像に差し替える）
@@ -1273,7 +1279,7 @@ function treeRow(m, i) {
     drawThumb(); changed();
   };
   thumb.onclick = async () => { await loadModelList(); openPicker(thumb, m, pick, modelFileList); };
-  acceptFileDrop(box, pick);
+  if (!proc) acceptFileDrop(box, pick);
   const row = put(box, '<div class="stoneTop"></div>');
   const name = row.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
   name.value = m.name || `木${i + 1}`;
@@ -1299,7 +1305,17 @@ function treeRow(m, i) {
   slider('本数', 'count', 1, 60, 1, 0, '木の本数（間隔や床の外・よける物のせいで置けない分は少なくなる）');
   slider('広がり', 'spread', 0, 40, 0.1, 1, '木を散らす範囲の半径 [unit]');
   slider('間隔', 'gap', 0, 10, 0.05, 2, '木どうしをこれより近づけない [unit]（幹の中心どうし）');
-  slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）');
+  if (proc) {
+    const sel = (label, key, opts, title) => {
+      const el = put(box, `<label class="sld" title="${title}"><span>${label}</span><select>${opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>`).querySelector('select');
+      el.value = m[key] ?? TREE_BASE[key];
+      el.onchange = () => { m[key] = el.value; changed(); };
+    };
+    sel('種類', 'species', [['broad', '広葉樹'], ['conifer', '針葉樹'], ['palm', 'ヤシ'], ['dead', '枯れ木']], '木の種類');
+    sel('葉の色', 'season', [['fresh', '新緑'], ['deep', '深緑'], ['autumn', '紅葉'], ['yellow', '黄葉']], '葉の色（枯れ木には効かない）');
+    slider('高さ', 'height', 1, 30, 0.1, 1, '木の高さ [unit]（1 unit ≒ 50cm）。「ばらつき」で 1 本ずつ変わる');
+    slider('葉の量', 'leaf', 0.3, 2, 0.05, 2, '葉の塊（針葉樹は段、ヤシは葉）の多さ');
+  } else slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）');
   slider('ばらつき', 'scaleVar', 0, 1, 0.05, 2, '大きさのばらつき。0.3 で ±30%');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、木の位置・向き・大きさのばらつきだけ変える">作り直し</button>');

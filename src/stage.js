@@ -1519,7 +1519,7 @@ export function buildRisers(seats) {
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
-  queueMicrotask(() => { if (grassList.length) buildGrass(); });   // 組み終わったら、草をひな壇の高さに合わせて並べ直す
+  queueMicrotask(() => { if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -4043,18 +4043,22 @@ export function setTrees(list) { treeList = (list || []).map((o) => ({ ...o }));
 function buildTrees() {
   if (!stageCtx) return;
   const g = stageCtx.trees;
-  g.clear();   // 形と材質は GLB の読み込み結果を使い回すので捨てない
+  for (const o of g.children) if (o.userData.pxoProc) o.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });   // コードで作った木だけ捨てる（GLB は使い回す）
+  g.clear();
   HL_VER++;
   treeList.forEach((st, ci) => {
-    if (st.show === false || !st.src) return;
-    const e = loadGlb(st.src);
-    if (!e.scene) return;   // 読み込み中・失敗（読み終わったら組み直される）
+    if (st.show === false) return;
+    const proc = st.kind === 'proc';   // コードで作る木（2026-10-05 ユーザー指定：木のジェネレーターのもう 1 つの案）
+    if (!proc && !st.src) return;
+    const e = proc ? { scene: null, treeR: procTreeR(st) } : loadGlb(st.src);
+    if (!proc && !e.scene) return;   // 読み込み中・失敗（読み終わったら組み直される）
     const r = rng32(st.seed ?? 1);
     const n = Math.max(1, Math.min(60, Math.round(st.count ?? 8))), spread = Math.max(0, Math.min(40, st.spread ?? 8));
-    const gap = Math.max(0, st.gap ?? 2.5), size = Math.max(0.05, st.scale ?? 1), sv = Math.max(0, Math.min(1, st.scaleVar ?? 0.3));
+    const gap = Math.max(0, st.gap ?? 2.5), size = proc ? 1 : Math.max(0.05, st.scale ?? 1), sv = Math.max(0, Math.min(1, st.scaleVar ?? 0.3));   // コードの木の大きさは「高さ」で決める（ばらつきだけ掛ける）
     // 枝葉の広がり（GLB の水平方向の半径。読み込んだ GLB ごとに 1 回だけ測る）。奏者よけは枝葉の 6 割が奏者にかからない所まで離す
     //（2026-10-05：幹から 0.6 unit だけ離していたら、奏者のすき間に木が入り、枝葉が奏者を覆った）
     if (e.treeR == null) { const b = new THREE.Box3().setFromObject(e.scene); e.treeR = Math.max(0.1, Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2); }
+    const tm = proc ? 1 / MODEL_M : 1;   // コードで作る木の treeR は unit そのもの（GLB は MODEL_M を掛ける前の大きさ）
     const placed = [];
     const avoidAny = WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length;
     for (let tries = 0; placed.length < n && tries < n * 40; tries++) {
@@ -4063,20 +4067,150 @@ function buildTrees() {
       if (!insideFloor(x, z)) continue;
       if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < gap)) continue;
       if (avoidAny && waterSdfAt(x, z, 'stone') < 0.4) continue;                     // 幹のまわり 0.4 unit
-      if (st.avoidPlayers !== false && playersSdfAt(x, z) < Math.max(0.6, 0.6 * e.treeR * MODEL_M * sc)) continue;   // 奏者のまわりの陸地に枝葉がかかる
-      placed.push({ x, z, sc, rot });
+      if (st.avoidPlayers !== false && playersSdfAt(x, z) < Math.max(0.6, 0.6 * e.treeR * tm * MODEL_M * sc)) continue;   // 奏者のまわりの陸地に枝葉がかかる
+      placed.push({ x, z, sc, rot, ry: riserTopAt(x, z) });   // ひな壇の上ではその天面から生やす（草と同じ）
     }
     const root = new THREE.Group(); root.userData.pxoCard = ci;
+    if (proc) { root.userData.pxoProc = true; buildProcTrees(root, st, placed); g.add(root); return; }
     if (e.wind) root.userData.pxoWind = e.wind;
     for (const p of placed) {
       const o = e.scene.clone(true);
-      o.position.set(p.x, st.y ?? 0, p.z); o.rotation.y = p.rot; o.scale.setScalar(MODEL_M * p.sc);
+      o.position.set(p.x, (st.y ?? 0) + p.ry, p.z); o.rotation.y = p.rot; o.scale.setScalar(MODEL_M * p.sc);
       if (e.wind) { applyWind(o, e.wind); o.userData.pxoWind = e.wind; }
       o.traverse((nn) => { if (nn.isMesh) nn.layers.enable(MODEL_SHADOW_LAYER); });   // 奏者に落とす影の元
       root.add(o);
     }
     g.add(root);
   });
+}
+
+// ---- コードで作る木（2026-10-05 ユーザー指定：木のジェネレーターのもう 1 つの案。GLB の無い種類の木を増やす）----
+// 種類：広葉樹（幹と枝に、角ばった丸い葉の塊を重ねる）／針葉樹（円錐を段に重ねる）／ヤシ（曲がった幹の先に垂れた葉）／枯れ木（幹と枝だけ）。
+// 葉の色：新緑・深緑・紅葉・黄葉。ドット絵になじむよう面は角ばらせる（flatShading）。カード 1 枚の木を幹と葉の 2 つの形にまとめて描く。
+// 葉は上ほど大きく風で揺らす（aSway：揺れの大きさ。時刻は水と同じ実時間）。高さ H は「高さ」×大きさのばらつき
+const TREE_LEAF = { fresh: '#6fb84a', deep: '#3d7a34', autumn: '#c4532e', yellow: '#d6a531' };
+const TREE_BARK = '#6b4a2f', TREE_DEAD = '#776652';
+function procTreeR(st) {   // 枝葉の広がり（水平の半径 [unit]、大きさ 1 の時）
+  const H = Math.max(1, st.height ?? 9), sp = st.species ?? 'broad';
+  return H * (sp === 'conifer' ? 0.28 : sp === 'palm' ? 0.42 : sp === 'dead' ? 0.3 : 0.34);
+}
+function buildProcTrees(root, st, placed) {
+  const bark = { pos: [], nrm: [], col: [], sw: [] }, leaf = { pos: [], nrm: [], col: [], sw: [] };
+  const r = rng32(((st.seed ?? 1) ^ 0x51ed27) >>> 0);
+  const sp = st.species ?? 'broad', H0 = Math.max(1, st.height ?? 9), amt = Math.max(0.3, Math.min(2, st.leaf ?? 1));
+  const leafC = new THREE.Color(TREE_LEAF[st.season] || TREE_LEAF.fresh);
+  if (sp === 'conifer') leafC.multiplyScalar(0.8);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), nv = new THREE.Vector3(), nm = new THREE.Matrix3(), c = new THREE.Color();
+  let baseY = 0, curH = 1;
+  // 形 1 つを、位置 pos・向き（from Y 軸を dir へ）・大きさ scl で置いて足す。col：色、jit：明るさのばらつき
+  const add = (buf, geo, pos, dir, scl, col, jit = 0.1) => {
+    const g2 = geo.index ? geo.toNonIndexed() : geo;
+    q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    m4.compose(pos, q, scl); nm.getNormalMatrix(m4);
+    const P = g2.attributes.position, k = 1 + (r() * 2 - 1) * jit;
+    c.copy(col).multiplyScalar(k);
+    for (let i = 0; i < P.count; i += 3) {   // 面ごとに法線を作り直す（角ばらせる）
+      const a0 = new THREE.Vector3().fromBufferAttribute(P, i).applyMatrix4(m4), a1 = new THREE.Vector3().fromBufferAttribute(P, i + 1).applyMatrix4(m4), a2 = new THREE.Vector3().fromBufferAttribute(P, i + 2).applyMatrix4(m4);
+      nv.subVectors(a2, a1).cross(v.subVectors(a0, a1)).normalize();
+      for (const p of [a0, a1, a2]) {
+        buf.pos.push(p.x, p.y, p.z); buf.nrm.push(nv.x, nv.y, nv.z); buf.col.push(c.r, c.g, c.b);
+        const h = Math.max(0, (p.y - baseY) / curH); buf.sw.push(h * h);
+      }
+    }
+    if (g2 !== geo) g2.dispose();
+  };
+  const cyl = (r0, r1, len, seg = 6) => { const g = new THREE.CylinderGeometry(r1, r0, len, seg, 1); g.translate(0, len / 2, 0); return g; };   // 根元が原点
+  const UP = new THREE.Vector3(0, 1, 0);
+  for (const pl of placed) {
+    const H = H0 * pl.sc, x = pl.x, z = pl.z, y = (st.y ?? 0) + pl.ry, rot = pl.rot;
+    baseY = y; curH = H;
+    const at = (lx, ly, lz) => new THREE.Vector3(x + lx * Math.cos(rot) + lz * Math.sin(rot), y + ly, z - lx * Math.sin(rot) + lz * Math.cos(rot));
+    const dirAt = (dx, dy, dz) => new THREE.Vector3(dx * Math.cos(rot) + dz * Math.sin(rot), dy, -dx * Math.sin(rot) + dz * Math.cos(rot));
+    const barkC = new THREE.Color(sp === 'dead' ? TREE_DEAD : TREE_BARK);
+    if (sp === 'conifer') {
+      add(bark, cyl(0.045 * H, 0.02 * H, 0.95 * H), at(0, 0, 0), UP, new THREE.Vector3(1, 1, 1), barkC, 0.05);
+      const tiers = Math.round(3 + amt * 1.5);
+      for (let i = 0; i < tiers; i++) {
+        const t = i / Math.max(1, tiers - 1), rad = (0.3 - 0.2 * t) * H, hgt = (0.32 - 0.1 * t) * H;
+        const g = new THREE.ConeGeometry(rad, hgt, 7, 1); g.translate(0, hgt / 2, 0);
+        add(leaf, g, at(0, (0.18 + 0.62 * t) * H, 0), UP, new THREE.Vector3(1, 1, 1), leafC, 0.08); g.dispose();
+      }
+    } else if (sp === 'palm') {
+      // 幹：6 節で少しずつ傾けて弓なりに。先に葉を放射状に 7〜9 枚、垂れるように
+      let p = at(0, 0, 0), d = new THREE.Vector3(0, 1, 0), lean = 0;
+      const seg = 6, segL = (0.92 * H) / seg;
+      for (let i = 0; i < seg; i++) {
+        lean += 0.06 + 0.03 * r();
+        d = dirAt(Math.sin(lean), Math.cos(lean), 0).normalize();
+        const g = cyl(0.045 * H * (1 - i * 0.06), 0.045 * H * (1 - (i + 1) * 0.06), segL * 1.05, 6);
+        add(bark, g, p, d, new THREE.Vector3(1, 1, 1), barkC, 0.12); g.dispose();
+        p = p.clone().addScaledVector(d, segL);
+      }
+      const nF = Math.round(6 + amt * 2), fl = 0.38 * H;
+      for (let i = 0; i < nF; i++) {
+        const az = (i / nF) * Math.PI * 2 + r() * 0.3;
+        let q0 = p.clone(), droop = -0.35 - 0.2 * r();
+        for (let k = 0; k < 4; k++) {   // 葉 1 枚を 4 つの細い板で、外へ行くほど垂らす
+          const el = 0.5 + droop * k * 0.6;
+          const dd = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+          const g = new THREE.BoxGeometry(0.09 * H * (1 - k * 0.18), fl / 4, 0.012 * H); g.translate(0, fl / 8, 0);
+          add(leaf, g, q0, dd, new THREE.Vector3(1, 1, 1), leafC, 0.1); g.dispose();
+          q0 = q0.clone().addScaledVector(dd.normalize(), fl / 4);
+        }
+      }
+    } else {
+      // 広葉樹・枯れ木：幹（0.55H）と、上へ広がる枝 3〜5 本（枯れ木は枝の先にさらに小枝）
+      const trunkH = (sp === 'dead' ? 0.75 : 0.55) * H, tr = 0.055 * H;
+      add(bark, cyl(tr, tr * 0.6, trunkH, 7), at(0, 0, 0), UP, new THREE.Vector3(1, 1, 1), barkC, 0.05);
+      const nb = sp === 'dead' ? 5 : 3 + Math.round(r() * 2), tips = [];
+      for (let i = 0; i < nb; i++) {
+        const az = (i / nb) * Math.PI * 2 + r() * 0.8, el = 0.6 + r() * 0.5, len = (0.22 + 0.12 * r()) * H;
+        const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+        const s0 = at(0, trunkH * (0.65 + 0.3 * r()), 0);
+        add(bark, cyl(tr * 0.45, tr * 0.2, len, 5), s0, d, new THREE.Vector3(1, 1, 1), barkC, 0.05);
+        const tip = s0.clone().addScaledVector(d.clone().normalize(), len); tips.push(tip);
+        if (sp === 'dead') for (let k = 0; k < 2; k++) {   // 小枝
+          const d2 = d.clone().normalize().add(new THREE.Vector3(r() - 0.5, 0.3, r() - 0.5)).normalize();
+          add(bark, cyl(tr * 0.18, tr * 0.06, len * 0.5, 4), s0.clone().lerp(tip, 0.6 + 0.3 * r()), d2, new THREE.Vector3(1, 1, 1), barkC, 0.05);
+        }
+      }
+      if (sp !== 'dead') {
+        // 葉の塊：枝先と、樹冠（高さ 0.68H のまわりの楕円）に角ばった丸（正二十面体）を重ねる
+        const n = Math.round((7 + 3 * r()) * amt), crown = at(0, 0.7 * H, 0);
+        const blob = new THREE.IcosahedronGeometry(1, 1);
+        const put = (pos, rad) => add(leaf, blob, pos, UP, new THREE.Vector3(rad, rad * 0.85, rad), leafC, 0.12);
+        for (const t of tips) put(t, (0.15 + 0.06 * r()) * H);
+        for (let i = 0; i < n; i++) {
+          const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r());
+          put(crown.clone().add(new THREE.Vector3(Math.cos(a2) * d2 * 0.22 * H, (r() - 0.4) * 0.16 * H, Math.sin(a2) * d2 * 0.22 * H)), (0.13 + 0.08 * r()) * H);
+        }
+        put(at(0, 0.86 * H, 0), 0.15 * H);
+        blob.dispose();
+      }
+    }
+  }
+  const mkMesh = (buf, rough) => {
+    if (!buf.pos.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(buf.nrm, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(buf.col, 3));
+    geo.setAttribute('aSway', new THREE.Float32BufferAttribute(buf.sw, 1));
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    mat.onBeforeCompile = (shader) => {   // 風の揺れ（上ほど大きく。位置で位相をずらす）
+      Object.assign(shader.uniforms, WATER_U);
+      shader.vertexShader = 'attribute float aSway;\nuniform float uWT;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+  { float ph = position.x * 0.35 + position.z * 0.27;
+    transformed.xz += aSway * ${rough.toFixed(3)} * vec2( sin( uWT * 1.4 + ph ), cos( uWT * 1.1 + ph * 1.3 ) * 0.6 ); }`);
+    };
+    mat.customProgramCacheKey = () => `pxo-proctree-${rough.toFixed(3)}`;
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true; m.receiveShadow = true;
+    m.layers.enable(MODEL_SHADOW_LAYER);   // 奏者に落とす影の元
+    root.add(m);
+  };
+  mkMesh(bark, 0.05);
+  mkMesh(leaf, 0.12);
 }
 
 export function setDomes(list) {
