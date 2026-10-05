@@ -323,11 +323,12 @@ body.viewer #stageArea { grid-row: 1; grid-column: 1; }
 body.viewer #viewArea { padding: 0; }
 #viewerCover { display: none; }
 body.viewer #viewerCover:not([hidden]) { display: flex; position: absolute; inset: 0; z-index: 5; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; background: rgba(0,0,0,.45); color: #fff; font-family: "DotGothic16", "Hiragino Sans", sans-serif; text-shadow: 0 2px 8px #000; }
+  gap: 14px; background: #000; color: #fff; font-family: "DotGothic16", "Hiragino Sans", sans-serif; text-shadow: 0 2px 8px #000; }
 body.viewer #viewerCover .vcTitle { font-size: clamp(16px, 3vw, 34px); letter-spacing: .05em; }
 body.viewer #viewerCover .vcPlay { display: none; width: 88px; height: 88px; border-radius: 50%; border: 3px solid #fff;
   align-items: center; justify-content: center; font-size: 36px; padding-left: 6px; }
-body.viewer #viewerCover.ready { cursor: pointer; }
+/* 読み込み中は真っ黒にして舞台を隠し、読み込めたら半透明にして舞台を見せる（2026-10-05 ユーザー指定：読み込み中に既定の板目の床が見えた） */
+body.viewer #viewerCover.ready { cursor: pointer; background: rgba(0,0,0,.45); }
 body.viewer #viewerCover.ready .vcPlay { display: flex; }
 body.viewer #viewerCover.ready:hover .vcPlay { background: rgba(255,255,255,.15); }
 body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
