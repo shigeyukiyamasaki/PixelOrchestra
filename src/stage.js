@@ -4176,14 +4176,14 @@ function buildProcTrees(root, st, placed) {
       }
       if (sp !== 'dead') {
         // 葉の塊（2026-10-05 ユーザー指定：葉を細かく）：小さな角ばった丸（正二十面体・分割なし）を、樹冠の楕円（中心 0.7H、
-        // 横の半径 0.27H・縦 0.2H）の外側寄りに 200 個ほど散らし（2026-10-05 さらに細かく：70 個・0.045〜0.08H → 200 個・0.025〜0.045H）、枝先のまわりにも数個ずつ。塊ごとの明るさのばらつきを強めて葉のつぶつぶ感を出す
-        const n = Math.round(200 * amt), crown = at(0, 0.7 * H, 0);
+        // 横の半径 0.27H・縦 0.2H）の外側寄りに 500 個ほど散らし（2026-10-05 さらに細かく：70 個・0.045〜0.08H → 200 個・0.025〜0.045H → 500 個・0.015〜0.028H）、枝先のまわりにも数個ずつ。塊ごとの明るさのばらつきを強めて葉のつぶつぶ感を出す
+        const n = Math.round(500 * amt), crown = at(0, 0.7 * H, 0);
         const blob = new THREE.IcosahedronGeometry(1, 0);
         const put = (pos, rad) => add(leaf, blob, pos, UP, new THREE.Vector3(rad, rad * 0.85, rad), leafC, 0.2);
-        for (const t of tips) for (let k = 0; k < 10; k++) put(t.clone().add(new THREE.Vector3((r() - 0.5) * 0.12 * H, (r() - 0.3) * 0.1 * H, (r() - 0.5) * 0.12 * H)), (0.028 + 0.017 * r()) * H);
+        for (const t of tips) for (let k = 0; k < 24; k++) put(t.clone().add(new THREE.Vector3((r() - 0.5) * 0.12 * H, (r() - 0.3) * 0.1 * H, (r() - 0.5) * 0.12 * H)), (0.017 + 0.011 * r()) * H);
         for (let i = 0; i < n; i++) {
           const a2 = r() * Math.PI * 2, cz = r() * 2 - 1, sz = Math.sqrt(1 - cz * cz), d2 = Math.pow(r(), 0.25);   // 球の中で外側寄り
-          put(crown.clone().add(new THREE.Vector3(Math.cos(a2) * sz * d2 * 0.27 * H, cz * d2 * 0.2 * H, Math.sin(a2) * sz * d2 * 0.27 * H)), (0.025 + 0.02 * r()) * H);
+          put(crown.clone().add(new THREE.Vector3(Math.cos(a2) * sz * d2 * 0.27 * H, cz * d2 * 0.2 * H, Math.sin(a2) * sz * d2 * 0.27 * H)), (0.015 + 0.013 * r()) * H);
         }
         blob.dispose();
       }
