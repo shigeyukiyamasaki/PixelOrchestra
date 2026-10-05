@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, tickWater, setWaterSky, setWaterPlayers, glbStatus } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -2820,35 +2820,6 @@ refreshValueLabels();
 applyCameraSliders(); // 保存されたカメラ座標を復元
 animate();
 if (VIEW_NAME) startViewer(); else loadFromUrl();
-if (VIEW_NAME && new URLSearchParams(location.search).has('dbg')) startDebugHud();
-
-// 診断の表示（2026-10-05：スマホの公開ページでだけ木が出ない原因を調べるため、一時的に置く。URL に &dbg=1 を付けた時だけ）。
-// スマホのコンソールは見られないので、GLB の読み込み・グラフィックの状態・エラーを画面の左上に書く
-function startDebugHud() {
-  const hud = Object.assign(document.createElement('pre'), { id: 'dbgHud' });
-  hud.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99;max-width:96vw;max-height:70vh;overflow:auto;margin:0;padding:6px;'
-    + 'background:rgba(0,0,0,.75);color:#0f0;font:11px/1.35 monospace;white-space:pre-wrap;pointer-events:auto;';
-  document.body.appendChild(hud);
-  const errs = [];
-  const push = (m) => { errs.push(String(m).slice(0, 300)); if (errs.length > 12) errs.shift(); };
-  for (const k of ['error', 'warn']) { const f = console[k].bind(console); console[k] = (...a) => { push(`${k}: ${a.map((x) => x?.message || x).join(' ')}`); f(...a); }; }
-  addEventListener('error', (e) => push(`onerror: ${e.message}`));
-  addEventListener('unhandledrejection', (e) => push(`reject: ${e.reason?.message || e.reason}`));
-  let lost = false;
-  renderer.domElement.addEventListener('webglcontextlost', () => { lost = true; push('WebGL コンテキストが失われました'); });
-  renderer.domElement.addEventListener('webglcontextrestored', () => { lost = false; push('WebGL コンテキストが戻りました'); });
-  const gl = renderer.getContext();
-  setInterval(() => {
-    const models = scene.getObjectByName('models');
-    const mem = renderer.info.memory;
-    hud.textContent = [
-      `GL: ${lost || gl.isContextLost() ? '✗ 失われた' : 'ok'}  maxTex ${gl.getParameter(gl.MAX_TEXTURE_SIZE)}  DPR ${devicePixelRatio}  canvas ${renderer.domElement.width}×${renderer.domElement.height}`,
-      `textures ${mem.textures}  geometries ${mem.geometries}  モデル ${models?.children.length ?? '-'} 個（中身あり ${models?.children.filter((c) => c.children.length).length ?? '-'}）`,
-      'GLB:', ...glbStatus().map(([n, st]) => `  ${n}: ${st}`),
-      'エラー:', ...(errs.length ? errs : ['  なし']),
-    ].join('\n');
-  }, 1000);
-}
 
 // 視聴モードの起動：プロジェクトを読み、覆いの ▶ を押すと再生（音の自動再生はブラウザが止めるので、必ず 1 回押してもらう）
 async function startViewer() {
