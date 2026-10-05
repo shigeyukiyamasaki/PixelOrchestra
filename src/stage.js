@@ -4175,17 +4175,31 @@ function buildProcTrees(root, st, placed) {
         }
       }
       if (sp !== 'dead') {
-        // 葉の塊（2026-10-05 ユーザー指定：葉を細かく）：小さな角ばった丸（正二十面体・分割なし）を、樹冠の楕円（中心 0.7H、
-        // 横の半径 0.27H・縦 0.2H）の外側寄りに 500 個ほど散らし（2026-10-05 さらに細かく：70 個・0.045〜0.08H → 200 個・0.025〜0.045H → 500 個・0.015〜0.028H）、枝先のまわりにも数個ずつ。塊ごとの明るさのばらつきを強めて葉のつぶつぶ感を出す
-        const n = Math.round(500 * amt), crown = at(0, 0.7 * H, 0);
-        const blob = new THREE.IcosahedronGeometry(1, 0);
-        const put = (pos, rad) => add(leaf, blob, pos, UP, new THREE.Vector3(rad, rad * 0.85, rad), leafC, 0.2);
-        for (const t of tips) for (let k = 0; k < 24; k++) put(t.clone().add(new THREE.Vector3((r() - 0.5) * 0.12 * H, (r() - 0.3) * 0.1 * H, (r() - 0.5) * 0.12 * H)), (0.017 + 0.011 * r()) * H);
+        // 葉（2026-10-05 ユーザー指定：塊ではなく薄い葉に置き換え）：ひし形の平らな板（幅 0.035H・長さ 0.05H）を、樹冠の楕円（中心 0.7H、
+        // 横の半径 0.27H・縦 0.2H）の外側寄りに約 2,500 枚、枝先のまわりにも少し、ばらばらの向きで散らす。表裏で暗さが変わらないよう両面を作り、
+        // 光の当たり方は「葉の向き」と「樹冠の中心から外向き」を混ぜた向きで決める（外側の葉ほど明るく、内側ほど暗い）。葉 1 枚ごとに明るさをずらす
+        const n = Math.round(2500 * amt), crown = at(0, 0.7 * H, 0);
+        const lw = 0.035 * H, lh = 0.05 * H;
+        const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), out = new THREE.Vector3(), nn = new THREE.Vector3();
+        const card = (pos) => {
+          fn.set(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1).normalize();   // 葉の面の向き
+          ax.set(r() - 0.5, r() - 0.5, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax);
+          const s0 = 0.7 + 0.6 * r(), w = lw * s0, h = lh * s0;
+          const P = [pos.clone().addScaledVector(ay, -h / 2), pos.clone().addScaledVector(ax, w / 2), pos.clone().addScaledVector(ay, h / 2), pos.clone().addScaledVector(ax, -w / 2)];
+          out.subVectors(pos, crown); out.y *= 1.3; out.normalize();
+          nn.copy(fn).multiplyScalar(Math.sign(fn.dot(out)) || 1).multiplyScalar(0.35).addScaledVector(out, 0.65).normalize();
+          c.copy(leafC).multiplyScalar(1 + (r() * 2 - 1) * 0.2);
+          for (const tri of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) for (const k of tri) {   // 両面（後ろの 2 つは裏向き）
+            const p = P[k];
+            leaf.pos.push(p.x, p.y, p.z); leaf.nrm.push(nn.x, nn.y, nn.z); leaf.col.push(c.r, c.g, c.b);
+            const hh = Math.max(0, (p.y - baseY) / curH); leaf.sw.push(hh * hh);
+          }
+        };
+        for (const t of tips) for (let k = 0; k < 60; k++) card(t.clone().add(new THREE.Vector3((r() - 0.5) * 0.14 * H, (r() - 0.3) * 0.12 * H, (r() - 0.5) * 0.14 * H)));
         for (let i = 0; i < n; i++) {
-          const a2 = r() * Math.PI * 2, cz = r() * 2 - 1, sz = Math.sqrt(1 - cz * cz), d2 = Math.pow(r(), 0.25);   // 球の中で外側寄り
-          put(crown.clone().add(new THREE.Vector3(Math.cos(a2) * sz * d2 * 0.27 * H, cz * d2 * 0.2 * H, Math.sin(a2) * sz * d2 * 0.27 * H)), (0.015 + 0.013 * r()) * H);
+          const a2 = r() * Math.PI * 2, cz = r() * 2 - 1, sz = Math.sqrt(1 - cz * cz), d2 = Math.pow(r(), 0.3);   // 球の中で外側寄り
+          card(crown.clone().add(new THREE.Vector3(Math.cos(a2) * sz * d2 * 0.27 * H, cz * d2 * 0.2 * H, Math.sin(a2) * sz * d2 * 0.27 * H)));
         }
-        blob.dispose();
       }
     }
   }
