@@ -4092,7 +4092,8 @@ const TREE_LEAF = { fresh: '#6fb84a', deep: '#3d7a34', autumn: '#c4532e', yellow
 const TREE_BARK = '#4d3c2e', TREE_DEAD = '#776652';   // 幹は GLB の木（広葉樹E）に寄せて、灰色がかった暗い茶（2026-10-05）
 function procTreeR(st) {   // 枝葉の広がり（水平の半径 [unit]、大きさ 1 の時）
   const H = Math.max(1, st.height ?? 9), sp = st.species ?? 'broad';
-  return H * (sp === 'conifer' ? 0.28 : sp === 'palm' ? 0.42 : sp === 'dead' ? 0.3 : 0.5);   // 広葉樹は枝が長く横に広い（2026-10-05）
+  const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
+  return H * (sp === 'conifer' ? 0.28 : sp === 'palm' ? 0.42 : sp === 'dead' ? 0.3 : 0.5 * wide);   // 広葉樹は枝が長く横に広い（2026-10-05）
 }
 function buildProcTrees(root, st, placed) {
   const bark = { pos: [], nrm: [], col: [], sw: [] }, leaf = { pos: [], nrm: [], col: [], sw: [] };
@@ -4180,6 +4181,7 @@ function buildProcTrees(root, st, placed) {
         // ほぼ水平な葉（ひし形の板・両面）を、枝の向きに長い楕円の中に散らす。光の当たり方は上向きを強めに混ぜ、層の上の面が明るく下が暗い。
         // 下の段の層ほど少し暗くする（上の葉の陰）
         const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
+        const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
         const lw = 0.025 * H, lh = 0.07 * H;   // 細長く尖った葉（GLB の木の層のふちのトゲトゲに寄せる）
         const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3();
@@ -4202,7 +4204,7 @@ function buildProcTrees(root, st, placed) {
         for (let i = 0; i < nb; i++) {
           // 枝の付く高さは 6 つの段にまとめる（段と段の間にすき間ができ、GLB の木のように葉が段々に見える）
           const t = i / (nb - 1), tier = Math.round(t * 5) / 5, hgt = (0.25 + 0.65 * tier + (r() - 0.5) * 0.03) * H, az = i * 2.39996 + r() * 0.5;
-          const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()), el = 0.3 + 0.35 * t + r() * 0.2;   // 斜め上へ（GLB の木の枝の向き）
+          const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()) * wide, el = Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7);   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
           const s0 = at(0, hgt, 0), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
@@ -4214,7 +4216,7 @@ function buildProcTrees(root, st, placed) {
           for (let k = 0; k < pads; k++) {
             const f = 0.35 + 0.65 * (k + r() * 0.5) / pads;
             const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
-            const pr = (0.09 + 0.06 * (1 - t)) * H, nl = Math.round(45 * amt);
+            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(45 * amt);
             pc.addScaledVector(fz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
             for (let j = 0; j < nl; j++) {
               const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;   // 層の厚み 0.04H
