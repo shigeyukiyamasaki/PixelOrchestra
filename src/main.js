@@ -555,7 +555,7 @@ function dirtRow(st, i, kind = 'dirt') {
   return box;
 }
 // 石畳の道（2026-10-05 ユーザー指定：街の道路になる石畳。グレー系）：中心線から幅一定の帯に、四角い石を道の向きにそろえて並べる
-const ROAD_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 3, meander: 0.2, dir: 0, stone: 1, shade: 1, curb: true, avoidGrass: true, avoidStones: true, seed: 1, show: true };
+const ROAD_BASE = { name: '', x: 0, z: 0, y: 0, len: 12, width: 3, meander: 0.2, dir: 0, stone: 1, shade: 1, curb: true, pattern: 'rect', avoidGrass: true, avoidStones: true, seed: 1, show: true };
 const roadDefaults = (o) => ({ ...ROAD_BASE, ...o });
 let road = (() => {
   try { const a = JSON.parse(LS.getItem(ROAD_KEY) || 'null'); if (Array.isArray(a)) return a.map(roadDefaults); } catch (e) { console.warn('石畳の設定の読込失敗:', e); }
@@ -587,6 +587,10 @@ function roadRow(st, i) {
     el.checked = st[key] ?? ROAD_BASE[key];
     el.onchange = () => { st[key] = el.checked; changed(); };
   };
+  // 並べ方（2026-10-05 ユーザー指定）：四角い石を列に／多角形の石を不規則に
+  const pat = put(box, '<label class="sld" title="石の並べ方。四角：四角い石を道を横切る列に並べ、1 列ごとに半分ずらす。多角形：大きさの違う多角形の石を不規則に敷き詰める"><span>並べ方</span><select><option value="rect">四角（列）</option><option value="poly">多角形（不規則）</option></select></label>').querySelector('select');
+  pat.value = st.pattern ?? ROAD_BASE.pattern;
+  pat.onchange = () => { st.pattern = pat.value; changed(); };
   check('縁石', 'curb', '道の両端に、細長い縁石を並べる');
   check('草をよける', 'avoidGrass', 'この石畳の上に、草のジェネレーターの草を生やさない（石畳を動かすと自動で並べ直す）');
   check('石をよける', 'avoidStones', 'この石畳の上に、石のジェネレーターの石を置かない（石畳を動かすと自動で並べ直す）');
@@ -604,7 +608,7 @@ function roadRow(st, i) {
   slider('幅', 'width', 0.5, 8, 0.05, 2, '道の幅 [unit]（縁石を含む）');
   slider('曲がり', 'meander', 0, 1, 0.05, 2, '道のゆるい曲がり。0 でまっすぐ。「作り直し」で曲がり方が変わる');
   slider('向き', 'dir', -180, 180, 1, 0, '道の向き [度]。0 で客席から見て左右、90 で奥へ');
-  slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '石 1 つの大きさの倍率。1 で 15〜18cm ほど');
+  slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '石 1 つの大きさの倍率。1 で 15〜18cm ほど（多角形は 20cm ほど）');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色（グレー）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、曲がり方と石の並び・明るさのばらつきだけ変える">作り直し</button>');

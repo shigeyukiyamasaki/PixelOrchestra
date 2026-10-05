@@ -2598,7 +2598,7 @@ function roadPoints(st) {   // 中心線の点 [x, z, 始点からの長さ]。0
 function roadMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   m.userData.u = { uP: { value: Array.from({ length: ROAD_MAX_P }, () => new THREE.Vector4()) }, uPN: { value: 0 }, uW: { value: 1.5 }, uStone: { value: 1 },
-    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 } };   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）
+    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 }, uPat: { value: 0 } };   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）、uPat：並べ方（0 四角い石を列に／1 多角形を不規則に）
   m.extensions = { derivatives: true };
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
@@ -2607,7 +2607,7 @@ function roadMaterial() {
     shader.fragmentShader = `varying vec3 pxoWW;
 uniform vec4 uP[ ${ROAD_MAX_P} ];
 uniform int uPN;
-uniform float uW, uStone, uShade, uCurb, uHL, uSeed, uPixLv;
+uniform float uW, uStone, uShade, uCurb, uHL, uSeed, uPixLv, uPat;
 uniform vec2 uPixDot;
 ${WATER_NOISE_GLSL}
 ${PIX_QUANT_GLSL}
@@ -2618,6 +2618,28 @@ float pxoStoneD( vec2 f, vec2 sz, float g, float rc ) {
   vec2 e = min( f, 1.0 - f ) * sz;                     // 4 辺のうち近い辺までの距離
   vec2 k = max( vec2( g + rc ) - e, 0.0 );
   return min( min( e.x, e.y ) - g, rc - length( k ) );
+}
+// 多角形の石（2026-10-05 ユーザー指定：長方形ではなく多角形を不規則に敷き詰めた版）：ます目ごとに点を 1 つずらして置き、一番近い点ごとに分ける（ボロノイ）。
+// x はます目単位。戻り値 (境目までの距離, 点から石の中心への向き x, z)、id に石の番号
+vec3 pxoVoronoi( vec2 x, out vec2 id ) {
+  vec2 nb = floor( x ), f = fract( x ), mg = vec2( 0.0 ), mr = vec2( 0.0 );
+  float md = 8.0;
+  for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
+    vec2 g = vec2( float( i ), float( j ) ), c = nb + g;
+    vec2 o = 0.15 + 0.7 * vec2( pxoWH( c + 1.3 ), pxoWH( c + 7.9 ) );
+    vec2 r = g + o - f;
+    float d = dot( r, r );
+    if ( d < md ) { md = d; mr = r; mg = g; }
+  }
+  md = 8.0;
+  for ( int j = -2; j <= 2; j ++ ) for ( int i = -2; i <= 2; i ++ ) {   // 境目（隣の点との垂直二等分線）までの距離
+    vec2 g = mg + vec2( float( i ), float( j ) ), c = nb + g;
+    vec2 o = 0.15 + 0.7 * vec2( pxoWH( c + 1.3 ), pxoWH( c + 7.9 ) );
+    vec2 r = g + o - f;
+    if ( dot( mr - r, mr - r ) > 1e-5 ) md = min( md, dot( 0.5 * ( mr + r ), normalize( r - mr ) ) );
+  }
+  id = nb + mg;
+  return vec3( md, mr );
 }
 ` + shader.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -2658,6 +2680,19 @@ float pxoStoneD( vec2 f, vec2 sz, float g, float rc ) {
     col = mix( ${c3('#6f7175')}, ${c3('#84868a')}, h );
     if ( e < 0.0 ) col = ${c3('#3d3e42')};
     else if ( e < 0.04 ) col *= f.y < 0.5 ? 1.15 : 0.78;
+  } else if ( uPat > 0.5 ) {
+    // 多角形の石：大きさ 0.4 のます目に 1 つずつ。目地は境目から 0.022、縁の明暗は境目から 0.035 まで。光の来る側（石の中心から見て −s・+n）の縁を明るく
+    float CS = 0.4 * uStone;
+    vec2 id;
+    vec3 v = pxoVoronoi( sp / CS, id );
+    float e = v.x * CS - 0.022 * uStone;
+    float h = pxoWH( id + 1.7 ), h2 = pxoWH( id + 9.3 );
+    col = mix( ${c3('#55585d')}, ${c3('#72757a')}, h );
+    col = mix( col, col * vec3( 1.04, 1.0, 0.94 ), step( 0.7, h2 ) );
+    col = mix( col, col * vec3( 0.95, 0.98, 1.05 ), step( h2, 0.2 ) );
+    if ( e < 0.0 ) col = ${c3('#3a3b3f')};
+    else if ( e < 0.035 * uStone ) col *= dot( -v.yz, vec2( -1.0, 1.0 ) ) > 0.0 ? 1.13 : 0.8;
+    col *= 1.0 + ( pxoWN( sp * 9.0 ) - 0.5 ) * 0.14;
   } else {
     // 石：道を横切る列（長さ 0.3）に、幅 0.36 の石を並べ、1 列ごとに半分ずらす（列ごとに少しだけ乱す）
     vec2 sz = vec2( 0.3, 0.36 ) * uStone;
@@ -2682,7 +2717,7 @@ float pxoStoneD( vec2 f, vec2 sz, float g, float rc ) {
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   if ( uPixDot.x > 0.0 ) gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );   // 階調の細かさ（水と同じ）`);
   };
-  m.customProgramCacheKey = () => 'pxo-road-v1';
+  m.customProgramCacheKey = () => 'pxo-road-v2';
   return m;
 }
 function buildRoad() {
@@ -2710,6 +2745,7 @@ function buildRoad() {
     u.uStone.value = Math.max(0.3, Math.min(3, st.stone ?? 1));
     u.uShade.value = Math.max(0, st.shade ?? 1);
     u.uCurb.value = st.curb === false ? 0 : 1;
+    u.uPat.value = st.pattern === 'poly' ? 1 : 0;
     u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
