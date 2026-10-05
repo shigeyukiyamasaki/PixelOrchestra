@@ -41,6 +41,7 @@ const MODELS_KEY = 'pixelOrchestra.models.v1';         // 床に置く 3D モデ
 const STONES_KEY = 'pixelOrchestra.stones.v1';         // 石のジェネレーター（2026-10-03 ユーザー指定）
 const GRASS_KEY = 'pixelOrchestra.grass.v1';           // 草のジェネレーター（2026-10-03 ユーザー指定）
 const WATER_KEY = 'pixelOrchestra.water.v1';           // 水のジェネレーター（2026-10-03 ユーザー指定）
+const PATTERNS_KEY = 'pixelOrchestra.genPatterns.v1';   // 石・草のジェネレーターの形のもと（GLB）。プロジェクトにだけ保存し、公開ページはこれで形を読む（2026-10-05）
 const DIRT_KEY = 'pixelOrchestra.dirt.v1';             // 土のジェネレーター（2026-10-05 ユーザー指定）
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
@@ -287,17 +288,26 @@ function saveStones() {
 // 石の形のもと：素材の「PixelOrchestra_ドロップ/3Dモデル」にある「石＋数字.glb」を全部（石4・石5 を足せば自動で増える）
 const STONE_DIR = 'PixelOrchestra_ドロップ/3Dモデル';
 let stonePatternCount = 0, rockPatternCount = 0, grassPatternCount = 0, grassPatternNames = [];
+let genPatterns = [];   // [{ kind: 'stone'|'rock'|'grass', name, src }]。プロジェクトの保存で GLB ごとコピーする
 async function refreshStonePatterns() {
+  // 公開ページには素材の一覧（media-models.json）が無いので、プロジェクトに保存した形を使う（projectBackend.apply。2026-10-05：公開ページで石と草が出ていなかった）
+  if (VIEW_NAME) return;
   await loadModelList();
   const pick = (head) => (modelFileList[STONE_DIR] || []).filter((n) => new RegExp(`^${head}\\d+\\.glb$`).test(n)).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10));
-  const names = pick('石'), rocks = pick('岩');   // 大きい石は岩の形に替える（幅 45〜80cm で混ぜる。2026-10-03）
+  // 大きい石は岩の形に替える（幅 45〜80cm で混ぜる。2026-10-03）。草のジェネレーターの形のもと（2026-10-03）
+  const of = (kind, head) => pick(head).map((n) => ({ kind, name: n.replace(/\.glb$/, ''), src: mediaUrlOf(STONE_DIR, n) }));
+  applyGenPatterns([...of('stone', '石'), ...of('rock', '岩'), ...of('grass', '草')]);
+}
+function applyGenPatterns(list) {
+  genPatterns = list;
+  const by = (kind) => list.filter((p) => p.kind === kind);
+  const names = by('stone'), rocks = by('rock'), grasses = by('grass');
   stonePatternCount = names.length; rockPatternCount = rocks.length;
-  setStonePatterns(names.map((n) => mediaUrlOf(STONE_DIR, n)), rocks.map((n) => mediaUrlOf(STONE_DIR, n)));
+  setStonePatterns(names.map((p) => p.src), rocks.map((p) => p.src));
   for (const el of document.querySelectorAll('#stoneRows .note')) el.textContent = stoneNote();
-  const grasses = pick('草');   // 草のジェネレーターの形のもと（2026-10-03）
   grassPatternCount = grasses.length;
-  const gNames = grasses.map((n) => n.replace(/\.glb$/, ''));
-  setGrassPatterns(grasses.map((n, k) => ({ url: mediaUrlOf(STONE_DIR, n), name: gNames[k] })));
+  const gNames = grasses.map((p) => p.name);
+  setGrassPatterns(grasses.map((p) => ({ url: p.src, name: p.name })));
   if (gNames.join('|') !== grassPatternNames.join('|')) { grassPatternNames = gNames; renderScreens(); }   // 割合のスライダーを草の数に合わせて作り直す
   for (const el of document.querySelectorAll('#grassRows .note')) el.textContent = grassNote();
 }
@@ -2463,7 +2473,7 @@ function snapshotSettings() {
 // 集めるだけなら fn の中で控えて undefined を返す
 function mapAssetSrcs(snap, fn) {
   const out = { ...snap };
-  for (const k of [SCREENS_KEY, DOMES_KEY, MODELS_KEY]) {
+  for (const k of [SCREENS_KEY, DOMES_KEY, MODELS_KEY, PATTERNS_KEY]) {
     if (out[k] == null) continue;
     try {
       const a = JSON.parse(out[k]);
@@ -2531,7 +2541,11 @@ const projectBackend = {
   async list() { return (await (await api('projects.json')).json()).filter((p) => !p.broken).map((p) => p.name); },
   async save(name) {
     const assets = [];
-    const settings = mapAssetSrcs(snapshotSettings(), (u) => { assets.push(u); });
+    const snap = snapshotSettings();
+    // 置いた石・草の形のもと（GLB）も一緒にコピーする（公開ページには素材の一覧が無いため。2026-10-05）
+    const used = new Set([...(stones.length ? ['stone', 'rock'] : []), ...(grass.length ? ['grass'] : [])]);
+    snap[PATTERNS_KEY] = JSON.stringify(genPatterns.filter((p) => used.has(p.kind)));
+    const settings = mapAssetSrcs(snap, (u) => { assets.push(u); });
     const body = { settings, midi: null, audio: null, assets };
     if (midiBytes) {
       await api(projectUrl(name, 'song.mid'), { method: 'POST', body: midiBytes });
@@ -2550,6 +2564,9 @@ const projectBackend = {
     const p = await (await api(projectUrl(name, 'project.json'))).json();
     const copies = p.copies || {};
     const settings = mapAssetSrcs(p.settings || {}, (u) => copies[u]);   // 素材は保存したコピーを使う
+    if (VIEW_NAME) {   // 公開ページ：石・草の形はプロジェクトに保存したコピーから（2026-10-05）
+      try { applyGenPatterns(JSON.parse(settings[PATTERNS_KEY] || '[]')); } catch (e) { console.warn('石・草の形を読めませんでした:', e); }
+    }
     const src = { midi: null, audio: null };
     if (p.midi?.file) src.midi = { name: p.midi.name, bytes: new Uint8Array(await (await api(projectUrl(name, p.midi.file))).arrayBuffer()) };
     if (p.audio?.file) src.audio = { kind: 'project', src: projectUrl(name, p.audio.file), name: p.audio.name };
