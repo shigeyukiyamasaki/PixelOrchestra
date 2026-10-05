@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSand, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -43,6 +43,7 @@ const GRASS_KEY = 'pixelOrchestra.grass.v1';           // 草のジェネレー�
 const WATER_KEY = 'pixelOrchestra.water.v1';           // 水のジェネレーター（2026-10-03 ユーザー指定）
 const PATTERNS_KEY = 'pixelOrchestra.genPatterns.v1';   // 石・草のジェネレーターの形のもと（GLB）。プロジェクトにだけ保存し、公開ページはこれで形を読む（2026-10-05）
 const DIRT_KEY = 'pixelOrchestra.dirt.v1';             // 土のジェネレーター（2026-10-05 ユーザー指定）
+const SAND_KEY = 'pixelOrchestra.sand.v1';             // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
 const DOMES_KEY = 'pixelOrchestra.domes.v1';           // スカイドーム（遠景。3 層固定）の対応
 const PRESETS_KEY = 'pixelOrchestra.presets.v1';       // プリセット（上の設定を丸ごと名前付きで控える。2026-09-14 ユーザー指定）
 const SECTION_PRESETS_KEY = 'pixelOrchestra.sectionPresets.v1'; // 箱ごとのプリセット { 箱: { 名前: 中身 } }（天気・光源など細かい単位。2026-09-19 ユーザー指定）
@@ -54,7 +55,7 @@ const SECTION_SEL_KEY = 'pixelOrchestra.sectionSel.v1';
 // settings.json を「置き場所」にして、起動時に読み込み・変更時に書き出す。
 // 同じ localhost:8766 を見ているブラウザは、リロードすれば同じ設定になる。
 // サーバーが無い／静的配信のときは POST が失敗するだけで、これまでどおり localStorage で動く。
-const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SECTION_SEL_KEY];
+const PRESET_KEYS = [SETTINGS_KEY, FAMILY_KEY, PITCH_FILTER_KEY, DYN_SOURCE_KEY, MERGE_KEY, COSTUME_KEY, SINGLE_KEY, CONDUCTOR_COSTUME_KEY, SCREENS_KEY, CREDITS_KEY, DOMES_KEY, MODELS_KEY, STONES_KEY, GRASS_KEY, WATER_KEY, DIRT_KEY, SAND_KEY, SECTION_SEL_KEY];
 const SYNC_KEYS = [...PRESET_KEYS, PRESETS_KEY, SECTION_PRESETS_KEY];   // プリセットそのもの（全体・箱ごと）も共有する（中身には入れない）。プロジェクトはサーバーのフォルダに保存（2026-09-18）
 const SYNC_URL = 'settings.json';
 let syncTimer = null;
@@ -483,52 +484,73 @@ function saveDirt() {
     try { LS.setItem(DIRT_KEY, JSON.stringify(dirt)); pushSettings(); } catch (e) { console.warn('土の設定の保存失敗:', e); }
   }, 400);
 }
-function dirtRow(st, i) {
-  const box = Object.assign(document.createElement('div'), { className: 'screen dirt gen' });
-  hoverHighlight(box, 'dirt', i);
+// 砂のジェネレーター（2026-10-05 ユーザー指定）：作りは土と同じで、色と模様（ベージュの地・風紋・砂粒）だけ違う。ripple：風紋の強さ
+const SAND_BASE = { ...DIRT_BASE, edgeDark: 0.15, ripple: 0.5 };
+const sandDefaults = (o) => ({ ...SAND_BASE, ...o });
+let sand = (() => {
+  try { const a = JSON.parse(LS.getItem(SAND_KEY) || 'null'); if (Array.isArray(a)) return a.map(sandDefaults); } catch (e) { console.warn('砂の設定の読込失敗:', e); }
+  return [];
+})();
+let sandSaveTimer = null;
+function saveSand() {
+  clearTimeout(sandSaveTimer);
+  sandSaveTimer = setTimeout(() => {
+    try { LS.setItem(SAND_KEY, JSON.stringify(sand)); pushSettings(); } catch (e) { console.warn('砂の設定の保存失敗:', e); }
+  }, 400);
+}
+// 土と砂のカードは同じ作り（kind で切り替える）
+const GROUND = {
+  dirt: { label: '土', what: '地肌', color: 'こげ茶〜茶', base: DIRT_BASE, defaults: dirtDefaults, get list() { return dirt; }, save: saveDirt, set: setDirt },
+  sand: { label: '砂', what: '砂地', color: 'ベージュ', base: SAND_BASE, defaults: sandDefaults, get list() { return sand; }, save: saveSand, set: setSand },
+};
+function dirtRow(st, i, kind = 'dirt') {
+  const G = GROUND[kind];
+  const box = Object.assign(document.createElement('div'), { className: `screen ${kind} gen` });
+  hoverHighlight(box, kind, i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
-  const changed = () => { setDirt(dirt); saveDirt(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）
+  const changed = () => { G.set(G.list); G.save(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）
   const top = put(box, '<div class="stoneTop"></div>');
   const name = top.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
-  name.value = st.name || `土${i + 1}`;
-  name.oninput = () => { st.name = name.value; saveDirt(); };
+  name.value = st.name || `${G.label}${i + 1}`;
+  name.oninput = () => { st.name = name.value; G.save(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この土の地肌を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, `<label title="この${G.label}の${G.what}を表示する"><input type="checkbox"><span>表示</span></label>`).querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const checks = put(box, '<div class="stoneTop genChecks"></div>');
   // 草・石を別々によける（2026-10-05 ユーザー指定）。以前の「草・石をよける」（avoid）は両方に引き継ぐ
-  const avoidG = put(checks, '<label title="この土の上に、草のジェネレーターの草を生やさない（土を動かすと自動で並べ直す）"><input type="checkbox"><span>草をよける</span></label>').querySelector('input');
+  const avoidG = put(checks, `<label title="この${G.label}の上に、草のジェネレーターの草を生やさない（${G.label}を動かすと自動で並べ直す）"><input type="checkbox"><span>草をよける</span></label>`).querySelector('input');
   avoidG.checked = st.avoidGrass ?? st.avoid ?? true;
   avoidG.onchange = () => { st.avoidGrass = avoidG.checked; changed(); };
-  const avoidS = put(checks, '<label title="この土の上に、石のジェネレーターの石を置かない（土を動かすと自動で並べ直す）"><input type="checkbox"><span>石をよける</span></label>').querySelector('input');
+  const avoidS = put(checks, `<label title="この${G.label}の上に、石のジェネレーターの石を置かない（${G.label}を動かすと自動で並べ直す）"><input type="checkbox"><span>石をよける</span></label>`).querySelector('input');
   avoidS.checked = st.avoidStones ?? st.avoid ?? true;
   avoidS.onchange = () => { st.avoidStones = avoidS.checked; changed(); };
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(box, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
-    el.value = st[key] ?? DIRT_BASE[key] ?? +min;
+    el.value = st[key] ?? G.base[key] ?? +min;
     const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
     el.oninput = () => { st[key] = +el.value; box2.show(); changed(); };
     return lab;
   };
   slider('横位置', 'x', -30, 30, 0.1, 1, '中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
-  slider('数', 'pools', 1, 16, 1, 0, '地肌の数。1 で 1 つの広い地肌。増やして「大きさ」を小さくすると、点々とした地肌が散らばる（2 つ以上の時は 1 つずつ大きさ・向き・位置がばらつく）');
-  slider('大きさ', 'lakeSize', 0.1, 20, 0.05, 2, '地肌 1 つの大きさ（丸い時の半径）[unit]。縦横比で細長くしても面積はほぼ同じ');
+  slider('数', 'pools', 1, 16, 1, 0, `${G.what}の数。1 で 1 つの広い${G.what}。増やして「大きさ」を小さくすると、点々とした${G.what}が散らばる（2 つ以上の時は 1 つずつ大きさ・向き・位置がばらつく）`);
+  slider('大きさ', 'lakeSize', 0.1, 20, 0.05, 2, `${G.what} 1 つの大きさ（丸い時の半径）[unit]。縦横比で細長くしても面積はほぼ同じ`);
   slider('縦横比', 'aspect', 1, 4, 0.05, 2, '細長さ。1 で丸く、大きいほど「向き」の方へ細長い');
-  slider('向き', 'dir', -180, 180, 1, 0, '細長い向き [度]。0 で客席から見て右へ、90 で奥へ');
-  slider('散らばり', 'scatter', 0, 40, 0.1, 1, '地肌が散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い');
+  slider('向き', 'dir', -180, 180, 1, 0, `細長い向き [度]。0 で客席から見て右へ、90 で奥へ${kind === 'sand' ? '。風紋の筋もこの向きに合わせて回る' : ''}`);
+  slider('散らばり', 'scatter', 0, 40, 0.1, 1, `${G.what}が散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い`);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '縁の形。1 でなめらかな丸み、0 でゴツゴツ。縁はさらに細かいむらで崩れながら床に溶ける');
-  slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '土の色の濃さ。1 で元の色（こげ茶〜茶）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
+  slider('色の濃さ', 'shade', 0, 3, 0.05, 2, `${G.label}の色の濃さ。1 で元の色（${G.color}）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）`);
   slider('縁の濃さ', 'edgeDark', 0, 1, 0.05, 2, '縁から 30cm ほど内側にかけて色を暗くする強さ。0 で暗くしない、1 で縁が一番暗い（2026-10-05 ユーザー指定）');
+  if (kind === 'sand') slider('風紋', 'ripple', 0, 1, 0.05, 2, '風でできる砂の筋の強さ。0 で筋なし、1 で一番くっきり。筋は「向き」の方へ並び、ところどころ途切れる（2026-10-05）');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（輪郭・散らばる位置・まだら）だけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
-  const dup = put(btns, '<button title="この土を複製する（設定ごと。右隣に入る）">複製</button>');
-  dup.onclick = () => { const c = dirtDefaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `土${i + 1}`}のコピー`; dirt.splice(i + 1, 0, c); renderScreens(); changed(); };
-  const del = put(btns, '<button class="del" title="この土を削除する">削除</button>');
-  del.onclick = () => { dirt.splice(i, 1); renderScreens(); changed(); };
+  const dup = put(btns, `<button title="この${G.label}を複製する（設定ごと。右隣に入る）">複製</button>`);
+  dup.onclick = () => { const c = G.defaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `${G.label}${i + 1}`}のコピー`; G.list.splice(i + 1, 0, c); renderScreens(); changed(); };
+  const del = put(btns, `<button class="del" title="この${G.label}を削除する">削除</button>`);
+  del.onclick = () => { G.list.splice(i, 1); renderScreens(); changed(); };
   return box;
 }
 function waterRow(st, i) {
@@ -1148,6 +1170,14 @@ function renderScreens() {
     addD.onclick = () => { dirt.push(dirtDefaults({ name: `土${dirt.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setDirt(dirt); saveDirt(); };
     dtbox.appendChild(addD);
   }
+  const sdbox = $('sandRows');
+  if (sdbox) {   // 砂のジェネレーター（2026-10-05）
+    sdbox.textContent = '';
+    sand.forEach((st, i) => sdbox.appendChild(dirtRow(st, i, 'sand')));
+    const addS = Object.assign(document.createElement('button'), { className: 'addCard', textContent: '＋', title: '砂地を 1 つ増やす' });
+    addS.onclick = () => { sand.push(sandDefaults({ name: `砂${sand.length + 1}`, seed: Math.floor(Math.random() * 1e6) + 1 })); renderScreens(); setSand(sand); saveSand(); };
+    sdbox.appendChild(addS);
+  }
   domes.forEach((d, i) => dbox.appendChild(domeRow(d, i)));    // 遠景（3 層固定）は左のセクションへ
   screens.forEach((sc, i) => box.appendChild(screenRow(sc, i)));
   // 右端の「＋」でカードを増やす
@@ -1185,7 +1215,7 @@ function showBarTab(id) {
 // 段の高さを、3 つの欄のうち一番高いものにそろえる（2026-10-01 ユーザー指定：切り替えるたびに段の高さが変わり、プレビューの大きさが変わった）。
 // 隠した欄は高さを持たないので、測る間だけ全部を表示にして読み、すぐ戻す（同じ処理の中なので画面には出ない）
 function equalizeBarTabs() {
-  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec'].map((id) => $(id)).filter(Boolean);
+  const secs = ['domeSec', 'screenSec', 'floorSec', 'modelSec', 'stoneSec', 'grassSec', 'waterSec', 'dirtSec', 'sandSec'].map((id) => $(id)).filter(Boolean);
   if (!secs.length) return;
   const off = secs.filter((el) => el.classList.contains('tabOff'));
   for (const el of secs) el.style.minHeight = '';
@@ -2500,7 +2530,8 @@ function applySnapshot(p, src) {
   try { const a = JSON.parse(LS.getItem(GRASS_KEY) || 'null'); grass = Array.isArray(a) ? a.map(grassDefaults) : []; } catch (e) { console.warn('草の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(WATER_KEY) || 'null'); water = Array.isArray(a) ? a.map(waterDefaults) : []; } catch (e) { console.warn('水の復元失敗:', e); }
   try { const a = JSON.parse(LS.getItem(DIRT_KEY) || 'null'); dirt = Array.isArray(a) ? a.map(dirtDefaults) : []; } catch (e) { console.warn('土の復元失敗:', e); }
-  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt);
+  try { const a = JSON.parse(LS.getItem(SAND_KEY) || 'null'); sand = Array.isArray(a) ? a.map(sandDefaults) : []; } catch (e) { console.warn('砂の復元失敗:', e); }
+  renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand);
   try { const c = JSON.parse(LS.getItem(CREDITS_KEY) || 'null'); if (c && c.hist) credits = c; } catch (e) { console.warn('クレジット履歴の復元失敗:', e); }
   closeCreditMenu();   // 候補は開くたびに credits から作るので、閉じておくだけでよい
   let midiDone = false;
@@ -2667,6 +2698,7 @@ const SECTIONS = [
   { key: 'grass', label: '草', sec: 'grassSec' },
   { key: 'water', label: '水', sec: 'waterSec' },
   { key: 'dirt', label: '土', sec: 'dirtSec' },
+  { key: 'sand', label: '砂', sec: 'sandSec' },
   // まとまり：空・時刻／天気／光源・影を 3 つまとめて（連動が強いので。2026-09-20 ユーザー指定）。▾ は見出し「環境」（#envHd）に置く。各箱のプリセットとは別の欄
   { key: 'env', label: '環境', group: ['sky', 'weather', 'light', 'wind'], hdId: 'envHd' },
 ];
@@ -2680,7 +2712,7 @@ const sectionInputs = (sec) => sec.boxes().filter(Boolean).flatMap((b) => [...b.
   .filter((el) => el.type !== 'file' && el.id !== 'seek' && el.id !== 'vSeek' && !el.id.startsWith('preset') && !el.id.startsWith('project'));
 function sectionSnap(sec) {
   if (sec.group) return { parts: Object.fromEntries(sec.group.map((k) => [k, sectionSnap(SECTION_BY_KEY[k])])) };   // まとまり：各箱の控えを束ねる
-  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : screens)) };
+  if (sec.sec) return { list: JSON.parse(JSON.stringify(sec.key === 'dome' ? domes : sec.key === 'model' ? models : sec.key === 'stone' ? stones : sec.key === 'grass' ? grass : sec.key === 'water' ? water : sec.key === 'dirt' ? dirt : sec.key === 'sand' ? sand : screens)) };
   const v = {}, r = {};
   for (const el of sectionInputs(sec)) {
     if (el.type === 'radio') { if (el.checked) r[el.name] = el.value; } else v[el.id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2700,8 +2732,9 @@ function applySection(sec, d) {
     else if (sec.key === 'grass') { grass = d.list.map(grassDefaults); saveGrass(); }
     else if (sec.key === 'water') { water = d.list.map(waterDefaults); saveWater(); }
     else if (sec.key === 'dirt') { dirt = d.list.map(dirtDefaults); saveDirt(); }
+    else if (sec.key === 'sand') { sand = d.list.map(sandDefaults); saveSand(); }
     else { screens = d.list.map(withDefaults); saveScreens(); }
-    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt);
+    renderScreens(); setScreens(screens); setDomes(domes); setModels(models); setStones(stones); setGrass(grass); setWater(water); setDirt(dirt); setSand(sand);
     return;
   }
   for (const [id, val] of Object.entries(d.v || {})) {
@@ -2813,6 +2846,7 @@ setStones(stones);    // 石のジェネレーター（2026-10-03）。形のも
 setGrass(grass);      // 草のジェネレーター（2026-10-03）。形のもと（草1・草2…）も同じく
 setWater(water);      // 水のジェネレーター（2026-10-03）
 setDirt(dirt);        // 土のジェネレーター（2026-10-05）
+setSand(sand);        // 砂のジェネレーター（2026-10-05）
 refreshStonePatterns();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);

@@ -552,13 +552,14 @@ export function createStage(container) {
   const grass = new THREE.Group(); grass.name = 'grass'; scene.add(grass);       // 草のジェネレーター（2026-10-03 ユーザー指定）
   const water = new THREE.Group(); water.name = 'water'; scene.add(water);       // 水のジェネレーター（2026-10-03 ユーザー指定）
   const dirt = new THREE.Group(); dirt.name = 'dirt'; scene.add(dirt);           // 土のジェネレーター（2026-10-05 ユーザー指定）
+  const sand = new THREE.Group(); sand.name = 'sand'; scene.add(sand);           // 砂のジェネレーター（2026-10-05 ユーザー指定。作りは土と同じ）
   scene.add(models);
   const weather = new THREE.Group();   // 天気（雨・雪・雷）。スカイドーム 1 枚ごとに、そのすぐ後ろへ 1 枚（2026-09-17 ユーザー指定）
   scene.add(domes);
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, dirt, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, sand, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -933,7 +934,7 @@ export function pixelGroups() {
   // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
   // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
   // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand], models: [stageCtx.models, stageCtx.stones, stageCtx.grass], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -2426,14 +2427,17 @@ let waterList = [];
 // 形は湖・池・水たまりと同じ（lakeCircles：数・大きさ・縦横比・向き・散らばり・縁のなめらかさ）。床のすぐ上に半透明の面で描き（水より下）、
 // 床が板目でも描く。色は土（こげ茶〜茶）に大小のむら（乾いた所・湿った所）と細かいざらつき、小石の粒。縁はむらで崩しながら床に溶かす。
 // ドット化は水と同じく範囲の「舞台」で、自分でます目・階調に揃える
-let dirtList = [];
+// 砂のジェネレーター（2026-10-05 ユーザー指定）も同じ作り（形・縁・向き・草と石をよける・ドット化）で、色と模様だけ違う（dirtMaterial の kind）
+let dirtList = [], sandList = [];
 export function setDirt(list) { dirtList = (list || []).map((o) => ({ ...o })); buildDirt(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
+export function setSand(list) { sandList = (list || []).map((o) => ({ ...o })); buildDirt(); buildStones(); buildGrass(); }
 const DIRT_LIFT = 0.008;   // 床からの浮かせ [unit]（水 0.02 より下）
+const SAND_LIFT = 0.006;   // 砂は土より下（土と重ねたら土が上に見える）
 const DIRT_MAX_C = 160;    // 土の円の数の上限（水の 64 より多い：奏者をよけないので配列に余裕がある。2026-10-05：数が多いと細長い形が分裂した）
-function dirtMaterial() {
+function dirtMaterial(kind = 'dirt') {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   m.userData.u = { uC: { value: Array.from({ length: DIRT_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
-    uHL: { value: 0 }, uShade: { value: 1 }, uEdge: { value: 0.5 }, uSeed: { value: 0 }, uRot: { value: new THREE.Vector4(1, 0, 0, 0) } };   // uRot：(cos 向き, sin 向き, 中心 x, 中心 z)
+    uHL: { value: 0 }, uShade: { value: 1 }, uEdge: { value: 0.5 }, uSeed: { value: 0 }, uRot: { value: new THREE.Vector4(1, 0, 0, 0) }, uRipple: { value: 0.5 } };   // uRot：(cos 向き, sin 向き, 中心 x, 中心 z)、uRipple：砂の風紋の強さ
   m.extensions = { derivatives: true };
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
@@ -2442,7 +2446,7 @@ function dirtMaterial() {
     shader.fragmentShader = `varying vec3 pxoWW;
 uniform vec4 uC[ ${DIRT_MAX_C} ];
 uniform int uN;
-uniform float uK, uHL, uShade, uEdge, uSeed, uPixLv;
+uniform float uK, uHL, uShade, uEdge, uSeed, uPixLv, uRipple;
 uniform vec4 uRot;
 uniform vec2 uPixDot;
 ${WATER_NOISE_GLSL}
@@ -2469,7 +2473,27 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
   // 形（水たまりと同じ）に、縁を崩す大小のむらを足す
   float sd = pxoCirclesSDF( P.xz ) + 0.18 * ( pxoWN( q * 3.0 ) * 2.0 - 1.0 ) + 0.06 * ( pxoWN( q * 11.0 + 4.1 ) * 2.0 - 1.0 );
   if ( sd > 0.0 ) discard;
-  // まだらは、向きを回しながら 3 段重ねたノイズを、さらに座標をゆがめて使う（2026-10-05 ユーザー指摘：1 段の値ノイズを
+${kind === 'sand' ? `  // 砂（2026-10-05 ユーザー指定）：明るいベージュの地に、大きなむら・風紋・細かい砂粒。
+  // 風紋は「向き」の方向に並ぶ筋（波長 約 17cm）。風下側の斜面を明るく、風上側の谷を暗くし、むらで途切れさせる
+  vec2 w = q + 0.5 * vec2( pxoDirtN( q * 0.5 ), pxoDirtN( q * 0.5 + 5.2 ) );
+  float n1 = pxoDirtN( w * 0.8 ), n2 = pxoDirtN( w * 3.1 + 7.3 ), n3 = pxoWN( q * 14.0 + 1.9 );
+  vec3 col = mix( ${c3('#c9a874')}, ${c3('#e3cb98')}, smoothstep( 0.35, 0.65, n1 ) );   // 地の色（乾いて明るい所／少し湿って濃い所）
+  col = mix( col, ${c3('#b39363')}, smoothstep( 0.55, 0.8, n2 ) * 0.35 );             // 湿った所（薄く）
+  {
+    float ph = ( q.x + 0.35 * ( pxoDirtN( q * 0.9 + 3.3 ) - 0.5 ) * 2.0 ) / 0.35;   // 筋をゆがめる
+    float f = fract( ph );
+    float crest = smoothstep( 0.0, 0.2, f ) * ( 1.0 - smoothstep( 0.45, 0.6, f ) );   // 明るい斜面
+    float trough = smoothstep( 0.62, 0.8, f ) * ( 1.0 - smoothstep( 0.9, 1.0, f ) );  // 暗い谷
+    float k = uRipple * smoothstep( 0.3, 0.6, pxoDirtN( q * 0.4 + 9.1 ) );            // 風紋が出る所と消える所
+    col *= 1.0 + k * ( 0.10 * crest - 0.22 * trough );
+  }
+  {   // 砂粒：2cm ごとに、ときどき暗い粒・明るい粒
+    vec2 gc = floor( q / 0.02 );
+    float h = pxoWH( gc + 5.7 );
+    if ( h < 0.05 ) col = mix( col, ${c3('#8f7650')}, 0.7 );
+    else if ( h > 0.96 ) col = mix( col, ${c3('#f6ead0')}, 0.7 );
+  }
+` : `  // まだらは、向きを回しながら 3 段重ねたノイズを、さらに座標をゆがめて使う（2026-10-05 ユーザー指摘：1 段の値ノイズを
   // しきい値で切っていて、格子の縦横の筋が規則正しい模様に見えた）
   vec2 w = q + 0.6 * vec2( pxoDirtN( q * 0.7 ), pxoDirtN( q * 0.7 + 5.2 ) );
   float n1 = pxoDirtN( w * 0.9 ), n2 = pxoDirtN( w * 3.7 + 7.3 ), n3 = pxoWN( q * 12.0 + 1.9 );
@@ -2494,7 +2518,7 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
     col = mix( col, ${c3('#2f2014')}, dots * 0.85 );
   }
   col *= 1.0 + ( n3 - 0.5 ) * 0.25;                                       // 細かいざらつき
-  col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
+`}  col *= pow( 0.5, uShade - 1.0 );   // 色の濃さ（1 上がるごとに明るさ半分）
   col *= 1.0 - uEdge * ( 1.0 - smoothstep( 0.03, 0.3, -sd ) );   // 縁を濃く（2026-10-05 ユーザー指定）：縁から 30cm ほど内側にかけて暗くしていく。uEdge：縁の濃さ（0 で暗くしない）
   // 縁は、内側ほど地肌がはっきり出て、むらで崩しながら床に溶ける
   float a = smoothstep( 0.05, 0.6, clamp( smoothstep( 0.0, -0.35, sd ) * 1.4 - ( 1.0 - n2 ) * 0.5, 0.0, 1.0 ) );
@@ -2509,41 +2533,43 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
     if ( gl_FragColor.a <= 0.0 ) discard;
   }`);
   };
-  m.customProgramCacheKey = () => 'pxo-dirt-v7';
+  m.customProgramCacheKey = () => `pxo-${kind}-v8`;
   return m;
 }
-function buildDirt() {
+function buildDirt() {   // 土と砂（2026-10-05）
   if (!stageCtx) return;
   HL_VER++;
-  const g = stageCtx.dirt;
-  for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
-  g.clear();
   DIRT_AVOID = [];
-  dirtList.forEach((st, ci) => {
-    if (st.show === false) return;
-    const cs = lakeCircles(st, true, DIRT_MAX_C);   // 散らばる位置も向きで回す。円は 160 個まで
-    if (!cs.length) return;
-    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
-    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
-    const k = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
-    const pad = 0.2 + k * 0.75 + 0.25;   // 円のつなぎのふくらみ（水と同じく 0.75k）＋縁のむら（最大 0.24）
-    const only = { grass: st.avoidGrass ?? st.avoid ?? true, stone: st.avoidStones ?? st.avoid ?? true };   // 草・石を別々によける（以前の「草・石をよける」は両方に引き継ぐ）
-    if (only.grass || only.stone) DIRT_AVOID.push({ cs, k, only });
-    const mat = dirtMaterial(), u = mat.userData.u;
-    cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
-    u.uN.value = cs.length; u.uK.value = k;
-    u.uShade.value = Math.max(0, st.shade ?? 1);
-    u.uEdge.value = Math.max(0, Math.min(1, st.edgeDark ?? 0.5));
-    u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
-    u.uRot.value.set(Math.cos(deg(st.dir ?? 0)), Math.sin(deg(st.dir ?? 0)), st.x ?? 0, st.z ?? 0);
-    const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
-    geo.rotateX(-Math.PI / 2);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + DIRT_LIFT, (z0 + z1) / 2);
-    mesh.receiveShadow = true; mesh.renderOrder = -11;   // 水（-10）より先に描く＝水が上
-    mesh.userData.pxoCard = ci;
-    g.add(mesh);
-  });
+  for (const [kind, list, g, lift, order] of [['sand', sandList, stageCtx.sand, SAND_LIFT, -12], ['dirt', dirtList, stageCtx.dirt, DIRT_LIFT, -11]]) {
+    for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
+    g.clear();
+    list.forEach((st, ci) => {
+      if (st.show === false) return;
+      const cs = lakeCircles(st, true, DIRT_MAX_C);   // 散らばる位置も向きで回す。円は 160 個まで
+      if (!cs.length) return;
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
+      for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
+      const k = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2);
+      const pad = 0.2 + k * 0.75 + 0.25;   // 円のつなぎのふくらみ（水と同じく 0.75k）＋縁のむら（最大 0.24）
+      const only = { grass: st.avoidGrass ?? st.avoid ?? true, stone: st.avoidStones ?? st.avoid ?? true };   // 草・石を別々によける（以前の「草・石をよける」は両方に引き継ぐ）
+      if (only.grass || only.stone) DIRT_AVOID.push({ cs, k, only });
+      const mat = dirtMaterial(kind), u = mat.userData.u;
+      cs.forEach(([x, z, rr], i) => u.uC.value[i].set(x, z, rr, 0));
+      u.uN.value = cs.length; u.uK.value = k;
+      u.uShade.value = Math.max(0, st.shade ?? 1);
+      u.uEdge.value = Math.max(0, Math.min(1, st.edgeDark ?? 0.5));
+      u.uRipple.value = Math.max(0, Math.min(1, st.ripple ?? 0.5));
+      u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
+      u.uRot.value.set(Math.cos(deg(st.dir ?? 0)), Math.sin(deg(st.dir ?? 0)), st.x ?? 0, st.z ?? 0);
+      const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
+      geo.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + lift, (z0 + z1) / 2);
+      mesh.receiveShadow = true; mesh.renderOrder = order;   // 砂 → 土 → 水（-10）の順に描く＝水が一番上
+      mesh.userData.pxoCard = ci;
+      g.add(mesh);
+    });
+  }
 }
 export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
@@ -3455,10 +3481,10 @@ function updateHighlight(renderer) {
   hlBuilt = key;
   for (const o of hlObjs) { o.parent?.remove(o); o.userData.pxoHlDispose?.(); }
   hlObjs = [];
-  if (stageCtx) for (const m of [...stageCtx.water.children, ...stageCtx.dirt.children]) m.material.userData.u.uHL.value = 0;   // 水・土は材質の縁の線で示す   // 水は材質の岸の線で示す
+  if (stageCtx) for (const m of [...stageCtx.water.children, ...stageCtx.dirt.children, ...stageCtx.sand.children]) m.material.userData.u.uHL.value = 0;   // 水・土は材質の縁の線で示す   // 水は材質の岸の線で示す
   if (!hlTarget || !stageCtx) return;
   const { kind, index } = hlTarget;
-  if (kind === 'dirt') { for (const m of stageCtx.dirt.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
+  if (kind === 'dirt' || kind === 'sand') { for (const m of stageCtx[kind].children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   if (kind === 'water') { for (const m of stageCtx.water.children) if (m.userData.pxoCard === index) m.material.userData.u.uHL.value = 1; return; }
   const add = (parent, o) => { o.castShadow = false; o.receiveShadow = false; o.userData.pixSkip = true; parent.add(o); hlObjs.push(o); };
   if (kind === 'model' || kind === 'stone' || kind === 'grass') {
