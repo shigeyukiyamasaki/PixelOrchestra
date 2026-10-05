@@ -1233,7 +1233,7 @@ async function loadModelList() {
   catch (e) { console.warn('3D モデルの一覧を取得できませんでした:', e.message); setStatus('✗ 3D モデルの一覧を取れません（開発サーバー tools/serve.py を再起動してください）'); }
 }
 // 木のジェネレーター（2026-10-05 ユーザー指定）：選んだ木の GLB を範囲に散らす。1 カード 1 種類（混ぜる時はカードを分ける）
-const TREE_BASE = { name: '', kind: 'glb', src: '', srcRaw: '', species: 'broad', season: 'fresh', height: 9, leaf: 1, branchSpread: 1, x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };   // kind：'glb'（GLB を散らす）／'proc'（コードで作る。2026-10-05）
+const TREE_BASE = { name: '', kind: 'glb', src: '', srcRaw: '', species: 'broad', season: 'fresh', height: 9, leaf: 1, branchSpread: 1, leafFall: 0, fallSpeed: 1, x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };   // kind：'glb'（GLB を散らす）／'proc'（コードで作る。2026-10-05）
 const treeDefaults = (o) => ({ ...TREE_BASE, ...o });
 let trees = (() => {
   try { const a = JSON.parse(LS.getItem(TREES_KEY) || 'null'); if (Array.isArray(a)) return a.map(treeDefaults); } catch (e) { console.warn('木の設定の読込失敗:', e); }
@@ -1318,6 +1318,9 @@ function treeRow(m, i) {
     slider('枝の広がり', 'branchSpread', 0.3, 1.5, 0.05, 2, '広葉樹の枝の広がり。1 で標準。下げると枝が短く上向きになり、細身の木になる（2026-10-05 ユーザー指定）');
   } else slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）');
   slider('ばらつき', 'scaleVar', 0, 1, 0.05, 2, '大きさのばらつき。0.3 で ±30%');
+  // 落ち葉（2026-10-05 ユーザー指定）
+  slider('落葉の量', 'leafFall', 0, 1, 0.05, 2, '樹冠から落ちる葉の多さ。0 で落ちない。葉の色は木の葉の色（GLB の木は濃い緑）。枯れ木からは落ちない');
+  slider('落ちる速さ', 'fallSpeed', 0.3, 2, 0.05, 2, '葉の落ちる速さとひらひらの速さ。1 で 1 秒に約 45cm。風は 3D モデルの風の向き・強さに流される');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、木の位置・向き・大きさのばらつきだけ変える">作り直し</button>');
   again.onclick = () => { m.seed = ((m.seed ?? 1) % 1000000) + 1; changed(); };

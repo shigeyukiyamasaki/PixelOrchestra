@@ -3049,7 +3049,7 @@ function waterSdfAt(x, z, kind = null) {   // 一番近い「よける」水場�
   return best;
 }
 /** 水の時刻を進める（毎フレーム、実時間の経過秒で） */
-export function tickWater(dt) { WATER_U.uWT.value += Math.max(0, Math.min(0.1, dt || 0)); }
+export function tickWater(dt) { WATER_U.uWT.value += Math.max(0, Math.min(0.1, dt || 0)); tickFall(Math.max(0, Math.min(0.1, dt || 0))); }   // 落ち葉も実時間で（2026-10-05）
 const c3 = (h) => { const c = new THREE.Color(h); return `vec3( ${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)} )`; };
 // 水の GLSL のうち、海の断面の壁（buildSeaWall）とも共有する部分（2026-10-04：同じ式を 2 か所に書かないよう切り出した）
 // 深さの色（0：岸 … 1：「深さ」1 の濃さ。1 を超えた分はさらに濃い紺へ）。水面と海の断面で共有（2026-10-04）
@@ -4043,8 +4043,9 @@ export function setTrees(list) { treeList = (list || []).map((o) => ({ ...o }));
 function buildTrees() {
   if (!stageCtx) return;
   const g = stageCtx.trees;
-  for (const o of g.children) if (o.userData.pxoProc) o.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });   // コードで作った木だけ捨てる（GLB は使い回す）
+  for (const o of g.children) o.traverse((n) => { if (n.isMesh && (o.userData.pxoProc || n.userData.pxoFall)) { n.geometry.dispose(); n.material.dispose(); } });   // コードで作った木と落ち葉だけ捨てる（GLB は使い回す）
   g.clear();
+  FALL.length = 0;
   HL_VER++;
   treeList.forEach((st, ci) => {
     if (st.show === false) return;
@@ -4071,7 +4072,12 @@ function buildTrees() {
       placed.push({ x, z, sc, rot, ry: riserTopAt(x, z) });   // ひな壇の上ではその天面から生やす（草と同じ）
     }
     const root = new THREE.Group(); root.userData.pxoCard = ci;
-    if (proc) { root.userData.pxoProc = true; buildProcTrees(root, st, placed); g.add(root); return; }
+    if (proc) {
+      root.userData.pxoProc = true; buildProcTrees(root, st, placed); g.add(root);
+      const H0 = Math.max(1, st.height ?? 9), R0 = procTreeR(st), lc = new THREE.Color(TREE_LEAF[st.season] || TREE_LEAF.fresh).multiplyScalar(0.9);   // 落ち葉は木の葉より少し明るく（地面の上でも見えるように）
+      if (st.species !== 'dead') buildFall(root, st, placed.map((p) => ({ x: p.x, z: p.z, y0: (st.y ?? 0) + p.ry, bot: (st.y ?? 0) + p.ry + 0.3 * H0 * p.sc, top: (st.y ?? 0) + p.ry + 0.9 * H0 * p.sc, R: R0 * p.sc * 0.8 })), lc);
+      return;
+    }
     if (e.wind) root.userData.pxoWind = e.wind;
     for (const p of placed) {
       const o = e.scene.clone(true);
@@ -4081,7 +4087,82 @@ function buildTrees() {
       root.add(o);
     }
     g.add(root);
+    if ((st.leafFall ?? 0) > 0) {   // 落ち葉の発生源：GLB の木の大きさ（枝葉は高さの 35〜95%、横は幅の 35%）
+      const em = root.children.map((o) => {
+        const b = new THREE.Box3().setFromObject(o), h = b.max.y - b.min.y;
+        return { x: o.position.x, z: o.position.z, y0: o.position.y, bot: b.min.y + 0.35 * h, top: b.min.y + 0.95 * h, R: 0.35 * Math.max(b.max.x - b.min.x, b.max.z - b.min.z) };
+      });
+      buildFall(root, st, em, new THREE.Color('#3a6a2f'));
+    }
   });
+}
+
+// ---- 落ち葉（2026-10-05 ユーザー指定：木のカードごとに、樹冠から葉が離れて落ちる）----
+// 葉はひし形の小さな板（ドット絵で 1〜2 ドットより大きめ）。木のカード 1 枚の葉をまとめて描く（InstancedMesh）。
+// 1 枚ずつ：樹冠（木ごとの円柱：半径 R、高さ bot〜top）の中で生まれ、ひらひら左右にゆらぎ回りながら落ち、風（3D モデルの風の向き・強さ）に流される。
+// 地面（ひな壇の上はその天面）に着いたら横たわって 2.5 秒残り、縮んで消え、また樹冠から落ちる。床の外に出た葉はすぐ樹冠に戻す
+const FALL = [];
+const FALL_GEO = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, -0.5, 0, 0.35, 0, 0, 0, 0.5, 0, 0, -0.5, 0, 0, 0.5, 0, -0.35, 0, 0], 3));
+  g.computeVertexNormals();
+  return g;
+})();
+const _fo = new THREE.Object3D(), _fc = new THREE.Color();
+function buildFall(root, st, em, color) {
+  const amt = Math.max(0, Math.min(1, st.leafFall ?? 0));
+  if (!amt || !em.length) return;
+  const n = Math.min(800, Math.max(1, Math.round(amt * 80 * em.length)));   // 量 1 で木 1 本あたり 80 枚
+  const mat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+  const mesh = new THREE.InstancedMesh(FALL_GEO, mat, n);
+  mesh.userData.pxoFall = true; mesh.frustumCulled = false;
+  const r = rng32(((st.seed ?? 1) ^ 0x1eaf) >>> 0);
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    _fc.copy(color).multiplyScalar(0.8 + 0.4 * r());
+    mesh.setColorAt(i, _fc);
+    const p = { e: em[i % em.length], pos: new THREE.Vector3(), rot: new THREE.Euler(), spin: new THREE.Vector3(), ph: r() * 6.28, size: 0.3 + 0.15 * r(), rest: -1, k: 1 };
+    fallSpawn(p, r, true);
+    parts.push(p);
+  }
+  mesh.instanceColor.needsUpdate = true;
+  root.add(mesh);
+  FALL.push({ mesh, parts, r, speed: Math.max(0.1, st.fallSpeed ?? 1) });
+}
+function fallSpawn(p, r, first = false) {   // 樹冠の中で生まれる（最初だけは地面までの高さのどこかから始めて、一度に落ち始めないように）
+  const e = p.e, a = r() * Math.PI * 2, d = e.R * Math.sqrt(r());
+  const y = first ? e.y0 + r() * (e.top - e.y0) : e.bot + r() * (e.top - e.bot);
+  p.pos.set(e.x + Math.cos(a) * d, y, e.z + Math.sin(a) * d);
+  p.rot.set(r() * 6.28, r() * 6.28, r() * 6.28);
+  p.spin.set((r() - 0.5) * 4, (r() - 0.5) * 3, (r() - 0.5) * 4);
+  p.rest = -1; p.k = 1;
+}
+function tickFall(dt) {
+  if (!FALL.length || !dt) return;
+  const ws = WIND_U.vdStrength.value, wd = WIND_U.vdDirection.value, T = WIND_U.vdTime.value;
+  for (const f of FALL) {
+    const v = 0.9 * f.speed;   // 落ちる速さ [unit/秒]（1 で約 45cm/秒。ゆっくり舞う）
+    f.parts.forEach((p, i) => {
+      if (p.rest >= 0) {   // 地面で休む → 縮んで消える → 樹冠へ
+        p.rest += dt;
+        if (p.rest > 2.5) p.k = Math.max(0, 1 - (p.rest - 2.5) / 0.8);
+        if (p.rest > 3.3) fallSpawn(p, f.r);
+      } else {
+        p.pos.y -= v * dt;
+        p.pos.x += (Math.cos(p.ph + T * 1.7 * f.speed) * 0.5 + wd.x * ws * 0.35) * dt;   // ひらひら＋風（流されすぎて木から離れないよう弱め）
+        p.pos.z += (Math.sin(p.ph * 1.3 + T * 1.3 * f.speed) * 0.5 + wd.y * ws * 0.35) * dt;
+        p.rot.x += p.spin.x * dt; p.rot.y += p.spin.y * dt; p.rot.z += p.spin.z * dt;
+        const gy = (p.e.y0 - riserTopAt(p.e.x, p.e.z)) + riserTopAt(p.pos.x, p.pos.z);   // 地面の高さ：カードの高さ位置＋その場所のひな壇の天面
+        if (p.pos.y <= gy + 0.02) {
+          if (!insideFloor(p.pos.x, p.pos.z)) fallSpawn(p, f.r);
+          else { p.pos.y = gy + 0.015; p.rot.set(-Math.PI / 2 + (f.r() - 0.5) * 0.3, f.r() * 6.28, 0); p.rest = 0; }
+        }
+      }
+      _fo.position.copy(p.pos); _fo.rotation.copy(p.rot); _fo.scale.setScalar(p.size * p.k);
+      _fo.updateMatrix(); f.mesh.setMatrixAt(i, _fo.matrix);
+    });
+    f.mesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // ---- コードで作る木（2026-10-05 ユーザー指定：木のジェネレーターのもう 1 つの案。GLB の無い種類の木を増やす）----
