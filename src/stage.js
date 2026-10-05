@@ -3979,85 +3979,89 @@ const GRASS_PALETTES = {
   dark:   { DEEP: '#173d17', BASE: '#2f6b2a', DARK: '#20511f', LIGHT: '#3d8236', HI: '#4f9a44', SOIL: '#3f6b2c', CLOVER: '#3a7a37' },
 };
 // 草原の床（2026-10-05 作り直し。ユーザー指定：初期に作った簡易なままだったので、土などに合わせてクオリティアップ）。
-// 384×384 ドット（1 ドット 4px）で床全体（40×32 unit）に 1 枚（以前は 192 ドットを 2 回繰り返し、模様の繰り返しが見えた。ドットの細かさは同じ）。
+// 2048×2048 ドットで床全体（40×32 unit）に 1 枚（1 ドット約 2cm）。2026-10-05 ユーザー指定：ドットが大きいので土と合わせる
+// （土はシェーダで描いていて、点の大きさは画面のドット化で決まる。草原も画面のドットより細かくし、同じく画面のドットで決まるようにした。
+//  まだらや草の房の実寸は前の版（384 ドット）と同じ）。遠くでちらつかないようミップマップを使う（2 の累乗にしたのはそのため）
 //   地：何段かのノイズを座標をゆがめて重ねたまだらを 5 段の色に分け、境目は格子状のディザで散らす（ノイズは絵の端で一周してつながる）
-//   草の房：1 本 2〜5 ドット、斜めにも伸び、根元は暗く先ほど明るい。明るい所ほど多い／クローバーの塊、小花の群れ、暗い所にわずかな土の粒
+//   草の房：根元は暗く先ほど明るい。明るい所ほど多い／クローバーの塊、暗い所にわずかな土の粒（小花はユーザー指定で無し）
 function grassTexture(palette = 'normal') {
-  const N = 384, DOT = 4, S = N * DOT;
+  const N = 2048, K = N / 384;   // K：前の版（384 ドット）からの細かさの倍率。数・長さはこれで実寸を保つ
   const c = document.createElement('canvas');
-  c.width = S; c.height = S;
+  c.width = N; c.height = N;
   const g = c.getContext('2d');
+  const img = g.createImageData(N, N), D = img.data;
   const P = GRASS_PALETTES[palette] || GRASS_PALETTES.normal;
+  const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const Q = {}; for (const k in P) Q[k] = rgb(P[k]);
   let seed = 20261005 >>> 0;
   const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
   const wrap = (v) => ((v % N) + N) % N;
-  const px = (x, y, col) => { g.fillStyle = col; g.fillRect(wrap(x) * DOT, wrap(y) * DOT, DOT, DOT); };
-  // 一周してつながる値ノイズ（格子 per 個で 1 周）
+  const px = (x, y, col) => { const i = (wrap(y) * N + wrap(x)) * 4; D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; D[i + 3] = 255; };
+  // 一周してつながる値ノイズ（格子 per 個で 1 周）。座標は 0〜M のます目
   const h2 = (x, y, k) => { let v = Math.imul(x * 374761393 + y * 668265263 + k * 2147483647, 1274126177) >>> 0; v ^= v >>> 13; v = Math.imul(v, 1103515245) >>> 0; return (v >>> 8) / 16777216; };
+  const M = 512;   // まだらはなめらかなので 512 ます目で計算し、ドットへは線形補間で広げる（2048² を直接計算すると重い）
   const vnoise = (x, y, per, k) => {
-    const fx = (x / N) * per, fy = (y / N) * per, ix = Math.floor(fx), iy = Math.floor(fy);
+    const fx = (x / M) * per, fy = (y / M) * per, ix = Math.floor(fx), iy = Math.floor(fy);
     let tx = fx - ix, ty = fy - iy; tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
     const q = (i, j) => h2(((ix + i) % per + per) % per, ((iy + j) % per + per) % per, k);
     return (q(0, 0) * (1 - tx) + q(1, 0) * tx) * (1 - ty) + (q(0, 1) * (1 - tx) + q(1, 1) * tx) * ty;
   };
   const fbm = (x, y, k) => (vnoise(x, y, 6, k) * 0.5 + vnoise(x, y, 12, k + 1) * 0.3 + vnoise(x, y, 24, k + 2) * 0.2);
-  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-  const TONES = [P.DEEP, P.DARK, P.BASE, P.LIGHT, P.HI];
-  const field = new Float32Array(N * N);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+  const low = new Float32Array(M * M);
+  for (let y = 0; y < M; y++) for (let x = 0; x < M; x++) {
     // 座標をゆがめて格子の向きを消す
-    const wx = x + (vnoise(x, y, 8, 11) - 0.5) * 40, wy = y + (vnoise(x, y, 8, 23) - 0.5) * 40;
-    const m = fbm(wx, wy, 37);
+    const wx = x + (vnoise(x, y, 8, 11) - 0.5) * 53, wy = y + (vnoise(x, y, 8, 23) - 0.5) * 53;
+    low[y * M + x] = fbm(wx, wy, 37);
+  }
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const TONES = [Q.DEEP, Q.DARK, Q.BASE, Q.LIGHT, Q.HI];
+  const field = new Float32Array(N * N), r = M / N;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const fx = x * r, fy = y * r, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+    const x1 = (ix + 1) % M, y1 = (iy + 1) % M;
+    const m = (low[iy * M + ix] * (1 - tx) + low[iy * M + x1] * tx) * (1 - ty) + (low[y1 * M + ix] * (1 - tx) + low[y1 * M + x1] * tx) * ty;
     field[y * N + x] = m;
-    // 5 段：0.30 / 0.42 / 0.58 / 0.70 を境に。境目の前後は格子状のディザで散らす
-    const v = (m - 0.18) / 0.62 * 4 + (BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * 0.45;   // ディザは境目付近だけ（広く効かせると市松模様が目立った）
-    const t = Math.max(0, Math.min(4, Math.round(v)));
-    g.fillStyle = TONES[t]; g.fillRect(x * DOT, y * DOT, DOT, DOT);
-    const r = rnd();   // ざらつき：ときどき 1 段ずらす
-    if (r < 0.05 && t > 0) px(x, y, TONES[t - 1]); else if (r > 0.96 && t < 4) px(x, y, TONES[t + 1]);
+    // 5 段に分ける。境目の前後は格子状のディザで散らす
+    const v = (m - 0.18) / 0.62 * 4 + (BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * 0.9;
+    let t = Math.max(0, Math.min(4, Math.round(v)));
+    const q = rnd();   // ざらつき：ときどき 1 段ずらす
+    if (q < 0.05 && t > 0) t--; else if (q > 0.96 && t < 4) t++;
+    px(x, y, TONES[t]);
   }
   // 暗い所にわずかな土の粒
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 900 * K * K; i++) {
     const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
-    if (field[y * N + x] < 0.38) { px(x, y, P.SOIL); if (rnd() < 0.4) px(x + 1, y, P.SOIL); }
+    if (field[y * N + x] < 0.38) { px(x, y, Q.SOIL); if (rnd() < 0.4) px(x + 1, y, Q.SOIL); }
   }
   // クローバーの塊（3 ドットの葉を寄せ集める）
-  for (let i = 0; i < 90; i++) {
-    const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N), n = 3 + Math.floor(rnd() * 6);
+  for (let i = 0; i < 90 * K * K / 4; i++) {
+    const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N), n = 12 + Math.floor(rnd() * 24);
     for (let k = 0; k < n; k++) {
-      const x = cx + Math.floor((rnd() - 0.5) * 8), y = cy + Math.floor((rnd() - 0.5) * 6);
-      px(x, y, P.CLOVER); px(x + 1, y, P.CLOVER); px(x, y - 1, P.CLOVER); px(x + 1, y + 1, P.DARK);
+      const x = cx + Math.floor((rnd() - 0.5) * 8 * K), y = cy + Math.floor((rnd() - 0.5) * 6 * K);
+      px(x, y, Q.CLOVER); px(x + 1, y, Q.CLOVER); px(x, y - 1, Q.CLOVER); px(x + 1, y + 1, Q.DARK);
     }
   }
-  // 草の房：明るい所ほど多い。1 本 2〜5 ドット、途中で 1 回だけ斜めに折れる。根元の下に影
-  for (let i = 0; i < 2600; i++) {
+  // 草の房：明るい所ほど多い。1 本 4〜14 ドット、途中で 1 回だけ斜めに折れる。根元の下に影
+  for (let i = 0; i < 2600 * K * K / 2; i++) {
     const bx = Math.floor(rnd() * N), by = Math.floor(rnd() * N);
     if (rnd() > 0.35 + field[by * N + bx]) continue;
-    const blades = 2 + Math.floor(rnd() * 4);
+    const blades = 2 + Math.floor(rnd() * 5);
     for (let b = 0; b < blades; b++) {
-      let x = bx + b * 2 + Math.floor(rnd() * 2) - blades;
-      const hgt = 2 + Math.floor(rnd() * 4), lean = rnd() < 0.5 ? -1 : 1, bend = 1 + Math.floor(rnd() * hgt);
+      let x = bx + b * 3 + Math.floor(rnd() * 3) - blades * 2;
+      const hgt = 4 + Math.floor(rnd() * 11), lean = rnd() < 0.5 ? -1 : 1, bend = 1 + Math.floor(rnd() * hgt);
       for (let k = 0; k < hgt; k++) {
-        if (k === bend && rnd() < 0.7) x += lean;
-        px(x, by - k, k === hgt - 1 ? P.HI : k === 0 ? P.BASE : P.LIGHT);   // 根元は地の色（暗くすると根元が横の点線に並んで見えた）
+        if (k >= bend && rnd() < 0.35) x += lean;
+        px(x, by - k, k >= hgt - 2 ? Q.HI : k <= 1 ? Q.DARK : Q.LIGHT);
       }
-    }
-    px(bx - 1, by + 1, P.DEEP);   // 房の根元の影は真ん中に 1 ドットだけ
-  }
-  // 小花の群れ（白・黄・桃。1〜2 ドットを寄せる）
-  const FL = ['#f4efd0', '#f2e08a', '#efc0d8'];
-  for (let i = 0; i < 160; i++) {
-    const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N), col = FL[Math.floor(rnd() * FL.length)], n = 2 + Math.floor(rnd() * 5);
-    for (let k = 0; k < n; k++) {
-      const x = cx + Math.floor((rnd() - 0.5) * 10), y = cy + Math.floor((rnd() - 0.5) * 7);
-      px(x, y, col); if (rnd() < 0.35) { px(x + 1, y, col); px(x, y + 1, col); px(x + 1, y + 1, col); px(x + 2, y + 1, P.DARK); }   // ときどき 2 ドット四方の花（右下に小さな影）
+      px(bx + b * 3 - blades * 2, by + 1, Q.DEEP);
     }
   }
+  g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter;   // 遠くは平均の色に（ちらつき防止）
   tex.avgColor = avgColorOf(c);   // r128 の Texture には userData が無いので直に持たせる
   tex.albedo = 0.22;              // 草地の反射率（実測の目安 0.2〜0.25）
-  tex.tileScale = 1;              // 1 枚で床全体（40×32 unit）。ドットの細かさは以前（192 ドットを 2 回）と同じ
+  tex.tileScale = 1;              // 1 枚で床全体（40×32 unit）
   tex.wallScale = 2;              // 床の側面の土壁のドットの大きさは以前と同じ（WALL_DPU × 2）
   return tex;
 }
