@@ -1,0 +1,8 @@
+# PixelOrchestra の公開先（romashige.com/pixel-orchestra/）に .htaccess として置く（tools/serve.py の publish が送る。2026-10-05 ユーザー指定）
+# HTML・JS・CSS・JSON は、使う前に毎回「新しくなっていないか」をサーバーに確かめさせる（変わっていなければ 304 の短い返事で済む）。
+# 以前はキャッシュの指示が無く、公開した直後に再読み込みしても古い stage.js などが使われた。素材（画像・動画・GLB）は今まで通りキャッシュさせる
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|mjs|css|json)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

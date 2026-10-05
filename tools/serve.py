@@ -125,6 +125,7 @@ PUBLISH = {
 }
 APP_FILES = ['index.html', 'style.css']   # アプリ本体（視聴モードもこれで動く）
 APP_DIRS = ['src', 'assets']
+HTACCESS = 'tools/publish.htaccess'   # 公開先に .htaccess として置く（HTML・JS などを毎回確かめさせる。2026-10-05）
 
 def publish(name, dry=False):
     """プロジェクト name を公開する。dry=True なら送らずに、送るものの一覧だけ出す。返り値 {ok, url, method, log}"""
@@ -144,6 +145,7 @@ def publish(name, dry=False):
     lines += [f'mirror -R --only-newer --no-perms --delete --parallel=4{dr} "{rel}" "{fd}/{rel}"']   # 使わなくなったコピーは向こうでも消す
     if not dry:
         lines += [f'put -O "{fd}" ' + ' '.join(f'"{f}"' for f in APP_FILES)]
+        lines += [f'put "{HTACCESS}" -o "{fd}/.htaccess"']
     lines += ['bye']
     try:
         r = subprocess.run(['lftp', '-c', '; '.join(lines)], capture_output=True, text=True, timeout=900)
@@ -160,7 +162,8 @@ def publish(name, dry=False):
     cmds = ([] if dry else [['ssh', '-i', PUBLISH['ssh_key'], '-p', PUBLISH['ssh_port'], '-o', 'ConnectTimeout=20', '-o', 'BatchMode=yes', host,
              f'mkdir -p "{sd}/{PROJECTS_DIR}"']]) + [
             ['rsync', '-az', '-v'] + (['-n'] if dry else []) + ['-e', ssh] + APP_FILES + APP_DIRS + [f'{host}:{sd}/'],
-            ['rsync', '-az', '-v', '--delete'] + (['-n'] if dry else []) + ['-e', ssh, rel + '/', f'{host}:{sd}/{rel}/']]
+            ['rsync', '-az', '-v', '--delete'] + (['-n'] if dry else []) + ['-e', ssh, rel + '/', f'{host}:{sd}/{rel}/'],
+            ['rsync', '-az', '-v'] + (['-n'] if dry else []) + ['-e', ssh, HTACCESS, f'{host}:{sd}/.htaccess']]
     for c in cmds:
         r = subprocess.run(c, capture_output=True, text=True, timeout=900)
         log.append(r.stdout + r.stderr)
