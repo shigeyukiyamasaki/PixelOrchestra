@@ -4268,7 +4268,7 @@ function buildProcTrees(root, st, placed) {
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
-        const LL = 0.065 * H, LW = 0.017 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
+        const LL = 0.065 * H, LW = 0.021 * H;   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
         const leafB = leafC.clone().multiplyScalar(0.65);   // 層ごとの明暗（幹寄り 0.55 … 先 0.9 ほど）と合わせて、GLB の木の暗さに寄せる
         const ax = new THREE.Vector3(), ay = new THREE.Vector3(), fn = new THREE.Vector3(), nn = new THREE.Vector3(), dv = new THREE.Vector3(), pv = new THREE.Vector3(), md = new THREE.Vector3();
         // 指の角度 [rad] と長さ：中指 1、人差し指・薬指 ±35° で 0.85、親指・小指 ±75° で 0.6（7 枚の時はさらに ±105° に 0.35）
@@ -4288,8 +4288,9 @@ function buildProcTrees(root, st, placed) {
             dv.copy(md).multiplyScalar(Math.cos(ang)).addScaledVector(mp, Math.sin(ang));   // 小葉の向き（葉の面の中）
             pv.crossVectors(fn, dv);                                                        // 小葉の幅の向き
             const L = LL * s0 * fl * (0.9 + 0.2 * r()), W = LW * s0 * (0.7 + 0.3 * fl);
-            // 小葉は五角形（2026-10-05 ユーザー指定：見本はひし形ではなく五角形に近い）：根元に幅 35%、根元から 55% の所が一番太く、先が尖る
-            const P = [pos.clone().addScaledVector(pv, -W * 0.175), pos.clone().addScaledVector(dv, L * 0.55).addScaledVector(pv, -W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.55).addScaledVector(pv, W / 2), pos.clone().addScaledVector(pv, W * 0.175)];
+            // 小葉は五角形（2026-10-06 ユーザー指定：見本はひし形ではなく五角形）：ホームベースの形。根元の幅 70%、根元から 6 割まで両側ほぼまっすぐ、先だけ尖る
+            //（根元 35% ではドット化でひし形と見分けがつかなかった）
+            const P = [pos.clone().addScaledVector(pv, -W * 0.35), pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, -W / 2), pos.clone().addScaledVector(dv, L), pos.clone().addScaledVector(dv, L * 0.6).addScaledVector(pv, W / 2), pos.clone().addScaledVector(pv, W * 0.35)];
             c.copy(leafB).multiplyScalar(shade * (1 + (r() * 2 - 1) * 0.15));
             for (const tri of [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 2, 1], [0, 3, 2], [0, 4, 3]]) for (const k of tri) {   // 両面（五角形＝三角形 3 つ）
               const p = P[k];
