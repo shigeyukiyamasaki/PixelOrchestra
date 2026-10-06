@@ -4478,6 +4478,12 @@ function buildProcTrees(root, st, placed) {
               // bb 0 の時は今まで通り、孫枝を出す時に位置を引く（乱数の順番を変えず、今までと同じ木にする）
               const gf = bb > 0 && lv < depth ? [0.5 + 0.35 * r(), 0.5 + 0.35 * r()] : [];
               const gs = gf.map((f, g) => ({ f, sd: g ? 1 : -1 })).sort((x, y) => x.f - y.f);
+              // 孫枝は枝が出ないので節が無かったが、途中の 1〜2 か所で折る（2026-10-06 ユーザー指定）。位置は乱数の列を使わず長さから作る（ほかの木の形を変えない）
+              if (bb > 0 && lv === 2) {
+                const hg = (k) => { const x = Math.sin(L2 * 91.7 + base.x * 17.3 + base.z * 29.1 + k * 7.13) * 43758.5453; return x - Math.floor(x); };
+                const n = hg(0) < 0.5 ? 1 : 2;
+                for (let g = 0; g < n; g++) gs.push({ f: n === 1 ? 0.35 + 0.3 * hg(1) : 0.25 + 0.2 * hg(1 + g) + 0.35 * g, sd: (g + (hg(3) < 0.5 ? 0 : 1)) % 2 ? 1 : -1 });
+              }
               const tk = bb > 0 && gs.length > 0;
               const tn = [{ f: 0, p: base.clone(), dir: dv2.clone() }];
               if (tk) {
