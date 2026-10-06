@@ -4283,7 +4283,7 @@ function buildProcTrees(root, st, placed) {
         const bb = Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝のうねり（2026-10-06）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
         // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
-        const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(0.15, Math.min(0.7, st.forkH ?? 0.35)) * H, TILT = 0.32;
+        const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(10, Math.min(85, st.forkPct ?? (st.forkH != null ? st.forkH * 100 : 35))) / 100 * H, TILT = 0.32;   // 分かれる高さ [%]（2026-10-06 ユーザー指定：% で 10〜85。以前の割合 forkH も読む）
         // 幹の曲がり（2026-10-06 ユーザー指定）：幹を節に分け、高さごとにゆるく左右へうねらせる（根元は動かさず、上ほど大きく）。分かれた幹も同じ
         const bend = Math.max(0, Math.min(1, st.bend ?? 0)), TOP = 0.95 * H;
         // うねりの細かさ：幹・枝とも常に、ゆったりした曲がりの約 2.8 倍の回数で細かくくねらせる（2026-10-06 ユーザー指定：大きくゆったり曲がるだけの
