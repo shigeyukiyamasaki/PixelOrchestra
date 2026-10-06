@@ -4275,7 +4275,8 @@ function buildProcTrees(root, st, placed) {
         // ほぼ水平な葉（ひし形の板・両面）を、枝の向きに長い楕円の中に散らす。光の当たり方は上向きを強めに混ぜ、層の上の面が明るく下が暗い。
         // 下の段の層ほど少し暗くする（上の葉の陰）
         const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
-        const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
+        const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
+        const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
@@ -4331,20 +4332,50 @@ function buildProcTrees(root, st, placed) {
           const s0 = at(0, hgt, 0), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           add(bark, cyl(tr * 0.4 * (1 - 0.4 * t), tr * 0.2, len * 0.62, 5), s0, d, ONE, barkC, 0.05);
           add(bark, cyl(tr * 0.2, tr * 0.08, len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
-          // 葉の層：枝の 35〜100% の所に 3〜4 枚。層は枝の向きに長い楕円（長さ pr×1.4・幅 pr）で、厚みは 0.03H
-          const pads = 4 + Math.round(r()), shade = 0.78 + 0.3 * t;
-          const fx = new THREE.Vector3(d.x, 0, d.z).normalize(), fz = new THREE.Vector3(-fx.z, 0, fx.x);
-          for (let k = 0; k < pads; k++) {
-            const f = 0.35 + 0.65 * (k + r() * 0.5) / pads;
-            const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
-            const pr = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl = Math.round(13 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ（片側に開く形にして透けた分、10 → 13）
-            pc.addScaledVector(fz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
+          // 葉の層 1 枚：中心 pc、枝の水平な向き hx、大きさ pr（枝の向きに長い楕円：長さ pr×1.4・幅 pr、厚み 0.04H）、葉の数 nl、
+          // f：枝の根元からの位置（0〜1。先ほど明るい）。層の幹寄りと下側は暗く、先は明るく（GLB の木は層の内側がほぼ黒に近い緑で、先だけ明るい）
+          const shade = 0.78 + 0.3 * t;
+          const pad = (pc, hx, pr, nl, f) => {
+            const hz = new THREE.Vector3(-hx.z, 0, hx.x);
+            pc.addScaledVector(hz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
             for (let j = 0; j < nl; j++) {
-              const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;   // 層の厚み 0.04H
+              const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;
               const u = Math.cos(a2) * d2;   // 層の中での枝の向きの位置（−1：幹寄り … 1：先）
-              // 層の幹寄りと下側は暗く、先は明るく（GLB の木は層の内側がほぼ黒に近い緑で、先だけ明るい）
               const k2 = (0.55 + 0.35 * (f + u * 0.25)) * (dy < 0 ? 0.65 : 1);
-              card(pc.clone().addScaledVector(fx, u * pr * 1.4).addScaledVector(fz, Math.sin(a2) * d2 * pr).add(new THREE.Vector3(0, dy, 0)), shade * k2, fx);
+              card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).add(new THREE.Vector3(0, dy, 0)), shade * k2, hx);
+            }
+          };
+          const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
+          const pr0 = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl0 = Math.round(13 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
+          const onMain = (f) => (f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4));   // 枝の上の点（f：根元 0 … 先 1）
+          if (depth === 0) {
+            // 枝分かれ 0（今まで通り）：枝の 35〜100% の所に 4〜5 枚
+            const pads = 4 + Math.round(r());
+            for (let k = 0; k < pads; k++) { const f = 0.35 + 0.65 * (k + r() * 0.5) / pads; pad(onMain(f), fx, pr0, nl0, f); }
+          } else {
+            // 枝分かれ 1・2（2026-10-06 ユーザー指定：分かれた枝からさらに分ける）：枝の先に層を 2 枚、途中（4〜8.5 割）から小枝を 2〜3 本、
+            // 左右に 30〜50° 開いて少し上向きに出す。小枝の先側に層を置く（枝分かれ 2 は小枝からさらに 2 本ずつ孫枝を出し、層は孫枝の先へ）
+            pad(onMain(0.8), fx, pr0, nl0, 0.8); pad(onMain(1), fx, pr0, nl0, 1);
+            const nC = 2 + (r() < 0.5 ? 1 : 0);
+            const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
+              const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
+              add(bark, cyl(rad, rad * 0.4, L2, 4), base, dv2, ONE, barkC, 0.05);
+              const tp = base.clone().addScaledVector(dv2, L2);
+              if (lv < depth) {
+                for (let g = 0; g < 2; g++) {
+                  const sd = g ? 1 : -1, h2 = hx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
+                  twig(base.clone().lerp(tp, 0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), rad * 0.5, lv + 1);
+                }
+                pad(tp.clone(), hx, pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
+              } else {
+                pad(base.clone().lerp(tp, 0.55), hx, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
+                pad(tp.clone(), hx, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 1);
+              }
+            };
+            for (let k = 0; k < nC; k++) {
+              const f = 0.4 + 0.45 * r(), sd = k % 2 ? 1 : -1;
+              const hx = fx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
+              twig(onMain(f), hx, el * 0.6 + 0.25, len * (0.38 + 0.15 * r()), tr * 0.18, 1);
             }
           }
         }
