@@ -4445,7 +4445,8 @@ function buildProcTrees(root, st, placed) {
             for (let k = 0; k < nC; k++) {
               const f = 0.4 + 0.45 * r(), sd = k % 2 ? 1 : -1;
               const hx = fx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-              twig(onMain(f), hx, el * 0.6 + 0.25, len * (0.38 + 0.15 * r()), Math.min(rBase * 0.9, tr * 0.18 * kB * tm), 1);
+              twig(onMain(f), hx, el * 0.6 + 0.25, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)),   // 小枝の長さ（2026-10-06 ユーザー指定：0.5〜2.5 倍。孫枝も比例して伸びる）
+                Math.min(rBase * 0.9, tr * 0.18 * kB * tm), 1);
             }
           }
         }

@@ -1233,7 +1233,7 @@ async function loadModelList() {
   catch (e) { console.warn('3D モデルの一覧を取得できませんでした:', e.message); setStatus('✗ 3D モデルの一覧を取れません（開発サーバー tools/serve.py を再起動してください）'); }
 }
 // 木のジェネレーター（2026-10-05 ユーザー指定）：選んだ木の GLB を範囲に散らす。1 カード 1 種類（混ぜる時はカードを分ける）
-const TREE_BASE = { name: '', kind: 'glb', src: '', srcRaw: '', species: 'broad', season: 'fresh', height: 9, leaf: 1, branchSpread: 1, branchDepth: 1, trunks: 1, forkPct: 35, bend: 0, branchBend: 0, trunkThick: 1, taper: 0.5, tipTaper: 0, leafFall: 0, fallSpeed: 1, x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };   // kind：'glb'（GLB を散らす）／'proc'（コードで作る。2026-10-05）
+const TREE_BASE = { name: '', kind: 'glb', src: '', srcRaw: '', species: 'broad', season: 'fresh', height: 9, leaf: 1, branchSpread: 1, branchDepth: 1, trunks: 1, forkPct: 35, bend: 0, branchBend: 0, trunkThick: 1, taper: 0.5, tipTaper: 0, twigLen: 1, leafFall: 0, fallSpeed: 1, x: 0, z: -14, y: 0, count: 8, spread: 8, gap: 2.5, scale: 3, scaleVar: 0.3, avoidPlayers: true, seed: 1, show: true };   // kind：'glb'（GLB を散らす）／'proc'（コードで作る。2026-10-05）
 const treeDefaults = (o) => { const t = { ...TREE_BASE, ...o }; if (o && o.forkPct == null && o.forkH != null) t.forkPct = Math.round(o.forkH * 100); delete t.forkH; return t; };   // 分かれる高さは % で持つ（以前の割合 forkH は読み替える。2026-10-06）
 let trees = (() => {
   try { const a = JSON.parse(LS.getItem(TREES_KEY) || 'null'); if (Array.isArray(a)) return a.map(treeDefaults); } catch (e) { console.warn('木の設定の読込失敗:', e); }
@@ -1317,6 +1317,7 @@ function treeRow(m, i) {
     slider('葉の量', 'leaf', 0.3, 2, 0.05, 2, '葉の塊（針葉樹は段、ヤシは葉）の多さ');
     slider('枝の広がり', 'branchSpread', 0.3, 1.5, 0.05, 2, '広葉樹の枝の広がり。1 で標準。下げると枝が短く上向きになり、細身の木になる（2026-10-05 ユーザー指定）');
     slider('枝分かれ', 'branchDepth', 0, 2, 1, 0, '広葉樹の枝分かれの段数。0：枝だけ（前の形）、1：枝から小枝を出す、2：小枝からさらに孫枝を出す。葉は一番先の枝に付く（2026-10-06 ユーザー指定）');
+    slider('小枝の長さ', 'twigLen', 0.5, 2.5, 0.05, 2, '枝から出る小枝（と孫枝）の長さの倍率。1 で標準。枝分かれが 1 以上の時に効く（2026-10-06 ユーザー指定）');
     slider('幹の太さ', 'trunkThick', 0.5, 3, 0.05, 2, '広葉樹の幹の太さの倍率。1 で標準、3 で 3 倍。枝も合わせて太くなる（2026-10-06 ユーザー指定）');
     slider('細り方', 'taper', 0, 1, 0.05, 2, '幹分かれ・枝分かれのたびに細くなる度合い。0.5 で標準、0 で細くなりにくい（子の枝が太い）、1 で分かれるたびに大きく細る（2026-10-06 ユーザー指定）');
     slider('先の細り', 'tipTaper', 0, 1, 0.05, 2, '幹・枝・小枝の 1 本の中で、先へ向かって細くなる度合い。0 で標準、1 で先がぐっと細い。幹 1 本の木にも効く（2026-10-06 ユーザー指定）');
