@@ -4393,9 +4393,12 @@ function buildProcTrees(root, st, placed) {
             const dir = (f) => dirs[Math.min(n - 1, Math.max(0, Math.floor(f * n)))];
             return { pts, dirs, at, dir };
           };
-          for (let i = 0; i < nb; i++) {
+          // 主枝の数は 18 本（2026-10-07 ユーザー指定。見本は 13 本、以前は 22 本）。減らした分、層 1 枚の葉を 22/18 倍にして木 1 本の葉の総数を保つ
+          const nbV = 18, leafK = 22 / nbV;
+          let leafAcc = 0;   // 層ごとの葉の数を leafK 倍した時の端数を次の層へ持ち越す（丸めで総数がずれないように）
+          for (let i = 0; i < nbV; i++) {
             // 枝の付く高さ（03a557f を適用。2026-10-07 ユーザー指定）：6 つの段にまとめず、幹の 25〜90% に等間隔に並べて間隔の ±30% だけずらす（高さの重複なし）
-            const t = i / (nb - 1), hgt = (0.25 + 0.65 * t + (r() - 0.5) * 0.6 * 0.65 / (nb - 1)) * H, lk = i % nTr;
+            const t = i / (nbV - 1), hgt = (0.25 + 0.65 * t + (r() - 0.5) * 0.6 * 0.65 / (nbV - 1)) * H, lk = i % nTr;
             const az0 = i * 2.39996 + r() * 0.5, az = nTr > 1 && hgt > forkH ? lead[lk].az + (az0 % 1 - 0.5) * 2.2 : az0;   // 分かれた幹の枝は、その幹の外側寄りに
             const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()), el = 0.3 + 0.35 * t + r() * 0.2;
             const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
@@ -4413,7 +4416,8 @@ function buildProcTrees(root, st, placed) {
               if (lu.lengthSq() < 1e-4) lu.set(1, 0, 0); lu.normalize();
               const hz = new THREE.Vector3().crossVectors(lu, hx).normalize();
               pc.addScaledVector(hz, (r() - 0.5) * pr).addScaledVector(lu, (0.01 + (r() - 0.3) * 0.02) * H);   // 層を横・上下にずらして重ねる
-              for (let j = 0; j < nl; j++) {
+              const want = nl * leafK + leafAcc, nlK = Math.max(0, Math.round(want)); leafAcc = want - nlK;   // 主枝を減らした分、葉を増やす
+              for (let j = 0; j < nlK; j++) {
                 const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;
                 const u = Math.cos(a2) * d2;
                 const k2 = (0.55 + 0.35 * (f + u * 0.25)) * (dy < 0 ? 0.65 : 1);
