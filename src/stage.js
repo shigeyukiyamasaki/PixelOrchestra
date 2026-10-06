@@ -4419,8 +4419,8 @@ function buildProcTrees(root, st, placed) {
               p = p.clone().addScaledVector(dir, (fk.f - f0) * len); f0 = fk.f;
               const ang = -fk.sd * bb * deg(15 + 20 * hsh(20 + k));
               dir = dir.clone().applyAxisAngle(UP, ang);
-              // 上下にも節ごとに交互に折る（6〜14°。正面から見ても折れがわかるように）。全体としては少しずつ垂らす
-              const hz = Math.hypot(dir.x, dir.z), e2 = Math.max(-0.5, Math.atan2(dir.y, hz) - 0.06 * bb + (k % 2 ? 1 : -1) * bb * deg(6 + 8 * hsh(30 + k)));
+              // 上下にも節ごとに交互に折る（左右と同じ (15〜35°)×bb。2026-10-06 ユーザー指定。以前は 6〜14°）。全体としては少しずつ垂らす
+              const hz = Math.hypot(dir.x, dir.z), e2 = Math.max(-0.5, Math.atan2(dir.y, hz) - 0.06 * bb + (k % 2 ? 1 : -1) * bb * deg(15 + 20 * hsh(30 + k)));
               dir = new THREE.Vector3(dir.x / hz * Math.cos(e2), Math.sin(e2), dir.z / hz * Math.cos(e2)).normalize();
               nodes.push({ f: fk.f, p: p.clone(), dir: dir.clone() });
             }
