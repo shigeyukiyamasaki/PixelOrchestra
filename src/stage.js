@@ -4383,7 +4383,10 @@ function buildProcTrees(root, st, placed) {
           // 枝の向き（2026-10-06 ユーザー指定：-60〜+30°。マイナスで地面の方向へ）。ただし水平より下には向けない（同日ユーザー指定：幹の先が丸見えになり幹ごと下がって見えた）。
           // 低い枝は、先が地面より上（高さの 10%）に残るよう下限も付ける
           const elMin = Math.asin(Math.max(-1, Math.min(1, (0.1 * H - hgt) / len))) + 0.2;
-          const el = Math.max(0, elMin, Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7 + deg(Math.max(0, Math.min(30, st.branchAngle ?? 0)))));   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
+          r();   // 乱数の列を保つ（以前ここで向きのばらつきに使っていた）
+          // 2026-10-06 ユーザー指定：以前は「枝の向き」0 でも下の枝 17°〜上の枝 49° 上を向けていた（Claude が GLB の木に寄せて入れた値）のを外し、
+          // 「枝の向き」0 で水平に。広がりが狭いほど上向きにする分は残す
+          const el = Math.max(0, elMin, Math.min(1.35, (1 - Math.min(1, wide)) * 0.7 + deg(Math.max(0, Math.min(30, st.branchAngle ?? 0)))));
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
           // 枝の付け根の太さ：幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせる。付け根の幹の太さを超えない
@@ -4394,7 +4397,8 @@ function buildProcTrees(root, st, placed) {
           // 枝も重力・日の光である程度上へ向き直るので、幹の傾きは 7 割だけ反映する。幹がまっすぐなら何もしない
           { const dh = 0.02 * H, tg = trunkAt(Math.min(TOP, hgt + dh), lk).sub(trunkAt(Math.max(0, hgt - dh), lk)).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(UP, tg), q0 = new THREE.Quaternion();
-            q0.slerp(q, 0.7); d.applyQuaternion(q0).normalize(); dDown.applyQuaternion(q0).normalize(); }
+            q0.slerp(q, 0.7); d.applyQuaternion(q0).normalize(); dDown.applyQuaternion(q0).normalize();
+            if (d.y < 0) { d.y = 0; d.normalize(); } }   // 幹が傾いている側の枝も水平より下には向けない
           const mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           // 枝の折れ（2026-10-06 ユーザー指定：枝はうねるのではなく、小枝が出る所で向きが変わり、節と節の間はまっすぐ）。
           // 「枝のうねり」bb を折れの強さに使う：小枝の出る位置（節）を先に決め、節ごとに小枝と反対側へ (15〜35°)×bb 折り、上下にも交互に折り、少しずつ垂らす。
