@@ -4400,7 +4400,8 @@ function buildProcTrees(root, st, placed) {
             // 枝の付く高さ（03a557f を適用。2026-10-07 ユーザー指定）：6 つの段にまとめず、幹の 25〜90% に等間隔に並べて間隔の ±30% だけずらす（高さの重複なし）
             const t = i / (nbV - 1), hgt = (0.25 + 0.65 * t + (r() - 0.5) * 0.6 * 0.65 / (nbV - 1)) * H, lk = i % nTr;
             const az0 = i * 2.39996 + r() * 0.5, az = nTr > 1 && hgt > forkH ? lead[lk].az + (az0 % 1 - 0.5) * 2.2 : az0;   // 分かれた幹の枝は、その幹の外側寄りに
-            const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()), el = 0.3 + 0.35 * t + r() * 0.2;
+            // 上の方の枝を短く（2026-10-07 ユーザー指定）：幹の上半分（t 0.5 より上）では、てっぺんへ向かって長さをさらに縮める（てっぺんで以前の半分）
+            const len = (0.48 - 0.32 * t) * (1 - 0.5 * Math.max(0, (t - 0.5) / 0.5)) * H * (0.8 + 0.4 * r()), el = 0.3 + 0.35 * t + r() * 0.2;
             const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
             const s0 = trunkAt(hgt, lk), mainL = bendLine(s0, dirAt(Math.cos(az), 0, Math.sin(az)).normalize(), el, len, DROOP, 5);   // 主枝は 5 節で先ほど垂れる
             // 枝の太さ：分かれるたびに太さ半分（tm。f96df91 の前半を適用。2026-10-07 ユーザー指定）。幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせ、
