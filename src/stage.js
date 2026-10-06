@@ -4276,14 +4276,17 @@ function buildProcTrees(root, st, placed) {
         // 下の段の層ほど少し暗くする（上の葉の陰）
         const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
-        const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
+        const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));
+        const bb = Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝のうねり（2026-10-06）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
         // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
         const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(0.15, Math.min(0.7, st.forkH ?? 0.35)) * H, TILT = 0.32;
         // 幹の曲がり（2026-10-06 ユーザー指定）：幹を節に分け、高さごとにゆるく左右へうねらせる（根元は動かさず、上ほど大きく）。分かれた幹も同じ
         const bend = Math.max(0, Math.min(1, st.bend ?? 0)), TOP = 0.95 * H;
-        const ph1 = r() * 6.28, ph2 = r() * 6.28, f1 = 0.8 + r() * 0.8, f2 = 1.2 + r() * 1.0;
-        const wig = (u, k) => dirAt(bend * 0.08 * H * Math.sin(u * Math.PI * f1 + ph1 + k * 2.1) * u, 0, bend * 0.08 * H * Math.sin(u * Math.PI * f2 + ph2 + k * 1.3) * u);   // 横へのずれ
+        // うねりの細かさ（2026-10-06 ユーザー指定）：0 でゆったり 1〜1.5 回、1 でその約 4 倍の回数。ずれ幅は最大で高さの 16%
+        const wq = 1 + 3 * Math.max(0, Math.min(1, st.wiggle ?? 0));
+        const ph1 = r() * 6.28, ph2 = r() * 6.28, f1 = (0.8 + r() * 0.8) * wq, f2 = (1.2 + r() * 1.0) * wq;
+        const wig = (u, k) => dirAt(bend * 0.16 * H * Math.sin(u * Math.PI * f1 + ph1 + k * 2.1) * u, 0, bend * 0.16 * H * Math.sin(u * Math.PI * f2 + ph2 + k * 1.3) * u);   // 横へのずれ
         const mainAt = (h) => at(0, h, 0).add(wig(h / TOP, 0));
         const lead = [];
         if (nTr > 1) {
@@ -4302,10 +4305,11 @@ function buildProcTrees(root, st, placed) {
             add(bark, cyl(r0 + (r1 - r0) * (i / n), r0 + (r1 - r0) * ((i + 1) / n), L0 * 1.05, 7), p0, dv0.normalize(), ONE, barkC, 0.05);
           }
         };
-        if (nTr === 1) trunkSegs(0, TOP, 0, tr, tr * 0.35, bend > 0 ? 7 : 1);
+        const tsN = Math.round(7 * Math.sqrt(wq));   // うねりが細かいほど節を増やす
+        if (nTr === 1) trunkSegs(0, TOP, 0, tr, tr * 0.35, bend > 0 ? tsN : 1);
         else {
-          trunkSegs(0, forkH * 1.02, 0, tr, tr * 0.8, bend > 0 ? 3 : 1);
-          for (let k = 0; k < nTr; k++) { trunkSegs(forkH, TOP, k, tr * 0.72, tr * 0.3, bend > 0 ? 5 : 1); lead[k].top = trunkAt(TOP, k); }
+          trunkSegs(0, forkH * 1.02, 0, tr, tr * 0.8, bend > 0 ? Math.max(3, Math.round(tsN * 0.4)) : 1);
+          for (let k = 0; k < nTr; k++) { trunkSegs(forkH, TOP, k, tr * 0.72, tr * 0.3, bend > 0 ? Math.max(5, Math.round(tsN * 0.7)) : 1); lead[k].top = trunkAt(TOP, k); }
         }
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
@@ -4360,8 +4364,22 @@ function buildProcTrees(root, st, placed) {
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
           const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
-          add(bark, cyl(tr * 0.4 * (1 - 0.4 * t), tr * 0.2, len * 0.62, 5), s0, d, ONE, barkC, 0.05);
-          add(bark, cyl(tr * 0.2, tr * 0.08, len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
+          // 枝のうねり（2026-10-06 ユーザー指定）：枝を 5 節に分け、横と上下へ波打たせる（根元は動かさず、先ほど大きく）。
+          // うねりの位相は枝の番号から決める（乱数を使わないので、0 の時は今までとまったく同じ木）
+          const bph = i * 1.93, bph2 = i * 2.71, bfq = (1.5 + (i % 3) * 0.4) * wq;
+          const side = new THREE.Vector3().crossVectors(d, UP).normalize();
+          const onMain = (f) => (f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4))   // 枝の上の点（f：根元 0 … 先 1）
+            .addScaledVector(side, Math.sin(f * Math.PI * bfq + bph) * bb * 0.14 * len * f).add(new THREE.Vector3(0, Math.sin(f * Math.PI * bfq * 1.3 + bph2) * bb * 0.09 * len * f, 0));
+          if (bb > 0) {
+            const nS = Math.round(5 * Math.sqrt(wq)), rA = tr * 0.4 * (1 - 0.4 * t), rB = tr * 0.08;
+            for (let q = 0; q < nS; q++) {
+              const p0 = onMain(q / nS), p1 = onMain((q + 1) / nS), dv0 = p1.clone().sub(p0), L0 = dv0.length();
+              add(bark, cyl(rA + (rB - rA) * (q / nS), rA + (rB - rA) * ((q + 1) / nS), L0 * 1.05, 5), p0, dv0.normalize(), ONE, barkC, 0.05);
+            }
+          } else {
+            add(bark, cyl(tr * 0.4 * (1 - 0.4 * t), tr * 0.2, len * 0.62, 5), s0, d, ONE, barkC, 0.05);
+            add(bark, cyl(tr * 0.2, tr * 0.08, len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
+          }
           // 葉の層 1 枚：中心 pc、枝の水平な向き hx、大きさ pr（枝の向きに長い楕円：長さ pr×1.4・幅 pr、厚み 0.04H）、葉の数 nl、
           // f：枝の根元からの位置（0〜1。先ほど明るい）。層の幹寄りと下側は暗く、先は明るく（GLB の木は層の内側がほぼ黒に近い緑で、先だけ明るい）
           const shade = 0.78 + 0.3 * t;
@@ -4377,7 +4395,6 @@ function buildProcTrees(root, st, placed) {
           };
           const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
           const pr0 = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl0 = Math.round(13 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
-          const onMain = (f) => (f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4));   // 枝の上の点（f：根元 0 … 先 1）
           if (depth === 0) {
             // 枝分かれ 0（今まで通り）：枝の 35〜100% の所に 4〜5 枚
             const pads = 4 + Math.round(r());
@@ -4389,16 +4406,25 @@ function buildProcTrees(root, st, placed) {
             const nC = 2 + (r() < 0.5 ? 1 : 0);
             const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
               const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
-              add(bark, cyl(rad, rad * 0.4, L2, 4), base, dv2, ONE, barkC, 0.05);
-              const tp = base.clone().addScaledVector(dv2, L2);
+              const ts = new THREE.Vector3().crossVectors(dv2, UP).normalize(), tq = (1.6 + lv * 0.3) * wq, tph = L2 * 7.3 + lv;
+              const tAt = (f) => base.clone().addScaledVector(dv2, L2 * f)   // 小枝の上の点（うねり：枝と同じ考え方）
+                .addScaledVector(ts, Math.sin(f * Math.PI * tq + tph) * bb * 0.16 * L2 * f).add(new THREE.Vector3(0, Math.sin(f * Math.PI * tq * 1.3 + tph * 1.7) * bb * 0.1 * L2 * f, 0));
+              if (bb > 0) {
+                const nS = Math.round(3 * Math.sqrt(wq));
+                for (let q = 0; q < nS; q++) {
+                  const p0 = tAt(q / nS), p1 = tAt((q + 1) / nS), dv0 = p1.clone().sub(p0), L0 = dv0.length();
+                  add(bark, cyl(rad * (1 - 0.6 * q / nS), rad * (1 - 0.6 * (q + 1) / nS), L0 * 1.05, 4), p0, dv0.normalize(), ONE, barkC, 0.05);
+                }
+              } else add(bark, cyl(rad, rad * 0.4, L2, 4), base, dv2, ONE, barkC, 0.05);
+              const tp = tAt(1);
               if (lv < depth) {
                 for (let g = 0; g < 2; g++) {
                   const sd = g ? 1 : -1, h2 = hx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-                  twig(base.clone().lerp(tp, 0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), rad * 0.5, lv + 1);
+                  twig(tAt(0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), rad * 0.5, lv + 1);
                 }
                 pad(tp.clone(), hx, pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
               } else {
-                pad(base.clone().lerp(tp, 0.55), hx, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
+                pad(tAt(0.55), hx, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
                 pad(tp.clone(), hx, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 1);
               }
             };
