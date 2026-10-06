@@ -4383,10 +4383,13 @@ function buildProcTrees(root, st, placed) {
           const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           // 枝のうねり（2026-10-06 ユーザー指定）：枝を 5 節に分け、横と上下へ波打たせる（根元は動かさず、先ほど大きく）。
           // うねりの位相は枝の番号から決める（乱数を使わないので、0 の時は今までとまったく同じ木）
-          const bph = i * 1.93, bph2 = i * 2.71, bfq = (1.5 + (i % 3) * 0.4) * wq;
-          const side = new THREE.Vector3().crossVectors(d, UP).normalize();
+          // うねりは幹と同じ計算（2026-10-06 ユーザー指定：枝は規則正しい波に見えた）：横と上下の 2 方向に、枝ごとに違う回数・位相の sin を足し、
+          // 振れ幅は先ほど大きく。回数は幹と同じ範囲（f1・f2 は幹の 0.8〜1.6・1.2〜2.2 に細かさ wq を掛けたもの）。乱数の列は使わず枝の番号から作る
+          const hsh = (k) => { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+          const bf1 = (0.8 + hsh(1) * 0.8) * wq, bf2 = (1.2 + hsh(2) * 1.0) * wq, bph = hsh(3) * 6.28, bph2 = hsh(4) * 6.28;
+          const side = new THREE.Vector3().crossVectors(d, UP).normalize(), nUp = new THREE.Vector3().crossVectors(side, d).normalize();   // 枝に直交する 2 方向
           const onMain = (f) => (f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4))   // 枝の上の点（f：根元 0 … 先 1）
-            .addScaledVector(side, Math.sin(f * Math.PI * bfq + bph) * bb * 0.14 * len * f).add(new THREE.Vector3(0, Math.sin(f * Math.PI * bfq * 1.3 + bph2) * bb * 0.09 * len * f, 0));
+            .addScaledVector(side, Math.sin(f * Math.PI * bf1 + bph) * bb * 0.16 * len * f).addScaledVector(nUp, Math.sin(f * Math.PI * bf2 + bph2) * bb * 0.16 * len * f);
           if (bb > 0) {
             const nS = Math.round(5 * Math.sqrt(wq)), rA = rBase, rB = endR(rBase, tr * 0.08 * kB / rBase);
             for (let q = 0; q < nS; q++) {
