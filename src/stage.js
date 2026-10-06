@@ -4277,7 +4277,7 @@ function buildProcTrees(root, st, placed) {
         const tr = 0.022 * H * Math.max(0.5, Math.min(3, st.trunkThick ?? 1)), ONE = new THREE.Vector3(1, 1, 1);
         // 細り方（2026-10-06 ユーザー指定）：幹分かれ・枝分かれのたびに太さへ掛ける倍率 tm。0.5 で今まで通り（1 倍）、0 で 2 倍（細くなりにくい）、1 で 0.5 倍。
         // 子は親より太くしない
-        const tm = Math.pow(2, (0.5 - Math.max(0, Math.min(1, st.taper ?? 0.5))) * 2);
+        const tm = 0.5;   // 細り方：分かれるたびに太さ半分で固定（2026-10-06 ユーザー指定：スライダーをやめ、前の最大 1 で固定）
         // 先の細り（2026-10-06 ユーザー指定）：幹・分かれた幹・枝・小枝の 1 本の中で、先へ向かって細くなる度合い。先の太さ／根元の太さ の比を tipK 乗する
         //（0 で 1 乗＝今まで通り、1 で約 2.5 乗＝先がぐっと細い。2026-10-06 ユーザー指定：前の真ん中を最小に）
         const tipK = Math.pow(2, Math.max(0, Math.min(1, st.tipTaper ?? 0)) * 1.3), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
@@ -4329,8 +4329,13 @@ function buildProcTrees(root, st, placed) {
         // 指の角度 [rad] と長さ：中指 1、人差し指・薬指 ±35° で 0.85、親指・小指 ±75° で 0.6（7 枚の時はさらに ±105° に 0.35）
         // 見本（広葉樹E の葉ポリゴンを取り出して確かめた。2026-10-06）：小葉 7 枚が約 200° の扇に開き、真ん中が一番長い（角度の順に並べる）
         const FINGERS = [[-1.7, 0.6], [-1.1, 0.8], [-0.55, 0.95], [0, 1], [0.55, 0.95], [1.1, 0.8], [1.7, 0.6]];
-        const card = (pos, shade, along = null) => {   // 関数名は前のまま（葉 1 つ＝手のひら形の小葉の集まり）
-          fn.set((r() - 0.5) * 0.7, 1, (r() - 0.5) * 0.7).normalize();   // ほぼ水平
+        const jA = new THREE.Vector3(), jB = new THREE.Vector3();
+        const card = (pos, shade, along = null, lup = null) => {   // 関数名は前のまま（葉 1 つ＝手のひら形の小葉の集まり）。lup：葉の層の上向き（無ければ真上）
+          // 葉の面は層の向き（枝の向きに合わせて傾いた面。2026-10-06 ユーザー指定）から ±20° ほどばらつかせる。lup 無し（てっぺんの層）はほぼ水平
+          if (lup) {
+            jA.crossVectors(lup, Math.abs(lup.y) < 0.9 ? UP : new THREE.Vector3(1, 0, 0)).normalize(); jB.crossVectors(lup, jA);
+            fn.copy(lup).addScaledVector(jA, (r() - 0.5) * 0.7).addScaledVector(jB, (r() - 0.5) * 0.7).normalize();
+          } else fn.set((r() - 0.5) * 0.7, 1, (r() - 0.5) * 0.7).normalize();   // ほぼ水平
           ax.set(r() - 0.5, 0, r() - 0.5).cross(fn).normalize(); ay.crossVectors(fn, ax);
           nn.copy(fn).multiplyScalar(0.4).add(new THREE.Vector3(0, 0.6, 0)).normalize();
           // 楓・人の手のような並び（2026-10-05 ユーザー指定：均等な星形ではなく 5 本指のように）：片側へ約 180° の扇に開き、
@@ -4428,14 +4433,18 @@ function buildProcTrees(root, st, placed) {
           // 葉の層 1 枚：中心 pc、枝の水平な向き hx、大きさ pr（枝の向きに長い楕円：長さ pr×1.4・幅 pr、厚み 0.04H）、葉の数 nl、
           // f：枝の根元からの位置（0〜1。先ほど明るい）。層の幹寄りと下側は暗く、先は明るく（GLB の木は層の内側がほぼ黒に近い緑で、先だけ明るい）
           const shade = 0.78 + 0.3 * t;
-          const pad = (pc, hx, pr, nl, f) => {
-            const hz = new THREE.Vector3(-hx.z, 0, hx.x);
-            pc.addScaledVector(hz, (r() - 0.5) * pr).y += (0.01 + (r() - 0.3) * 0.02) * H;   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
+          // 葉の層は、枝の向き bd（3 次元）に合わせて傾ける（2026-10-06 ユーザー指定：以前は枝の向きに関係なく水平）。層の面は bd と、それに直交する横 hz で張り、
+          // 層の上向き lu は「真上を bd に直交させたもの」。上向きの枝の層は斜め上を向き、水平な枝の層は水平になる
+          const pad = (pc, bd, pr, nl, f) => {
+            const hx = bd.clone().normalize(), lu = UP.clone().addScaledVector(hx, -hx.y);
+            if (lu.lengthSq() < 1e-4) lu.set(1, 0, 0); lu.normalize();
+            const hz = new THREE.Vector3().crossVectors(lu, hx).normalize();
+            pc.addScaledVector(hz, (r() - 0.5) * pr).addScaledVector(lu, (0.01 + (r() - 0.3) * 0.02) * H);   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
             for (let j = 0; j < nl; j++) {
               const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;
               const u = Math.cos(a2) * d2;   // 層の中での枝の向きの位置（−1：幹寄り … 1：先）
               const k2 = (0.55 + 0.35 * (f + u * 0.25)) * (dy < 0 ? 0.65 : 1);
-              card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).add(new THREE.Vector3(0, dy, 0)), shade * k2, hx);
+              card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).addScaledVector(lu, dy), shade * k2, hx, lu);
             }
           };
           const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
@@ -4443,12 +4452,11 @@ function buildProcTrees(root, st, placed) {
           if (depth === 0) {
             // 枝分かれ 0（今まで通り）：枝の 35〜100% の所に 4〜5 枚
             const pads = 4 + Math.round(r());
-            for (let k = 0; k < pads; k++) { const f = 0.35 + 0.65 * (k + r() * 0.5) / pads; pad(onMain(f), fx, pr0, nl0, f); }
+            for (let k = 0; k < pads; k++) { const f = 0.35 + 0.65 * (k + r() * 0.5) / pads; pad(onMain(f), dirOn(f), pr0, nl0, f); }
           } else {
             // 枝分かれ 1・2（2026-10-06 ユーザー指定：分かれた枝からさらに分ける）：枝の先に層を 2 枚、途中（4〜8.5 割）から小枝を 2〜3 本、
             // 左右に 30〜50° 開いて少し上向きに出す。小枝の先側に層を置く（枝分かれ 2 は小枝からさらに 2 本ずつ孫枝を出し、層は孫枝の先へ）
-            const fxE = kinked ? new THREE.Vector3(dirOn(1).x, 0, dirOn(1).z).normalize() : fx;   // 折れた枝は、先の向きで葉の層を置く
-            pad(onMain(0.8), fxE, pr0, nl0, 0.8); pad(onMain(1), fxE, pr0, nl0, 1);
+            pad(onMain(0.8), dirOn(0.8), pr0, nl0, 0.8); pad(onMain(1), dirOn(1), pr0, nl0, 1);
             const nC = 3 + (r() < 0.5 ? 1 : 0);   // 小枝は 3〜4 本（2026-10-06：以前は 2〜3 本）
             const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
               const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
@@ -4479,6 +4487,7 @@ function buildProcTrees(root, st, placed) {
                 for (let q = 0; q < tn.length - 1; q++) if (f <= tn[q + 1].f) return tn[q].p.clone().lerp(tn[q + 1].p, (f - tn[q].f) / Math.max(1e-6, tn[q + 1].f - tn[q].f));
                 return tn[tn.length - 1].p.clone();
               };
+              const tDir = (f) => { if (!tk) return dv2; let k = 0; for (let q = 0; q < tn.length - 1; q++) if (f >= tn[q].f) k = q; return tn[k].dir; };   // 小枝の向き（3 次元。葉の層の傾きに使う）
               const tHx = (f) => { if (!tk) return hx; let k = 0; for (let q = 0; q < tn.length - 1; q++) if (f >= tn[q].f) k = q; const v = tn[k].dir; return new THREE.Vector3(v.x, 0, v.z).normalize(); };
               const tp = tAt(1);
               if (lv < depth) {
@@ -4486,10 +4495,10 @@ function buildProcTrees(root, st, placed) {
                   const sd = g ? 1 : -1, h2 = (tk ? tHx(gf[g]) : hx).clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
                   twig(tAt(tk ? gf[g] : 0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);
                 }
-                pad(tp.clone(), tHx(1), pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
+                pad(tp.clone(), tDir(1), pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
               } else {
-                pad(tAt(0.55), tHx(0.55), pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
-                pad(tp.clone(), tHx(1), pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 1);
+                pad(tAt(0.55), tDir(0.55), pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
+                pad(tp.clone(), tDir(1), pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 1);
               }
             };
             for (let k = 0; k < nC; k++) {
