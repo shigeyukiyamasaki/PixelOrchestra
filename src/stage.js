@@ -4214,10 +4214,13 @@ function buildProcTrees(root, st, placed) {
     }
     if (g2 !== geo) g2.dispose();
   };
-  const cyl = (r0, r1, len, seg = 6) => { const g = new THREE.CylinderGeometry(r1, r0, len, seg, 1); g.translate(0, len / 2, 0); return g; };   // 根元が原点
+  // 最低の太さ RMIN（2026-10-06 ユーザー指定：細い枝が 1 ドットより細くなり、ドット化で途切れて枝や葉が宙に浮いて見えた）。木ごとに高さの 0.25%
+  let RMIN = 0;
+  const cyl = (r0, r1, len, seg = 6) => { const g = new THREE.CylinderGeometry(Math.max(r1, RMIN), Math.max(r0, RMIN), len, seg, 1); g.translate(0, len / 2, 0); return g; };   // 根元が原点
   const UP = new THREE.Vector3(0, 1, 0);
   for (const pl of placed) {
     const H = H0 * pl.sc, x = pl.x, z = pl.z, y = (st.y ?? 0) + pl.ry, rot = pl.rot;
+    RMIN = 0.0025 * H;
     baseY = y; curH = H;
     const at = (lx, ly, lz) => new THREE.Vector3(x + lx * Math.cos(rot) + lz * Math.sin(rot), y + ly, z - lx * Math.sin(rot) + lz * Math.cos(rot));
     const dirAt = (dx, dy, dz) => new THREE.Vector3(dx * Math.cos(rot) + dz * Math.sin(rot), dy, -dx * Math.sin(rot) + dz * Math.cos(rot));
@@ -4380,7 +4383,7 @@ function buildProcTrees(root, st, placed) {
           // 枝の向き（2026-10-06 ユーザー指定：-60〜+30°。マイナスで地面の方向へ）。ただし水平より下には向けない（同日ユーザー指定：幹の先が丸見えになり幹ごと下がって見えた）。
           // 低い枝は、先が地面より上（高さの 10%）に残るよう下限も付ける
           const elMin = Math.asin(Math.max(-1, Math.min(1, (0.1 * H - hgt) / len))) + 0.2;
-          const el = Math.max(0, elMin, Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7 + deg(Math.max(-60, Math.min(30, st.branchAngle ?? 0)))));   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
+          const el = Math.max(0, elMin, Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7 + deg(Math.max(0, Math.min(30, st.branchAngle ?? 0)))));   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
           // 枝の付け根の太さ：幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせる。付け根の幹の太さを超えない
