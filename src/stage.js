@@ -4389,7 +4389,13 @@ function buildProcTrees(root, st, placed) {
           // 枝の付け根の太さ：幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせる。付け根の幹の太さを超えない
           const onLead = nTr > 1 && hgt > forkH, rBase0 = tr * 0.4 * (1 - 0.4 * t);
           const rBase = Math.min(tr * (onLead ? 0.6 : 0.85), rBase0 * tm * (onLead ? tm : 1)), kB = rBase / rBase0;   // kB：今までの太さに対する倍率（細り方 0.5 で 1）
-          const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
+          const s0 = trunkAt(hgt, lk);
+          // 枝の向きを、その高さでの幹の向きに合わせて回す（2026-10-06 ユーザー指定：枝の角度が、うねった幹ではなく垂直な幹から測られていた）。
+          // 枝も重力・日の光である程度上へ向き直るので、幹の傾きは 7 割だけ反映する。幹がまっすぐなら何もしない
+          { const dh = 0.02 * H, tg = trunkAt(Math.min(TOP, hgt + dh), lk).sub(trunkAt(Math.max(0, hgt - dh), lk)).normalize();
+            const q = new THREE.Quaternion().setFromUnitVectors(UP, tg), q0 = new THREE.Quaternion();
+            q0.slerp(q, 0.7); d.applyQuaternion(q0).normalize(); dDown.applyQuaternion(q0).normalize(); }
+          const mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           // 枝の折れ（2026-10-06 ユーザー指定：枝はうねるのではなく、小枝が出る所で向きが変わり、節と節の間はまっすぐ）。
           // 「枝のうねり」bb を折れの強さに使う：小枝の出る位置（節）を先に決め、節ごとに小枝と反対側へ (15〜35°)×bb 折り、上下にも交互に折り、少しずつ垂らす。
           // 節の位置・角度は乱数の列を使わず枝の番号から作る（bb 0 の時は今までとまったく同じ木）
