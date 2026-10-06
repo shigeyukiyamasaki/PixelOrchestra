@@ -4313,7 +4313,10 @@ function buildProcTrees(root, st, placed) {
         if (nTr === 1) trunkSegs(0, TOP, 0, tr, tr * 0.35, bend > 0 ? tsN : 1);
         else {
           trunkSegs(0, forkH * 1.02, 0, tr, tr * 0.8, bend > 0 ? Math.max(3, Math.round(tsN * 0.4)) : 1);
-          for (let k = 0; k < nTr; k++) { trunkSegs(forkH, TOP, k, Math.min(tr * 0.8, tr * 0.72 * tm), Math.min(tr * 0.8, tr * 0.72 * tm) * 0.42, bend > 0 ? Math.max(5, Math.round(tsN * 0.7)) : 1); lead[k].top = trunkAt(TOP, k); }
+          // 分かれた幹の太さは、分かれる高さで変える（2026-10-06 ユーザー指定：低い位置で分かれた幹ほど太く）：10% で元の幹の 95%、45% で 65%
+          // 細り方の効きも、低い位置ほど弱くする（10% ではほぼ効かず、45% で今まで通り）
+          const fp = Math.max(0, Math.min(1, (forkH / H * 100 - 10) / 35)), rL = tr * (0.95 - 0.3 * fp), tmL = 1 + (tm - 1) * fp;
+          for (let k = 0; k < nTr; k++) { trunkSegs(forkH, TOP, k, Math.min(tr * 0.95, rL * tmL), Math.min(tr * 0.95, rL * tmL) * 0.42, bend > 0 ? Math.max(5, Math.round(tsN * 0.7)) : 1); lead[k].top = trunkAt(TOP, k); }
         }
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
