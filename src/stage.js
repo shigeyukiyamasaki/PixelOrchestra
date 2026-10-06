@@ -4374,7 +4374,40 @@ function buildProcTrees(root, st, placed) {
           for (let q = 0; q < corners.length - 1; q++) pushTri(pos, corners[q], corners[q + 1]);   // 水かき（付け根の扇）
         };
         const nb = 22;
-        for (let i = 0; i < nb; i++) {
+        // 作り方 v2（2026-10-07 ユーザー指定：見本を真似た最初の木＝2576dd3 の枝を土台に、葉（A）・落ち葉（B）・幹（C）の変更だけを載せる）。
+        // 枝は 2576dd3 のまま：6 つの段の高さから、斜め上へまっすぐ伸び先が少し垂れる。小枝・折れ・枝の向きなどのスライダーは効かない。
+        // 幹の太さ・本数・分かれる高さ・曲がり・先の細り・最低の太さは効く（枝の付け根は曲がった幹・分かれた幹の上）
+        if (st.build === 'v2') {
+          for (let i = 0; i < nb; i++) {
+            const t = i / (nb - 1), tier = Math.round(t * 5) / 5, hgt = (0.25 + 0.65 * tier + (r() - 0.5) * 0.03) * H, lk = i % nTr;
+            const az0 = i * 2.39996 + r() * 0.5, az = nTr > 1 && hgt > forkH ? lead[lk].az + (az0 % 1 - 0.5) * 2.2 : az0;   // 分かれた幹の枝は、その幹の外側寄りに
+            const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()), el = 0.3 + 0.35 * t + r() * 0.2;
+            const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
+            const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
+            const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
+            const r0 = tr * 0.4 * (1 - 0.4 * t);
+            add(bark, cyl(r0, endR(r0, tr * 0.2 / r0), len * 0.62, 5), s0, d, ONE, barkC, 0.05);
+            add(bark, cyl(endR(r0, tr * 0.2 / r0), endR(r0, tr * 0.08 / r0), len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
+            // 葉の層：枝の 35〜100% の所に 4〜5 枚。層は枝の向きに合わせて傾け、水平より上には傾けない（A）
+            const pads = 4 + Math.round(r()), shade = 0.78 + 0.3 * t;
+            const pr = (0.09 + 0.06 * (1 - t)) * H, nl = Math.max(2, Math.round(13 * amt));
+            for (let k = 0; k < pads; k++) {
+              const f = 0.35 + 0.65 * (k + r() * 0.5) / pads, bd = f < 0.6 ? d : dDown;
+              const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
+              const hx = new THREE.Vector3(bd.x, Math.min(0, bd.y), bd.z).normalize(), lu = UP.clone().addScaledVector(hx, -hx.y);
+              if (lu.lengthSq() < 1e-4) lu.set(1, 0, 0); lu.normalize();
+              const hz = new THREE.Vector3().crossVectors(lu, hx).normalize();
+              pc.addScaledVector(hz, (r() - 0.5) * pr).addScaledVector(lu, (0.01 + (r() - 0.3) * 0.02) * H);   // 層を横・上下にずらして重ねる
+              for (let j = 0; j < nl; j++) {
+                const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()), dy = (r() - 0.5) * 0.04 * H;
+                const u = Math.cos(a2) * d2;
+                const k2 = (0.55 + 0.35 * (f + u * 0.25)) * (dy < 0 ? 0.65 : 1);
+                card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).addScaledVector(lu, dy), shade * k2, hx, lu);
+              }
+            }
+          }
+        }
+        if (st.build !== 'v2') for (let i = 0; i < nb; i++) {
           // 枝の付く高さ（2026-10-06 ユーザー指定：同じ高さから何本も出て見えたので、互い違いに・高さの重複なし）：幹の 25〜90% に等間隔に並べ、
           // 間隔の ±30% だけずらす（隣の枝と高さが重ならない）。向きは 1 本ごとに約 137° 回る。以前は 6 つの段にまとめていた
           const t = i / (nb - 1), hgt = (0.25 + 0.65 * t + (r() - 0.5) * 0.6 * 0.65 / (nb - 1)) * H, lk = i % nTr;
