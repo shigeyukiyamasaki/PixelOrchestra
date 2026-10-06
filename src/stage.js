@@ -4375,7 +4375,7 @@ function buildProcTrees(root, st, placed) {
         };
         const nb = 22;
         // 作り方 v2（2026-10-07 ユーザー指定：見本を真似た最初の木＝2576dd3 の枝を土台に、葉（A）・落ち葉（B）・幹（C）の変更だけを載せる）。
-        // 枝は 2576dd3 のまま（高さだけ 03a557f の並べ方）：斜め上へまっすぐ伸び先が少し垂れる。小枝・折れ・枝の向きなどのスライダーは効かない。
+        // 枝は 2576dd3 のまま（高さだけ 03a557f の並べ方）：斜め上へまっすぐ伸び先が少し垂れる。折れ・枝の向きなどのスライダーは効かない（枝分かれ・小枝の長さは効く）。
         // 幹の太さ・本数・分かれる高さ・曲がり・先の細り・最低の太さは効く（枝の付け根は曲がった幹・分かれた幹の上）
         if (st.build === 'v2') {
           for (let i = 0; i < nb; i++) {
@@ -4392,12 +4392,9 @@ function buildProcTrees(root, st, placed) {
             const r0 = Math.min(tr * (onLead ? 0.6 : 0.85), rB0 * tm * (onLead ? tm : 1)), kB = r0 / rB0;
             add(bark, cyl(r0, endR(r0, tr * 0.2 * kB / r0), len * 0.62, 5), s0, d, ONE, barkC, 0.05);
             add(bark, cyl(endR(r0, tr * 0.2 * kB / r0), endR(r0, tr * 0.08 * kB / r0), len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
-            // 葉の層：枝の 35〜100% の所に 4〜5 枚。層は枝の向きに合わせて傾け、水平より上には傾けない（A）
-            const pads = 4 + Math.round(r()), shade = 0.78 + 0.3 * t;
-            const pr = (0.09 + 0.06 * (1 - t)) * H, nl = Math.max(2, Math.round(13 * amt));
-            for (let k = 0; k < pads; k++) {
-              const f = 0.35 + 0.65 * (k + r() * 0.5) / pads, bd = f < 0.6 ? d : dDown;
-              const pc = f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4);
+            // 葉の層 1 枚（A）：中心 pc、枝の向き bd、大きさ pr、葉の数 nl、f：根元からの位置。層は枝の向きに合わせて傾け、水平より上には傾けない
+            const shade = 0.78 + 0.3 * t;
+            const pad = (pc, bd, pr, nl, f) => {
               const hx = new THREE.Vector3(bd.x, Math.min(0, bd.y), bd.z).normalize(), lu = UP.clone().addScaledVector(hx, -hx.y);
               if (lu.lengthSq() < 1e-4) lu.set(1, 0, 0); lu.normalize();
               const hz = new THREE.Vector3().crossVectors(lu, hx).normalize();
@@ -4407,6 +4404,41 @@ function buildProcTrees(root, st, placed) {
                 const u = Math.cos(a2) * d2;
                 const k2 = (0.55 + 0.35 * (f + u * 0.25)) * (dy < 0 ? 0.65 : 1);
                 card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).addScaledVector(lu, dy), shade * k2, hx, lu);
+              }
+            };
+            const onMain = (f) => (f < 0.6 ? s0.clone().lerp(mid, f / 0.6) : mid.clone().lerp(tip, (f - 0.6) / 0.4)), dirOn = (f) => (f < 0.6 ? d : dDown);
+            // 枝分かれで層が増えた分、層 1 枚の葉を減らす（A：8d5d714）
+            const pr0 = (0.09 + 0.06 * (1 - t)) * H, nl0 = Math.max(2, Math.round(13 * amt * (depth === 0 ? 1 : depth === 1 ? 0.6 : 0.3)));
+            if (depth === 0) {
+              // 枝分かれ 0：枝の 35〜100% の所に 4〜5 枚
+              const pads = 4 + Math.round(r());
+              for (let k = 0; k < pads; k++) { const f = 0.35 + 0.65 * (k + r() * 0.5) / pads; pad(onMain(f), dirOn(f), pr0, nl0, f); }
+            } else {
+              // 枝分かれ 1・2（7e86144 を適用。2026-10-07 ユーザー指定）：枝の先に層を 2 枚。小枝は根元から 15〜85% にほぼ等間隔で 3〜4 本（4629296）、
+              // 左右に 30〜50° 開いて、元の枝の角度の 6 割＋約 14° の上向き（7e86144 のまま。孫枝はさらに＋約 6°）。層は一番先の枝の途中と先へ
+              pad(onMain(0.8), dirOn(0.8), pr0, nl0, 0.8); pad(onMain(1), dirOn(1), pr0, nl0, 1);
+              const nC = 3 + (r() < 0.5 ? 1 : 0);
+              const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
+                const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
+                add(bark, cyl(rad, endR(rad, 0.4), L2, 4), base, dv2, ONE, barkC, 0.05);
+                const tp = base.clone().addScaledVector(dv2, L2);
+                if (lv < depth) {
+                  for (let g = 0; g < 2; g++) {
+                    const sd = g ? 1 : -1, h2 = hx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
+                    twig(base.clone().lerp(tp, 0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);   // 分かれるたびに太さ半分
+                  }
+                  pad(tp.clone(), dv2, pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
+                } else {
+                  pad(base.clone().lerp(tp, 0.55), dv2, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 0.7);
+                  pad(tp.clone(), dv2, pr0 * (lv === 1 ? 0.75 : 0.6), Math.round(nl0 * (lv === 1 ? 0.6 : 0.5)), 1);
+                }
+              };
+              const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
+              for (let k = 0; k < nC; k++) {
+                const f = 0.15 + 0.7 * (k + 0.5 + (r() - 0.5) * 0.7) / nC, sd = k % 2 ? 1 : -1;
+                const hx = fx.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
+                // 小枝の長さ（1172def を適用）：0.5〜2.5 倍。孫枝も比例して伸びる
+                twig(onMain(f), hx, el * 0.6 + 0.25, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)), Math.min(r0 * 0.9, tr * 0.18 * kB * tm), 1);
               }
             }
           }
