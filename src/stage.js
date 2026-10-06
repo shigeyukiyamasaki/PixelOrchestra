@@ -4436,7 +4436,8 @@ function buildProcTrees(root, st, placed) {
           // 葉の層は、枝の向き bd（3 次元）に合わせて傾ける（2026-10-06 ユーザー指定：以前は枝の向きに関係なく水平）。層の面は bd と、それに直交する横 hz で張り、
           // 層の上向き lu は「真上を bd に直交させたもの」。上向きの枝の層は斜め上を向き、水平な枝の層は水平になる
           const pad = (pc, bd, pr, nl, f) => {
-            const hx = bd.clone().normalize(), lu = UP.clone().addScaledVector(hx, -hx.y);
+            // 葉は水平より上には傾けない（2026-10-06 ユーザー指定：葉が上を向くのは重力的に不自然）。上向きの枝は水平に、下向きの枝先だけ枝に合わせて下へ傾く
+            const hx = new THREE.Vector3(bd.x, Math.min(0, bd.y), bd.z).normalize(), lu = UP.clone().addScaledVector(hx, -hx.y);
             if (lu.lengthSq() < 1e-4) lu.set(1, 0, 0); lu.normalize();
             const hz = new THREE.Vector3().crossVectors(lu, hx).normalize();
             pc.addScaledVector(hz, (r() - 0.5) * pr).addScaledVector(lu, (0.01 + (r() - 0.3) * 0.02) * H);   // 層を横・上下にずらして重ねる（離れた皿に見えないように）
