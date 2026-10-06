@@ -4280,19 +4280,33 @@ function buildProcTrees(root, st, placed) {
         // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
         // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
         const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(0.15, Math.min(0.7, st.forkH ?? 0.35)) * H, TILT = 0.32;
+        // 幹の曲がり（2026-10-06 ユーザー指定）：幹を節に分け、高さごとにゆるく左右へうねらせる（根元は動かさず、上ほど大きく）。分かれた幹も同じ
+        const bend = Math.max(0, Math.min(1, st.bend ?? 0)), TOP = 0.95 * H;
+        const ph1 = r() * 6.28, ph2 = r() * 6.28, f1 = 0.8 + r() * 0.8, f2 = 1.2 + r() * 1.0;
+        const wig = (u, k) => dirAt(bend * 0.08 * H * Math.sin(u * Math.PI * f1 + ph1 + k * 2.1) * u, 0, bend * 0.08 * H * Math.sin(u * Math.PI * f2 + ph2 + k * 1.3) * u);   // 横へのずれ
+        const mainAt = (h) => at(0, h, 0).add(wig(h / TOP, 0));
         const lead = [];
-        if (nTr === 1) add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
-        else {
-          add(bark, cyl(tr, tr * 0.8, forkH * 1.02, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
-          const a0 = r() * Math.PI * 2, Ll = (0.95 * H - forkH) / Math.cos(TILT);
+        if (nTr > 1) {
+          const a0 = r() * Math.PI * 2;
           for (let k = 0; k < nTr; k++) {
             const az = a0 + (k / nTr) * Math.PI * 2 + (r() - 0.5) * 0.4;
-            const dir = dirAt(Math.cos(az) * Math.sin(TILT), Math.cos(TILT), Math.sin(az) * Math.sin(TILT)).normalize();
-            add(bark, cyl(tr * 0.72, tr * 0.3, Ll, 6), at(0, forkH, 0), dir, ONE, barkC, 0.05);
-            lead.push({ az, dir, top: at(0, forkH, 0).addScaledVector(dir, Ll) });
+            lead.push({ az, dir: dirAt(Math.cos(az) * Math.sin(TILT), Math.cos(TILT), Math.sin(az) * Math.sin(TILT)).normalize() });
           }
         }
-        const trunkAt = (h, k) => (nTr === 1 || h <= forkH ? at(0, h, 0) : at(0, forkH, 0).addScaledVector(lead[k].dir, (h - forkH) / Math.cos(TILT)));   // 幹の上の高さ h の点
+        const leaderAt = (h, k) => mainAt(forkH).addScaledVector(lead[k].dir, (h - forkH) / Math.cos(TILT)).add(wig((h - forkH) / (TOP - forkH), k + 1).multiplyScalar(0.7));
+        const trunkAt = (h, k) => (nTr === 1 || h <= forkH ? mainAt(h) : leaderAt(h, k));   // 幹の上の高さ h の点
+        const trunkSegs = (from, to, k, r0, r1, n) => {   // 幹を n 節の円柱で描く（節どうしを少し重ねて、曲がり目にすき間が出ないように）
+          for (let i = 0; i < n; i++) {
+            const h0 = from + ((to - from) * i) / n, h1 = from + ((to - from) * (i + 1)) / n;
+            const p0 = trunkAt(h0, k), p1 = trunkAt(h1, k), dv0 = p1.clone().sub(p0), L0 = dv0.length();
+            add(bark, cyl(r0 + (r1 - r0) * (i / n), r0 + (r1 - r0) * ((i + 1) / n), L0 * 1.05, 7), p0, dv0.normalize(), ONE, barkC, 0.05);
+          }
+        };
+        if (nTr === 1) trunkSegs(0, TOP, 0, tr, tr * 0.35, bend > 0 ? 7 : 1);
+        else {
+          trunkSegs(0, forkH * 1.02, 0, tr, tr * 0.8, bend > 0 ? 3 : 1);
+          for (let k = 0; k < nTr; k++) { trunkSegs(forkH, TOP, k, tr * 0.72, tr * 0.3, bend > 0 ? 5 : 1); lead[k].top = trunkAt(TOP, k); }
+        }
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
         const LL = 0.065 * H, LW = 0.014 * H;   // 見本の小葉は長さ：幅がおよそ 5：1   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
