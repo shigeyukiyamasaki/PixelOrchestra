@@ -4398,7 +4398,9 @@ function buildProcTrees(root, st, placed) {
           { const dh = 0.02 * H, tg = trunkAt(Math.min(TOP, hgt + dh), lk).sub(trunkAt(Math.max(0, hgt - dh), lk)).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(UP, tg), q0 = new THREE.Quaternion();
             q0.slerp(q, 0.7); d.applyQuaternion(q0).normalize(); dDown.applyQuaternion(q0).normalize();
-            if (d.y < 0) { d.y = 0; d.normalize(); } }   // 幹が傾いている側の枝も水平より下には向けない
+            // 枝は幹に対して垂直より根元側には向けない（2026-10-06 ユーザー指定：「最低でも水平」は地面ではなく幹に対しての話。
+            // 以前ここで地面に対して水平より下を止めていたのは取り違え）。幹の傾きは 7 割しか反映しないので、傾いた側で少し根元側を向くことがある
+            const dt = d.dot(tg); if (dt < 0) { d.addScaledVector(tg, -dt).normalize(); } }
           const mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           // 枝の折れ（2026-10-06 ユーザー指定：枝はうねるのではなく、小枝が出る所で向きが変わり、節と節の間はまっすぐ）。
           // 「枝のうねり」bb を折れの強さに使う：小枝の出る位置（節）を先に決め、節ごとに小枝と反対側へ (15〜35°)×bb 折り、上下にも交互に折り、少しずつ垂らす。
