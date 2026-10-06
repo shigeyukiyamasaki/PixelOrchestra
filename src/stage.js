@@ -4283,7 +4283,7 @@ function buildProcTrees(root, st, placed) {
         const tipK = Math.pow(2, Math.max(0, Math.min(1, st.tipTaper ?? 0)) * 1.3), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
         const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));
-        const bb = Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝のうねり（2026-10-06。一度 2 まで広げたが、1 を上限に戻した＝真ん中の木を最大に。同日ユーザー指定。幹の曲がりとは別）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
+        const bb = 0.5 + 1.5 * Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝の折れの強さ（2026-10-06 ユーザー指定：前の真ん中 0.5 を最小に、最大は前の 2 倍）。   // 枝のうねり（2026-10-06。一度 2 まで広げたが、1 を上限に戻した＝真ん中の木を最大に。同日ユーザー指定。幹の曲がりとは別）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
         // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
         const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(10, Math.min(45, st.forkPct ?? (st.forkH != null ? st.forkH * 100 : 35))) / 100 * H, TILT = 0.32;   // 分かれる高さ [%]（2026-10-06 ユーザー指定：% で 10〜45。以前の割合 forkH も読む）
