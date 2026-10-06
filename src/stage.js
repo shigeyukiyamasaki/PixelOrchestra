@@ -4186,8 +4186,8 @@ const TREE_LEAF = { fresh: '#6fb84a', deep: '#3d7a34', autumn: '#c4532e', yellow
 const TREE_BARK = '#4d3c2e', TREE_DEAD = '#776652';   // 幹は GLB の木（広葉樹E）に寄せて、灰色がかった暗い茶（2026-10-05）
 function procTreeR(st) {   // 枝葉の広がり（水平の半径 [unit]、大きさ 1 の時）
   const H = Math.max(1, st.height ?? 9), sp = st.species ?? 'broad';
-  const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
-  return H * (sp === 'conifer' ? 0.28 : sp === 'palm' ? 0.42 : sp === 'dead' ? 0.3 : 0.5 * wide);   // 広葉樹は枝が長く横に広い（2026-10-05）
+  const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1)), nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1)));
+  return H * (sp === 'conifer' ? 0.28 : sp === 'palm' ? 0.42 : sp === 'dead' ? 0.3 : 0.5 * wide * (1 + 0.15 * (nTr - 1)));   // 幹が分かれると樹冠も少し広がる   // 広葉樹は枝が長く横に広い（2026-10-05）
 }
 function buildProcTrees(root, st, placed) {
   const bark = { pos: [], nrm: [], col: [], sw: [] }, leaf = { pos: [], nrm: [], col: [], sw: [] };
@@ -4277,7 +4277,22 @@ function buildProcTrees(root, st, placed) {
         const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
         const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
-        add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
+        // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
+        // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
+        const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(0.15, Math.min(0.7, st.forkH ?? 0.35)) * H, TILT = 0.32;
+        const lead = [];
+        if (nTr === 1) add(bark, cyl(tr, tr * 0.35, 0.95 * H, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
+        else {
+          add(bark, cyl(tr, tr * 0.8, forkH * 1.02, 7), at(0, 0, 0), UP, ONE, barkC, 0.05);
+          const a0 = r() * Math.PI * 2, Ll = (0.95 * H - forkH) / Math.cos(TILT);
+          for (let k = 0; k < nTr; k++) {
+            const az = a0 + (k / nTr) * Math.PI * 2 + (r() - 0.5) * 0.4;
+            const dir = dirAt(Math.cos(az) * Math.sin(TILT), Math.cos(TILT), Math.sin(az) * Math.sin(TILT)).normalize();
+            add(bark, cyl(tr * 0.72, tr * 0.3, Ll, 6), at(0, forkH, 0), dir, ONE, barkC, 0.05);
+            lead.push({ az, dir, top: at(0, forkH, 0).addScaledVector(dir, Ll) });
+          }
+        }
+        const trunkAt = (h, k) => (nTr === 1 || h <= forkH ? at(0, h, 0) : at(0, forkH, 0).addScaledVector(lead[k].dir, (h - forkH) / Math.cos(TILT)));   // 幹の上の高さ h の点
         // 葉 1 つ（2026-10-05 ユーザー指定：葉の形を GLB の木にさらに寄せる）：GLB の葉は 1 か所から 5〜7 枚の小葉が星形（手のひら形）に開いた形。
         // 小葉は根元に少し幅のある五角形（先が尖る）。葉はほぼ水平に開き、回転はばらばら。along（枝の外向き）側の小葉を少し長く
         const LL = 0.065 * H, LW = 0.014 * H;   // 見本の小葉は長さ：幅がおよそ 5：1   // 小葉の長さ・幅（GLB の小葉の細長さに寄せる）
@@ -4325,11 +4340,12 @@ function buildProcTrees(root, st, placed) {
         const nb = 22;
         for (let i = 0; i < nb; i++) {
           // 枝の付く高さは 6 つの段にまとめる（段と段の間にすき間ができ、GLB の木のように葉が段々に見える）
-          const t = i / (nb - 1), tier = Math.round(t * 5) / 5, hgt = (0.25 + 0.65 * tier + (r() - 0.5) * 0.03) * H, az = i * 2.39996 + r() * 0.5;
+          const t = i / (nb - 1), tier = Math.round(t * 5) / 5, hgt = (0.25 + 0.65 * tier + (r() - 0.5) * 0.03) * H, lk = i % nTr;
+          const az = nTr > 1 && hgt > forkH ? lead[lk].az + (r() - 0.5) * 2.2 : i * 2.39996 + r() * 0.5;   // 分かれた幹の枝は、その幹の外側寄りに
           const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()) * wide, el = Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7);   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
-          const s0 = at(0, hgt, 0), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
+          const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
           add(bark, cyl(tr * 0.4 * (1 - 0.4 * t), tr * 0.2, len * 0.62, 5), s0, d, ONE, barkC, 0.05);
           add(bark, cyl(tr * 0.2, tr * 0.08, len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
           // 葉の層 1 枚：中心 pc、枝の水平な向き hx、大きさ pr（枝の向きに長い楕円：長さ pr×1.4・幅 pr、厚み 0.04H）、葉の数 nl、
@@ -4379,8 +4395,9 @@ function buildProcTrees(root, st, placed) {
             }
           }
         }
-        for (let k = 0; k < 3; k++) {   // てっぺんの小さな層
-          const pc = at((r() - 0.5) * 0.06 * H, (0.9 + 0.05 * k) * H, (r() - 0.5) * 0.06 * H);
+        for (let k = 0; k < 3 * nTr; k++) {   // てっぺんの小さな層（幹が分かれた時は、それぞれの幹の先に）
+          const pc = nTr === 1 ? at((r() - 0.5) * 0.06 * H, (0.9 + 0.05 * (k % 3)) * H, (r() - 0.5) * 0.06 * H)
+            : lead[k % nTr].top.clone().add(new THREE.Vector3((r() - 0.5) * 0.06 * H, (Math.floor(k / nTr) - 1) * 0.05 * H, (r() - 0.5) * 0.06 * H));
           for (let j = 0; j < Math.round(7 * amt); j++) { const a2 = r() * Math.PI * 2, d2 = Math.sqrt(r()); card(pc.clone().add(new THREE.Vector3(Math.cos(a2) * d2 * 0.07 * H, (r() - 0.5) * 0.03 * H, Math.sin(a2) * d2 * 0.07 * H)), 1.08); }
         }
       }
