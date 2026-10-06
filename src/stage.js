@@ -4386,9 +4386,12 @@ function buildProcTrees(root, st, placed) {
             const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
             const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
             const s0 = trunkAt(hgt, lk), mid = s0.clone().addScaledVector(d, len * 0.6), tip = mid.clone().addScaledVector(dDown, len * 0.4);
-            const r0 = tr * 0.4 * (1 - 0.4 * t);
-            add(bark, cyl(r0, endR(r0, tr * 0.2 / r0), len * 0.62, 5), s0, d, ONE, barkC, 0.05);
-            add(bark, cyl(endR(r0, tr * 0.2 / r0), endR(r0, tr * 0.08 / r0), len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
+            // 枝の太さ：分かれるたびに太さ半分（tm。f96df91 の前半を適用。2026-10-07 ユーザー指定）。幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせ、
+            // 途中・先の太さも同じ割合で細くする。付け根の幹の太さは超えない
+            const onLead = nTr > 1 && hgt > forkH, rB0 = tr * 0.4 * (1 - 0.4 * t);
+            const r0 = Math.min(tr * (onLead ? 0.6 : 0.85), rB0 * tm * (onLead ? tm : 1)), kB = r0 / rB0;
+            add(bark, cyl(r0, endR(r0, tr * 0.2 * kB / r0), len * 0.62, 5), s0, d, ONE, barkC, 0.05);
+            add(bark, cyl(endR(r0, tr * 0.2 * kB / r0), endR(r0, tr * 0.08 * kB / r0), len * 0.42, 4), mid, dDown, ONE, barkC, 0.05);
             // 葉の層：枝の 35〜100% の所に 4〜5 枚。層は枝の向きに合わせて傾け、水平より上には傾けない（A）
             const pads = 4 + Math.round(r()), shade = 0.78 + 0.3 * t;
             const pr = (0.09 + 0.06 * (1 - t)) * H, nl = Math.max(2, Math.round(13 * amt));
