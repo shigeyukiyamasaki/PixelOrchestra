@@ -918,9 +918,19 @@ const _flareTmp = new THREE.Vector3();
 export const PLAYER_LAYER = 4;
 // 階調の細かさ（2026-10-04 ユーザー指定）：色の成分ごとに lv 段へ丸める。32 以上で丸めない。
 // 舞台は色を変換せずそのまま画面に出す（outputEncoding は既定のまま）ので、画面の値をそのまま等分する（ガンマを掛けて刻むと暗い色が黒に潰れた）
-const PIX_QUANT_GLSL = `vec3 pxoQuant( vec3 c, float lv ) {
+// 減らし方（uPixQM。2026-10-06 ユーザー指定）：0＝RGB の成分ごとに丸める（色数が減りレトロに。色相はずれる）／
+// 1＝色相を保つ（輝度だけを段数に丸め、色の比率はそのまま。明るさだけが段々になる）
+const PIX_QUANT_GLSL = `uniform float uPixQM;
+vec3 pxoQuant( vec3 c, float lv ) {
   if ( lv >= 31.5 ) return c;
-  return floor( max( c, 0.0 ) * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
+  c = max( c, 0.0 );
+  if ( uPixQM > 0.5 ) {
+    float L = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+    if ( L < 1e-4 ) return vec3( 0.0 );
+    float Lq = floor( L * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
+    return min( c * ( Lq / L ), vec3( 1.0 ) );
+  }
+  return floor( c * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
 }
 // 透明度も同じ段数で丸める（2026-10-04 ユーザー指定：泡の消え方・水の縁が、階調を粗くしても滑らかなままだった）。0 になったら描かない
 float pxoQuantA( float a, float lv ) {
@@ -1021,11 +1031,12 @@ function pixelPass(renderer, scene, camera) {
     pix.rt.depthTexture.type = THREE.UnsignedIntType;
   }
   WATER_PIX.uPixLv.value = pix.on ? (pix.levels ?? 32) : 32;
+  WATER_PIX.uPixQM.value = pix.quantMode === 'hue' ? 1 : 0;   // 階調の減らし方（2026-10-06）
   // 水・土が自分でドットのます目に揃える処理（uPixDot）は使わない（2026-10-05：舞台と一緒にドット化用の絵に描くようにしたため）
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
@@ -2391,7 +2402,7 @@ const WATER_BLOOM = { pass: { value: 0 }, depth: { value: null }, res: { value: 
 export function setWaterBloomThreshold(thr) { WATER_BLOOM.thr.value = thr; }
 const WATER_U = { uWT: { value: 0 } };   // 水の時刻（全水場で共有。曲と関係なく実時間で進める）
 // ドット絵（範囲に 3D モデル）の時の 1 ドットの大きさ [画素]。0 でドットにしない（2026-10-04 ユーザー指定）。pixelPass が毎フレーム決める
-const WATER_PIX = { uPixDot: { value: new THREE.Vector2() }, uPixLv: { value: 32 } };   // uPixLv：階調の細かさ（ドットにした物と同じ。32 で制限なし）
+const WATER_PIX = { uPixDot: { value: new THREE.Vector2() }, uPixLv: { value: 32 }, uPixQM: { value: 0 } };   // uPixQM：階調の減らし方（0 RGB ごと／1 色相を保つ）   // uPixLv：階調の細かさ（ドットにした物と同じ。32 で制限なし）
 // 奏者の位置（「奏者をよける」用。全水場で共有）。x, z と陸地とみなす半径 [unit]
 const WATER_MAX_PL = 128, WATER_PL_R = 1.3, WATER_COND_R = 1.9;   // 奏者（椅子・楽器ぶん）と、指揮者（一辺 2.2 の指揮台の角まで陸に）の半径
 const WATER_PL = { uPl: { value: Array.from({ length: WATER_MAX_PL }, () => new THREE.Vector3()) }, uPlN: { value: 0 } };
