@@ -4423,11 +4423,12 @@ function buildProcTrees(root, st, placed) {
             pad(onMain(0.8), fx, pr0, nl0, 0.8); pad(onMain(1), fx, pr0, nl0, 1);
             const nC = 2 + (r() < 0.5 ? 1 : 0);
             const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
+              const tbb = lv >= 2 ? 0 : bb;   // 枝のうねりは孫枝には効かせない（2026-10-06 ユーザー指定）
               const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
               const ts = new THREE.Vector3().crossVectors(dv2, UP).normalize(), tq = (1.6 + lv * 0.3) * wq, tph = L2 * 7.3 + lv;
               const tAt = (f) => base.clone().addScaledVector(dv2, L2 * f)   // 小枝の上の点（うねり：枝と同じ考え方）
-                .addScaledVector(ts, Math.sin(f * Math.PI * tq + tph) * bb * 0.16 * L2 * f).add(new THREE.Vector3(0, Math.sin(f * Math.PI * tq * 1.3 + tph * 1.7) * bb * 0.1 * L2 * f, 0));
-              if (bb > 0) {
+                .addScaledVector(ts, Math.sin(f * Math.PI * tq + tph) * tbb * 0.16 * L2 * f).add(new THREE.Vector3(0, Math.sin(f * Math.PI * tq * 1.3 + tph * 1.7) * tbb * 0.1 * L2 * f, 0));
+              if (tbb > 0) {
                 const nS = Math.round(3 * Math.sqrt(wq));
                 for (let q = 0; q < nS; q++) {
                   const p0 = tAt(q / nS), p1 = tAt((q + 1) / nS), dv0 = p1.clone().sub(p0), L0 = dv0.length();
