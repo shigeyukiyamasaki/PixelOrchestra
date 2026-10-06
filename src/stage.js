@@ -4283,8 +4283,9 @@ function buildProcTrees(root, st, placed) {
         const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(0.15, Math.min(0.7, st.forkH ?? 0.35)) * H, TILT = 0.32;
         // 幹の曲がり（2026-10-06 ユーザー指定）：幹を節に分け、高さごとにゆるく左右へうねらせる（根元は動かさず、上ほど大きく）。分かれた幹も同じ
         const bend = Math.max(0, Math.min(1, st.bend ?? 0)), TOP = 0.95 * H;
-        // うねりの細かさ（2026-10-06 ユーザー指定）：0 でゆったり 1〜1.5 回、1 でその約 4 倍の回数。ずれ幅は最大で高さの 16%
-        const wq = 1 + 3 * Math.max(0, Math.min(1, st.wiggle ?? 0));
+        // うねりの細かさ：幹・枝とも常に、ゆったりした曲がりの約 2.8 倍の回数で細かくくねらせる（2026-10-06 ユーザー指定：大きくゆったり曲がるだけの
+        // うねりにはならないように。細かさのスライダーは置かず、比べて気に入った 0.6 相当で固定）。ずれ幅は最大で高さの 16%
+        const wq = 2.8;
         const ph1 = r() * 6.28, ph2 = r() * 6.28, f1 = (0.8 + r() * 0.8) * wq, f2 = (1.2 + r() * 1.0) * wq;
         const wig = (u, k) => dirAt(bend * 0.16 * H * Math.sin(u * Math.PI * f1 + ph1 + k * 2.1) * u, 0, bend * 0.16 * H * Math.sin(u * Math.PI * f2 + ph2 + k * 1.3) * u);   // 横へのずれ
         const mainAt = (h) => at(0, h, 0).add(wig(h / TOP, 0));
