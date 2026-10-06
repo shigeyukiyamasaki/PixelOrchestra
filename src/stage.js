@@ -4448,7 +4448,7 @@ function buildProcTrees(root, st, placed) {
             }
           };
           const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
-          const pr0 = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl0 = Math.round(13 * amt);   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
+          const pr0 = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl0 = Math.max(2, Math.round(13 * amt * (depth === 0 ? 1 : depth === 1 ? 0.6 : 0.3)));   // 枝分かれで層が増えた分、層 1 枚の葉を減らし、木 1 本の葉の総数を小枝が無かった頃と同じくらいに（2026-10-06：スマホで公開ページが開けなくなった）   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
           if (depth === 0) {
             // 枝分かれ 0（今まで通り）：枝の 35〜100% の所に 4〜5 枚
             const pads = 4 + Math.round(r());
