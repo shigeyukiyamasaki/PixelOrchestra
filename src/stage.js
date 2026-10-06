@@ -4279,8 +4279,8 @@ function buildProcTrees(root, st, placed) {
         // 子は親より太くしない
         const tm = Math.pow(2, (0.5 - Math.max(0, Math.min(1, st.taper ?? 0.5))) * 2);
         // 先の細り（2026-10-06 ユーザー指定）：幹・分かれた幹・枝・小枝の 1 本の中で、先へ向かって細くなる度合い。先の太さ／根元の太さ の比を tipK 乗する
-        //（0.5 で 1 乗＝今まで通り、1 で約 2.5 乗＝先がぐっと細い、0 で約 0.4 乗＝ずんぐり）
-        const tipK = Math.pow(2, (Math.max(0, Math.min(1, st.tipTaper ?? 0.5)) - 0.5) * 2.6), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
+        //（0 で 1 乗＝今まで通り、1 で約 2.5 乗＝先がぐっと細い。2026-10-06 ユーザー指定：前の真ん中を最小に）
+        const tipK = Math.pow(2, Math.max(0, Math.min(1, st.tipTaper ?? 0)) * 1.3), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
         const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));
         const bb = Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝のうねり（2026-10-06）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
