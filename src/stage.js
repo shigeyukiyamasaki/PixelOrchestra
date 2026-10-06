@@ -4463,7 +4463,6 @@ function buildProcTrees(root, st, placed) {
               card(pc.clone().addScaledVector(hx, u * pr * 1.4).addScaledVector(hz, Math.sin(a2) * d2 * pr).addScaledVector(lu, dy), shade * k2, hx, lu);
             }
           };
-          const fx = new THREE.Vector3(d.x, 0, d.z).normalize();
           const pr0 = (0.09 + 0.06 * (1 - t)) * H * (0.5 + 0.5 * wide), nl0 = Math.max(2, Math.round(13 * amt * (depth === 0 ? 1 : depth === 1 ? 0.6 : 0.3)));   // 枝分かれで層が増えた分、層 1 枚の葉を減らし、木 1 本の葉の総数を小枝が無かった頃と同じくらいに（2026-10-06：スマホで公開ページが開けなくなった）   // 葉 1 つが小葉 5〜7 枚（手のひら形）なので数は少なめ
           if (depth === 0) {
             // 枝分かれ 0（今まで通り）：枝の 35〜100% の所に 4〜5 枚
@@ -4474,8 +4473,15 @@ function buildProcTrees(root, st, placed) {
             // 左右に 30〜50° 開いて少し上向きに出す。小枝の先側に層を置く（枝分かれ 2 は小枝からさらに 2 本ずつ孫枝を出し、層は孫枝の先へ）
             pad(onMain(0.8), dirOn(0.8), pr0, nl0, 0.8); pad(onMain(1), dirOn(1), pr0, nl0, 1);
             const nC = 3 + (r() < 0.5 ? 1 : 0);   // 小枝は 3〜4 本（2026-10-06：以前は 2〜3 本）
-            const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
-              const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
+            // 小枝・孫枝の向きは、直近の親の枝の実際の向き pd から測る（2026-10-06 ユーザー指定。以前は地面から測っていて、幹の傾きや枝の折れについていかなかった）。
+            // a：横への開き（親の向きを軸に、親の横の向きへ）、p：上下（親の向きからの仰角）
+            const relDir = (pd, a, p) => {
+              const fw = pd.clone().normalize(), sv = new THREE.Vector3().crossVectors(UP, fw);
+              if (sv.lengthSq() < 1e-6) sv.set(0, 0, 1); sv.normalize();
+              const uv = new THREE.Vector3().crossVectors(fw, sv).normalize();
+              return fw.multiplyScalar(Math.cos(a) * Math.cos(p)).addScaledVector(sv, Math.sin(a) * Math.cos(p)).addScaledVector(uv, Math.sin(p)).normalize();
+            };
+            const twig = (base, dv2, L2, rad, lv) => {   // 小枝 1 本（base から、向き dv2・長さ L2）。lv：1 小枝／2 孫枝
               // 折れ（bb > 0）の時は、孫枝の出る 2 か所を先に決め、小枝もそこで孫枝と反対側へ折れる（2026-10-06 ユーザー指定）。
               // bb 0 の時は今まで通り、孫枝を出す時に位置を引く（乱数の順番を変えず、今までと同じ木にする）
               const gf = bb > 0 && lv < depth ? [0.5 + 0.35 * r(), 0.5 + 0.35 * r()] : [];
@@ -4510,12 +4516,11 @@ function buildProcTrees(root, st, placed) {
                 return tn[tn.length - 1].p.clone();
               };
               const tDir = (f) => { if (!tk) return dv2; let k = 0; for (let q = 0; q < tn.length - 1; q++) if (f >= tn[q].f) k = q; return tn[k].dir; };   // 小枝の向き（3 次元。葉の層の傾きに使う）
-              const tHx = (f) => { if (!tk) return hx; let k = 0; for (let q = 0; q < tn.length - 1; q++) if (f >= tn[q].f) k = q; const v = tn[k].dir; return new THREE.Vector3(v.x, 0, v.z).normalize(); };
               const tp = tAt(1);
               if (lv < depth) {
                 for (let g = 0; g < 2; g++) {
-                  const sd = g ? 1 : -1, h2 = (tk ? tHx(gf[g]) : hx).clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-                  twig(tAt(tk ? gf[g] : 0.5 + 0.35 * r()), h2, el2, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);
+                  const sd = g ? 1 : -1, h2 = relDir(tk ? tDir(gf[g]) : dv2, sd * (0.5 + 0.35 * r()), 0);   // 孫枝：小枝の向きから横へ開く
+                  twig(tAt(tk ? gf[g] : 0.5 + 0.35 * r()), h2, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);
                 }
                 pad(tp.clone(), tDir(1), pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
               } else {
@@ -4527,9 +4532,9 @@ function buildProcTrees(root, st, placed) {
               const fr0 = 0.15 + 0.7 * (k + 0.5 + (r() - 0.5) * 0.7) / nC;   // 根元から 15〜85% にほぼ等間隔（2026-10-06 ユーザー指定）
               if (kinked && k >= forks.length) { r(); r(); continue; }   // 折れた枝は節の数だけ小枝を出す（乱数の数は今まで通り引く）
               const f = kinked ? forks[k].f : fr0, sd = kinked ? forks[k].sd : (k % 2 ? 1 : -1);
-              const hxB = kinked ? new THREE.Vector3(nodes[k].dir.x, 0, nodes[k].dir.z).normalize() : fx;   // 節の手前の枝の向き
-              const hx = hxB.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-              twig(onMain(f), hx, el * 0.6, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)),   // 小枝の長さ（2026-10-06 ユーザー指定：0.5〜2.5 倍。孫枝も比例して伸びる）
+              // 小枝：節の手前の枝の実際の向きから横へ開き、以前と同じだけ（枝の向きの 4 割）下げる
+              const hx = relDir(kinked ? nodes[k].dir : dirOn(f), sd * (0.5 + 0.35 * r()), -0.4 * el);
+              twig(onMain(f), hx, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)),   // 小枝の長さ（2026-10-06 ユーザー指定：0.5〜2.5 倍。孫枝も比例して伸びる）
                 Math.min(rBase * 0.9, tr * 0.18 * kB * tm), 1);
             }
           }
