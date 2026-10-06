@@ -4274,7 +4274,7 @@ function buildProcTrees(root, st, placed) {
         // らせん状（黄金角）に枝を約 14 本、横に近い角度で出す（下ほど長く、先は少し垂れる）。葉は枝の外側に「平たい葉の層」を並べる：
         // ほぼ水平な葉（ひし形の板・両面）を、枝の向きに長い楕円の中に散らす。光の当たり方は上向きを強めに混ぜ、層の上の面が明るく下が暗い。
         // 下の段の層ほど少し暗くする（上の葉の陰）
-        const tr = 0.022 * H, ONE = new THREE.Vector3(1, 1, 1);
+        const tr = 0.022 * H * Math.max(0.5, Math.min(3, st.trunkThick ?? 1)), ONE = new THREE.Vector3(1, 1, 1);   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
         const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));
         const bb = Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝のうねり（2026-10-06）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
