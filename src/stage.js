@@ -4388,8 +4388,9 @@ function buildProcTrees(root, st, placed) {
           const kinked = bb > 0 && depth > 0;
           const forks = [];
           if (kinked) {
-            const nF = hsh(5) < 0.5 ? 3 : 2;
-            const fs = Array.from({ length: nF }, (_, k) => 0.4 + 0.45 * hsh(10 + k)).sort((x, y) => x - y);
+            // 小枝の位置：根元から 15〜85% にほぼ等間隔（2026-10-06 ユーザー指定：小枝の出始めが遅く、長い枝が続いて見えた。以前は 40〜85% に 2〜3 本）
+            const nF = hsh(5) < 0.5 ? 4 : 3;
+            const fs = Array.from({ length: nF }, (_, k) => 0.15 + 0.7 * (k + 0.5 + (hsh(10 + k) - 0.5) * 0.7) / nF);
             fs.forEach((f, k) => forks.push({ f, sd: k % 2 ? 1 : -1 }));
           }
           const nodes = [{ f: 0, p: s0.clone(), dir: d.clone() }];   // 折れ線の節（f：根元 0 … 先 1、p：位置、dir：その節から先の向き）
@@ -4447,7 +4448,7 @@ function buildProcTrees(root, st, placed) {
             // 左右に 30〜50° 開いて少し上向きに出す。小枝の先側に層を置く（枝分かれ 2 は小枝からさらに 2 本ずつ孫枝を出し、層は孫枝の先へ）
             const fxE = kinked ? new THREE.Vector3(dirOn(1).x, 0, dirOn(1).z).normalize() : fx;   // 折れた枝は、先の向きで葉の層を置く
             pad(onMain(0.8), fxE, pr0, nl0, 0.8); pad(onMain(1), fxE, pr0, nl0, 1);
-            const nC = 2 + (r() < 0.5 ? 1 : 0);
+            const nC = 3 + (r() < 0.5 ? 1 : 0);   // 小枝は 3〜4 本（2026-10-06：以前は 2〜3 本）
             const twig = (base, hx, el2, L2, rad, lv) => {   // 小枝 1 本（base から、水平の向き hx・仰角 el2・長さ L2）。lv：1 小枝／2 孫枝
               const dv2 = hx.clone().multiplyScalar(Math.cos(el2)).add(new THREE.Vector3(0, Math.sin(el2), 0)).normalize();
               // 折れ（bb > 0）の時は、孫枝の出る 2 か所を先に決め、小枝もそこで孫枝と反対側へ折れる（2026-10-06 ユーザー指定）。
@@ -4491,7 +4492,7 @@ function buildProcTrees(root, st, placed) {
               }
             };
             for (let k = 0; k < nC; k++) {
-              const fr0 = 0.4 + 0.45 * r();
+              const fr0 = 0.15 + 0.7 * (k + 0.5 + (r() - 0.5) * 0.7) / nC;   // 根元から 15〜85% にほぼ等間隔（2026-10-06 ユーザー指定）
               if (kinked && k >= forks.length) { r(); r(); continue; }   // 折れた枝は節の数だけ小枝を出す（乱数の数は今まで通り引く）
               const f = kinked ? forks[k].f : fr0, sd = kinked ? forks[k].sd : (k % 2 ? 1 : -1);
               const hxB = kinked ? new THREE.Vector3(nodes[k].dir.x, 0, nodes[k].dir.z).normalize() : fx;   // 節の手前の枝の向き
