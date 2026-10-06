@@ -4503,7 +4503,7 @@ function buildProcTrees(root, st, placed) {
               if (lv < depth) {
                 for (let g = 0; g < 2; g++) {
                   const sd = g ? 1 : -1, h2 = (tk ? tHx(gf[g]) : hx).clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-                  twig(tAt(tk ? gf[g] : 0.5 + 0.35 * r()), h2, el2 + 0.1, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);
+                  twig(tAt(tk ? gf[g] : 0.5 + 0.35 * r()), h2, el2, L2 * (0.5 + 0.15 * r()), Math.min(rad * 0.7, rad * 0.5 * tm), lv + 1);
                 }
                 pad(tp.clone(), tDir(1), pr0 * 0.6, Math.round(nl0 * 0.45), 0.9);
               } else {
@@ -4517,7 +4517,7 @@ function buildProcTrees(root, st, placed) {
               const f = kinked ? forks[k].f : fr0, sd = kinked ? forks[k].sd : (k % 2 ? 1 : -1);
               const hxB = kinked ? new THREE.Vector3(nodes[k].dir.x, 0, nodes[k].dir.z).normalize() : fx;   // 節の手前の枝の向き
               const hx = hxB.clone().applyAxisAngle(UP, sd * (0.5 + 0.35 * r()));
-              twig(onMain(f), hx, el * 0.6 + 0.25, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)),   // 小枝の長さ（2026-10-06 ユーザー指定：0.5〜2.5 倍。孫枝も比例して伸びる）
+              twig(onMain(f), hx, el * 0.6, len * (0.38 + 0.15 * r()) * Math.max(0.5, Math.min(2.5, st.twigLen ?? 1)),   // 小枝の長さ（2026-10-06 ユーザー指定：0.5〜2.5 倍。孫枝も比例して伸びる）
                 Math.min(rBase * 0.9, tr * 0.18 * kB * tm), 1);
             }
           }
