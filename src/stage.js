@@ -4370,7 +4370,10 @@ function buildProcTrees(root, st, placed) {
           // 枝の付く高さは 6 つの段にまとめる（段と段の間にすき間ができ、GLB の木のように葉が段々に見える）
           const t = i / (nb - 1), tier = Math.round(t * 5) / 5, hgt = (0.25 + 0.65 * tier + (r() - 0.5) * 0.03) * H, lk = i % nTr;
           const az = nTr > 1 && hgt > forkH ? lead[lk].az + (r() - 0.5) * 2.2 : i * 2.39996 + r() * 0.5;   // 分かれた幹の枝は、その幹の外側寄りに
-          const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()) * wide, el = Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7);   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
+          const len = (0.48 - 0.32 * t) * H * (0.8 + 0.4 * r()) * wide;
+          // 枝の向き（2026-10-06 ユーザー指定：-60〜+30°。マイナスで地面の方向へ）。下向きの枝は、先が地面より上（高さの 10%）に残るよう角度に下限を付ける
+          const elMin = Math.asin(Math.max(-1, Math.min(1, (0.1 * H - hgt) / len))) + 0.2;
+          const el = Math.max(-1.2, elMin, Math.min(1.35, (0.3 + 0.35 * t + r() * 0.2) + (1 - Math.min(1, wide)) * 0.7 + deg(Math.max(-60, Math.min(30, st.branchAngle ?? 0)))));   // 斜め上へ（GLB の木の枝の向き）。広がりが狭いほど上向き
           const d = dirAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
           const dDown = dirAt(Math.cos(az) * Math.cos(el - 0.35), Math.sin(el - 0.35), Math.sin(az) * Math.cos(el - 0.35)).normalize();   // 先は垂れる
           // 枝の付け根の太さ：幹から 1 回分かれた分（分かれた幹から出る枝は 2 回分）細らせる。付け根の幹の太さを超えない
