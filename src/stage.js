@@ -4184,6 +4184,9 @@ function tickFall(dt) {
 // 葉は上ほど大きく風で揺らす（aSway：揺れの大きさ。時刻は水と同じ実時間）。高さ H は「高さ」×大きさのばらつき
 const TREE_LEAF = { fresh: '#6fb84a', deep: '#3d7a34', autumn: '#c4532e', yellow: '#d6a531' };
 const TREE_BARK = '#4d3c2e', TREE_DEAD = '#776652';   // 幹は GLB の木（広葉樹E）に寄せて、灰色がかった暗い茶（2026-10-05）
+// 広葉樹の既定値（2026-10-07 ユーザー指定：見本・v2・前の木を並べて見比べ、v2 のこの見た目を正式に採用）。値を持たない木はこの値で作る。
+// 編集画面の既定（main.js の TREE_BASE）もここから取る（2 か所に書かない）
+export const TREE_BROAD_DEFAULT = { branchDepth: 2, trunkThick: 2.2, tipTaper: 1, bend: 0.3 };
 function procTreeR(st) {   // 枝葉の広がり（水平の半径 [unit]、大きさ 1 の時）
   const H = Math.max(1, st.height ?? 9), sp = st.species ?? 'broad';
   const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1)), nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1)));
@@ -4277,21 +4280,21 @@ function buildProcTrees(root, st, placed) {
         // らせん状（黄金角）に枝を約 14 本、横に近い角度で出す（下ほど長く、先は少し垂れる）。葉は枝の外側に「平たい葉の層」を並べる：
         // ほぼ水平な葉（ひし形の板・両面）を、枝の向きに長い楕円の中に散らす。光の当たり方は上向きを強めに混ぜ、層の上の面が明るく下が暗い。
         // 下の段の層ほど少し暗くする（上の葉の陰）
-        const tr = 0.022 * H * Math.max(0.5, Math.min(3, st.trunkThick ?? 1)), ONE = new THREE.Vector3(1, 1, 1);
+        const tr = 0.022 * H * Math.max(0.5, Math.min(3, st.trunkThick ?? TREE_BROAD_DEFAULT.trunkThick)), ONE = new THREE.Vector3(1, 1, 1);
         // 細り方（2026-10-06 ユーザー指定）：幹分かれ・枝分かれのたびに太さへ掛ける倍率 tm。0.5 で今まで通り（1 倍）、0 で 2 倍（細くなりにくい）、1 で 0.5 倍。
         // 子は親より太くしない
         const tm = 0.5;   // 細り方：分かれるたびに太さ半分で固定（2026-10-06 ユーザー指定：スライダーをやめ、前の最大 1 で固定）
         // 先の細り（2026-10-06 ユーザー指定）：幹・分かれた幹・枝・小枝の 1 本の中で、先へ向かって細くなる度合い。先の太さ／根元の太さ の比を tipK 乗する
         //（0 で 1 乗＝今まで通り、1 で約 2.5 乗＝先がぐっと細い。2026-10-06 ユーザー指定：前の真ん中を最小に）
-        const tipK = Math.pow(2, Math.max(0, Math.min(1, st.tipTaper ?? 0)) * 1.3), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
+        const tipK = Math.pow(2, Math.max(0, Math.min(1, st.tipTaper ?? TREE_BROAD_DEFAULT.tipTaper)) * 1.3), endR = (r0, ratio) => r0 * Math.pow(ratio, tipK);   // 小枝の中に tp（先の点）があるので別名に   // 幹の太さ（2026-10-06 ユーザー指定：0.5〜3 倍。枝も合わせて太くなる）
         const wide = Math.max(0.3, Math.min(1.5, st.branchSpread ?? 1));
-        const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? 1)));
+        const depth = Math.max(0, Math.min(2, Math.round(st.branchDepth ?? TREE_BROAD_DEFAULT.branchDepth)));
         const bb = 0.5 + 1.5 * Math.max(0, Math.min(1, st.branchBend ?? 0));   // 枝の折れの強さ（2026-10-06 ユーザー指定：前の真ん中 0.5 を最小に、最大は前の 2 倍）。   // 枝のうねり（2026-10-06。一度 2 まで広げたが、1 を上限に戻した＝真ん中の木を最大に。同日ユーザー指定。幹の曲がりとは別）   // 枝分かれ（2026-10-06）：0 今まで通り／1 小枝まで／2 孫枝まで   // 枝の広がり（2026-10-05 ユーザー指定）：枝の長さ・葉の層の大きさに掛け、狭いほど枝を上向きに
         // 幹の分かれ（2026-10-06 ユーザー指定）：幹の本数 2・3 で、分かれる高さ（木の高さの 15〜70%）から幹を外側へ約 18° 傾けててっぺんへ伸ばす。
         // 枝は分かれた幹に順に振り分け、その幹の傾いている向き（外側）寄りに出す
         const nTr = Math.max(1, Math.min(3, Math.round(st.trunks ?? 1))), forkH = Math.max(10, Math.min(45, st.forkPct ?? (st.forkH != null ? st.forkH * 100 : 35))) / 100 * H, TILT = 0.32;   // 分かれる高さ [%]（2026-10-06 ユーザー指定：% で 10〜45。以前の割合 forkH も読む）
         // 幹の曲がり（2026-10-06 ユーザー指定）：幹を節に分け、高さごとにゆるく左右へうねらせる（根元は動かさず、上ほど大きく）。分かれた幹も同じ
-        const bend = Math.max(0, Math.min(1, st.bend ?? 0)), TOP = 0.95 * H;
+        const bend = Math.max(0, Math.min(1, st.bend ?? TREE_BROAD_DEFAULT.bend)), TOP = 0.95 * H;
         // うねりの細かさ：幹・枝とも常に、ゆったりした曲がりの約 2.8 倍の回数で細かくくねらせる（2026-10-06 ユーザー指定：大きくゆったり曲がるだけの
         // うねりにはならないように。細かさのスライダーは置かず、比べて気に入った 0.6 相当で固定）。ずれ幅は最大で高さの 16%
         const wq = 2.8;
@@ -4377,7 +4380,9 @@ function buildProcTrees(root, st, placed) {
         // 作り方 v2（2026-10-07 ユーザー指定：見本を真似た最初の木＝2576dd3 の枝を土台に、葉（A）・落ち葉（B）・幹（C）の変更だけを載せる）。
         // 枝は 2576dd3 のまま（高さだけ 03a557f の並べ方）：斜め上へまっすぐ伸び先が少し垂れる。折れ・枝の向きなどのスライダーは効かない（枝分かれ・小枝の長さは効く）。
         // 幹の太さ・本数・分かれる高さ・曲がり・先の細り・最低の太さは効く（枝の付け根は曲がった幹・分かれた幹の上）
-        if (st.build === 'v2') {
+        // 正式採用（2026-10-07 ユーザー指定）：広葉樹は印が無くても v2 で作る。前の作り方は build: 'v1' の印を付けた木だけ（比較用に残置）
+        const useV2 = st.build !== 'v1';
+        if (useV2) {
           // 頭を垂れる枝（2026-10-07 ユーザー指定：見本の枝は先へ行くほど頭を垂れる。以前は主枝が 6 割の所で 1 回だけ折れ、小枝はまっすぐだった）。
           // 根元 p0 から水平の向き hx・仰角 e0 で出て、n 節で長さ L を進み、節ごとに先ほど大きく下へ曲げる（先で合計 droop [rad] 下がる）
           const DROOP = 0.45;
@@ -4462,7 +4467,7 @@ function buildProcTrees(root, st, placed) {
             }
           }
         }
-        if (st.build !== 'v2') for (let i = 0; i < nb; i++) {
+        if (!useV2) for (let i = 0; i < nb; i++) {
           // 枝の付く高さ（2026-10-06 ユーザー指定：同じ高さから何本も出て見えたので、互い違いに・高さの重複なし）：幹の 25〜90% に等間隔に並べ、
           // 間隔の ±30% だけずらす（隣の枝と高さが重ならない）。向きは 1 本ごとに約 137° 回る。以前は 6 つの段にまとめていた
           const t = i / (nb - 1), hgt = (0.25 + 0.65 * t + (r() - 0.5) * 0.6 * 0.65 / (nb - 1)) * H, lk = i % nTr;
