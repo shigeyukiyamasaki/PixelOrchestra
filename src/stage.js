@@ -538,10 +538,11 @@ export function createStage(container) {
   sh.lineTo(X, yEdge);
   sh.absarc(0, cy, R, Math.atan2(yEdge - cy, X), Math.atan2(yEdge - cy, -X), false);
   sh.lineTo(-X, -FLOOR_Z_FRONT);
-  const floorMat = stageMat({ map: floorMapOf(floorTex), color: '#e6e6e6' });
+  const floorMat = stepPatch(stageMat({ map: floorMapOf(floorTex), color: '#e6e6e6' }), 'surf', 0);   // 段差で掘った所は描かない（2026-10-08）
   const floor = new THREE.Mesh(new THREE.ShapeGeometry(sh, 64), floorMat);
   floor.rotation.x = -Math.PI / 2;
   addStage(floor, -40);
+  const steps = new THREE.Group(); steps.name = 'steps'; scene.add(steps);   // 段差の底と壁（2026-10-08 ユーザー指定）
   const skirt = new THREE.Group(); skirt.name = 'floorSkirt'; scene.add(skirt);   // 床の厚み（外周の側面）。buildFloorSkirt で組む
 
   // ひな壇は座席が決まってから buildRisers() で作る（扇形：使われている角度だけ）
@@ -568,7 +569,7 @@ export function createStage(container) {
   scene.add(weather);
   const flashLight = new THREE.AmbientLight('#cfe0ff', 0); flashLight.layers.enable(METAL_LAYER); flashLight.layers.enable(PLAYER_LAYER);   // 雷が舞台を照らすぶん（updateWeather が毎フレーム決める）
   scene.add(flashLight);
-  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, masonry, trees, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
+  stageCtx = { models, stones, grass, water, dirt, sand, road, pillars, masonry, trees, steps, floorMesh: floor, stageMeshes, scene, floorTex, grassTex: null, groundTex: floorTex, floorMat, stageMat, addStage, risers, skirt, screens, domes, weather, flashLight, hemi, amb, spots, sun, sky, sunOnly, bloom: { el: 0, cloud: 0, vis: 0, dip: 0, gain: 1 }, seats: [] };
   buildRisers([]);
   buildFloorSkirt();
 
@@ -751,6 +752,7 @@ export function setFloorStyle(style) {
   stageCtx.floorMat.map = floorMapOf(tex);
   stageCtx.floorMat.needsUpdate = true;
   buildRisers(stageCtx.seats);   // ひな壇の天面も同じ地面の絵にする
+  buildSteps();                  // 段差の底と壁も同じ絵にする（2026-10-08）
   buildFloorSkirt();             // 床の側面の絵も床のスタイルに合わせる
 }
 
@@ -953,7 +955,7 @@ export function pixelGroups() {
   // 本編で描く床に塗られて消えた。そのため一時は水のシェーダーが自分でドットに揃えていた（WATER_PIX.uPixDot。今は使わない）
   // 水・土は「舞台」に入れて、床と一緒にドット化用の絵に描く（2026-10-05 ユーザー指摘：ちらつき抑えで石の縁に下の草の色が付いた。
   // 本編で後から描いていた時は、ドットにまとめる時に床の草の色だけが混ざった）。床も同じ絵に入るので、以前の「水が床に塗られて消える」は起きない
-  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars, stageCtx.masonry, stageCtx.trees], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
+  return { stage: [...stageCtx.stageMeshes, stageCtx.skirt, stageCtx.steps, stageCtx.risers, stageCtx.water, stageCtx.dirt, stageCtx.sand, stageCtx.road], models: [stageCtx.models, stageCtx.stones, stageCtx.grass, stageCtx.pillars, stageCtx.masonry, stageCtx.trees], screens: [stageCtx.screens], domes: [stageCtx.domes], weather: [stageCtx.weather] };
 }
 // トゥーン陰影（明るさを段に丸める）は試したが外した（2026-09-30 ユーザー指定）
 export function setPixelPlayers(o) { Object.assign(pix, o); }
@@ -1495,10 +1497,10 @@ export function buildFloorSkirt() {
   const { skirt, stageMat } = stageCtx;
   skirt.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   skirt.clear();
-  const h = ROWS.woodwind.h;                                  // 1 段目と同じ高さ
+  const h = Math.max(ROWS.woodwind.h, STEP_DEEP + 0.5);       // 1 段目と同じ高さ。段差の一番深い底より 0.5 下までは伸ばす（2026-10-08）
   const X = FLOOR_X_HALF, F = FLOOR_Z_FRONT, R = FLOOR_BACK_R, cy = -SEAT_SHIFT_Z;
   const yEdge = cy + Math.sqrt(Math.max(0, R * R - X * X)); // 左右の辺と弧が交わる位置（shape 座標。世界の z = −yEdge）
-  const mat = (uLen) => stageMat({ ...wallSkin(uLen, h, '#5f4c2f'), side: THREE.DoubleSide });
+  const mat = (uLen) => stepPatch(stageMat({ ...wallSkin(uLen, h, '#5f4c2f'), side: THREE.DoubleSide }), 'skirt');   // 段差が縁に達した所は、地面より上を描かない（切り欠き）
   const add = (mesh) => { mesh.receiveShadow = true; mesh.renderOrder = -41; skirt.add(mesh); };
   // 前（z = +F、+z を向く）
   const front = new THREE.Mesh(new THREE.PlaneGeometry(2 * X, h), mat(2 * X));
@@ -1535,7 +1537,7 @@ export function buildRisers(seats) {
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
-  queueMicrotask(() => { if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
+  queueMicrotask(() => { if (stepList.length) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -2092,7 +2094,7 @@ function buildStones() {
         const rad = shapes[pi].s.r * k * MODEL_M;
         if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < (q.rad + rad) * STONE_GAP)) continue;
         placed.push({ x, z, rad });
-        const mat = _sm.compose(_sp.set(x, st.y ?? 0, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();
+        const mat = _sm.compose(_sp.set(x, (st.y ?? 0) + stepHAt(x, z), z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();   // 段差で掘った所では、その底に乗せる（2026-10-08。ひな壇の高さは足さない：段の上の物は高さを数字で持たせてあるため）
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
         if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
@@ -2353,7 +2355,7 @@ function buildGrass() {
       // 「草・石をよける」水場：株の中心が水に近い（株の半径の半分以内）ものは置かない。1 株が大きいので、少しでも重なったら除くと岸の草が消えすぎる
       if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'grass') < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;
       if (st.avoidPlayers && playersSdfAt(x, z) < shapes[pi].s.r * sc * MODEL_M * 0.5) continue;   // 「奏者をよける」：株の中心が奏者のまわりの陸地に近いものは置かない（2026-10-04）   // 中心が床の外の株は置かない（はみ出した分は描く時に消す）
-      per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + riserTopAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
+      per[pi].push([_sm.compose(_sp.set(x, (st.y ?? 0) + groundYAt(x, z), z),   // ひな壇の上ではその天面から生やす（2026-10-04）
          _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(sc * MODEL_M)).clone(), shade]);
     }
     shapes.forEach((p, pi) => {
@@ -2422,7 +2424,13 @@ export function setWaterPlayers(roots, conductorRoot = null) {
   // 草の「奏者をよける」（2026-10-04 ユーザー指定）：奏者の位置が変わった時（MIDI の読み込み・並びの変更）だけ草を並べ直す
   let sig = '';
   for (let i = 0; i < n; i++) { const v = WATER_PL.uPl.value[i]; sig += `${v.x.toFixed(1)},${v.y.toFixed(1)};`; }
-  if (sig !== plSig) { plSig = sig; if (grassList.some((g) => g.avoidPlayers && g.show !== false)) buildGrass(); if (treeList.some((t) => t.avoidPlayers !== false && t.show !== false)) buildTrees(); }
+  if (sig !== plSig) {
+    plSig = sig;
+    const st = stepList.some((o) => o.show !== false);   // 段差は奏者の足元を掘らないので、段差と、その高さに乗る水・草・木も組み直す（2026-10-08）
+    if (st) buildStepsAndRiders();
+    if (st || grassList.some((g) => g.avoidPlayers && g.show !== false)) buildGrass();
+    if (st || treeList.some((t) => t.avoidPlayers !== false && t.show !== false)) buildTrees();
+  }
 }
 let plSig = '';
 // 奏者のまわりの陸地までの距離（負が陸地の中）。水のシェーダー（pxoWaterSDF0 の「奏者をよける」）と同じ半径・同じなめらかなつなぎ方
@@ -2458,10 +2466,10 @@ const DIRT_MAX_C = 160;    // 土の円の数の上限（水の 64 より多い�
 function dirtMaterial(kind = 'dirt') {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   m.userData.u = { uC: { value: Array.from({ length: DIRT_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
-    uHL: { value: 0 }, uShade: { value: 1 }, uEdge: { value: 0.5 }, uSeed: { value: 0 }, uRot: { value: new THREE.Vector4(1, 0, 0, 0) }, uRipple: { value: 0.5 } };   // uRot：(cos 向き, sin 向き, 中心 x, 中心 z)、uRipple：砂の風紋の強さ
+    uHL: { value: 0 }, uShade: { value: 1 }, uEdge: { value: 0.5 }, uSeed: { value: 0 }, uRot: { value: new THREE.Vector4(1, 0, 0, 0) }, uRipple: { value: 0.5 }, uStepLv: { value: 0 } };   // uRot：(cos 向き, sin 向き, 中心 x, 中心 z)、uRipple：砂の風紋の強さ
   m.extensions = { derivatives: true };
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
+    Object.assign(shader.uniforms, WATER_PIX, STEP_U, m.userData.u);
     shader.vertexShader = 'varying vec3 pxoWW;\n' + shader.vertexShader
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
     shader.fragmentShader = `varying vec3 pxoWW;
@@ -2474,7 +2482,8 @@ ${WATER_NOISE_GLSL}
 ${circlesSdfGlsl(DIRT_MAX_C)}
 ${PIX_QUANT_GLSL}
 ${FLOOR_GLSL}
-float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ（0〜1。格子の向きが見えない）
+uniform float uStepLv;
+${STEP_GLSL}float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ（0〜1。格子の向きが見えない）
   float v = 0.0, a = 0.5;
   for ( int i = 0; i < 3; i ++ ) { v += a * pxoWN( p ); p = mat2( 0.8, -0.6, 0.6, 0.8 ) * p * 2.03 + 1.7; a *= 0.5; }
   return v / 0.875;
@@ -2488,6 +2497,8 @@ float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ねたノイズ
     P += dFdx( pxoWW ) * dc.x + dFdy( pxoWW ) * dc.y;
   }
   if ( pxoOutsideFloor( P ) ) discard;
+  // 地形に沿って切り取る（2026-10-08 ユーザー指定：石畳と同じく、砂・土も）。乗っている高さ uStepLv と、その場所の地面の高さが違えば描かない
+  if ( abs( pxoStepH( P.xz, 0.0 ) - uStepLv ) > 0.001 ) discard;
   // 模様・縁のむらは、中心のまわりに「向き」の分だけ回した座標で描く（地肌と一緒に回る。2026-10-05）
   vec2 rel = P.xz - uRot.zw;
   vec2 q = vec2( rel.x * uRot.x - rel.y * uRot.y, rel.x * uRot.y + rel.y * uRot.x ) + uSeed;
@@ -2554,7 +2565,7 @@ ${kind === 'sand' ? `  // 砂（2026-10-05 ユーザー指定）：明るいベ�
     if ( gl_FragColor.a <= 0.0 ) discard;
   }`);
   };
-  m.customProgramCacheKey = () => `pxo-${kind}-v8`;
+  m.customProgramCacheKey = () => `pxo-${kind}-v9`;
   return m;
 }
 function buildDirt() {   // 土と砂（2026-10-05）
@@ -2582,15 +2593,241 @@ function buildDirt() {   // 土と砂（2026-10-05）
       u.uRipple.value = Math.max(0, Math.min(1, st.ripple ?? 0.5));
       u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
       u.uRot.value.set(Math.cos(deg(st.dir ?? 0)), Math.sin(deg(st.dir ?? 0)), st.x ?? 0, st.z ?? 0);
+      const lv = stepLevelOf(cs);   // 乗る地面の高さ：円が一番多くかかっている高さ（段差の底にまるごと入っていれば、その底）。違う高さの所は描かない
+      u.uStepLv.value = lv;
       const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
       geo.rotateX(-Math.PI / 2);
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + lift, (z0 + z1) / 2);
+      mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + lift + lv, (z0 + z1) / 2);
       mesh.receiveShadow = true; mesh.renderOrder = order;   // 砂 → 土 → 水（-10）の順に描く＝水が一番上
       mesh.userData.pxoCard = ci;
       g.add(mesh);
     });
   }
+}
+// ---- 段差（2026-10-08 ユーザー指定：床に、今の高さより凹ませた低い所を作る。低い所を流れる川などのため）----
+// カード 1 枚が「範囲」と「深さ」を持ち、床をその深さだけ掘る。重なった所は足し算（-1 の中に -1 を置くと -2）。岸は垂直の壁。
+// 奏者・指揮者の足元とひな壇は掘らない（奏者の位置は変えない）。盛る方は作らない（階段などの物でやる。同日ユーザー指定）。
+// 範囲は土・水と同じ「円の並び＋なめらかなつなぎ」。0.1 unit の格子に「縁までの距離」をカードごとに焼き（テクスチャ 2 枚の 8 チャンネル＝8 枚まで）、
+//   ・床と底の面：床と同じ形の板を高さごとに 1 枚ずつ置き、シェーダーがこのテクスチャを見て「その高さの所だけ」描く
+//   ・壁：同じ格子から輪郭を取り出して（マーチングスクエア）板を立てる。面と壁が同じ値を見るので、縁がずれない
+//   ・床の縁の断面：同じテクスチャで「地面より上」を描かない（縁に達した段差は切り欠きになる）
+// 物の高さ（y）は絶対値ではなく、その場所の地面からの高さ。地面の高さは groundYAt(x, z)（ひな壇の天面＋掘った深さ）で引く
+const STEP_MAX = 8;            // カードの数の上限（テクスチャ 2 枚 × 4 チャンネル）
+const STEP_CELL = 0.1;         // 格子の細かさ [unit]
+const STEP_GROW = 0.06;        // 底の面を範囲の外へはみ出させる量 [unit]（壁との間に隙間を出さない。はみ出した分は上の床に隠れる）
+const STEP_PAD = 1;            // 格子を床の外へ広げる量 [unit]
+const STEP_RISER_GAP = 0.3;    // ひな壇の壁から、これより近くは掘らない [unit]
+const STEP_STRIP_W = 30;       // 帯の幅の上限 [unit]（2026-10-08 ユーザー指定：もっと広く。川の 5 より広い）
+const STEP_NUDGE = 0.05;       // 縁の両側の高さを見る時に、縁から離す量 [unit]
+const STEP_X0 = -(FLOOR_X_HALF + STEP_PAD), STEP_Z0 = SEAT_SHIFT_Z - FLOOR_BACK_R - STEP_PAD;
+const STEP_W = Math.ceil((2 * (FLOOR_X_HALF + STEP_PAD)) / STEP_CELL) + 1, STEP_H = Math.ceil((FLOOR_Z_FRONT + STEP_PAD - STEP_Z0) / STEP_CELL) + 1;
+// 距離は ±1 unit を 8 ビットに詰める（128 が縁、1 段 ≒ 0.008 unit）。半精度の小数テクスチャは端末によって補間が効かないので使わない
+const stepTex = () => {
+  const t = new THREE.DataTexture(new Uint8Array(STEP_W * STEP_H * 4).fill(255), STEP_W, STEP_H, THREE.RGBAFormat);
+  t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return t;
+};
+const STEP_U = { uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
+  uStepRect: { value: new THREE.Vector4(STEP_X0 - STEP_CELL / 2, STEP_Z0 - STEP_CELL / 2, 1 / (STEP_W * STEP_CELL), 1 / (STEP_H * STEP_CELL)) } };
+const STEP_GLSL = `uniform sampler2D uStepA, uStepB;
+uniform vec4 uStepDA, uStepDB, uStepRect;
+float pxoStepH( vec2 p, float grow ) {   // 掘った深さの合計（0 以下）。grow：範囲を外へ広げる量
+  vec2 uv = ( p - uStepRect.xy ) * uStepRect.zw;
+  vec4 a = ( texture2D( uStepA, uv ) * 255.0 - 128.0 ) / 127.0, b = ( texture2D( uStepB, uv ) * 255.0 - 128.0 ) / 127.0;
+  return - dot( uStepDA, step( a, vec4( grow ) ) ) - dot( uStepDB, step( b, vec4( grow ) ) );
+}
+`;
+// 材質に段差の判定を差し込む。mode：'surf'（床・底の面。level の高さの所だけ描く）／'skirt'（床の縁の断面。地面より上を描かない）
+function stepPatch(mat, mode, level = 0) {
+  const u = { uStepLv: { value: level } };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, STEP_U, u);
+    shader.vertexShader = 'varying vec3 pxoSW;\n' + shader.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  pxoSW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = 'uniform float uStepLv;\nvarying vec3 pxoSW;\n' + STEP_GLSL + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+${mode === 'skirt' ? '  if ( pxoSW.y > pxoStepH( pxoSW.xz, 0.0 ) + 0.0005 ) discard;' : `  {
+    if ( pxoStepH( pxoSW.xz, 0.0 ) < uStepLv - 0.001 ) discard;                                   // もっと深く掘ってある所
+    if ( uStepLv < -0.001 && pxoStepH( pxoSW.xz, ${STEP_GROW.toFixed(3)} ) > uStepLv + 0.001 ) discard;   // ここまで掘っていない所
+  }`}`);
+  };
+  mat.customProgramCacheKey = () => `pxo-step-${mode}-v1`;
+  return mat;
+}
+let stepList = [], STEP_D = new Array(STEP_MAX).fill(0), STEP_DEEP = 0;   // STEP_D：チャンネルごとの深さ、STEP_DEEP：一番深い所
+/** 段差の一覧。草・木・水は地面の高さに従うので組み直す */
+export function setSteps(list) { stepList = (list || []).map((o) => ({ ...o })); rebuildSteps(); }
+// 段差を組み、その高さに乗る物（水・土・砂・石畳・石・柱・石組み・3D モデル）を組み直す。草・木は呼ぶ側で（奏者をよける設定などの条件があるため）
+function buildStepsAndRiders() { buildSteps(); buildWater(); buildDirt(); buildRoad(); buildPillars(); buildMasonry(); buildModels(); buildStones(); }
+function rebuildSteps() { buildStepsAndRiders(); buildGrass(); buildTrees(); }
+const stepData = (c) => (c < 4 ? STEP_U.uStepA : STEP_U.uStepB).value.image.data;
+function stepSd(c, x, z) {   // カード c の縁までの距離（負が中）。格子の値を、シェーダーのテクスチャと同じ補間で読む
+  const fx = Math.max(0, Math.min(STEP_W - 1.001, (x - STEP_X0) / STEP_CELL)), fz = Math.max(0, Math.min(STEP_H - 1.001, (z - STEP_Z0) / STEP_CELL));
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, d = stepData(c), w4 = STEP_W * 4, p = (j * STEP_W + i) * 4 + (c & 3);
+  const a = d[p], b = d[p + 4], e = d[p + w4], f = d[p + w4 + 4];
+  return ((a + (b - a) * tx) * (1 - tz) + (e + (f - e) * tx) * tz - 128) / 127;
+}
+function stepHAt(x, z) {   // 掘った深さの合計（0 以下）。シェーダーの pxoStepH( p, 0 ) と同じ
+  let h = 0;
+  for (let c = 0; c < STEP_MAX; c++) if (STEP_D[c] > 0 && stepSd(c, x, z) <= 0) h -= STEP_D[c];
+  return h;
+}
+/** その場所の地面の高さ [unit]：ひな壇の上なら天面、掘った所ならその底（ひな壇は掘らないので、どちらか片方だけが効く） */
+export function groundYAt(x, z) { return riserTopAt(x, z) + stepHAt(x, z); }
+function stepLevelOf(cs) {   // 円の並び（水場など）が乗っている地面の高さ：円の中心で一番多い高さ
+  const cnt = new Map(); let best = 0, n = 0;
+  for (const c of cs) { const h = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000, k = (cnt.get(h) || 0) + 1; cnt.set(h, k); if (k > n) { n = k; best = h; } }
+  return best;
+}
+function riserSdAt(x, z) {   // 一番近いひな壇の縁までの距離（負が中。おおよそ）。範囲の取り方は riserTopAt と同じ
+  const dz = z - SEAT_SHIFT_Z, r = Math.hypot(x, dz), th = Math.atan2(x, -dz);
+  let best = 1e5;
+  for (const f of RISER_FOOT) {
+    let d = Math.max(f.rIn - r, r - f.rOut, (f.thMin - th) * r, (th - f.thMax) * r);
+    if (f.clipX) d = Math.max(d, Math.abs(x) - f.clipX);
+    best = Math.min(best, d);
+  }
+  return best;
+}
+const stepExclAt = (x, z) => Math.min(playersSdfAt(x, z), riserSdAt(x, z) - STEP_RISER_GAP);   // 掘らない所（奏者の足元・ひな壇）の縁までの距離（負が中）
+function circlesSd(cs, k, x, z) {   // 円の並びをなめらかにつないだ形の縁までの距離（シェーダーの pxoCirclesSDF と同じ）
+  let d = 1e5;
+  for (const c of cs) { const di = Math.hypot(x - c[0], z - c[1]) - c[2], h = Math.max(0, Math.min(1, 0.5 + 0.5 * (di - d) / k)); d = di * (1 - h) + d * h - k * h * (1 - h); }
+  return d;
+}
+// 範囲の形：'pool' は池の形（土・砂と同じ）、'strip' は帯（川と同じ決め方。分かれ・散らばりは使わない）
+const stepCircles = (st) => (st.shape === 'strip' ? riverCircles({ ...st, pieces: 1, scatter: 0 }, STEP_STRIP_W) : lakeCircles(st, true));
+// マーチングスクエア：角の内外（1: 左下 / 2: 右下 / 4: 右上 / 8: 左上）→ 輪郭が通る辺の組（0: 下 / 1: 右 / 2: 上 / 3: 左）。5・10 は真ん中の値で決める
+const STEP_MS = { 1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]], 6: [[0, 2]], 7: [[3, 2]], 8: [[2, 3]], 9: [[0, 2]], 11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]] };
+function buildSteps() {
+  if (!stageCtx) return;
+  const g = stageCtx.steps;
+  for (const o of g.children) { if (!o.userData.sharedGeo) o.geometry.dispose(); stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); }
+  g.clear();
+  stepData(0).fill(255); stepData(4).fill(255);
+  STEP_D = new Array(STEP_MAX).fill(0);
+  const X = (i) => STEP_X0 + i * STEP_CELL, Z = (j) => STEP_Z0 + j * STEP_CELL, cards = [];
+  for (const st of stepList) {
+    if (cards.length >= STEP_MAX) { console.warn(`段差は ${STEP_MAX} 枚まで。それより後のカードは使わない`); break; }
+    const depth = Math.max(0, st.depth ?? 1);
+    if (st.show === false || depth <= 0) continue;
+    const cs = stepCircles(st);
+    if (!cs.length) continue;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
+    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
+    const k = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2), pad = k * 0.75 + 0.3;   // 円のつなぎのふくらみ（水・土と同じく 0.75k）
+    const cl = (v, hi) => Math.max(0, Math.min(hi, v));
+    const i0 = cl(Math.floor((x0 - pad - STEP_X0) / STEP_CELL), STEP_W - 1), i1 = cl(Math.ceil((x1 + pad - STEP_X0) / STEP_CELL), STEP_W - 1);
+    const j0 = cl(Math.floor((z0 - pad - STEP_Z0) / STEP_CELL), STEP_H - 1), j1 = cl(Math.ceil((z1 + pad - STEP_Z0) / STEP_CELL), STEP_H - 1);
+    const c = cards.length, d = stepData(c), o = c & 3;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      let sd = circlesSd(cs, k, X(i), Z(j));
+      if (sd < 0.25) sd = Math.max(sd, -stepExclAt(X(i), Z(j)));   // 奏者の足元・ひな壇は範囲から外す（縁の近くだけ調べる）
+      d[(j * STEP_W + i) * 4 + o] = Math.max(0, Math.min(255, Math.round(sd * 127 + 128)));
+    }
+    STEP_D[c] = depth;
+    cards.push({ cs, k, i0, i1, j0, j1 });
+  }
+  STEP_U.uStepA.value.needsUpdate = STEP_U.uStepB.value.needsUpdate = true;
+  STEP_U.uStepDA.value.set(STEP_D[0], STEP_D[1], STEP_D[2], STEP_D[3]); STEP_U.uStepDB.value.set(STEP_D[4], STEP_D[5], STEP_D[6], STEP_D[7]);
+  // 底の面：実際に現れる高さごとに、床と同じ形の板を 1 枚（床の絵・色も同じ）
+  const levels = new Set();
+  for (const cd of cards) for (let j = cd.j0; j <= cd.j1; j += 2) for (let i = cd.i0; i <= cd.i1; i += 2) {
+    if (!insideFloor(X(i), Z(j))) continue;
+    const h = stepHAt(X(i), Z(j));
+    if (h < 0) levels.add(Math.round(h * 1000) / 1000);
+  }
+  for (const L of levels) {
+    const m = new THREE.Mesh(stageCtx.floorMesh.geometry, stepPatch(stageCtx.stageMat({ map: stageCtx.floorMat.map, color: '#e6e6e6' }), 'surf', L));
+    m.rotation.x = -Math.PI / 2; m.position.y = L; m.receiveShadow = true; m.renderOrder = -40; m.userData.sharedGeo = true;
+    g.add(m);
+  }
+  // 壁：カードごとに輪郭を取り出してつなぎ、縁の両側の高さの差だけ板を立てる。上端と下端の組ごとに 1 つのメッシュ（壁の絵は高さごとに作る）
+  const groups = new Map();   // `${上端}|${下端}` → { pos, nor, uv }
+  cards.forEach((cd, c) => {
+    const d = stepData(c), o = c & 3, V = (i, j) => (d[(j * STEP_W + i) * 4 + o] - 128) / 127, segs = [];
+    for (let j = Math.max(0, cd.j0 - 1); j < Math.min(STEP_H - 1, cd.j1 + 1); j++) for (let i = Math.max(0, cd.i0 - 1); i < Math.min(STEP_W - 1, cd.i1 + 1); i++) {
+      const v0 = V(i, j), v1 = V(i + 1, j), v2 = V(i + 1, j + 1), v3 = V(i, j + 1);
+      const m = (v0 <= 0 ? 1 : 0) | (v1 <= 0 ? 2 : 0) | (v2 <= 0 ? 4 : 0) | (v3 <= 0 ? 8 : 0);
+      if (m === 0 || m === 15) continue;
+      const mid = (v0 + v1 + v2 + v3) / 4 <= 0;
+      const pairs = m === 5 ? (mid ? [[0, 1], [2, 3]] : [[3, 0], [1, 2]]) : m === 10 ? (mid ? [[3, 0], [1, 2]] : [[0, 1], [2, 3]]) : STEP_MS[m];
+      const P = (e) => (e === 0 ? [X(i) + (v0 / (v0 - v1)) * STEP_CELL, Z(j), `h${i},${j}`] : e === 1 ? [X(i + 1), Z(j) + (v1 / (v1 - v2)) * STEP_CELL, `v${i + 1},${j}`]
+        : e === 2 ? [X(i) + (v3 / (v3 - v2)) * STEP_CELL, Z(j + 1), `h${i},${j + 1}`] : [X(i), Z(j) + (v0 / (v0 - v3)) * STEP_CELL, `v${i},${j}`]);
+      for (const [ea, eb] of pairs) { const a = P(ea), b = P(eb); segs.push([a[0], a[1], b[0], b[1], a[2], b[2]]); }
+    }
+    // 線分を、格子の辺を共有する物どうしでつないで折れ線にする（壁の絵の横の位置を、輪郭に沿った長さで決めるため）
+    const byKey = new Map(), used = new Uint8Array(segs.length);
+    segs.forEach((s, n) => { for (const key of [s[4], s[5]]) { if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(n); } });
+    for (let n = 0; n < segs.length; n++) {
+      if (used[n]) continue;
+      used[n] = 1;
+      const s = segs[n], line = [[s[0], s[1]], [s[2], s[3]]];
+      for (const fwd of [true, false]) {
+        let key = fwd ? s[5] : s[4];
+        for (let guard = 0; guard < segs.length; guard++) {
+          const nx = byKey.get(key).find((q) => !used[q]);
+          if (nx == null) break;
+          used[nx] = 1;
+          const t = segs[nx], same = t[4] === key, p = same ? [t[2], t[3]] : [t[0], t[1]];
+          key = same ? t[5] : t[4];
+          if (fwd) line.push(p); else line.unshift(p);
+        }
+      }
+      let u = 0;
+      for (let q = 0; q + 1 < line.length; q++) {
+        let [ax, az] = line[q], [bx, bz] = line[q + 1], ua = u;
+        const len = Math.hypot(bx - ax, bz - az);
+        u += len;
+        let ub = u;
+        if (len < 1e-6) continue;
+        // 床の外は作らない。床の縁をまたぐ線分は、縁の所で切る（2 分法）
+        const ia = insideFloor(ax, az), ib = insideFloor(bx, bz);
+        if (!ia && !ib) continue;
+        if (ia !== ib) {
+          let lo = 0, hi = 1;   // lo：床の中の側、hi：外の側（a から b への割合。a が外なら逆に持つ）
+          for (let it = 0; it < 12; it++) { const t = (lo + hi) / 2, tt = ia ? t : 1 - t; if (insideFloor(ax + (bx - ax) * tt, az + (bz - az) * tt)) lo = t; else hi = t; }
+          const tt = ia ? lo : 1 - lo, cx = ax + (bx - ax) * tt, cz = az + (bz - az) * tt, cu = ua + (ub - ua) * tt;
+          if (ia) { bx = cx; bz = cz; ub = cu; } else { ax = cx; az = cz; ua = cu; }
+        }
+        const l2 = Math.hypot(bx - ax, bz - az);
+        if (l2 < 1e-6) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        let nx = -(bz - az) / l2, nz = (bx - ax) / l2;   // 線分に直角な向き。掘ってある側（距離が小さくなる側）へ向ける
+        if (stepSd(c, mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) > stepSd(c, mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; [ax, az, bx, bz, ua, ub] = [bx, bz, ax, az, ub, ua]; }
+        const ix = mx + nx * STEP_NUDGE, iz = mz + nz * STEP_NUDGE;
+        const top = Math.round(stepHAt(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE) * 1000) / 1000, bot = Math.round(stepHAt(ix, iz) * 1000) / 1000;
+        if (!(bot < top - 0.001)) continue;
+        // 奏者・ひな壇をよけた縁は、重なったカードどうしで同じ線になる。壁を 2 重に立てないよう、内側を掘っているカードのうち最初の 1 枚だけが立てる
+        if (-stepExclAt(mx, mz) > circlesSd(cd.cs, cd.k, mx, mz) - 0.02) {
+          let first = -1;
+          for (let w = 0; w < cards.length; w++) if (stepSd(w, ix, iz) <= 0) { first = w; break; }
+          if (first !== c) continue;
+        }
+        const key = `${top}|${bot}`;
+        if (!groups.has(key)) groups.set(key, { top, bot, pos: [], nor: [], uv: [] });
+        const G = groups.get(key);
+        // 表（法線の向き＝掘ってある側）から見て反時計回りになる順に 2 枚の三角形
+        G.pos.push(ax, top, az, ax, bot, az, bx, bot, bz, ax, top, az, bx, bot, bz, bx, top, bz);
+        for (let w = 0; w < 6; w++) G.nor.push(nx, 0, nz);
+        G.uv.push(ua, 1, ua, 0, ub, 0, ua, 1, ub, 0, ub, 1);
+      }
+    }
+  });
+  for (const G of groups.values()) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(G.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(G.nor, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(G.uv, 2));
+    // 壁の絵はひな壇・床の縁と同じ（上端が草との境目）。横は 1 unit を 1 として渡してあるので、輪郭に沿った長さがそのまま絵の位置になる
+    const m = new THREE.Mesh(geo, stageCtx.stageMat({ ...wallSkin(1, G.top - G.bot, '#5f4c2f'), side: THREE.DoubleSide }));
+    m.receiveShadow = true; m.renderOrder = -40;
+    g.add(m);
+  }
+  // 一番深い所が変わったら、床の縁の断面を組み直す（断面は一番深い底より下まで要る）
+  let deep = 0;
+  for (const L of levels) deep = Math.max(deep, -L);
+  if (deep !== STEP_DEEP) { STEP_DEEP = deep; buildFloorSkirt(); }
 }
 // ---- 石畳の道（2026-10-05 ユーザー指定：街の道路になる石畳。グレー系）----
 // 形は中心線（ゆるく曲げられる）から幅一定の帯。縁はまっすぐ、端は四角く切る。石は道に沿った座標（長さ s・横 n）で、
@@ -2629,10 +2866,10 @@ function roadPoints(st) {   // 中心線の点 [x, z, 始点からの長さ]。0
 function roadMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   m.userData.u = { uP: { value: Array.from({ length: ROAD_MAX_P }, () => new THREE.Vector4()) }, uPN: { value: 0 }, uW: { value: 1.5 }, uStone: { value: 1 },
-    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 }, uPat: { value: 0 }, uRound: { value: 0.4 }, uTint: { value: new THREE.Vector3(1, 1, 1) } };   // uRound：石の角の丸み（0〜1）、uTint：色味（グレーに掛ける RGB の係数）   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）、uPat：並べ方（0 四角い石を列に／1 多角形を不規則に）
+    uShade: { value: 1 }, uCurb: { value: 1 }, uHL: { value: 0 }, uSeed: { value: 0 }, uPat: { value: 0 }, uRound: { value: 0.4 }, uTint: { value: new THREE.Vector3(1, 1, 1) }, uStepLv: { value: 0 } };   // uRound：石の角の丸み（0〜1）、uTint：色味（グレーに掛ける RGB の係数）   // uW：道幅の半分、uStone：石の大きさの倍率、uCurb：縁石（0／1）、uPat：並べ方（0 四角い石を列に／1 多角形を不規則に）
   m.extensions = { derivatives: true };
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, WATER_PIX, m.userData.u);
+    Object.assign(shader.uniforms, WATER_PIX, STEP_U, m.userData.u);
     shader.vertexShader = 'varying vec3 pxoWW;\n' + shader.vertexShader
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
     shader.fragmentShader = `varying vec3 pxoWW;
@@ -2644,7 +2881,8 @@ uniform vec2 uPixDot;
 ${WATER_NOISE_GLSL}
 ${PIX_QUANT_GLSL}
 ${FLOOR_GLSL}
-${STONE_D_GLSL}// 多角形の石（2026-10-05 ユーザー指定：長方形ではなく多角形を不規則に敷き詰めた版）：ます目ごとに点を 1 つずらして置き、一番近い点ごとに分ける（ボロノイ）。
+uniform float uStepLv;
+${STEP_GLSL}${STONE_D_GLSL}// 多角形の石（2026-10-05 ユーザー指定：長方形ではなく多角形を不規則に敷き詰めた版）：ます目ごとに点を 1 つずらして置き、一番近い点ごとに分ける（ボロノイ）。
 // x はます目単位。戻り値 (境目までの距離, 点から石の中心への向き x, z)、id に石の番号、md2 に 2 番目に近い境目までの距離（角を丸めるのに使う）
 vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
   vec2 nb = floor( x ), f = fract( x ), mg = vec2( 0.0 ), mr = vec2( 0.0 );
@@ -2678,6 +2916,8 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
     P += dFdx( pxoWW ) * dc.x + dFdy( pxoWW ) * dc.y;
   }
   if ( pxoOutsideFloor( P ) ) discard;
+  // 地形に沿って切り取る（2026-10-08 ユーザー指定：段差で掘った所の上に石畳が浮いた）。石畳が乗っている高さ uStepLv と、その場所の地面の高さが違えば描かない
+  if ( abs( pxoStepH( P.xz, 0.0 ) - uStepLv ) > 0.001 ) discard;
   // 一番近い中心線の区間に点を下ろし、道に沿った長さ s と横のずれ n を出す
   float best = 1e9, s = 0.0, n = 0.0;
   bool cut = false;
@@ -2750,7 +2990,7 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   if ( uPixDot.x > 0.0 ) gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );   // 階調の細かさ（水と同じ）`);
   };
-  m.customProgramCacheKey = () => 'pxo-road-v4';
+  m.customProgramCacheKey = () => 'pxo-road-v5';
   return m;
 }
 function buildRoad() {
@@ -2782,13 +3022,15 @@ function buildRoad() {
     u.uRound.value = Math.max(0, Math.min(1, st.round ?? 0.4));
     u.uTint.value.fromArray(ROAD_TINT[st.tint] || ROAD_TINT.gray);
     u.uSeed.value = ((st.seed ?? 1) % 997) * 0.37;
+    const lv = stepLevelOf(pts);   // 石畳が乗る地面の高さ：中心線が一番長くかかっている高さ（段差の底にまるごと入っていれば、その底）。違う高さの所は描かない
+    u.uStepLv.value = lv;
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
     const pad = W + 0.1;
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
     geo.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + ROAD_LIFT, (z0 + z1) / 2);
+    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + ROAD_LIFT + lv, (z0 + z1) / 2);
     mesh.receiveShadow = true; mesh.renderOrder = -10.5;   // 土（-11）より後、水（-10）より先＝水が上
     mesh.userData.pxoCard = ci;
     g.add(mesh);
@@ -2914,7 +3156,7 @@ function buildPillars() {
       const k = r();   // 崩れ：柱ごとの高さの減り方
       const H = H0 * (1 - ruin * k), broken = ruin > 0 && ruin * k > 0.15;
       const seed = (Math.floor(r() * 997) + ci * 13) * 0.37;
-      const p = new THREE.Group(); p.position.set(x, st.y ?? 0, z); p.rotation.y = dir; root.add(p);
+      const p = new THREE.Group(); p.position.set(x, (st.y ?? 0) + stepHAt(x, z), z); p.rotation.y = dir; root.add(p);   // 段差で掘った所では底に（1 本ずつ）
       const mk = (geo, kind, y, oo = o) => {
         geo.translate(0, y, 0);
         const m = new THREE.Mesh(geo, pillarMaterial(kind, { ...oo, seed }));
@@ -2948,7 +3190,7 @@ function buildMasonry() {
     if (st.show === false) return;
     const r = rng32(st.seed ?? 1), dir = deg(st.dir ?? 0);
     const root = new THREE.Group(); root.userData.pxoCard = ci;
-    root.position.set(st.x ?? 0, st.y ?? 0, st.z ?? 0); root.rotation.y = dir; g.add(root);
+    root.position.set(st.x ?? 0, (st.y ?? 0) + stepHAt(st.x ?? 0, st.z ?? 0), st.z ?? 0); root.rotation.y = dir; g.add(root);   // 段差で掘った所では底に（中心の位置の深さで、まるごと）
     const stone = Math.max(0.3, Math.min(3, st.stone ?? 1));
     const o = { r: 1, stone, shade: Math.max(0, st.shade ?? 1), tint: ROAD_TINT[st.tint] || ROAD_TINT.gray, round: Math.max(0, Math.min(1, st.round ?? 0.4)), flute: true, seed: ((st.seed ?? 1) % 997) * 0.37 };
     const mk = (geo, kind, oo = o) => {
@@ -3667,10 +3909,11 @@ function lakeBody(r, out, cx, cz, s, asp, dir, rough, budget, maxC = WATER_MAX_C
     at(u, v, b * (0.3 + 0.25 * r()) * (1 + rough * (r() - 0.3)));
   }
 }
-function riverCircles(st) {   // 川（2026-10-03 から の形の決め方。分かれで小さな切れ端も散らす）。太さは 5 まで（2026-10-04 ユーザー指定：それより太いと川に見えない）
+function riverCircles(st, maxW = 5) {   // maxW：太さの上限（川は 5。段差の帯はもっと広くできる。2026-10-08）
+    // 川（2026-10-03 から の形の決め方。分かれで小さな切れ端も散らす）。太さは 5 まで（2026-10-04 ユーザー指定：それより太いと川に見えない）
   const r = rng32(st.seed ?? 1);
   const pieces = Math.max(1, Math.min(4, Math.round(st.pieces ?? 1)));   // 分かれは 4 まで（2026-10-04 ユーザー指定）
-  const len = Math.max(0, st.len ?? 12), wid = Math.max(0.1, Math.min(5, st.width ?? 2)), mean = Math.max(0, Math.min(1, st.meander ?? 0.4));
+  const len = Math.max(0, st.len ?? 12), wid = Math.max(0.1, Math.min(maxW, st.width ?? 2)), mean = Math.max(0, Math.min(1, st.meander ?? 0.4));
   const scatter = Math.max(0, Math.min(20, st.scatter ?? 6)), dir0 = deg(st.dir ?? 0), rough = 1 - Math.max(0, Math.min(1, st.smooth ?? 0.5));   // 川の散らばりは欄と同じ 20 まで（湖・池・水たまりの欄は 40 まで。2026-10-04）
   const perPiece = Math.floor(WATER_MAX_C / pieces), out = [];
   for (let k = 0; k < pieces; k++) {
@@ -3733,7 +3976,7 @@ function buildWater() {
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
     geo.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + WATER_LIFT, (z0 + z1) / 2);
+    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + WATER_LIFT + stepLevelOf(cs), (z0 + z1) / 2);   // 段差で掘った所にある水場は、その底の高さに乗せる（2026-10-08）
     mesh.receiveShadow = true; mesh.renderOrder = -10;
     mesh.layers.enable(WATER_GLOW_LAYER);   // 水の白のブルームのパスでも描く
     mesh.userData.pxoCard = ci;
@@ -4039,7 +4282,7 @@ function buildModels() {
     if (!e.scene) return;   // 読み込み中・失敗（読み終わったら組み直される）
     const o = e.scene.clone(true);
     o.userData.pxoCard = ci;   // どのカードの物か（ホバーの輪郭）
-    o.position.set(m.x ?? 0, m.y ?? 0, m.z ?? 0);
+    o.position.set(m.x ?? 0, (m.y ?? 0) + stepHAt(m.x ?? 0, m.z ?? 0), m.z ?? 0);   // 段差で掘った所では底に（置いた位置の深さで）
     o.rotation.y = deg(m.rot ?? 0);
     o.scale.setScalar(MODEL_M * (m.scale > 0 ? m.scale : 1));
     const ps = texPixSize(m.texPix ?? 0);
@@ -4085,7 +4328,7 @@ function buildTrees() {
       if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < gap)) continue;
       if (avoidAny && waterSdfAt(x, z, 'stone') < 0.4) continue;                     // 幹のまわり 0.4 unit
       if (st.avoidPlayers !== false && playersSdfAt(x, z) < Math.max(0.6, 0.6 * e.treeR * tm * MODEL_M * sc)) continue;   // 奏者のまわりの陸地に枝葉がかかる
-      placed.push({ x, z, sc, rot, ry: riserTopAt(x, z) });   // ひな壇の上ではその天面から生やす（草と同じ）
+      placed.push({ x, z, sc, rot, ry: groundYAt(x, z) });   // ひな壇の上ではその天面から生やす（草と同じ）
     }
     const root = new THREE.Group(); root.userData.pxoCard = ci;
     if (proc) {
@@ -4168,7 +4411,7 @@ function tickFall(dt) {
         p.pos.x += (Math.cos(p.ph + T * 1.7 * f.speed) * 0.5 + wd.x * ws * 0.35) * dt;   // ひらひら＋風（流されすぎて木から離れないよう弱め）
         p.pos.z += (Math.sin(p.ph * 1.3 + T * 1.3 * f.speed) * 0.5 + wd.y * ws * 0.35) * dt;
         p.rot.x += p.spin.x * dt; p.rot.y += p.spin.y * dt; p.rot.z += p.spin.z * dt;
-        const gy = (p.e.y0 - riserTopAt(p.e.x, p.e.z)) + riserTopAt(p.pos.x, p.pos.z);   // 地面の高さ：カードの高さ位置＋その場所のひな壇の天面
+        const gy = (p.e.y0 - groundYAt(p.e.x, p.e.z)) + groundYAt(p.pos.x, p.pos.z);   // 地面の高さ：カードの高さ位置＋その場所のひな壇の天面
         if (p.pos.y <= gy + 0.02) {
           if (!insideFloor(p.pos.x, p.pos.z)) fallSpawn(p, f.r);
           else { p.pos.y = gy + 0.015; p.rot.set(-Math.PI / 2 + (f.r() - 0.5) * 0.3, f.r() * 6.28, 0); p.rest = 0; }

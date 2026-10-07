@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261005f">
+  <link rel="stylesheet" href="style.css?v=20261008a">
 </head>
 <body>
   <div id="stageArea">
@@ -114,6 +114,7 @@
         <button data-sec="domeSec">スカイドーム</button>
         <button data-sec="screenSec">スクリーン</button>
         <button data-sec="floorSec">床</button>
+        <button data-sec="stepSec">段差</button>
         <button data-sec="modelSec">3Dモデル</button>
         <button data-sec="stoneSec">石</button>
         <button data-sec="grassSec">草</button>
@@ -161,6 +162,11 @@
       <section id="waterSec">
         <div class="hd">水</div>
         <div id="waterRows"></div>
+      </section>
+      <!-- 段差（2026-10-08 ユーザー指定）。床を掘って低い所を作る（低い所を流れる川などのため）。重なった所は足し算、岸は垂直の壁 -->
+      <section id="stepSec">
+        <div class="hd">段差</div>
+        <div id="stepRows"></div>
       </section>
       <!-- 土のジェネレーター（2026-10-05 ユーザー指定）。草の生えていない、土の地肌が見えている所。形は水たまりと同じ作り -->
       <section id="dirtSec">
