@@ -5913,6 +5913,7 @@ const GRASS_PALETTES = {
 //  まだらや草の房の実寸は前の版（384 ドット）と同じ）。遠くでちらつかないようミップマップを使う（2 の累乗にしたのはそのため）
 //   地：何段かのノイズを座標をゆがめて重ねたまだらを 5 段の色に分け、境目は格子状のディザで散らす（ノイズは絵の端で一周してつながる）
 //   草の房：根元は暗く先ほど明るい。明るい所ほど多い／クローバーの塊、暗い所にわずかな土の粒（小花はユーザー指定で無し）
+const GRASS_SOFT = 4, GRASS_STEPS = 2;   // 床の草：ならす幅 [ドット]（地のディザが 4 ドット周期なので、4 で粒が消える。1 でならさない＝以前の絵）と、色と色の間を何等分するか（2 で 5 色 → 9 段）
 function grassTexture(palette = 'normal') {
   const N = 2048, K = N / 384;   // K：前の版（384 ドット）からの細かさの倍率。数・長さはこれで実寸を保つ
   const c = document.createElement('canvas');
@@ -5983,6 +5984,39 @@ function grassTexture(palette = 'normal') {
         px(x, by - k, k >= hgt - 2 ? Q.HI : k <= 1 ? Q.DARK : Q.LIGHT);
       }
       px(bx + b * 3 - blades * 2, by + 1, Q.DEEP);
+    }
+  }
+  // ならして塗り直す（2026-10-08 ユーザー指定：岩の崖と同じく、階調を粗くしてカメラを回した時のちらつきを減らす）。
+  // ここまでの絵は、地のディザ・ざらつき・1 ドット幅の草の房と、1 ドットごとに明暗が入れ替わる所ばかりで、画面の 1 ドットにその明暗が
+  // 何粒か入り、カメラが少し動くたびに割合が変わって、まとめた色が階調の段をまたいだ（測ると、床のちらつきの 4 割ほどがこの模様）。
+  // 描き終えた絵を GRASS_SOFT ドット四方でならし（上下左右とも一周）、草の 5 色の並び（濃い緑 → 明るい緑）の上の一番近い所へ寄せて、
+  // 色と色の間を GRASS_STEPS 等分した段に置き直す。まだらの濃淡と房のにじみが残り、同じ色のかたまりが数ドット以上になる
+  // （土の粒・クローバーの色は、並びの上の近い緑になる。どちらも 1〜3 ドットで、ならすと元から見えなくなる大きさ）
+  if (GRASS_SOFT > 1) {
+    const n = Math.round(GRASS_SOFT), o0 = -Math.floor(n / 2), st = Math.max(1, Math.round(GRASS_STEPS));
+    const tmp = new Float32Array(N * N * 3), out = new Float32Array(N * N * 3);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {   // 横にならす
+      let a = 0, b = 0, cc = 0;
+      for (let i = 0; i < n; i++) { const q = (y * N + ((x + o0 + i + N) % N)) * 4; a += D[q]; b += D[q + 1]; cc += D[q + 2]; }
+      const o = (y * N + x) * 3; tmp[o] = a / n; tmp[o + 1] = b / n; tmp[o + 2] = cc / n;
+    }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {   // 縦にならす
+      let a = 0, b = 0, cc = 0;
+      for (let j = 0; j < n; j++) { const q = (((y + o0 + j + N) % N) * N + x) * 3; a += tmp[q]; b += tmp[q + 1]; cc += tmp[q + 2]; }
+      const o = (y * N + x) * 3; out[o] = a / n; out[o + 1] = b / n; out[o + 2] = cc / n;
+    }
+    for (let i = 0; i < N * N; i++) {
+      const r0 = out[i * 3], g0 = out[i * 3 + 1], b0 = out[i * 3 + 2];
+      let best = 1e9, f = 0;   // 5 色の並び（折れ線）の上の、一番近い位置 f（0〜4）
+      for (let k = 0; k < 4; k++) {
+        const A = TONES[k], B = TONES[k + 1], ex = B[0] - A[0], ey = B[1] - A[1], ez = B[2] - A[2];
+        const t = Math.max(0, Math.min(1, ((r0 - A[0]) * ex + (g0 - A[1]) * ey + (b0 - A[2]) * ez) / (ex * ex + ey * ey + ez * ez)));
+        const dx = r0 - A[0] - ex * t, dy = g0 - A[1] - ey * t, dz = b0 - A[2] - ez * t, d = dx * dx + dy * dy + dz * dz;
+        if (d < best) { best = d; f = k + t; }
+      }
+      f = Math.round(f * st) / st;
+      const k = Math.min(3, Math.floor(f)), t = f - k, A = TONES[k], B = TONES[k + 1];
+      D[i * 4] = Math.round(A[0] + (B[0] - A[0]) * t); D[i * 4 + 1] = Math.round(A[1] + (B[1] - A[1]) * t); D[i * 4 + 2] = Math.round(A[2] + (B[2] - A[2]) * t);
     }
   }
   g.putImageData(img, 0, 0);
