@@ -1558,7 +1558,7 @@ export function buildRisers(seats) {
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
-  queueMicrotask(() => { buildFloorSkirt(); if (stepList.length) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
+  queueMicrotask(() => { buildFloorSkirt(); if (anySteps()) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -2447,7 +2447,7 @@ export function setWaterPlayers(roots, conductorRoot = null) {
   for (let i = 0; i < n; i++) { const v = WATER_PL.uPl.value[i]; sig += `${v.x.toFixed(1)},${v.y.toFixed(1)};`; }
   if (sig !== plSig) {
     plSig = sig;
-    const st = stepList.some((o) => o.show !== false);   // 段差は奏者の足元を掘らないので、段差と、その高さに乗る水・草・木も組み直す（2026-10-08）
+    const st = anySteps();   // 段差は奏者の足元を掘らないので、段差と、その高さに乗る水・草・木も組み直す（2026-10-08）
     if (st) buildStepsAndRiders();
     if (st || grassList.some((g) => g.avoidPlayers && g.show !== false)) buildGrass();
     if (st || treeList.some((t) => t.avoidPlayers !== false && t.show !== false)) buildTrees();
@@ -2801,6 +2801,27 @@ function stepContourLines(V, i0, i1, j0, j1) {
   }
   return lines;
 }
+// 水のカード（川・池・湖・水たまり）の「掘る深さ」（2026-10-08 ユーザー指定：川のカード自体に、その形に沿って地面を窪ませる機能を。池や湖にも）：
+// 水の形の範囲を、その深さだけ掘る。「岸の幅」があれば、範囲を外へその分だけ広げる（水際と壁の間に地面が見える）。形は水面と同じ円の並び・
+// 同じつなぎ方なので、岸の幅 0 なら水がちょうど溝の幅になる。段差のカードと同じ枠を使い、重なれば足し算。海は対象外
+function stepDigs() {
+  const out = [];
+  for (const w of waterList) {
+    const depth = Math.max(0, w.dig ?? 0);
+    if (w.show === false || w.type === 'sea' || depth <= 0) continue;
+    const cs0 = waterCircles(w), bank = Math.max(0, w.bank ?? 0);
+    let rMax = 0;
+    for (const c of cs0) rMax = Math.max(rMax, c[2]);
+    out.push({ cs: cs0.map((c) => [c[0], c[1], c[2] + bank]), depth, k: Math.max(0.02, (w.smooth ?? 0.5) * rMax * 1.2) });   // つなぎ方は水面と同じ値
+  }
+  return out;
+}
+// 掘る形に関わる値の控え（水のスライダーを動かした時、ここが変わった時だけ段差と、その上に乗る物を組み直す）
+const stepDigSig = () => JSON.stringify(waterList.filter((w) => w.show !== false && w.type !== 'sea' && (w.dig ?? 0) > 0)
+  .map((w) => [w.type, w.x, w.z, w.len, w.width, w.meander, w.dir, w.pieces, w.scatter, w.smooth, w.seed, w.pools, w.lakeSize, w.aspect, w.dig, w.bank]));
+let lastDigSig = '[]';
+/** 掘る物があるか（段差のカード、または水のカードの「掘る深さ」） */
+const anySteps = () => stepList.some((o) => o.show !== false) || lastDigSig !== '[]';
 function buildSteps() {
   if (!stageCtx) return;
   const g = stageCtx.steps;
@@ -2809,15 +2830,13 @@ function buildSteps() {
   stepData(0).fill(255); stepData(4).fill(255);
   STEP_D = new Array(8).fill(0);   // 8 番目（STEP_KEPT）は深さ 0 のまま＝地面の高さには効かない
   const X = (i) => STEP_X0 + i * STEP_CELL, Z = (j) => STEP_Z0 + j * STEP_CELL, cards = [];
-  for (const st of stepList) {
-    if (cards.length >= STEP_MAX) { console.warn(`段差は ${STEP_MAX} 枚まで。それより後のカードは使わない`); break; }
-    const depth = Math.max(0, st.depth ?? 1);
-    if (st.show === false || depth <= 0) continue;
-    const cs = stepCircles(st);
-    if (!cs.length) continue;
-    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, rMax = 0;
-    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); rMax = Math.max(rMax, rr); }
-    const k = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2), pad = k * 0.75 + 0.3;   // 円のつなぎのふくらみ（水・土と同じく 0.75k）
+  // 掘る物：段差のカードと、水のカード（川・池）の「掘る深さ」（stepDigs）。どちらも同じ枠（STEP_MAX 枚まで）を使い、重なれば足し算
+  for (const { cs, depth, k } of [...stepList.filter((st) => st.show !== false).map((st) => { const cs = stepCircles(st); let rMax = 0; for (const c of cs) rMax = Math.max(rMax, c[2]); return { cs, depth: Math.max(0, st.depth ?? 1), k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) }; }), ...stepDigs()]) {
+    if (depth <= 0 || !cs.length) continue;
+    if (cards.length >= STEP_MAX) { console.warn(`段差は ${STEP_MAX} 枚まで（水のカードの「掘る深さ」も数える）。それより後の物は使わない`); break; }
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); }
+    const pad = k * 0.75 + 0.3;   // 円のつなぎのふくらみ（水・土と同じく 0.75k）
     const cl = (v, hi) => Math.max(0, Math.min(hi, v));
     const i0 = cl(Math.floor((x0 - pad - STEP_X0) / STEP_CELL), STEP_W - 1), i1 = cl(Math.ceil((x1 + pad - STEP_X0) / STEP_CELL), STEP_W - 1);
     const j0 = cl(Math.floor((z0 - pad - STEP_Z0) / STEP_CELL), STEP_H - 1), j1 = cl(Math.ceil((z1 + pad - STEP_Z0) / STEP_CELL), STEP_H - 1);
@@ -3351,7 +3370,12 @@ function buildMasonry() {
     if (avoid.length) MASONRY_AVOID.push({ cs: avoid, k: 0.02, only: { grass: true, stone: true } });
   });
 }
-export function setWater(list) { waterList = (list || []).map((o) => ({ ...o })); buildWater(); buildStones(); buildGrass(); }   // 「草・石をよける」ため石・草も組み直す
+export function setWater(list) {
+  waterList = (list || []).map((o) => ({ ...o }));
+  const sig = stepDigSig();
+  if (sig !== lastDigSig) { lastDigSig = sig; rebuildSteps(); buildStones(); return; }   // 掘る形が変わった：段差と、その上に乗る物を全部組み直す（水・草・木も含む）
+  buildWater(); buildStones(); buildGrass();
+}   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
 let DIRT_AVOID = [];    // 土の「草・石をよける」（形は水と同じ持ち方。2026-10-05）
