@@ -6233,14 +6233,15 @@ function wallCanvasOf(img, rows, grass = null) {
 // 横は CLIFF_W ドットで一周してつながる。縦は壁の高さ（ドット行数）ごとに描く（上端を草との境目に合わせるため。wallCanvasOf と同じ考え方）
 const CLIFF_DPU = 2048 / 40;   // 1 unit あたりのドット数（草原の床と同じ：2048 ドット ÷ 40 unit）
 const CLIFF_W = 512;           // 絵の横幅 [ドット]（10 unit で一周）
-const CLIFF_COLS = 12, CLIFF_CELL_H = 80, CLIFF_SQUASH = 0.5;   // 岩の塊：横に 12 個（1 個約 43 ドット ≒ 0.8 unit）、縦 80 ドット。距離は縦を縮めて測る＝縦長になる
+const CLIFF_COLS = 14, CLIFF_CELL_H = 68, CLIFF_SQUASH = 0.5;   // 岩の塊：横に 14 個（1 個約 37 ドット ≒ 0.7 unit）、縦 68 ドット。距離は縦を縮めて測る＝縦長になる。2026-10-09 ユーザー指定：少しだけ小さく（その前は横 12 個・縦 80 ドット＝1 個約 43 ドット）
 // 暗 → 明。2026-10-08 ユーザー指定：少し明るく、黄土色寄りに。その前は以前の絵（wall_dirt.png）の茶色を引き継いだ
 // '#2a1e1a', '#3e2d26', '#523726', '#684632', '#7a583c', '#9d794f', '#b48f5d'（赤みのある焦げ茶）だった
 // 同日ユーザー指定：少し赤みを戻し、彩度を少し落とす。黄土色寄りにした直後は '#33261a', '#4b3822', '#65492a', '#806033', '#9a773f', '#b8934f', '#d0ac64' だった。
 // そこから色相を焦げ茶の側へ 4 割戻し、彩度を 15% 落とした（明るさはそのまま）
 const CLIFF_ROCK = ['#33261e', '#4b3728', '#654a33', '#805f3f', '#9a774d', '#b8955f', '#d0ae74'];
-const CLIFF_GAP = 0.75, CLIFF_ROUND = 6;   // 割れ目の幅の半分と、塊の角の丸みの半径 [ドット]（丸みは塊の幅の約 15%＝石畳の「角の丸み」0.4 相当）
+const CLIFF_GAP = 0.75, CLIFF_ROUND = 5;   // 割れ目の幅の半分と、塊の角の丸みの半径 [ドット]（丸みは塊の幅の約 15%＝石畳の「角の丸み」0.4 相当。塊を小さくしたのに合わせて 6 → 5）
 const CLIFF_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const CLIFF_SPLIT = [0.5, 0.35];   // 岩の大きさのばらつき：ます目をそのまま 1 個の塊にする割合と、2 個に割る割合（残りは 3 個に割る）
 const CLIFF_DITHER = 0.9, CLIFF_FINE = 0.12;   // ならす前の模様：色の境目のディザの幅（段）と、4 ドット刻みの細かいノイズの強さ
 const CLIFF_SOFT = 4, CLIFF_STEPS = 2;   // ならす幅 [ドット]（ディザの格子が 4 ドット周期なので、4 でちょうど粒が消える。1 でならさない）と、色と色の間を何等分するか（2 で 7 色 → 13 段）
 const cliffCache = new Map();   // 「行数|草の色の組|草の垂れの有無」 → canvas
@@ -6265,8 +6266,17 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
   const cw = W / CLIFF_COLS;
   // 塊の位置（ます目の中でのずれ）と濃淡を、先に表にしておく（1 ドットごとに乱数を引き直さない）。横は一周、縦は絵の上下に 4 段ずつ余分に持つ
   const SR0 = -4, SRN = Math.ceil((H + 30) / CLIFF_CELL_H) + 8;
-  const SJX = new Float32Array(CLIFF_COLS * SRN), SJY = new Float32Array(CLIFF_COLS * SRN), SID = new Float32Array(CLIFF_COLS * SRN);
-  for (let gy = 0; gy < SRN; gy++) for (let hx = 0; hx < CLIFF_COLS; hx++) { const o = gy * CLIFF_COLS + hx; SJX[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 4); SJY[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 5); SID[o] = hash(hx, gy + SR0, 6); }
+  // 大きさのばらつき（2026-10-09 ユーザー指定：岩の大きさにばらつきを。大きい岩は今の大きさで）：ます目 1 つに塊を 1〜3 個置く。
+  // 1 個のます目（CLIFF_SPLIT[0] の割合）は今までどおりの大きさ、2 個・3 個に割ったます目に中くらい・小さい塊ができる。
+  // 表は 1 ます目あたり 3 個ぶん持ち、SN がそのます目の個数。割った時の置き場所は、2 個なら左右か上下に分け、3 個なら三角に置いて、少しずらす
+  const SJX = new Float32Array(CLIFF_COLS * SRN * 3), SJY = new Float32Array(CLIFF_COLS * SRN * 3), SID = new Float32Array(CLIFF_COLS * SRN * 3), SN = new Uint8Array(CLIFF_COLS * SRN);
+  for (let gy = 0; gy < SRN; gy++) for (let hx = 0; hx < CLIFF_COLS; hx++) {
+    const o = gy * CLIFF_COLS + hx, y = gy + SR0, r = hash(hx, y, 20), n = r < CLIFF_SPLIT[0] ? 1 : r < CLIFF_SPLIT[0] + CLIFF_SPLIT[1] ? 2 : 3;
+    SN[o] = n;
+    const base = n === 1 ? [[0.5, 0.5]] : n === 2 ? (hash(hx, y, 21) < 0.5 ? [[0.27, 0.5], [0.73, 0.5]] : [[0.5, 0.27], [0.5, 0.73]]) : (hash(hx, y, 21) < 0.5 ? [[0.3, 0.28], [0.74, 0.42], [0.42, 0.78]] : [[0.7, 0.28], [0.26, 0.42], [0.58, 0.78]]);
+    const jit = n === 1 ? 0.7 : n === 2 ? 0.26 : 0.2;   // ずらす幅（ます目の何割か）。1 個の時は今までと同じ 0.15〜0.85
+    for (let k = 0; k < n; k++) { SJX[o * 3 + k] = base[k][0] + jit * (hash(hx, y, 4 + k * 7) - 0.5); SJY[o * 3 + k] = base[k][1] + jit * (hash(hx, y, 5 + k * 7) - 0.5); SID[o * 3 + k] = hash(hx, y, 6 + k * 7); }
+  }
   const site = (gx, gy) => Math.max(0, Math.min(SRN - 1, gy - SR0)) * CLIFF_COLS + wrap(gx, CLIFF_COLS);
   const put = (x, y, col) => { const o = (y * W + x) * 4; D[o] = col[0]; D[o + 1] = col[1]; D[o + 2] = col[2]; D[o + 3] = 255; };
   const V = new Float32Array(W * H).fill(-1);   // 岩の色の番号（0〜6。ならす前）。草の葉の所は -1（ならさない）
@@ -6285,22 +6295,26 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
     const wx = x + 9 * (noise(x, y, 64, 1) - 0.5) * 2 + 3 * (noise(x, y, 16, 2) - 0.5) * 2, wy = y + 12 * (noise(x, y, 64, 3) - 0.5) * 2;
     // 一番近い塊を探し、その塊の境目（隣の塊との垂直二等分線）までの距離を近い順に 2 つ出す（石畳の多角形の石と同じ測り方）
     const qx = wx, qy = wy * CLIFF_SQUASH, cu = Math.floor(wx / cw), cv = Math.floor(wy / CLIFF_CELL_H);
-    let d1 = 1e9, mx = 0, my = 0, bu = 0, bv = 0, id = 0;
+    let d1 = 1e9, mx = 0, my = 0, bu = 0, bv = 0, bk = 0, id = 0;
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
       const gx = cu + i, gy = cv + j, o = site(gx, gy);
-      const rx = (gx + SJX[o]) * cw - qx, ry = (gy + SJY[o]) * CLIFF_CELL_H * CLIFF_SQUASH - qy, d = rx * rx + ry * ry;
-      if (d < d1) { d1 = d; mx = rx; my = ry; bu = gx; bv = gy; id = SID[o]; }
+      for (let k = 0; k < SN[o]; k++) {
+        const rx = (gx + SJX[o * 3 + k]) * cw - qx, ry = (gy + SJY[o * 3 + k]) * CLIFF_CELL_H * CLIFF_SQUASH - qy, d = rx * rx + ry * ry;
+        if (d < d1) { d1 = d; mx = rx; my = ry; bu = gx; bv = gy; bk = k; id = SID[o * 3 + k]; }
+      }
     }
     d1 = Math.sqrt(d1);
     let md = 1e9, md2 = 1e9;
     for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) {
-      if (!i && !j) continue;
       const gx = bu + i, gy = bv + j, o = site(gx, gy);
-      const rx = (gx + SJX[o]) * cw - qx, ry = (gy + SJY[o]) * CLIFF_CELL_H * CLIFF_SQUASH - qy;
-      const ex = rx - mx, ey = ry - my, el = Math.hypot(ex, ey);
-      if (el < 1e-4) continue;
-      const d = (0.5 * (mx + rx) * ex + 0.5 * (my + ry) * ey) / el;
-      if (d < md) { md2 = md; md = d; } else if (d < md2) md2 = d;
+      for (let k = 0; k < SN[o]; k++) {
+        if (!i && !j && k === bk) continue;   // 自分の塊
+        const rx = (gx + SJX[o * 3 + k]) * cw - qx, ry = (gy + SJY[o * 3 + k]) * CLIFF_CELL_H * CLIFF_SQUASH - qy;
+        const ex = rx - mx, ey = ry - my, el = Math.hypot(ex, ey);
+        if (el < 1e-4) continue;
+        const d = (0.5 * (mx + rx) * ex + 0.5 * (my + ry) * ey) / el;
+        if (d < md) { md2 = md; md = d; } else if (d < md2) md2 = d;
+      }
     }
     // 角の丸み（2026-10-08 ユーザー指定：石畳と同じように、各石の角を少し丸く）。割れ目の幅の半分 CLIFF_GAP と丸みの半径 CLIFF_ROUND から、
     // 塊の縁までの距離 e を出す（正が塊の中、負が割れ目）。3 つ以上の塊が集まる角では、近い 2 本の境目の両方から離れた所だけが塊になる
@@ -6311,7 +6325,7 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
     else {
       // 光の向きは描き込まない（2026-10-08 ユーザー指定：片側が明るく反対側が暗い絵になっていた。光の当たり方はライティングで表す）。
       // 陰影は向きの無い物だけ：塊ごとの濃淡、塊の中心がわずかに明るく縁へ向かって暗くなる丸み、割れ目の際の影（両側同じ濃さ）
-      const bulge = 1 - Math.min(1, d1 / 20);   // 塊の中心で 1、離れるほど 0
+      const bulge = 1 - Math.min(1, d1 / 17);   // 塊の中心で 1、離れるほど 0（塊を小さくしたのに合わせて 20 → 17）
       v = 0.44 + 0.12 * bulge + 0.34 * (id - 0.5) + 0.2 * (noise(x, y, 16, 7) - 0.5) + CLIFF_FINE * (noise(x, y, 4, 8) - 0.5);
       if (e < 1.5) v -= 0.16 * (1 - e / 1.5);   // 割れ目の際は暗く
       if (Math.abs(noise(x, y * 5, 32, 9) - 0.5) < 0.012 && e > 2.5) v -= 0.22;       // 塊の中の横の細いひび
