@@ -1500,23 +1500,33 @@ export function buildFloorSkirt() {
   const h = Math.max(ROWS.woodwind.h, STEP_DEEP + 0.5);       // 1 段目と同じ高さ。段差の一番深い底より 0.5 下までは伸ばす（2026-10-08）
   const X = FLOOR_X_HALF, F = FLOOR_Z_FRONT, R = FLOOR_BACK_R, cy = -SEAT_SHIFT_Z;
   const yEdge = cy + Math.sqrt(Math.max(0, R * R - X * X)); // 左右の辺と弧が交わる位置（shape 座標。世界の z = −yEdge）
-  const mat = (uLen) => stepPatch(stageMat({ ...wallSkin(uLen, h, '#5f4c2f'), side: THREE.DoubleSide }), 'skirt');   // 段差が縁に達した所は、地面より上を描かない（切り欠き）
+  // opt：wallSkin の fringe（上端の草の垂れ）・uOff（模様の横の始まり）。段の真下の断面は、上の段の側面と同じ面でつながるので草を描かない（2026-10-08）
+  const mat = (uLen, opt) => stepPatch(stageMat({ ...wallSkin(uLen, h, '#5f4c2f', opt), side: THREE.DoubleSide }), 'skirt');   // 段差が縁に達した所は、地面より上を描かない（切り欠き）
   const add = (mesh) => { mesh.receiveShadow = true; mesh.renderOrder = -41; skirt.add(mesh); };
   // 前（z = +F、+z を向く）
   const front = new THREE.Mesh(new THREE.PlaneGeometry(2 * X, h), mat(2 * X));
   front.position.set(0, -h / 2, F); add(front);
-  // 左右（x = ±X、外向き）。z は +F 〜 −yEdge
+  // 左右（x = ±X、外向き）。z は +F 〜 −yEdge。縁のすぐ内側に段が載っている区間と、床が見えている区間に分けて作る
   const sideLen = F + yEdge;
   for (const sgn of [-1, 1]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(sideLen, h), mat(sideLen));
-    m.position.set(sgn * X, -h / 2, (F - yEdge) / 2);
-    m.rotation.y = sgn * Math.PI / 2;
-    add(m);
+    const cuts = [0];   // 区間の境目（+F の端からの長さ）
+    const under = (t) => riserTopAt(sgn * (X - 0.05), F - t) > 0;
+    for (let t = 0.1; t < sideLen; t += 0.1) if (under(t) !== under(t - 0.1)) cuts.push(t - 0.05);
+    cuts.push(sideLen);
+    for (let q = 0; q + 1 < cuts.length; q++) {
+      const a = cuts[q], b = cuts[q + 1], len = b - a;
+      if (len < 0.01) continue;
+      // 面の横の向き：右（+x）の面は手前から奥へ、左の面は奥から手前へ進む。模様がつながるよう、面の左端の位置を uOff に渡す
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h), mat(len, { fringe: !under((a + b) / 2), uOff: sgn > 0 ? a : sideLen - b }));
+      m.position.set(sgn * X, -h / 2, F - (a + b) / 2);
+      m.rotation.y = sgn * Math.PI / 2;
+      add(m);
+    }
   }
-  // 奥の弧（中心 (0, SEAT_SHIFT_Z)・半径 R）。ひな壇の壁と同じく CylinderGeometry の角 φ = π − θ（θ は −z から）
+  // 奥の弧（中心 (0, SEAT_SHIFT_Z)・半径 R）。ひな壇の壁と同じく CylinderGeometry の角 φ = π − θ（θ は −z から）。一番奥の段の背面と同じ面なので草は描かない
   const thE = Math.atan2(X, yEdge - cy);
   const segs = Math.max(8, Math.ceil((2 * thE) / deg(4)));
-  const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, segs, 1, true, Math.PI - thE, 2 * thE), mat(R * 2 * thE));
+  const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, segs, 1, true, Math.PI - thE, 2 * thE), mat(R * 2 * thE, { fringe: riserTopAt(0, SEAT_SHIFT_Z - R + 0.05) <= 0 }));
   back.position.set(0, -h / 2, SEAT_SHIFT_Z); add(back);
 }
 
@@ -1537,7 +1547,7 @@ export function buildRisers(seats) {
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
-  queueMicrotask(() => { if (stepList.length) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
+  queueMicrotask(() => { buildFloorSkirt(); if (stepList.length) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -5404,7 +5414,8 @@ function grassTexture(palette = 'normal') {
 // 絵は参考画像（2026-09-13 ユーザー提供）から元のドットを復元し、左右がつながる窓を切り出したもの。
 // ?wall=<画像URL> で差し替えて試せる
 const WALL_DPU = 6;            // 1 unit あたりのドット数（草原の床の 192 ドット ÷ 32 unit と同じ）。草原の tileScale を掛けて使う
-const WALL_IMG = new URLSearchParams(location.search).get('wall') || 'assets/wall_dirt.png';
+const WALL_CUSTOM = new URLSearchParams(location.search).get('wall');   // 指定がある時だけ画像の壁（以前の見た目は ?wall=assets/wall_dirt.png）。無ければ岩の崖をコードで描く（2026-10-08）
+const WALL_IMG = WALL_CUSTOM || 'assets/wall_dirt.png';
 let wallImgTex = null;
 // 読み込みは非同期なので、届いてからひな壇を組み直す（clone は clone した時点の画像しか持たないため）
 wallImgTex = new THREE.TextureLoader().load(WALL_IMG, (t) => {
@@ -5449,11 +5460,122 @@ function wallCanvasOf(img, rows, grass = null) {
   return c;
 }
 
+// 岩の崖（2026-10-08 ユーザー指定：草原のひな壇や岸の岩のグラフィックを改善）。それまでは 29×25 ドットの小さな絵（wall_dirt.png：茶色 4 色のまだら）を
+// 繰り返していて、作り直した草原の床（1 ドット約 2cm）に比べてドットが 4 倍粗く、模様も単調だった。草原の床と同じくコードで描く：
+//   上端：草の葉が不揃いに垂れ（色は草原の床と同じ）、その下に影と暗い表土
+//   岩：縦長の塊に割り（ゆがめたボロノイ）、塊ごとに濃淡を変える。塊の境目は黒い割れ目。色の境目は格子状のディザ。
+//       光の向き（片側が明るい・暗い）は描き込まない。向きのある明暗はライティングで付く（2026-10-08 ユーザー指定）。
+//       塊の角は少し丸める（石畳と同じ測り方。同日ユーザー指定）
+//   下端：暗くしない（段の側面と床の縁の断面が同じ面で上下につながる所で、暗い帯になるため）
+// 横は CLIFF_W ドットで一周してつながる。縦は壁の高さ（ドット行数）ごとに描く（上端を草との境目に合わせるため。wallCanvasOf と同じ考え方）
+const CLIFF_DPU = 2048 / 40;   // 1 unit あたりのドット数（草原の床と同じ：2048 ドット ÷ 40 unit）
+const CLIFF_W = 512;           // 絵の横幅 [ドット]（10 unit で一周）
+const CLIFF_COLS = 12, CLIFF_CELL_H = 80, CLIFF_SQUASH = 0.5;   // 岩の塊：横に 12 個（1 個約 43 ドット ≒ 0.8 unit）、縦 80 ドット。距離は縦を縮めて測る＝縦長になる
+// 暗 → 明。2026-10-08 ユーザー指定：少し明るく、黄土色寄りに。その前は以前の絵（wall_dirt.png）の茶色を引き継いだ
+// '#2a1e1a', '#3e2d26', '#523726', '#684632', '#7a583c', '#9d794f', '#b48f5d'（赤みのある焦げ茶）だった
+// 同日ユーザー指定：少し赤みを戻し、彩度を少し落とす。黄土色寄りにした直後は '#33261a', '#4b3822', '#65492a', '#806033', '#9a773f', '#b8934f', '#d0ac64' だった。
+// そこから色相を焦げ茶の側へ 4 割戻し、彩度を 15% 落とした（明るさはそのまま）
+const CLIFF_ROCK = ['#33261e', '#4b3728', '#654a33', '#805f3f', '#9a774d', '#b8955f', '#d0ae74'];
+const CLIFF_GAP = 0.75, CLIFF_ROUND = 6;   // 割れ目の幅の半分と、塊の角の丸みの半径 [ドット]（丸みは塊の幅の約 15%＝石畳の「角の丸み」0.4 相当）
+const CLIFF_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const cliffCache = new Map();   // 「行数|草の色の組|草の垂れの有無」 → canvas
+/** fringe：上端に草の垂れと表土を描く。上に別の壁が載って同じ面でつながる所（段の真下の、床の縁の断面）は false＝上端から岩 */
+function cliffCanvas(rows, palette = 'normal', fringe = true) {
+  const key = `${rows}|${palette}|${fringe}`;
+  let c = cliffCache.get(key);
+  if (c) return c;
+  const W = CLIFF_W, H = rows;
+  c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), img = g.createImageData(W, H), D = img.data;
+  const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const ROCK = CLIFF_ROCK.map(rgb), P = GRASS_PALETTES[palette] || GRASS_PALETTES.normal, GR = [P.HI, P.LIGHT, P.BASE, P.DARK, P.DEEP].map(rgb);
+  const hash = (x, y, s = 0) => { let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s + 1, 0x9e3779b1); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const wrap = (i, n) => ((i % n) + n) % n;
+  const noise = (x, y, cell, s) => {   // 値ノイズ（0〜1）。横は絵の幅で一周する（cell は W を割り切る大きさ）
+    const n = W / cell, fx = x / cell, fy = y / cell, ix = Math.floor(fx), iy = Math.floor(fy);
+    let tx = fx - ix, ty = fy - iy; tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+    const a = hash(wrap(ix, n), iy, s), b = hash(wrap(ix + 1, n), iy, s), e = hash(wrap(ix, n), iy + 1, s), f = hash(wrap(ix + 1, n), iy + 1, s);
+    return (a + (b - a) * tx) * (1 - ty) + (e + (f - e) * tx) * ty;
+  };
+  const cw = W / CLIFF_COLS;
+  // 塊の位置（ます目の中でのずれ）と濃淡を、先に表にしておく（1 ドットごとに乱数を引き直さない）。横は一周、縦は絵の上下に 4 段ずつ余分に持つ
+  const SR0 = -4, SRN = Math.ceil((H + 30) / CLIFF_CELL_H) + 8;
+  const SJX = new Float32Array(CLIFF_COLS * SRN), SJY = new Float32Array(CLIFF_COLS * SRN), SID = new Float32Array(CLIFF_COLS * SRN);
+  for (let gy = 0; gy < SRN; gy++) for (let hx = 0; hx < CLIFF_COLS; hx++) { const o = gy * CLIFF_COLS + hx; SJX[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 4); SJY[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 5); SID[o] = hash(hx, gy + SR0, 6); }
+  const site = (gx, gy) => Math.max(0, Math.min(SRN - 1, gy - SR0)) * CLIFF_COLS + wrap(gx, CLIFF_COLS);
+  const put = (x, y, col) => { const o = (y * W + x) * 4; D[o] = col[0]; D[o + 1] = col[1]; D[o + 2] = col[2]; D[o + 3] = 255; };
+  // 草の垂れ：2 ドット幅の葉ごとに長さを決める（房の多い所は長め）
+  const blade = new Int32Array(W);
+  for (let x = 0; x < W; x++) { const b = x >> 1; blade[x] = fringe ? Math.min(H, Math.round(2 + 9 * hash(b, 0, 11) * (0.45 + 0.9 * noise(x, 0, 32, 12)))) : -9; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const bay = (CLIFF_BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+    if (y < blade[x]) {   // 草の葉：付け根（上）が明るく、先（下）が暗い。葉ごとに明るさをずらす
+      const t = y / Math.max(1, blade[x] - 1), k = hash(x >> 1, 0, 13);
+      put(x, y, GR[Math.max(0, Math.min(4, Math.floor(t * 2.6 + k * 1.6 + (bay - 0.5) * 0.8)))]);
+      continue;
+    }
+    if (y < blade[x] + 2) { put(x, y, ROCK[0]); continue; }   // 葉の影
+    // 岩：座標をゆがめてからボロノイ（縦長）。塊の境目が割れ目
+    const wx = x + 9 * (noise(x, y, 64, 1) - 0.5) * 2 + 3 * (noise(x, y, 16, 2) - 0.5) * 2, wy = y + 12 * (noise(x, y, 64, 3) - 0.5) * 2;
+    // 一番近い塊を探し、その塊の境目（隣の塊との垂直二等分線）までの距離を近い順に 2 つ出す（石畳の多角形の石と同じ測り方）
+    const qx = wx, qy = wy * CLIFF_SQUASH, cu = Math.floor(wx / cw), cv = Math.floor(wy / CLIFF_CELL_H);
+    let d1 = 1e9, mx = 0, my = 0, bu = 0, bv = 0, id = 0;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const gx = cu + i, gy = cv + j, o = site(gx, gy);
+      const rx = (gx + SJX[o]) * cw - qx, ry = (gy + SJY[o]) * CLIFF_CELL_H * CLIFF_SQUASH - qy, d = rx * rx + ry * ry;
+      if (d < d1) { d1 = d; mx = rx; my = ry; bu = gx; bv = gy; id = SID[o]; }
+    }
+    d1 = Math.sqrt(d1);
+    let md = 1e9, md2 = 1e9;
+    for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) {
+      if (!i && !j) continue;
+      const gx = bu + i, gy = bv + j, o = site(gx, gy);
+      const rx = (gx + SJX[o]) * cw - qx, ry = (gy + SJY[o]) * CLIFF_CELL_H * CLIFF_SQUASH - qy;
+      const ex = rx - mx, ey = ry - my, el = Math.hypot(ex, ey);
+      if (el < 1e-4) continue;
+      const d = (0.5 * (mx + rx) * ex + 0.5 * (my + ry) * ey) / el;
+      if (d < md) { md2 = md; md = d; } else if (d < md2) md2 = d;
+    }
+    // 角の丸み（2026-10-08 ユーザー指定：石畳と同じように、各石の角を少し丸く）。割れ目の幅の半分 CLIFF_GAP と丸みの半径 CLIFF_ROUND から、
+    // 塊の縁までの距離 e を出す（正が塊の中、負が割れ目）。3 つ以上の塊が集まる角では、近い 2 本の境目の両方から離れた所だけが塊になる
+    const kx = Math.max(0, CLIFF_GAP + CLIFF_ROUND - md), ky = Math.max(0, CLIFF_GAP + CLIFF_ROUND - md2);
+    const e = Math.min(md - CLIFF_GAP, CLIFF_ROUND - Math.hypot(kx, ky));
+    let v;
+    if (e < 0) v = 0.02;                            // 割れ目
+    else {
+      // 光の向きは描き込まない（2026-10-08 ユーザー指定：片側が明るく反対側が暗い絵になっていた。光の当たり方はライティングで表す）。
+      // 陰影は向きの無い物だけ：塊ごとの濃淡、塊の中心がわずかに明るく縁へ向かって暗くなる丸み、割れ目の際の影（両側同じ濃さ）
+      const bulge = 1 - Math.min(1, d1 / 20);   // 塊の中心で 1、離れるほど 0
+      v = 0.44 + 0.12 * bulge + 0.34 * (id - 0.5) + 0.2 * (noise(x, y, 16, 7) - 0.5) + 0.12 * (noise(x, y, 4, 8) - 0.5);
+      if (e < 1.5) v -= 0.16 * (1 - e / 1.5);   // 割れ目の際は暗く
+      if (Math.abs(noise(x, y * 5, 32, 9) - 0.5) < 0.012 && e > 2.5) v -= 0.22;       // 塊の中の横の細いひび
+    }
+    const soil = blade[x] + 2 + 7 + 7 * noise(x, 0, 16, 10);   // 表土（草のすぐ下の暗い層）の下端
+    if (fringe && y < soil + bay * 5) v = Math.min(v, 0.2 + 0.1 * noise(x, y, 4, 14));
+    put(x, y, ROCK[Math.max(0, Math.min(6, Math.floor(v * 7 + (bay - 0.5) * 0.9)))]);
+  }
+  g.putImageData(img, 0, 0);
+  cliffCache.set(key, c);
+  return c;
+}
+
 /** 壁 1 枚ぶんの材質。草原の時は土の絵、板目の時は従来どおりの無地（2026-09-13 ユーザー指定） */
-function wallSkin(uLen, vLen, col) {
+function wallSkin(uLen, vLen, col, { fringe = true, uOff = 0 } = {}) {   // fringe：上端の草の垂れ、uOff：絵の横の始まり [unit]（1 つの面を分けて作る時に模様をつなげる）
   const img = wallImgTex.image;
   const isGrass = stageCtx.groundTex === stageCtx.grassTex || stageCtx.groundTex === stageCtx.grassDarkTex;
-  if (!img || !isGrass) return { color: col };
+  if (!isGrass) return { color: col };
+  if (!WALL_CUSTOM) {   // 岩の崖（コードで描く。2026-10-08）。ドットは草原の床と同じ細かさで、遠くは床と同じく平均の色にする（ちらつき防止）
+    const rows = Math.max(1, Math.ceil(vLen * CLIFF_DPU - 1e-6));
+    const m = new THREE.CanvasTexture(cliffCanvas(rows, stageCtx.groundTex === stageCtx.grassDarkTex ? 'dark' : 'normal', fringe));
+    m.magFilter = THREE.NearestFilter; m.minFilter = THREE.NearestMipmapLinearFilter;
+    m.wrapS = m.wrapT = THREE.RepeatWrapping;
+    const tw = CLIFF_W / CLIFF_DPU, th = rows / CLIFF_DPU;
+    m.repeat.set(uLen / tw, vLen / th);
+    m.offset.set(uOff / tw, 1 - vLen / th);   // 絵の上端（草との境目）を壁の上端に合わせる
+    m.__disposable = true;
+    return { map: m, color: '#ffffff' };
+  }
+  if (!img) return { color: col };
   const dpu = WALL_DPU * (stageCtx.groundTex.wallScale ?? stageCtx.groundTex.tileScale ?? 1);   // 草原は絵を作り直した時に tileScale が変わったので、壁は wallScale で同じ大きさを保つ（2026-10-05）   // 草原のタイルを細かくしたら壁のドットも同じ大きさに（2026-09-17 ユーザー指定）
   const rows = Math.max(1, Math.ceil(vLen * dpu - 1e-6));
   const grass = stageCtx.groundTex === stageCtx.grassDarkTex ? GRASS_PALETTES.dark.LIGHT : null;   // 縁の見切り線と同じ色
