@@ -262,6 +262,82 @@ function mergeParts(parts, key = null, material = null) {
   if (parts[0].userData.baseColor) mesh.userData.baseColor = parts[0].userData.baseColor;
   return mesh;
 }
+// 楽器の中で動かない部品を、同じ種類の材質ごとに 1 つへまとめる（2026-10-09 ユーザー指定：楽器本体も。考え方は上の mergeParts と同じ）。
+// 楽器（root）の中で動く物は、root.userData に部品そのものが登録されている（swing：銅鑼・シンバルの揺れ、slide：トロンボーンの外管、
+// foot：グランカッサの足）。登録された部品は「別のまとまり」として、その中と外でそれぞれまとめる。位置・向きは、まとまりの根元から見た形に焼き込む。
+// 混ぜない条件（材質の署名）：材質の種類・艶・金属の設定・半透明や重なり対策（polygonOffset）などの設定、フラッシュの対象か（userData.baseColor）、
+// 描画の層（金属のブルーム用）、描く順番。名前の付いた部品・子を持つ部品・ほかの目印（userData）を持つ部品・見えない部品は、そのまま残す。
+// 頂点色の無い部品（弦の円柱など）は、材質の色を頂点色に写してまとめる。
+// 形の使い回し：元の形と置き方が全部同じなら、同じまとめた形を使う（木目の個体差を掛けた楽器は元の形が奏者ごとに別なので、共有されない）
+const _flatGeo = new Map();
+function mergeStaticMeshes(root, share = true) {   // share：まとめた形を控えて使い回す（元の形が奏者ごとに別の楽器は false。控えると作り直すたびに溜まる）
+  const dyn = new Set();
+  const note = (o) => { for (const v of Object.values(o.userData)) if (v && v.isObject3D && v !== o) dyn.add(v); };
+  note(root); root.traverse((o) => { if (o !== root) note(o); });
+  const sigOf = (m) => {
+    const t = m.material;
+    return [t.type, t.vertexColors ? 1 : 0, t.shininess ?? '', t.userData?.metalBase ?? '', t.transparent ? 1 : 0, t.opacity, t.alphaTest, t.side, t.depthWrite ? 1 : 0, t.depthTest ? 1 : 0, t.blending,
+      t.polygonOffset ? `${t.polygonOffsetFactor},${t.polygonOffsetUnits}` : '', t.map ? t.map.uuid : '', t.emissive ? t.emissive.getHex() : '', t.vertexColors ? t.color.getHex() : '',
+      m.userData.baseColor ? 1 : 0, m.layers.mask, m.renderOrder].join('|');
+  };
+  const okMesh = (m) => m.isMesh && !m.isInstancedMesh && !m.isSkinnedMesh && m.visible && !m.name && !m.children.length && !Array.isArray(m.material)
+    && m.geometry?.attributes?.position && m.geometry.attributes.normal && !m.geometry.morphAttributes?.position
+    && Object.keys(m.userData).every((k) => k === 'baseColor' || k === 'size');
+  const buckets = new Map();   // まとまりの根元 → (署名 → [{ m, mat }])
+  const walk = (o, cont, mat) => {
+    for (const c of [...o.children]) {
+      c.updateMatrix();
+      if (dyn.has(c)) { walk(c, c, new THREE.Matrix4()); continue; }
+      const mm = mat.clone().multiply(c.matrix);
+      if (okMesh(c)) { let b = buckets.get(cont); if (!b) buckets.set(cont, b = new Map()); const k = sigOf(c); (b.get(k) || b.set(k, []).get(k)).push({ m: c, mat: mm }); }
+      else walk(c, cont, mm);
+    }
+  };
+  walk(root, root, new THREE.Matrix4());
+  for (const [cont, b] of buckets) for (const list of b.values()) {
+    if (list.length < 2) continue;
+    const key = list.map(({ m, mat }) => `${m.geometry.uuid}:${m.material.vertexColors ? '' : m.material.color.getHex()}:${mat.elements.map((v) => Math.round(v * 1e4)).join(',')}`).join(';');
+    let geo = share ? _flatGeo.get(key) : null;
+    if (!geo) {
+      const gs = list.map(({ m, mat }) => {
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        g.applyMatrix4(mat);
+        if (mat.determinant() < 0) {   // 鏡像に置いた部品：面の表裏が入れ替わるので、三角形の回り順を戻す
+          for (const a of [g.attributes.position, g.attributes.normal, g.attributes.color]) {
+            if (!a) continue;
+            const A = a.array;
+            for (let i = 0; i + 8 < a.count * 3; i += 9) for (let k = 0; k < 3; k++) { const t = A[i + 3 + k]; A[i + 3 + k] = A[i + 6 + k]; A[i + 6 + k] = t; }
+          }
+        }
+        return g;
+      });
+      const n = gs.reduce((a, g) => a + g.attributes.position.count, 0);
+      const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+      let o = 0;
+      gs.forEach((g, i) => {
+        const c = g.attributes.position.count;
+        pos.set(g.attributes.position.array.subarray(0, c * 3), o * 3);
+        nor.set(g.attributes.normal.array.subarray(0, c * 3), o * 3);
+        if (g.attributes.color) col.set(g.attributes.color.array.subarray(0, c * 3), o * 3);
+        else { const mc = list[i].m.material.color; for (let k = 0; k < c; k++) { col[(o + k) * 3] = mc.r; col[(o + k) * 3 + 1] = mc.g; col[(o + k) * 3 + 2] = mc.b; } }
+        o += c; g.dispose();
+      });
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      if (share) _flatGeo.set(key, geo);
+    }
+    const first = list[0].m, mat = first.material;
+    if (!mat.vertexColors) { mat.vertexColors = true; mat.color.set(0xffffff); mat.needsUpdate = true; }   // 色は頂点色に写した
+    const mesh = new THREE.Mesh(geo, mat);
+    if (first.userData.baseColor) mesh.userData.baseColor = mat.color.clone();
+    mesh.layers.mask = first.layers.mask; mesh.renderOrder = first.renderOrder; mesh.castShadow = first.castShadow; mesh.receiveShadow = first.receiveShadow;
+    for (const { m } of list) { m.parent.remove(m); if (m.material !== mat) m.material.dispose(); }
+    cont.add(mesh);
+  }
+  return root;
+}
 const BRIDGE_VIS_H = 1;
 // 弦楽器ごとの胴の形（画面で測った値。2026-09-27）：edge ＝ 接点から弓の手元側へ胴が続く長さ、gap ＝ 接点と胴の表面のすき間 [px]
 const BOW_BODY = {
@@ -715,6 +791,7 @@ export class Puppet {
       const item = this.cfg.held?.[side];
       if (item) {
         const m = INSTRUMENT[item]();
+        if (!this.flat) mergeStaticMeshes(m);   // 手に持つ物も、動かない部品をまとめる
         m.position.set(0, holdY * PX, (this.flat ? 3 : 0) * PX); // 2D 板では手の少し前（重ね順）。3D では手の軸上
         holder.add(m);
         this.held[side] = m;
@@ -726,6 +803,8 @@ export class Puppet {
       const m = INSTRUMENT[this.variant]();
       if (this.drumStyle?.recolor) recolorParts(m, this.drumStyle.recolor);   // バスドラの色（BASSDRUM_STYLES）
       if (!this.flat && WOOD_INSTRUMENTS.has(this.variant)) applyWoodVariation(m, this.seed); // ニスの個体差＋木目の区画（2026-09-11）
+      // 動かない部品を、同じ種類の材質ごとに 1 つへまとめる（色替え・木目の個体差を掛けた後で。それらを掛けた楽器は形が奏者ごとに別なので、使い回さない）
+      if (!this.flat) mergeStaticMeshes(m, !(this.drumStyle?.recolor || WOOD_INSTRUMENTS.has(this.variant)));
       const pos = (this.p3 && this.p3.pos) || this.cfg.inst.pos;
       m.position.set(pos[0] * PX, pos[1] * PX, pos[2] * PX);
       if (this.p3 && this.p3.quat) m.quaternion.copy(this.p3.quat);
