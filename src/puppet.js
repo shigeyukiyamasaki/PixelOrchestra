@@ -229,6 +229,39 @@ const BRIDGE_H = 1.5;
 // 弦を押さえる左手を弦から浮かせる量 [px]（手の厚みで指が弦・指板に埋もれないように）
 const LH_LIFT = 0.6;
 // 駒の見た目の高さ [px]（表板から）。弓はこれより少し高い所を擦る（傾けても胴に埋もれないため。2026-09-27 ユーザー判断）
+// 一緒に動く部品を 1 つの部品にまとめる（2026-10-09 ユーザー指定：奏者の部品の数を減らして軽くする）。
+// このアプリの重さの大半は奏者で、効いているのは形の細かさではなく部品の数（部品 1 つにつき 1 回、描く命令が出る）。測ると、奏者の形を
+// 1/30 に粗くしても 1 コマの時間は変わらず、奏者を隠すと 13 → 4 ミリ秒になった。なので、形はそのままで、同じ親の下で必ず一緒に動く部品
+// （椅子と座った脚、弦楽器の駒・弦など）を 1 つにする。見た目は変わらない。
+//   parts：位置・向きを決めた後の部品（親に付ける前でよい）。頂点色の無い部品（箱・円柱）は、材質の色を頂点色にして入れる。
+//   key：まとめた形を使い回す名前（同じ組み合わせ・同じ配置なら同じ形。奏者ごとに形を持つとメモリを食うので、共有できる物は必ず付ける）。
+//   材質は 1 つ目の部品の物を使う（全部が同じ種類の材質であること）。衣装の色替え（recolorParts）は色の一致で頂点を書き換えるので、まとめた後も効く
+const _mergedGeo = new Map();
+function mergeParts(parts, key = null, material = null) {
+  let geo = key ? _mergedGeo.get(key) : null;
+  if (!geo) {
+    const gs = parts.map((m) => { m.updateMatrix(); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(m.matrix); return g; });
+    const n = gs.reduce((a, g) => a + g.attributes.position.count, 0);
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    let o = 0;
+    gs.forEach((g, i) => {
+      const c = g.attributes.position.count;
+      pos.set(g.attributes.position.array.subarray(0, c * 3), o * 3);
+      nor.set(g.attributes.normal.array.subarray(0, c * 3), o * 3);
+      if (g.attributes.color) col.set(g.attributes.color.array.subarray(0, c * 3), o * 3);
+      else { const mc = parts[i].material.color; for (let k = 0; k < c; k++) { col[(o + k) * 3] = mc.r; col[(o + k) * 3 + 1] = mc.g; col[(o + k) * 3 + 2] = mc.b; } }
+      o += c; g.dispose();
+    });
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    if (key) _mergedGeo.set(key, geo);
+  }
+  const mesh = new THREE.Mesh(geo, material || parts[0].material);
+  if (parts[0].userData.baseColor) mesh.userData.baseColor = parts[0].userData.baseColor;
+  return mesh;
+}
 const BRIDGE_VIS_H = 1;
 // 弦楽器ごとの胴の形（画面で測った値。2026-09-27）：edge ＝ 接点から弓の手元側へ胴が続く長さ、gap ＝ 接点と胴の表面のすき間 [px]
 const BOW_BODY = {
@@ -607,16 +640,20 @@ export class Puppet {
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
       this.upper.add(this.body);
       if (!this.flat) { const coat = (K?.coat || coatFor)(P, accentCol, false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
-      const ch = chair(); ch.position.set(0, 0, -6 * PX); this.rig.add(ch); // 座面は z -6..+6、背もたれは後ろ
+      const ch = chair(); ch.position.set(0, 0, -6 * PX); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
+        this.rig.add(ch);
         const legs = legsSeatedSprite(); legs.position.set(0, 0, 1 * PX); this.rig.add(legs);
       } else {
         const spread = this.cfg.legSpread ?? 3.5; // 膝の開き（チェロは楽器を挟むので広く）
+        // 椅子と座った脚は動かないので 1 つの部品にまとめる（7 個 → 1 個。上の mergeParts）。形は膝の開きごとに 1 つ作って全員で使い回す
+        const seat = [ch];
         for (const sx of [-spread, spread]) {
-          const t = thigh(); t.position.set(sx * PX, 12 * PX, 0); this.rig.add(t);           // 太もも：腰から前へ
-          const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); this.rig.add(sh);          // すね：太ももの先から床へ
-          const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); this.rig.add(so);          // 靴：前へ
+          const t = thigh(); t.position.set(sx * PX, 12 * PX, 0); seat.push(t);           // 太もも：腰から前へ
+          const sh = shin(); sh.position.set(sx * PX, 0, 8 * PX); seat.push(sh);          // すね：太ももの先から床へ
+          const so = shoe(); so.position.set(sx * PX, 0, 8 * PX); seat.push(so);          // 靴：前へ
         }
+        this.rig.add(mergeParts(seat, `seat|${spread}`));
         if (P.gender === 'f' || K?.skirt) { // ロングスカート：腰の上を覆い、膝から床へ垂れる（衣装のローブも同じ仕組み）
           const sk = (K?.skirt || skirtSeated)();
           sk.hip.position.set(0, 12 * PX, 0); this.rig.add(sk.hip);
@@ -1127,15 +1164,14 @@ export class Puppet {
     // 色は絵の駒と同じ（sprites.js の C.ivory）
     const m = new THREE.Mesh(new THREE.BoxGeometry(size[0] * PX, size[1] * PX, size[2] * PX), new THREE.MeshLambertMaterial({ color: '#f6f1dc' }));
     m.position.set(b.c[0] * PX, b.c[1] * PX, (b.plate + h / 2) * PX);
-    m.castShadow = true;
-    this.inst.add(m);
-    this._bridge = m;
+    // 駒・テールピース・弦は 1 つの部品にまとめて楽器に付ける（10 個 → 1 個。上の mergeParts）。色は頂点色に写す
+    const bits = [m];
     // 駒の下の黒い部分（駒の下の弦・テールピース）に高さを付ける（2026-09-27 ユーザー指定）：絵の黒い部分と同じ範囲に TAIL_H の板
     const T = TAIL_AT[this.variant];
     if (T) {
       const tb = new THREE.Mesh(new THREE.BoxGeometry((T.x1 - T.x0) * PX, (T.y1 - T.y0) * PX, TAIL_H * PX), new THREE.MeshLambertMaterial({ color: '#101016' }));
       tb.position.set((T.x0 + T.x1) / 2 * PX, (T.y0 + T.y1) / 2 * PX, (b.plate + TAIL_H / 2) * PX);
-      this.inst.add(tb);
+      bits.push(tb);
     }
     // 弦（2026-09-27 ユーザー指定：ボクセルを無視して細く）。テールピースの端 → 駒の上端 → 指板の先（ナット）を 4 本。
     // 位置は楽器のローカル座標 [px]（STRINGS_AT。弦の方向の位置 a と表板からの高さ z、弦を横切る向きの広がり w）
@@ -1156,10 +1192,15 @@ export class Puppet {
           const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * PX, 0.05 * PX, len, 4), mat);
           cyl.position.copy(p0).add(p1).multiplyScalar(0.5);
           cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
-          this.inst.add(cyl);
+          bits.push(cyl);
         }
       }
     }
+    const merged = mergeParts(bits, `bridge|${this.variant}`, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    for (const q of bits) { q.geometry.dispose(); q.material.dispose(); }
+    merged.castShadow = true;
+    this.inst.add(merged);
+    this._bridge = merged;
   }
   _strings(st, { t, dt, settings }) {
     const { onset, next, age, toNext, active, energy, posture } = st;
