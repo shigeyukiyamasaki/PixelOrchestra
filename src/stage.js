@@ -4199,6 +4199,45 @@ ${WATER_NOISE_GLSL}
   m.customProgramCacheKey = () => 'pxo-waterfall-v7';
   return m;
 }
+// 滝の飛沫（2026-10-08 ユーザー指定：滝が落ちた所に飛沫をあげる）。滝の下端（落ちた所）に沿って小さな四角い粒を並べ、粒ごとに
+// 「跳ね上がる → 放物線で落ちる」を繰り返す。位置は描く時に時刻から計算する（粒を 1 つずつ動かさない）：
+//   position：落ちた所の位置（粒の 4 隅とも同じ）、aSpDir：(滝の外向き x, z, 勢い)、aSpSeed：粒ごとの乱数 4 つ、aSpCorner：四角の隅（±1）
+// 勢いは落差で決まる（buildWaterSides）。粒はカメラのほうを向く板で、光は上向きの面として受ける（滝の白い筋と同じく、夜は暗くなる）。
+// 水と同じく奥行きは書かない半透明（ドット化の輪郭線が粒の周りに付かないように。輪郭線は奥行きを書いた物にだけ引かれる）
+const WATER_SPLASH_N = 60;      // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34（2026-10-08 ユーザー指定：数を増やす）
+const WATER_SPLASH_G = 9;       // 粒を落とす加速度 [unit/秒²]
+function waterSplashMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, depthWrite: false });
+  m.userData.u = { uHL: { value: 0 } };   // 水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WATER_U, m.userData.u);
+    shader.vertexShader = `attribute vec3 aSpDir;
+attribute vec4 aSpSeed;
+attribute vec2 aSpCorner;
+uniform float uWT;
+varying float pxoSpPh;
+float pxoSpSize;
+` + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+{
+  float pw = aSpDir.z;
+  float vy = pw * mix( 1.2, 2.5, aSpSeed.z );                       // 跳ね上がる速さ [unit/秒]
+  float T = 2.0 * vy / ${WATER_SPLASH_G.toFixed(1)};                 // 元の高さへ落ちてくるまでの時間
+  float ph = fract( uWT / T + aSpSeed.x ), t = ph * T;
+  float vo = pw * mix( -0.1, 1.6, aSpSeed.w );                       // 滝の外向きへの速さ（少しは滝の側へも跳ねる）。最初は −0.15〜0.7（2026-10-08 ユーザー指定：もう少し前方にも飛び散らせる）
+  float vl = ( fract( aSpSeed.x * 7.31 ) - 0.5 ) * 0.5;              // 滝に沿った横への速さ
+  transformed += vec3( aSpDir.x, 0.0, aSpDir.y ) * vo * t + vec3( -aSpDir.y, 0.0, aSpDir.x ) * vl * t;
+  transformed.y += vy * t - 0.5 * ${WATER_SPLASH_G.toFixed(1)} * t * t;
+  pxoSpPh = ph;
+  pxoSpSize = sqrt( pw ) * mix( 0.03, 0.065, fract( aSpSeed.y * 5.71 ) ) * ( 1.0 - 0.55 * ph );   // 粒の一辺の半分 [unit]。落ちるにつれ小さく
+}`).replace('#include <project_vertex>', `vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+mvPosition.xy += aSpCorner * pxoSpSize;   // カメラのほうを向く四角
+gl_Position = projectionMatrix * mvPosition;`);
+    shader.fragmentShader = 'varying float pxoSpPh;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  diffuseColor = vec4( ${c3('#eef8ff')}, 1.0 - smoothstep( 0.8, 1.0, pxoSpPh ) );   // 落ちきる手前で消える`);
+  };
+  m.customProgramCacheKey = () => 'pxo-watersplash-v2';
+  return m;
+}
 /** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置、
  *  isLake：池・湖・水たまり（水面は 1 枚。低い地面も水面の下で、滝は立てない）、surfMat：この水面の材質（滝の落ち口に貼る面に、同じ絵を使う） */
 function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, surfMat = null) {
@@ -4234,6 +4273,9 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
   { const T = waterTopTex.image.data, v = Math.max(1, Math.min(255, Math.round(((surf + yOff - WATER_TOP_LO) / WATER_TOP_SPAN) * 255)));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (F[(j - j0) * w + (i - i0)] <= 0) { const q = (j * STEP_W + i) * 4; if (!T[q + 1] || v > T[q]) T[q] = v; if (!T[q + 1] || v > T[q + 2]) T[q + 2] = v; T[q + 1] = 255; } }
   const D = Math.max(0.05, st.depth ?? 1), side = { pos: [], nor: [], col: [], al: [] }, fall = { pos: [], nor: [], fall: [] }, cap = { pos: [], nor: [], out: [] };   // cap：滝の落ち口に貼る水面の続き（out：下へ行くほど消す量）
+  const splash = { pos: [], nor: [], dir: [], seed: [], corner: [] };   // 滝の飛沫の粒（waterSplashMaterial）
+  let spSeed = (ci * 7919 + Math.round(L * 1000) * 31 + 12345) >>> 0;   // 粒の乱数（作り直しても同じ並び）
+  const spRnd = () => (spSeed = (Math.imul(spSeed, 1103515245) + 12345) >>> 0) / 4294967296;
   const lineCol = waterDepthCol(0.05 * D).lerp(new THREE.Color('#ffffff'), 0.35);
   const colAt = (y) => waterDepthCol((0.3 + (surf - y) * 0.9) * D);
   // 透け方（2026-10-08 ユーザー指定：透明な水の時は、断面も透明に）：水面と同じ式（深さの値 0 で 5 割、0.3 以上で 96% の濃さ）。
@@ -4353,6 +4395,20 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
         if (EP.has(ia)) [ax, az] = EP.get(ia);   // 舞台の端まで延ばした端
         if (EP.has(ib)) [bx, bz] = EP.get(ib);
         touch(ia, ax, az, va, P, bx, bz); touch(ib, bx, bz, vb, P, ax, az);
+        if (P.length >= 2) {   // 飛沫：この線分の滝が落ちた所（断面の下端。内側の段の分は、崖寄りにも散らす）に粒を置く
+          const drop = surf - bot, pw = Math.min(1.6, 0.5 + 0.45 * Math.sqrt(drop)), sEnd = P[P.length - 1].s;   // pw：勢い（落差が大きいほど高く・大きく）
+          const want = Math.hypot(bx - ax, bz - az) * WATER_SPLASH_N * pw, cnt = Math.floor(want) + (spRnd() < want - Math.floor(want) ? 1 : 0);
+          for (let k = 0; k < cnt; k++) {
+            const r = spRnd(), sl = sEnd * (0.4 + 0.6 * spRnd());
+            let vx = va[0] + (vb[0] - va[0]) * r, vz = va[1] + (vb[1] - va[1]) * r;
+            const px = ax + (bx - ax) * r + vx * sl, pz = az + (bz - az) * r + vz * sl, vl = Math.hypot(vx, vz) || 1;
+            vx /= vl; vz /= vl;
+            const sd = [spRnd(), spRnd(), spRnd(), spRnd()];
+            for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]]) {
+              splash.pos.push(px, bot + yOff + 0.02, pz); splash.nor.push(0, 1, 0); splash.dir.push(vx, vz, pw); splash.seed.push(sd[0], sd[1], sd[2], sd[3]); splash.corner.push(cx, cy);
+            }
+          }
+        }
         const pt = (x, z, v, p) => [x + v[0] * p.s, p.y + yOff, z + v[1] * p.s, v[0] * p.ns, p.ny, v[1] * p.ns];
         for (let li = 1; li <= fallLayers; li++) {   // 内側の段から順に（外の段が後に描かれて、手前に重なる）
           let Q = li === fallLayers ? P : fallProfile(bot, li / fallLayers);
@@ -4448,6 +4504,12 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
   add(fall, fallMat, (geo) => geo.setAttribute('aFall', new THREE.Float32BufferAttribute(fall.fall, 4)));
   if (!side.pos.length) sideMat.dispose();
   if (!fall.pos.length) fallMat.dispose();
+  if (splash.pos.length) {   // 飛沫：滝・水面より後に描く（奥行きを書かない物どうしなので、順番で手前にする）。粒は元の位置から動くので、視野の外の判定はしない
+    const n0 = stageCtx.water.children.length;
+    add(splash, waterSplashMaterial(), (geo) => { geo.setAttribute('aSpDir', new THREE.Float32BufferAttribute(splash.dir, 3)); geo.setAttribute('aSpSeed', new THREE.Float32BufferAttribute(splash.seed, 4)); geo.setAttribute('aSpCorner', new THREE.Float32BufferAttribute(splash.corner, 2)); }, false);
+    const sm = stageCtx.water.children[n0];
+    if (sm) { sm.renderOrder = -9; sm.frustumCulled = false; }
+  }
   // 滝の落ち口に貼る水面の続き：水面と同じ材質（値を全部写す）で、地面の高さによる切り取りだけ外す。絵は世界の位置から決まるので、水面から途切れずに続く
   if (cap.pos.length && surfMat) {
     const capMat = waterMaterial(), cu = capMat.userData.u, su = surfMat.userData.u;
