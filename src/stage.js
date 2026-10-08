@@ -944,7 +944,7 @@ float pxoQuantA( float a, float lv ) {
 }`;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
-const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, ss: 1, hi: null, down: null };   // ss：ちらつき抑えの細かさ（1＝そのまま）
+const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, ss: 1, hi: null, down: null, quantFirst: false, quantFirstAmt: 1 };   // ss：ちらつき抑えの細かさ（1＝そのまま）   // quantFirst：階調を、ドットにまとめる前に丸める（ss 2 以上の時だけ効く）。quantFirstAmt：その割合（0〜1）
 /** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
  *  輪郭線はドット化の画像から引く（ドット化とセットで使う。単独ではかけない。2026-09-30 ユーザー指定）。
  *  roots：ドットにする物（奏者・舞台・スクリーン等をチェックで選ぶ。2026-10-01 ユーザー指定）。選ばなかった物は本編で等倍に描く */
@@ -966,11 +966,20 @@ const _pixClear = new THREE.Color();
 function pixDownsample(renderer, ss, camera) {
   if (!pix.down) {
     const mat = new THREE.ShaderMaterial({
-      uniforms: { tex: { value: null }, dep: { value: null }, texel: { value: new THREE.Vector2() }, ss: { value: 2 }, near: { value: 0.1 }, far: { value: 200 } },
+      uniforms: { tex: { value: null }, dep: { value: null }, texel: { value: new THREE.Vector2() }, ss: { value: 2 }, near: { value: 0.1 }, far: { value: 200 },
+                  lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM, pre: { value: 0 } },   // pre：まとめる前に、細かい 1 点ずつを先に階調へ丸める割合（0〜1。下記）
       vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 手前の面（一番手前の画素から近い奥行きのもの）と奥の面に分け、数の多い方だけで色と奥行きを決める（2026-10-05 ユーザー指摘：
       // 石の縁のドットが下の床の草の色と混ざり、本編で描く土が上に乗らず、石の縁に緑が付いた）。同じ面の中の平均は残すので、ちらつき抑えの効果は同じ
-      fragmentShader: `uniform sampler2D tex; uniform sampler2D dep; uniform vec2 texel; uniform float ss; uniform float near; uniform float far;
+      // 階調を先に丸める（pre。2026-10-08 ユーザー指定：階調 16 などで、カメラを回した時のちらつきを減らす。オンオフで切り替え）：
+      // まとめてから丸めると、草や岩のように明暗が細かく混ざった絵では、カメラが少し動いて 1 ドットの中の明暗の割合が変わるたびに、
+      // 平均の色が段の境目を越えて 1 段まるごと飛んだ。細かい 1 点ずつを先に丸めてから平均すれば、1 点が段を越えてもドットの色は
+      // 1 段の 1/(ss×ss) しか動かない。1 ドットの中が同じ色の所は今までどおりの段の色で、色の境目のドットにだけ中間の色が出る。
+      // 半透明の点は、色（透明度を割り戻した値）と透明度を別々に丸めてから掛け戻す（最後の合成で丸めていたのと同じ扱い）。
+      // 割合（同日ユーザー指定：色数が増える感じが強いので、間を選べるスライダーに）：「まとめてから丸めた色」と「先に丸めてからまとめた色」の
+      // 両方を出して pre で混ぜる。0 で今までどおり（段の色だけ）、1 で全部先に丸める。小さいほど中間の色が減り、ちらつきは戻る
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D dep; uniform vec2 texel; uniform float ss; uniform float near; uniform float far; uniform float lv; uniform float pre;
+        ${PIX_QUANT_GLSL}
         float lin( float d ) { float z = d * 2.0 - 1.0; return 2.0 * near * far / ( far + near - z * ( far - near ) ); }
         // ドットの真ん中での奥行き：選んだ面の画素の奥行きに平らな面（d = a + b·u + c·v。u, v はドットの真ん中からのずれ）を当てはめ、a を返す。
         // 奥行きの値は平らな面なら画面上で一次式なので、画素がドットの片側にしか無くても真ん中の値が正しく出る（2026-10-05 ユーザー指摘：
@@ -992,20 +1001,28 @@ function pixDownsample(renderer, ss, camera) {
           }
           float tol = 0.15 + lmin * 0.03;   // 同じ面とみなす奥行きの差 [unit]
           vec4 sN = vec4( 0.0 ), sF = vec4( 0.0 ); float cN = 0.0, cF = 0.0, dN = 0.0, dF = 0.0;
+          vec4 qN = vec4( 0.0 ), qF = vec4( 0.0 );   // 先に丸めた色の和（pre が 0 より大きい時だけ使う）
           vec3 pN1 = vec3( 0.0 ), pN2 = vec3( 0.0 ), pN3 = vec3( 0.0 ), pF1 = vec3( 0.0 ), pF2 = vec3( 0.0 ), pF3 = vec3( 0.0 );   // 当てはめ用の和：(Σu, Σv, Σuv)・(Σuu, Σvv, ‥)・(Σud, Σvd, ‥)
           for ( int j = 0; j < 4; j ++ ) for ( int i = 0; i < 4; i ++ ) {
             if ( float( i ) >= ss || float( j ) >= ss ) continue;
             vec2 uv = ( o + vec2( float( i ), float( j ) ) + 0.5 ) * texel;
             vec4 c = texture2D( tex, uv );
             if ( c.a <= 0.01 ) continue;
+            vec4 cq = c;
+            if ( pre > 0.0 ) { float qa = pxoQuantA( c.a, lv ); cq = vec4( pxoQuant( c.rgb / max( c.a, 0.0001 ), lv ) * qa, qa ); }
             float d = texture2D( dep, uv ).r;
             float pu = float( i ) + 0.5 - ss * 0.5, pv = float( j ) + 0.5 - ss * 0.5;   // ドットの真ん中からのずれ
-            if ( lin( d ) < lmin + tol ) { sN += c; cN += 1.0; dN += d; pN1 += vec3( pu, pv, pu * pv ); pN2 += vec3( pu * pu, pv * pv, 0.0 ); pN3 += vec3( pu * d, pv * d, 0.0 ); }
-            else { sF += c; cF += 1.0; dF += d; pF1 += vec3( pu, pv, pu * pv ); pF2 += vec3( pu * pu, pv * pv, 0.0 ); pF3 += vec3( pu * d, pv * d, 0.0 ); }
+            if ( lin( d ) < lmin + tol ) { sN += c; qN += cq; cN += 1.0; dN += d; pN1 += vec3( pu, pv, pu * pv ); pN2 += vec3( pu * pu, pv * pv, 0.0 ); pN3 += vec3( pu * d, pv * d, 0.0 ); }
+            else { sF += c; qF += cq; cF += 1.0; dF += d; pF1 += vec3( pu, pv, pu * pv ); pF2 += vec3( pu * pu, pv * pv, 0.0 ); pF3 += vec3( pu * d, pv * d, 0.0 ); }
           }
           if ( cN + cF < ss * ss * 0.5 ) discard;   // 物がかかっているのが半分未満なら描かない
           bool useN = cN >= cF;
           gl_FragColor = useN ? sN / cN : sF / cF;
+          if ( pre > 0.0 ) {   // まとめてから丸めた色（今までの結果）と、先に丸めてからまとめた色を混ぜる
+            float qa = pxoQuantA( gl_FragColor.a, lv );
+            vec4 after = vec4( pxoQuant( gl_FragColor.rgb / max( gl_FragColor.a, 0.0001 ), lv ) * qa, qa );
+            gl_FragColor = mix( after, useN ? qN / cN : qF / cF, pre );
+          }
           gl_FragDepthEXT = useN ? fitD( cN, pN1.x, pN1.y, pN2.x, pN2.y, pN1.z, dN, pN3.x, pN3.y )
                                  : fitD( cF, pF1.x, pF1.y, pF2.x, pF2.y, pF1.z, dF, pF3.x, pF3.y );   // その面のドットの真ん中での奥行き
         }`,
@@ -1019,6 +1036,7 @@ function pixDownsample(renderer, ss, camera) {
   const u = pix.down.mat.uniforms;
   u.tex.value = pix.hi.texture; u.dep.value = pix.hi.depthTexture; u.texel.value.set(1 / pix.hi.width, 1 / pix.hi.height); u.ss.value = ss;
   u.near.value = camera.near; u.far.value = camera.far;
+  u.pre.value = pix.quantFirst ? Math.max(0, Math.min(1, pix.quantFirstAmt ?? 1)) : 0;
   renderer.setRenderTarget(pix.rt); renderer.setClearColor(0x000000, 0); renderer.clear();
   renderer.render(pix.down.scene, pix.down.cam);
   u.dep.value = null;   // 次のフレームで pix.hi に描く時に同時読みにならないよう外す
@@ -1041,7 +1059,7 @@ function pixelPass(renderer, scene, camera) {
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM,
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM, pre: { value: 0 },
                   uInvVP: { value: new THREE.Matrix4() }, uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect },   // 水面より下の物に輪郭線を引かないため（2026-10-08）
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
@@ -1050,7 +1068,7 @@ function pixelPass(renderer, scene, camera) {
         // 輪郭の色（2026-10-01 ユーザー指定：セルアウト）：隣の物の色を lineDark（輪郭の明るさ）倍に暗くした色。0 で黒、1 で物の色そのまま。
         // 以前は黒との混ぜ具合（輪郭の色）も別に持っていたが、黒がほぼ 0 なので明るさとの掛け算になり、同じ働きの重複だった
         vec3 selOut(vec4 n) { return (n.rgb / max(n.a, 0.0001)) * lineDark; }
-        uniform float near; uniform float far; uniform float lv; varying vec2 vUv;
+        uniform float near; uniform float far; uniform float lv; uniform float pre; varying vec2 vUv;
         ${PIX_QUANT_GLSL}
         float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
         // その画素が水面より下か（2026-10-08 ユーザー指定：水の中に沈んでいる物には輪郭線を付けない）。画面の位置と奥行きから世界の位置を出し、
@@ -1061,6 +1079,7 @@ function pixelPass(renderer, scene, camera) {
           vec4 t = texture2D(uWaterTop, (w.xz - uStepRect.xy) * uStepRect.zw);
           return t.g > 0.5 && w.y < t.b * ${WATER_TOP_SPAN.toFixed(1)} + (${WATER_TOP_LO.toFixed(1)}) - 0.03;
         }
+        bool pxoLined = false;   // この画素に輪郭線を引いたか（引いた画素だけ、まとめる前に丸めた割合に関係なく、ここで丸める分を残す）
         void pxoBody() {
           vec4 c = texture2D(tex, vUv);
           float d = texture2D(depth, vUv).r;
@@ -1081,7 +1100,7 @@ function pixelPass(renderer, scene, camera) {
               if (best < 1.0 && outerOff < 0.5) {   // outerOff：線を消す（外周と奥行きの境目の両方。内側の輪郭だけ残す。2026-10-01 ユーザー指定）
                 float la = line * na;
                 if (la < 0.01) discard;
-                gl_FragColor = vec4(selOut(nc), la);
+                gl_FragColor = vec4(selOut(nc), la); pxoLined = true;
                 gl_FragDepthEXT = best;
                 return;
               }
@@ -1106,13 +1125,13 @@ function pixelPass(renderer, scene, camera) {
               if (s2 && l2 < fl) { fl = l2; fc = n2; fo = o2; fd = d2; }
               if (s3 && l3 < fl) { fl = l3; fc = n3; fo = o3; fd = d3; }
               // 線を引く画素と、その手前の物の両方が水面より下なら引かない（沈んだ物どうしの線。水から突き出た部分の線は残る）
-              if (!(pxoUnder(vUv, d) && pxoUnder(vUv + fo, fd))) c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a);   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
+              if (!(pxoUnder(vUv, d) && pxoUnder(vUv + fo, fd))) { c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a); pxoLined = true; }   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
             } else if (ring > 0.0 && !edge) {
               // 内側の輪郭（2026-10-01 ユーザー指定）：線に接する物の縁の 1 ドット目に、自分の濃い色を線の ring 倍の濃さで重ねる（線→薄い線→物の色のグラデーション）。
               // 外側の線の内側＝隣が背景、内側の線の手前側＝隣が自分よりずっと奥
               bool rim = !s0 || !s1 || !s2 || !s3
                       || (s0 && l0 > ld + 2.0 * gap) || (s1 && l1 > ld + 2.0 * gap) || (s2 && l2 > ld + 2.0 * gap) || (s3 && l3 > ld + 2.0 * gap);
-              if (rim && !pxoUnder(vUv, d)) c.rgb = mix(c.rgb, selOut(c) * c.a, ring * c.a);   // 水面より下の物には付けない   // ring：内側の輪郭の濃さ（輪郭の濃さとは別。2026-10-01）
+              if (rim && !pxoUnder(vUv, d)) { c.rgb = mix(c.rgb, selOut(c) * c.a, ring * c.a); pxoLined = true; }   // 水面より下の物には付けない   // ring：内側の輪郭の濃さ（輪郭の濃さとは別。2026-10-01）
             }
           } else if (c.a < 0.01) discard;
           // 半透明の物（スカイドーム等）は透明な黒の上に描いたので色に不透明度が掛かっている。割り戻してから重ねる
@@ -1120,7 +1139,10 @@ function pixelPass(renderer, scene, camera) {
           gl_FragColor = vec4(c.rgb / max(c.a, 0.0001), c.a);
           gl_FragDepthEXT = d;   // 奏者の深度も書く（本編の物との前後を正しくする）
         }
-        void main() { pxoBody(); gl_FragColor.rgb = pxoQuant(gl_FragColor.rgb, lv); gl_FragColor.a = pxoQuantA(gl_FragColor.a, lv); if (gl_FragColor.a <= 0.0) discard; }   // 階調の細かさ（輪郭線の色・透明度にも掛かる）`,
+        // 階調の細かさ（輪郭線の色・透明度にも掛かる）。pre：まとめる前に丸めた割合。0 なら今までどおりここで全部丸める。
+        // 0 より大きい時、ふつうの画素は、まとめる所でもう割合どおりに混ぜてあるので、ここでは丸めない（丸め直すと割合が二重に掛かり、
+        // スライダーの真ん中あたりでほとんど効かなかった）。輪郭線を引いた画素だけ、同じ割合で、丸めた色とそのままの色を混ぜる
+        void main() { pxoBody(); if (pre <= 0.0 || pxoLined) { gl_FragColor.rgb = mix(pxoQuant(gl_FragColor.rgb, lv), gl_FragColor.rgb, pre); gl_FragColor.a = mix(pxoQuantA(gl_FragColor.a, lv), gl_FragColor.a, pre); } if (gl_FragColor.a <= 0.0) discard; }`,
       extensions: { fragDepth: true },
       transparent: true, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth, toneMapped: false,
     });
@@ -1173,6 +1195,7 @@ function pixelPass(renderer, scene, camera) {
 function renderMainWithPixels(renderer, scene, camera) {
   const u = pix.quad.mat.uniforms;
   u.tex.value = pix.rt.texture; u.depth.value = pix.rt.depthTexture;
+  u.pre.value = pix.quantFirst && pix.on && Math.round(pix.ss || 1) > 1 ? Math.max(0, Math.min(1, pix.quantFirstAmt ?? 1)) : 0;   // まとめる前に丸めた割合（ちらつき抑えが 1 以上＝ pixelPass の ss が 2 以上の時だけ）。その分、ここでは丸めない
   u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
   u.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // 画面の位置と奥行き → 世界の位置（輪郭線を水面より下に引かないため）
   u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? Math.max(0, Math.min(1, pix.ringAmt ?? 0.5)) : 0; u.outerOff.value = pix.outerOff ? 1 : 0;
@@ -3661,7 +3684,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   if ( sd > ( uType > 1.5 ? pxoSeaRun() + 0.3 : 0.3 ) ) discard;   // 海は駆け上がる範囲（濡れた砂）まで描く。岸の外は、はみ出した・打ち寄せた泡の粒だけ描く（濡れて暗い床の輪はやめた。2026-10-03）
   // 泡：岸に沿った大小の粒の集まり（2026-10-03 ユーザー指定）。粒を置くかどうかは「粒の中心」の位置で決め、粒は丸ごと描く
   // （水の外にはみ出してよい）。こうすると輪郭そのものが丸の並びでできて見える（最初は 1 粒ずつ水の形の線で切っていて、
-  // 輪郭の線がそのまま見えた）。粒は流さず、置き場所も固定で、1 粒ずつ大きさだけがゆっくり膨らんだり縮んだりする（出たり消えたりは
+  // 輪郭の線がそのまま見えた）。粒は流さず（川だけは流れに沿って動かす。下記）、置き場所も固定で、1 粒ずつ大きさだけがゆっくり膨らんだり縮んだりする（出たり消えたりは
   // 炭酸の泡のように見えたのでやめた。2026-10-03）。中心はます目の中のどこでもよく、隣にはみ出す
   // （周り 3×3 のます目を調べる。ずれが小さいと碁盤の目に見えた）。きわではほぼ全部のます目に入り、線のように連なる
   // 打ち寄せ（2026-10-03 ユーザー指定）：泡の帯が陸側へ最大 SURGE_A 押し出されては引く。陸側に出た時ほど粒が大きい。
@@ -3680,41 +3703,67 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 粒の判定はギザギザ抜きのなめらかな形から見積もり、粒の中心でのギザギザを足す（画素ごとのギザギザで判定すると粒がちぎれた。2026-10-03）
     float sd0 = pxoWaterSDF0( pxoP.xz );
     gn = vec2( pxoWaterSDF0( pxoP.xz + vec2( 0.02, 0.0 ) ) - sd0, pxoWaterSDF0( pxoP.xz + vec2( 0.0, 0.02 ) ) - sd0 );
+    float gLen = length( gn ) / 0.02;   // 岸からの距離の値が、1 unit でいくつ進むか（円 1 つなら 1。円のつなぎ目では 1 より小さい）
     gn = length( gn ) > 1e-6 ? normalize( gn ) : vec2( 0.0, 1.0 );
     // 風下の岸（岸の外向き gn が風下を向く）ほど強く、風上の岸ほど穏やかに打ち寄せる
     float dw = dot( gn, wD );
     sa *= clamp( 1.0 + 0.8 * Wc * max( dw, 0.0 ) - 0.5 * Wc * max( -dw, 0.0 ), 0.3, 2.0 );
     vec2 p = pxoP.xz, p0 = p - gn * sa * 0.5;   // 押し出しの真ん中に戻した位置の周りのます目を調べる
-    // 泡は川でも流さない（2026-10-04 ユーザー指定）。流れの向きが場所ごとに変わると、ます目ごとずらす量の差が時間とともにたまり、粒がちぎれるため
+    // 川の泡は流れに沿って動かす（2026-10-08 ユーザー指定。湖・池・海は動かさない）：粒のます目を（川の中心線に沿った上流からの長さ,
+    // 岸からの距離）の座標で取り、長さの方向へ時間で送る。粒は岸に沿って下流へ運ばれる。粒の世界の位置は、この点の岸に沿った向き・
+    // 岸に垂直な向き gn で近くだけまっすぐに見積もる（粒は小さいので曲がりの分のずれは見えない）。
+    // 横の座標に川の座標の「横のずれ」を使わないのは、実際の距離の 6〜8 割しか進まず（近くの区間を混ぜて均すため）、粒が横に伸びて
+    // 数も減ったため。岸からの距離は実際の距離と一致する。長さのほうも 1 unit で 0.65〜0.9 しか進まないので、その場での進み方 a を
+    // 測って粒の位置を補正し、ます目を KS 倍に細かくして数を元に近づける。左右の岸は、ます目をずらして別の並びにする
+    // 以前（2026-10-04）は世界の座標のます目を場所ごとの流れの向きへずらして、ずらす量の差がたまり粒がちぎれたので、流すのをやめていた。
+    // 速さは岸際の水の速さ（さざ波の岸際と同じぐらい）＝「流れ」× 0.25 [unit/秒]。
+    // 流れていく粒が、岸からの距離の境で急に出たり消えたりしないよう、川だけ境をなだらかにする（下の soft）
+    bool riv = uType < 0.5;
+    vec2 q0 = p0, fF = vec2( 1.0, 0.0 ), fP = vec2( 0.0, 1.0 );   // q0：ます目を取る座標での、この点の位置
+    float gs = 1.0;   // 川：岸からの距離の値の進み方（川の岸は円のつなぎ目で、実際の距離の 6〜7 割しか進まない。そのままだと粒が岸に垂直に伸びた）
+    if ( riv ) {
+      const float KS = 1.25;
+      vec2 fl, fl2, r0 = pxoRiverUV( p0, fl ), tg = vec2( -gn.y, gn.x );
+      if ( dot( tg, fl ) < 0.0 ) tg = -tg;   // 岸に沿った、下流への向き
+      // 補正の幅はしぼる：川の切れ端どうしの境目では、長さの座標が別の切れ端の値と混ざって乱れ、そのまま補正すると粒が細い線になった
+      float a = clamp( ( pxoRiverUV( p0 + tg * 0.03, fl2 ).x - r0.x ) / 0.03, 0.6, 1.3 );
+      gs = clamp( gLen, 0.6, 1.0 );
+      q0 = vec2( r0.x * KS - uWT * 0.25 * uSpeed, sd0 - gs * sa * 0.5 + ( r0.y > 0.0 ? 37.3 : -41.9 ) );
+      fF = tg / ( KS * a ); fP = gn / gs;
+    }
     {   // 小さい粒：7cm ます目。元の中心が内側 25cm〜きわのすぐ外（1.5cm）の間（2026-10-03：内側の小さい泡を減らした。40cm → 25cm、内側ほど急に減る）
-      vec2 fb = floor( p0 / 0.07 );
+      vec2 fb = floor( q0 / 0.07 );
       for ( int j = -2; j <= 2; j ++ ) for ( int i = -2; i <= 2; i ++ ) {
         vec2 fid = fb + vec2( float( i ), float( j ) );
         float f1 = pxoWH( fid ), f2 = pxoWH( fid + 41.7 ), f3 = pxoWH( fid + 83.3 ), f4 = pxoWH( fid + 29.9 ), f5 = pxoWH( fid + 7.7 );
-        vec2 cs = ( fid + vec2( f4, f3 ) ) * 0.07, cw = cs;   // 元の中心（世界の座標）
-        float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
+        vec2 cs = ( fid + vec2( f4, f3 ) ) * 0.07, cw = riv ? p0 + fF * ( cs.x - q0.x ) + fP * ( cs.y - q0.y ) : cs;   // 元の中心（cs：ます目の座標、cw：世界の座標）
+        float sdc = sd0 + gs * dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.015 || sdc < -0.25 ) continue;
-        if ( f1 > min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 ) ) continue;   // きわほど多い
+        float dens = min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 );   // きわほど多い
+        if ( f1 > dens ) continue;
+        float soft = riv ? smoothstep( 0.0, 0.15, dens - f1 ) * ( 1.0 - smoothstep( 0.008, 0.015, sdc ) ) : 1.0;
         float th = uWT * 1.2 + pxoWN( cs * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
         // 押し寄せている間（cos θ ≥ 0）だけ見え、引き始めると薄く縮みながら消える（波打ち際の泡。2026-10-03 ユーザー指定）
         float vis = smoothstep( -0.5, 0.15, cos( th ) );
-        float r = mix( 0.22, 0.5, f2 ) * 0.07 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, f5 ) + f5 * 6.283 ) );
+        float r = soft * mix( 0.22, 0.5, f2 ) * 0.07 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, f5 ) + f5 * 6.283 ) );
         float d = length( p - ( cw + gn * sa * surge ) );
         dotF = max( dotF, ( 1.0 - smoothstep( r - 0.0056, r, d ) ) * mix( 0.6, 1.0, f3 ) * vis );
       }
     }
     {   // 大きい粒：16cm ます目（直径 7〜14cm ほど）。元の中心が内側 30cm〜きわのすぐ外（3cm）の間（2026-10-03：約 1.6 倍に増やした）
-      vec2 bb = floor( ( p0 + 0.37 ) / 0.16 );
+      vec2 bb = floor( ( q0 + 0.37 ) / 0.16 );
       for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
         vec2 bid = bb + vec2( float( i ), float( j ) );
         float b1 = pxoWH( bid + 3.3 ), b2 = pxoWH( bid + 61.1 ), b3 = pxoWH( bid + 97.7 ), b4 = pxoWH( bid + 11.3 ), b5 = pxoWH( bid + 19.9 );
-        vec2 cs = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37, cw = cs;
-        float sdc = sd0 + dot( gn, cw - p ) + pxoJag( cw );
+        vec2 cs = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37, cw = riv ? p0 + fF * ( cs.x - q0.x ) + fP * ( cs.y - q0.y ) : cs;
+        float sdc = sd0 + gs * dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.03 || sdc < -0.3 ) continue;
-        if ( b1 > pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8 ) continue;
+        float dens = pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8;
+        if ( b1 > dens ) continue;
+        float soft = riv ? smoothstep( 0.0, 0.15, dens - b1 ) * ( 1.0 - smoothstep( 0.02, 0.03, sdc ) ) : 1.0;
         float th = uWT * 1.2 + pxoWN( cs * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
         float vis = smoothstep( -0.5, 0.15, cos( th ) );   // 押し寄せている間だけ
-        float r = mix( 0.22, 0.44, b2 ) * 0.16 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, b5 ) + b5 * 6.283 ) );
+        float r = soft * mix( 0.22, 0.44, b2 ) * 0.16 * mix( 0.6, 1.2, surge ) * mix( 0.6, 1.0, vis ) * ( 0.92 + 0.08 * sin( uWT * mix( 0.9, 2.1, b5 ) + b5 * 6.283 ) );
         float d = length( p - ( cw + gn * sa * surge ) );
         dotB = max( dotB, ( 1.0 - smoothstep( r - 0.0096, r, d ) ) * mix( 0.7, 1.0, b3 ) * vis );
       }
@@ -4008,7 +4057,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v70';
+  m.customProgramCacheKey = () => 'pxo-water-v75';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -5999,7 +6048,13 @@ function wallCanvasOf(img, rows, grass = null) {
 // 岩の崖（2026-10-08 ユーザー指定：草原のひな壇や岸の岩のグラフィックを改善）。それまでは 29×25 ドットの小さな絵（wall_dirt.png：茶色 4 色のまだら）を
 // 繰り返していて、作り直した草原の床（1 ドット約 2cm）に比べてドットが 4 倍粗く、模様も単調だった。草原の床と同じくコードで描く：
 //   上端：草の葉が不揃いに垂れ（色は草原の床と同じ）、その下に影と暗い表土
-//   岩：縦長の塊に割り（ゆがめたボロノイ）、塊ごとに濃淡を変える。塊の境目は黒い割れ目。色の境目は格子状のディザ。
+//   岩：縦長の塊に割り（ゆがめたボロノイ）、塊ごとに濃淡を変える。塊の境目は黒い割れ目。
+//       塗り方（2026-10-08 ユーザー指定：階調を粗くしてカメラを回した時のちらつきを減らす）：最初は色の境目を格子状のディザでぼかし、
+//       4 ドット刻みの細かいノイズも重ねていて、岩の面のほとんどが 1 ドットごとに明暗の入れ替わる模様だった。画面の 1 ドットに
+//       その明暗が何粒か入るので、カメラが少し動くたびに割合が変わり、まとめた色が階調の段をまたいでちらついた（測ると、崖のちらつきは
+//       ほぼ全部この模様が原因）。いったんディザとノイズを外してベタの面にしたが、同日ユーザー指定で「元の絵を遠目に 16 階調で見た時の、
+//       やわらかいまだらの濃淡と、にじんだ割れ目」の見た目にする：元と同じ模様で色の番号を作り、CLIFF_SOFT ドット四方でならして粒を消し、
+//       色と色の間を CLIFF_STEPS 等分した段に置き直して塗る。1 ドットごとに明暗が入れ替わる所は無くなり、同じ色のかたまりが数ドット以上になる
 //       光の向き（片側が明るい・暗い）は描き込まない。向きのある明暗はライティングで付く（2026-10-08 ユーザー指定）。
 //       塊の角は少し丸める（石畳と同じ測り方。同日ユーザー指定）
 //   下端：暗くしない（段の側面と床の縁の断面が同じ面で上下につながる所で、暗い帯になるため）
@@ -6014,6 +6069,8 @@ const CLIFF_COLS = 12, CLIFF_CELL_H = 80, CLIFF_SQUASH = 0.5;   // 岩の塊：�
 const CLIFF_ROCK = ['#33261e', '#4b3728', '#654a33', '#805f3f', '#9a774d', '#b8955f', '#d0ae74'];
 const CLIFF_GAP = 0.75, CLIFF_ROUND = 6;   // 割れ目の幅の半分と、塊の角の丸みの半径 [ドット]（丸みは塊の幅の約 15%＝石畳の「角の丸み」0.4 相当）
 const CLIFF_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const CLIFF_DITHER = 0.9, CLIFF_FINE = 0.12;   // ならす前の模様：色の境目のディザの幅（段）と、4 ドット刻みの細かいノイズの強さ
+const CLIFF_SOFT = 4, CLIFF_STEPS = 2;   // ならす幅 [ドット]（ディザの格子が 4 ドット周期なので、4 でちょうど粒が消える。1 でならさない）と、色と色の間を何等分するか（2 で 7 色 → 13 段）
 const cliffCache = new Map();   // 「行数|草の色の組|草の垂れの有無」 → canvas
 /** fringe：上端に草の垂れと表土を描く。上に別の壁が載って同じ面でつながる所（段の真下の、床の縁の断面）は false＝上端から岩 */
 function cliffCanvas(rows, palette = 'normal', fringe = true) {
@@ -6040,6 +6097,7 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
   for (let gy = 0; gy < SRN; gy++) for (let hx = 0; hx < CLIFF_COLS; hx++) { const o = gy * CLIFF_COLS + hx; SJX[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 4); SJY[o] = 0.15 + 0.7 * hash(hx, gy + SR0, 5); SID[o] = hash(hx, gy + SR0, 6); }
   const site = (gx, gy) => Math.max(0, Math.min(SRN - 1, gy - SR0)) * CLIFF_COLS + wrap(gx, CLIFF_COLS);
   const put = (x, y, col) => { const o = (y * W + x) * 4; D[o] = col[0]; D[o + 1] = col[1]; D[o + 2] = col[2]; D[o + 3] = 255; };
+  const V = new Float32Array(W * H).fill(-1);   // 岩の色の番号（0〜6。ならす前）。草の葉の所は -1（ならさない）
   // 草の垂れ：2 ドット幅の葉ごとに長さを決める（房の多い所は長め）
   const blade = new Int32Array(W);
   for (let x = 0; x < W; x++) { const b = x >> 1; blade[x] = fringe ? Math.min(H, Math.round(2 + 9 * hash(b, 0, 11) * (0.45 + 0.9 * noise(x, 0, 32, 12)))) : -9; }
@@ -6047,10 +6105,10 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
     const bay = (CLIFF_BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
     if (y < blade[x]) {   // 草の葉：付け根（上）が明るく、先（下）が暗い。葉ごとに明るさをずらす
       const t = y / Math.max(1, blade[x] - 1), k = hash(x >> 1, 0, 13);
-      put(x, y, GR[Math.max(0, Math.min(4, Math.floor(t * 2.6 + k * 1.6 + (bay - 0.5) * 0.8)))]);
+      put(x, y, GR[Math.max(0, Math.min(4, Math.floor(t * 2.6 + k * 1.6)))]);   // 草の葉にはディザを掛けない（以前は (bay − 0.5) × 0.8 を足していた）
       continue;
     }
-    if (y < blade[x] + 2) { put(x, y, ROCK[0]); continue; }   // 葉の影
+    if (y < blade[x] + 2) { V[y * W + x] = 0; continue; }   // 葉の影
     // 岩：座標をゆがめてからボロノイ（縦長）。塊の境目が割れ目
     const wx = x + 9 * (noise(x, y, 64, 1) - 0.5) * 2 + 3 * (noise(x, y, 16, 2) - 0.5) * 2, wy = y + 12 * (noise(x, y, 64, 3) - 0.5) * 2;
     // 一番近い塊を探し、その塊の境目（隣の塊との垂直二等分線）までの距離を近い順に 2 つ出す（石畳の多角形の石と同じ測り方）
@@ -6082,14 +6140,23 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
       // 光の向きは描き込まない（2026-10-08 ユーザー指定：片側が明るく反対側が暗い絵になっていた。光の当たり方はライティングで表す）。
       // 陰影は向きの無い物だけ：塊ごとの濃淡、塊の中心がわずかに明るく縁へ向かって暗くなる丸み、割れ目の際の影（両側同じ濃さ）
       const bulge = 1 - Math.min(1, d1 / 20);   // 塊の中心で 1、離れるほど 0
-      v = 0.44 + 0.12 * bulge + 0.34 * (id - 0.5) + 0.2 * (noise(x, y, 16, 7) - 0.5) + 0.12 * (noise(x, y, 4, 8) - 0.5);
+      v = 0.44 + 0.12 * bulge + 0.34 * (id - 0.5) + 0.2 * (noise(x, y, 16, 7) - 0.5) + CLIFF_FINE * (noise(x, y, 4, 8) - 0.5);
       if (e < 1.5) v -= 0.16 * (1 - e / 1.5);   // 割れ目の際は暗く
       if (Math.abs(noise(x, y * 5, 32, 9) - 0.5) < 0.012 && e > 2.5) v -= 0.22;       // 塊の中の横の細いひび
     }
     const soil = blade[x] + 2 + 7 + 7 * noise(x, 0, 16, 10);   // 表土（草のすぐ下の暗い層）の下端
-    if (fringe && y < soil + bay * 5) v = Math.min(v, 0.2 + 0.1 * noise(x, y, 4, 14));
-    put(x, y, ROCK[Math.max(0, Math.min(6, Math.floor(v * 7 + (bay - 0.5) * 0.9)))]);
+    if (fringe && y < soil + (CLIFF_DITHER > 0 ? bay * 5 : 2.5)) v = Math.min(v, CLIFF_FINE > 0 ? 0.2 + 0.1 * noise(x, y, 4, 14) : 0.22);
+    V[y * W + x] = Math.max(0, Math.min(6, Math.floor(v * 7 + (bay - 0.5) * CLIFF_DITHER)));
   }
+  // 岩をならして塗る：周り CLIFF_SOFT ドット四方の岩の番号を平均し（横は一周、上下は絵の中だけ。草の葉は数えない）、段に置き直す
+  { const n = Math.max(1, Math.round(CLIFF_SOFT)), o0 = -Math.floor(n / 2), st = Math.max(1, Math.round(CLIFF_STEPS));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (V[y * W + x] < 0) continue;
+      let sum = 0, cnt = 0;
+      for (let j = 0; j < n; j++) { const yy = y + o0 + j; if (yy < 0 || yy >= H) continue; for (let i = 0; i < n; i++) { const q = V[yy * W + wrap(x + o0 + i, W)]; if (q >= 0) { sum += q; cnt++; } } }
+      const f = Math.round((sum / cnt) * st) / st, a = Math.min(5, Math.floor(f)), t = f - a, A = ROCK[a], B = ROCK[a + 1];
+      put(x, y, [Math.round(A[0] + (B[0] - A[0]) * t), Math.round(A[1] + (B[1] - A[1]) * t), Math.round(A[2] + (B[2] - A[2]) * t)]);
+    } }
   g.putImageData(img, 0, 0);
   cliffCache.set(key, c);
   return c;

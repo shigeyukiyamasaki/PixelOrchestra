@@ -362,6 +362,9 @@
       <label class="ctl" title="色の階調の細かさ。色の成分ごとに何段に分けるか。小さいほど色数が減り、昔のゲーム機のような段のついた色になる。一番右の 256 で丸めない（今までどおり）。ドットにした物（範囲でチェックした物）だけに掛かる"><span>階調の細かさ <b data-value-for="pixelLevels">256</b></span><input type="range" id="pixelLevels" min="2" max="32" step="1" value="32"></label>
       <!-- 階調の減らし方（2026-10-06 ユーザー指定） -->
       <label class="ctl row" title="階調を減らす時の丸め方。RGB ごと：色の成分ごとに丸める（色数が減って昔のゲーム機のような色に。色相は少しずれる）。色相を保つ：明るさだけを段数に丸め、色味はそのまま残す（明るさだけが段々になる）"><span>階調の減らし方</span><select id="pixelQuantMode"><option value="rgb">RGB ごと</option><option value="hue">色相を保つ</option></select></label>
+      <!-- 階調を先に丸める（2026-10-08 ユーザー指定：カメラを回した時のちらつき対策。オフで今までどおり） -->
+      <label class="chk2 pixDep" title="階調を粗くした時（16 など）に、カメラを回すと草や岩がちらつくのを減らす。オフ：ドットにまとめてから階調に丸める（今までどおり。色は段の色だけ）。オン：細かく描いた 1 点ずつを先に丸めてから、ドットにまとめる（色の境目のドットに中間の色が出るが、色が段をまたいで飛ばなくなる）。ちらつき抑えが 1 以上の時だけ効く"><input type="checkbox" id="pixelQuantFirst"> 階調を先に丸める（ちらつき軽減）</label>
+      <label class="ctl pixDep" title="「階調を先に丸める」の割合。1：全部先に丸める（ちらつきが一番少ないが、色の境目に中間の色が増える）。0：今までどおり（色は段の色だけ）。下げるほど中間の色が減り、ちらつきは戻る。チェックがオンの時だけ効く"><span>先に丸める割合 <b data-value-for="pixelQuantFirstAmt">1</b></span><input type="range" id="pixelQuantFirstAmt" min="0" max="1" step="0.05" value="1"></label>
           </div>
           <div>
       <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
@@ -497,6 +500,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>   <!-- 床に置く 3D モデル（GLB。2026-10-01） -->
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20261007q"></script>
+  <script type="module" src="src/main.js?v=20261008b"></script>
 </body>
 </html>
