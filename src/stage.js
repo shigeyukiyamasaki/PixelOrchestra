@@ -1564,6 +1564,24 @@ export function buildFloorSkirt() {
   back.position.set(0, -h / 2, SEAT_SHIFT_Z); add(back);
 }
 
+// ひな壇の縁の線を、滝の落ち口で切る（2026-10-08 ユーザー指定：ひな壇に乗せた川が落ちる所で、縁の緑の線が水の上を横切って見えた）。
+// 縁の線は段の端から端まで通る棒なので、描く時に「すぐ内側（段の上）に、この高さの水があるか」を水面の高さの地図（uWaterTop。
+// G：水があるか、B：水面の高さ）で見て、あれば描かない。川を動かしてもひな壇は作り直さないので、形ではなく地図を毎回読む。
+// 地図の高さは +4 unit までしか入らない（それより高い水面は上限の値になる）ので、上限に張り付いている時も「この高さの水がある」とみなす
+function rimWaterCut(m) {
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect });
+    shader.vertexShader = 'varying vec3 pxoRimW;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoRimW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = 'varying vec3 pxoRimW;\nuniform sampler2D uWaterTop;\nuniform vec4 uStepRect;\n' + shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  {
+    vec2 c = vec2( 0.0, ${SEAT_SHIFT_Z.toFixed(4)} ), d = pxoRimW.xz - c;
+    vec2 q = c + d * ( 1.0 + 0.2 / max( length( d ), 0.001 ) );   // 縁から 0.2 unit 内側（段の上）
+    vec4 t = texture2D( uWaterTop, ( q - uStepRect.xy ) * uStepRect.zw );
+    if ( t.g > 0.5 && ( t.b * ${WATER_TOP_SPAN.toFixed(1)} + ( ${WATER_TOP_LO.toFixed(1)} ) > pxoRimW.y - 0.4 || t.b > 0.995 ) ) discard;
+  }`);
+  };
+  m.customProgramCacheKey = () => 'pxo-rim-watercut-v1';
+}
 // ひな壇の段ごとの範囲 { rIn, rOut, thMin, thMax, h, clipX }（buildRisers が控える）と、ある位置の天面の高さ（ひな壇の外は 0）。
 // 草をひな壇の上に生やすのに使う（2026-10-04 ユーザー指定：ひな壇の高さを 0 m として生やす）。角度は buildRisers と同じく −z から測る
 let RISER_FOOT = [];
@@ -1581,7 +1599,7 @@ export function buildRisers(seats) {
   stageCtx.seats = seats;       // 床のスタイルを変えた時に組み直せるよう控える
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
-  queueMicrotask(() => { buildFloorSkirt(); if (anySteps()) buildStepsAndRiders(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
+  queueMicrotask(() => { syncRiserU(); buildFloorSkirt(); if (anySteps()) buildStepsAndRiders(); else buildWater(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
   risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
   risers.clear();
 
@@ -1609,7 +1627,7 @@ export function buildRisers(seats) {
     // 左右対称にする（片側だけ広いと舞台らしくない）。ただし木管を右へずらした時（seats.asym）は奏者の範囲そのまま
     if (fam && seats.asym?.has(fam)) { thMin -= RISER_MARGIN; thMax += RISER_MARGIN; }
     else { const half = Math.max(Math.abs(thMin), Math.abs(thMax)) + RISER_MARGIN; thMin = -half; thMax = half; }
-    RISER_FOOT.push({ rIn, rOut, thMin, thMax, h: row.h, clipX: row.clipX });
+    RISER_FOOT.push({ rIn, rOut, thMin, thMax, h: row.h, clipX: row.clipX, back: !fam });   // back：奏者のいない後ろの段（川を乗せられる。下の riserWaterH）
     const segs = Math.max(8, Math.ceil((thMax - thMin) / deg(4)));
     // clipX 指定の段は x = ±clipX の垂直面で切る。扇の弧は clipX の外まで作っておき、はみ出しをクリップで落とす
     const cx = row.clipX;
@@ -1667,6 +1685,7 @@ export function buildRisers(seats) {
       : stageCtx.groundTex === stageCtx.grassDarkTex ? GRASS_PALETTES.dark.LIGHT : '#b08a55';
     const rimCol = new THREE.Color(rimBase).multiply(new THREE.Color(col));
     const rim = new THREE.Mesh(new THREE.TorusGeometry(rIn, 0.07, 6, segs * 2, thMax - thMin), matC({ color: rimCol }));
+    if (!fam) rimWaterCut(rim.material);   // 奏者のいない後ろの段：川が縁を越えて落ちる所では、縁の線を描かない
     rim.rotation.x = -Math.PI / 2; rim.rotation.z = Math.PI / 2 - thMax; rim.position.y = row.h + 0.01;
     rim.renderOrder = ro + 0.3; risers.add(rim);
 
@@ -2682,7 +2701,38 @@ const stepTex = () => {
 const WATER_TOP_LO = -6, WATER_TOP_SPAN = 10;   // -6〜+4 unit（1 段 ≒ 0.04 unit）。海は見た目上の深さを床の上の高さとして焼くので、床より上まで要る
 const waterTopTex = (() => { const t = new THREE.DataTexture(new Uint8Array(STEP_W * STEP_H * 4), STEP_W, STEP_H, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; })();
 const STEP_U = { uWaterTop: { value: waterTopTex }, uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
-  uStepRect: { value: new THREE.Vector4(STEP_X0 - STEP_CELL / 2, STEP_Z0 - STEP_CELL / 2, 1 / (STEP_W * STEP_CELL), 1 / (STEP_H * STEP_CELL)) } };
+  uStepRect: { value: new THREE.Vector4(STEP_X0 - STEP_CELL / 2, STEP_Z0 - STEP_CELL / 2, 1 / (STEP_W * STEP_CELL), 1 / (STEP_H * STEP_CELL)) },
+  // 奏者のいない後ろのひな壇（川を乗せられる段。2026-10-08）：段ごとに (内径, 外径, 角度の下限, 上限) と (高さ, x の切り口（0 で無し）, 0, 0)。高さ 0 は空き
+  uRiserA: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uRiserB: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) } };
+// 川を乗せられるひな壇（奏者のいない後ろの段）の天面の高さ（段の外は 0）。g：段の範囲を外へ広げる量。シェーダーの pxoRiserH と同じ式
+// （2026-10-08 ユーザー指定：一番後ろのひな壇に川を乗せ、縁で滝にする。一番後ろは奏者が乗らない背景用）。
+// 水のカードの「ひな壇に乗せる」がオンの川だけが、掘った深さ（stepHAt）にこれを足した物を地面の高さとして見る。奏者の段は対象にしない
+function riserWaterH(x, z, g = 0) {
+  const dz = z - SEAT_SHIFT_Z, r = Math.hypot(x, dz), th = Math.atan2(x, -dz);
+  let h = 0;
+  for (const f of RISER_FOOT) {
+    if (!f.back) continue;
+    let d = Math.max(f.rIn - r, r - f.rOut, (f.thMin - th) * r, (th - f.thMax) * r);
+    if (f.clipX) d = Math.max(d, Math.abs(x) - f.clipX);
+    if (d <= g) h = Math.max(h, f.h);
+  }
+  return h;
+}
+function riserWaterSd(x, z) {   // その段の縁までの距離（負が中。段が無ければ大きな値）
+  const dz = z - SEAT_SHIFT_Z, r = Math.hypot(x, dz), th = Math.atan2(x, -dz);
+  let best = 1e5;
+  for (const f of RISER_FOOT) {
+    if (!f.back) continue;
+    let d = Math.max(f.rIn - r, r - f.rOut, (f.thMin - th) * r, (th - f.thMax) * r);
+    if (f.clipX) d = Math.max(d, Math.abs(x) - f.clipX);
+    best = Math.min(best, d);
+  }
+  return best;
+}
+function syncRiserU() {   // ひな壇を組み直したら、シェーダーへ渡す段の表を作り直す
+  const A = STEP_U.uRiserA.value, B = STEP_U.uRiserB.value, fs = RISER_FOOT.filter((f) => f.back);
+  for (let i = 0; i < 4; i++) { const f = fs[i]; if (f) { A[i].set(f.rIn, f.rOut, f.thMin, f.thMax); B[i].set(f.h, f.clipX || 0, 0, 0); } else { A[i].set(0, 0, 0, 0); B[i].set(0, 0, 0, 0); } }
+}
 const STEP_GLSL = `uniform sampler2D uStepA, uStepB;
 uniform vec4 uStepDA, uStepDB, uStepRect;
 float pxoStepH( vec2 p, float grow ) {   // 掘った深さの合計（0 以下）。grow：範囲を外へ広げる量
@@ -2692,6 +2742,18 @@ float pxoStepH( vec2 p, float grow ) {   // 掘った深さの合計（0 以下�
 }
 bool pxoStepKept( vec2 p ) {   // 掘るはずだったが、奏者の足元・ひな壇をよけて残した所か
   return ( texture2D( uStepB, ( p - uStepRect.xy ) * uStepRect.zw ).a * 255.0 - 128.0 ) / 127.0 <= 0.0;
+}
+uniform vec4 uRiserA[ 4 ], uRiserB[ 4 ];
+float pxoRiserH( vec2 p, float g ) {   // 川を乗せられるひな壇（奏者のいない後ろの段）の天面の高さ（段の外は 0）。g：範囲を外へ広げる量。riserWaterH と同じ式
+  float dz = p.y - ( ${SEAT_SHIFT_Z.toFixed(4)} ), r = length( vec2( p.x, dz ) ), th = atan( p.x, -dz ), h = 0.0;
+  for ( int i = 0; i < 4; i ++ ) {
+    if ( uRiserB[ i ].x <= 0.0 ) continue;
+    vec4 a = uRiserA[ i ];
+    float d = max( max( a.x - r, r - a.y ), max( ( a.z - th ) * r, ( th - a.w ) * r ) );
+    if ( uRiserB[ i ].y > 0.0 ) d = max( d, abs( p.x ) - uRiserB[ i ].y );
+    if ( d <= g ) h = max( h, uRiserB[ i ].x );
+  }
+  return h;
 }
 uniform sampler2D uWaterTop;
 float pxoWaterAbove( vec3 w ) {   // 世界の位置 w の上にある水の厚さ [unit]（水が無ければ 0）
@@ -3507,7 +3569,8 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 }, uFlowRev: { value: 0 }, uCap: { value: 0 },   // uCap：滝の落ち口に貼る面（1）。地面の高さによる切り取りをしない   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 }, uFlowRev: { value: 0 }, uCap: { value: 0 }, uRiserOn: { value: 0 },   // uRiserOn：ひな壇に乗せる（1）。掘った深さに、後ろのひな壇の高さを足した物を地面の高さとして見る
+      // uCap：滝の落ち口に貼る面（1）。地面の高さによる切り取りをしない   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
    
     uSea: { value: new THREE.Vector4(0.5, 1, 7, 0.3) }, uSeaP: { value: new THREE.Vector2() }, uSeaW: { value: 0.3 }, uRipDots: { value: 0 } };   // uRipDots：さざ波を粒で描く（2026-10-04）   // 海：(岸線のうねり, 波の高さ, 波の周期 [秒], うねり [unit])、岸線の通る点、白波（2026-10-04）   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
@@ -3528,7 +3591,7 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv, uFlowRev, uCap;
+uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv, uFlowRev, uCap, uRiserOn;
 varying float pxoCapOut;
 uniform vec4 uSea;
 uniform vec2 uSeaP;
@@ -3668,9 +3731,10 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   // 池・湖（uType 1）は水面が 1 枚なので、低い地面にも描く（深い所は水が深くなるだけ。滝は川だけ。2026-10-08 ユーザー指定）
   // 滝の落ち口に貼る面（uCap 1）は、崖の縁の外（低い地面の上）へ丸く下っていく面なので、この切り取りをしない。
   // 川の水面は、低い地面との境目を 0.02 だけ越えて描く（落ち口に貼る面と重ねて、境目に隙間を出さない）
-  if ( uType < 1.5 && uCap < 0.5 ) { float gh = pxoStepH( pxoP.xz, 0.0 ); if ( ( uType < 0.5 && pxoStepH( pxoP.xz, -0.02 ) < uStepLv - 0.001 ) || ( gh > uStepLv + 0.001 && gh > uSurfLv - 0.001 ) ) discard; }
+  if ( uType < 1.5 && uCap < 0.5 ) { float gh = pxoStepH( pxoP.xz, 0.0 ) + uRiserOn * pxoRiserH( pxoP.xz, 0.0 ); if ( ( uType < 0.5 && pxoStepH( pxoP.xz, -0.02 ) + uRiserOn * pxoRiserH( pxoP.xz, 0.03 ) < uStepLv - 0.001 ) || ( gh > uStepLv + 0.001 && gh > uSurfLv - 0.001 ) ) discard; }
   // 段差が奏者の足元・ひな壇をよけて残した所には、水が無いことにする（2026-10-08 ユーザー指定：そこに水面が置かれ、できた崖へ滝が落ちた）
-  if ( uType < 1.5 && uCap < 0.5 && pxoStepKept( pxoP.xz ) ) discard;
+  // ただし、ひな壇に乗せる川では、ひな壇（とその壁の際の掘らない帯）は「よけて残した所」でも水を置く（残した理由が奏者ではなくひな壇なので）
+  if ( uType < 1.5 && uCap < 0.5 && pxoStepKept( pxoP.xz ) && !( uRiserOn > 0.5 && pxoRiserH( pxoP.xz, ${( STEP_RISER_GAP + 0.15 ).toFixed( 3 )} ) > 0.0 ) ) discard;
   pxoWhite = 0.0;
   if ( uWBPass > 0.5 && gl_FragCoord.z > texture2D( uWBDepth, gl_FragCoord.xy / uWBRes ).r + 0.00002 ) discard;   // ブルームの素材の時：本編で手前の物に隠れた画素は捨てる
   // 床の奥の弧から 5cm 内側で切る（2026-10-04 ユーザー指摘：境界の線が残った）。弧を覆う一番奥のひな壇の背面は 4° ごとの多角形で、
@@ -3897,7 +3961,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 底までの深さは、厚みのある水（段差の中）では実際の値（水面と、その場所の地面の差）、厚みが無ければ明るい網と同じ仮の深さ。
     // 明るい網より線を少し太く、浅い所ほど濃い。太陽が沈んでいる時は出さない。海は対象外
     if ( uType < 1.5 ) {
-      float realBed = uSurfLv - pxoStepH( pxoP.xz, 0.0 ), sBed = realBed > 0.02 ? realBed : bed;
+      float realBed = uSurfLv - pxoStepH( pxoP.xz, 0.0 ) - uRiserOn * pxoRiserH( pxoP.xz, 0.0 ), sBed = realBed > 0.02 ? realBed : bed;
       // 水面の板に落ちる影（木など）は、厚みがあって透けている所では薄くする：底の面でぼかした影の上に、硬い影を重ねない（2026-10-08）
       pxoShFade = ${SHADOW_FADE_MAX.toFixed(2)} * clamp( realBed / 0.4, 0.0, 1.0 ) * ( 1.0 - smoothstep( 0.3, 1.2, t ) );
       vec3 sn = normalize( sunDir );
@@ -4057,7 +4121,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v75';
+  m.customProgramCacheKey = () => 'pxo-water-v77';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4244,6 +4308,10 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
   // カードの「高さ」を下げた時（負）は、水面だけを下げる：断面・側面の下端は地面のまま（2026-10-08 ユーザー指摘：断面もまるごと下がって地面の下へ
   // はみ出し、同じ面にある地面の断面と重なってちらついた）。水位が下がった形になる。「高さ」を上げた時（正。ひな壇や物の上に置く）は、
   // 今までどおり水をまるごと持ち上げる。以下、surf は下げた後の水面、yOff は持ち上げる量（0 以上）
+  // ひな壇に乗せる川（2026-10-08）：地面の高さ＝掘った深さ＋後ろのひな壇の天面。ひな壇とその壁の際は「よけて残した所」でも水を置く
+  const useR = !isLake && !!st.onRiser;
+  const gAt = (x, z) => stepHAt(x, z) + (useR ? riserWaterH(x, z) : 0);
+  const keptAt = (x, z) => stepKeptAt(x, z) && !(useR && riserWaterH(x, z, STEP_RISER_GAP + 0.15) > 0);
   const yDown = Math.min(yOff, 0);
   surf += yDown; yOff = Math.max(yOff, 0);
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
@@ -4260,7 +4328,8 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
     let d = 1;
     for (let c = 0; c < STEP_MAX; c++) if (STEP_D[c] > 0) d = Math.min(d, Math.abs(stepSd(c, x, z)));
     d = Math.min(d, Math.abs(stepSd(STEP_KEPT, x, z)));   // 「よけて残した所」の縁も境目
-    return member(stepHAt(x, z)) && !stepKeptAt(x, z) ? -d : Math.max(d, 1e-4);   // 奏者の足元などをよけて残した所は、水が無い所
+    if (useR) d = Math.min(d, Math.abs(riserWaterSd(x, z)));   // ひな壇の縁も、地面の高さが変わる境目
+    return member(gAt(x, z)) && !keptAt(x, z) ? -d : Math.max(d, 1e-4);   // 奏者の足元などをよけて残した所は、水が無い所
   };
   const f = (x, z) => Math.max(circlesSd(cs, k, x, z), Math.abs(x) - FLOOR_X_HALF, z - FLOOR_Z_FRONT, Math.hypot(x, z - SEAT_SHIFT_Z) - FLOOR_BACK_R, lvSd(x, z));
   const w = i1 - i0 + 1, F = new Float32Array(w * (j1 - j0 + 1));
@@ -4294,7 +4363,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
     const top = surf - fallThick * (1 - fr), H = top - bot, P = [];
     if (H < 0.01) return P;
     const S = Math.min(WATER_FALL_REACH * fallThick * fr * Math.sqrt(H), WATER_FALL_MAX);
-    if (S < 0.02) P.push({ s: 0, y: top, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });
+    if (S < 0.02) P.push({ s: L > 0.001 ? WATER_FALL_OUT : 0, y: top, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });   // ひな壇（L が正）から落ちる滝は、上端も壁から離す（ひな壇の壁は弧で、輪郭の折れ線とわずかにずれるため）
     else for (let n = 0; n <= WATER_FALL_SEG; n++) {
       const t = n / WATER_FALL_SEG, ds = S, dy = 2 * H * t, l = Math.hypot(ds, dy) || 1;   // 接線は (ds, -dy)。面の向き（外・上）はその直角
       P.push({ s: S * t + (n ? WATER_FALL_OUT : 0), y: top - H * t * t, ns: dy / l, ny: ds / l });
@@ -4321,7 +4390,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
       const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE;
       let fb = null;
       if (insideFloor(ox, oz)) {
-        const gOut = stepHAt(ox, oz);
+        const gOut = gAt(ox, oz);
         if (!isLake && gOut < surf - 0.01 && gOut < L - 0.001 && circlesSd(cs, k, ox, oz) < 0) {   // 低い側へ水の形が続く：滝（川だけ）
           const key = Math.round(gOut * 1000) / 1000, bot = surfOf.has(key) ? Math.max(gOut, surfOf.get(key) + yDown) : gOut;   // 下の段の水面も同じだけ下がる（地面より下へは行かない）
           if (bot < surf - 0.005) fb = bot;
@@ -4360,7 +4429,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
           const ok = (x, z) => {
             const ux = x - n[0] * STEP_NUDGE, uz = z - n[1] * STEP_NUDGE, ox = x + n[0] * STEP_NUDGE, oz = z + n[1] * STEP_NUDGE;
             if (f(ux, uz) >= 0 || !insideFloor(ox, oz) || circlesSd(cs, k, ox, oz) >= 0) return false;
-            const g = stepHAt(ox, oz);
+            const g = gAt(ox, oz);
             return g < surf - 0.01 && g < L - 0.001;
           };
           for (let s = 0.005; s <= 0.3; s += 0.005) { if (!ok(px + tx * s, pz + tz * s)) break; lam = s; }
@@ -4381,12 +4450,12 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
       const mx = (ax + bx) / 2, mz = (az + bz) / 2;
       let nx = -(bz - az) / len, nz = (bx - ax) / len;   // 線分に直角な向き。範囲の外側（値が大きくなる側）へ向ける
       if (f(mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) < f(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; [ax, az, bx, bz, ua, ub, ia, ib] = [bx, bz, ax, az, ub, ua, ib, ia]; }
-      const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE, gIn = stepHAt(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE);
+      const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE, gIn = gAt(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE);
       if (!insideFloor(ox, oz)) {   // 舞台の端：断面（水面から、内側の地面まで）
         if (gIn < surf - 0.005) { const yl = Math.max(gIn, surf - WATER_SIDE_LINE); quad(ax, az, bx, bz, surf, yl, lineCol, lineCol, nx, nz, lineAl, lineAl); if (yl > gIn) quad(ax, az, bx, bz, yl, gIn, colAt(yl), colAt(gIn), nx, nz, alAt(yl), alAt(gIn)); }
         continue;
       }
-      const gOut = stepHAt(ox, oz);
+      const gOut = gAt(ox, oz);
       if (gOut >= surf - 0.01) continue;   // 岸のほうが高い：岸の壁に隠れる
       if (FB[q] != null) {   // 低い側へ水の形が続く：滝（上で決めてある）
         const bot = FB[q];
@@ -4547,6 +4616,12 @@ function buildWater() {
     // 段ごとに水面の高さが変わり、境目は滝になる）。中心線より高い地面（溝の脇の岸など）には置かない＝溝より太い水は溝の幅で止まる。
     // 「厚み」は水面を底から持ち上げる量。高さごとに、その場所を掘った深さまで（超えた分は使わない＝水面は床の高さより上へ出ない）
     const kk = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2), yOff = st.y ?? 0, thick0 = Math.max(0, st.thick ?? 0);
+    // ひな壇に乗せる（2026-10-08 ユーザー指定。川だけ）：地面の高さを「掘った深さ＋奏者のいない後ろのひな壇の天面」として見る。段の上では天面に
+    // 水面が乗り、段の縁は段差の崖と同じ扱いで滝になる。ひな壇は掘れないので、段の上の水は厚み 0（厚みは掘った深さまで）
+    const useR = st.type !== 'lake' && st.type !== 'puddle' && !!st.onRiser;
+    const gAt = (x, z) => stepHAt(x, z) + (useR ? riserWaterH(x, z) : 0);
+    const keptAt = (x, z) => stepKeptAt(x, z) && !(useR && riserWaterH(x, z, STEP_RISER_GAP + 0.15) > 0);
+    const surfFor = (L) => L + Math.max(0, Math.min(thick0, -L));   // その高さの地面に置く水面の高さ
     const surfOf = new Map();   // 地面の高さ → その高さに置く水面の高さ（どちらも床からの高さ。カードの高さ位置 y は含めない）
     // 池・湖・水たまりは、地形が変わっても水面は 1 つ（2026-10-08 ユーザー指定：滝になり得るのは流れている川だけ。池や湖は水がつながっていれば
     // 水面は一定で、底が深い所は水が深くなるだけ）：水面は、中心が一番多くかかっている地面の高さ＋厚みの 1 枚だけ。それより低い地面は全部その下。
@@ -4555,28 +4630,28 @@ function buildWater() {
     if (isLake) {
       const cnt = new Map(); let best = 0, n = 0;
       for (const pass of [true, false]) {   // 奏者の足元などをよけて残した所と、舞台の外は数えない（全部がそうである時だけ数える）
-        for (const c of cs) { if (pass && (stepKeptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000, q = (cnt.get(L) || 0) + 1; cnt.set(L, q); if (q > n) { n = q; best = L; } }
+        for (const c of cs) { if (pass && (keptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(gAt(c[0], c[1]) * 1000) / 1000, q = (cnt.get(L) || 0) + 1; cnt.set(L, q); if (q > n) { n = q; best = L; } }
         if (cnt.size) break;
       }
-      surfOf.set(best, best + Math.min(thick0, -best));
+      surfOf.set(best, surfFor(best));
     } else {
       // 段差が奏者の足元・ひな壇をよけて残した所は、水が無い所として数えない（そこに水面を置くと、できた崖へ滝が落ちる。2026-10-08 ユーザー指定）
       for (const pass of [true, false]) {   // 全部の中心が「残した所」か舞台の外にある時だけ、数えずに済ませず全部を使う
         // 舞台の外にある中心も数えない（2026-10-08 ユーザー指摘：掘った川の縁の地面に、水際の濡れ色と岸の泡だけが残った。舞台の外まで伸びた川の
         // 中心が、段差の情報の無い所で「掘っていない高さ」と判定され、その高さにも水面が置かれて、縁の地面にはみ出した分だけが描かれていた）
-        for (const c of cs) { if (pass && (stepKeptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000; if (!surfOf.has(L)) surfOf.set(L, L + Math.min(thick0, -L)); }
+        for (const c of cs) { if (pass && (keptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(gAt(c[0], c[1]) * 1000) / 1000; if (!surfOf.has(L)) surfOf.set(L, surfFor(L)); }
         if (surfOf.size) break;
       }
       // 水の形の中にある、中心線より低い地面にも水面を置く（水は低い所へ流れ込む。滝が水の無い穴へ落ちて消えないように）。
       // 中心線より高い地面（岸）には置かない。0.2 unit おきに調べ、4 点以上かかっている高さだけ（かすった程度の所は除く）
-      if (STEP_DEEP > 0) {
+      if ((STEP_DEEP > 0 || useR)) {
         const top = Math.max(...surfOf.keys()), cnt = new Map();
         for (let z = z0; z <= z1; z += 0.2) for (let x = x0; x <= x1; x += 0.2) {
-          if (!insideFloor(x, z) || circlesSd(cs, kk, x, z) > -0.1 || stepKeptAt(x, z)) continue;
-          const L = Math.round(stepHAt(x, z) * 1000) / 1000;
+          if (!insideFloor(x, z) || circlesSd(cs, kk, x, z) > -0.1 || keptAt(x, z)) continue;
+          const L = Math.round(gAt(x, z) * 1000) / 1000;
           if (L < top - 0.001 && !surfOf.has(L)) cnt.set(L, (cnt.get(L) || 0) + 1);
         }
-        for (const [L, n] of cnt) if (n >= 4) surfOf.set(L, L + Math.min(thick0, -L));
+        for (const [L, n] of cnt) if (n >= 4) surfOf.set(L, surfFor(L));
       }
     }
     for (const [L, surf] of surfOf) {
@@ -4590,6 +4665,7 @@ function buildWater() {
     u.uJag.value = 1;   // 岸のギザギザ：最大で固定（2026-10-03 ユーザー指定。スライダーは外した）
     u.uGlit.value = Math.max(0, st.glitter ?? 1);   // きらめき（2026-10-03）
     u.uWindK.value = Math.max(0, Math.min(1, st.windK ?? 1));   // 風の影響（2026-10-03）
+    u.uRiserOn.value = useR ? 1 : 0;
     u.uAvoidPl.value = st.avoidPlayers === false ? 0 : 1;   // 奏者をよける（2026-10-03）
     const rev = !isLake && st.reverse ? -1 : 1;   // 流れを逆に（川だけ）。全体の向き uFlow も逆にする（中心線から外れた所などで使う）
     u.uFlow.value.set(rev * Math.cos(deg(st.dir ?? 0)), -rev * Math.sin(deg(st.dir ?? 0)));
@@ -4609,7 +4685,7 @@ function buildWater() {
     mesh.layers.enable(WATER_GLOW_LAYER);   // 水の白のブルームのパスでも描く
     mesh.userData.pxoCard = ci;
     g.add(mesh);
-    if (STEP_DEEP > 0) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff, isLake, mat);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
+    if ((STEP_DEEP > 0 || useR)) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff, isLake, mat);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
     }
   });
   // 水面の高さの地図の仕上げ：水の無いますのうち、水のますに隣り合う所へ、隣の高さを写す（水があるか（G）はなめらかに 1 → 0 へ補間されるが、

@@ -459,7 +459,7 @@ function grassRow(st, i) {
 }
 // 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
 const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
-  rapids: 0.2, foam: 1, reach: 1, thick: 0, dig: 0, reverse: false, ripple: 'real', coast: 0.5, waveH: 1, period: 7, swell: 0.3, white: 0.3,   // 海：岸線のうねり・波の高さ・波の周期 [秒]・うねり [unit]・白波（2026-10-04）
+  rapids: 0.2, foam: 1, reach: 1, thick: 0, dig: 0, reverse: false, onRiser: false, ripple: 'real', coast: 0.5, waveH: 1, period: 7, swell: 0.3, white: 0.3,   // 海：岸線のうねり・波の高さ・波の周期 [秒]・うねり [unit]・白波（2026-10-04）
   lakeSize: 10, aspect: 1, pools: 1 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池・水たまり。水たまり puddle は 2026-10-04 に統合）。rapids：川の瀬、foam：岸の泡、lakeSize・aspect・pools：湖の大きさ・縦横比・数。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 // 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
 // 水たまり（puddle）は湖・池・水たまり（lake）にまとめた（2026-10-04 ユーザー指定）：数・大きさを引き継ぎ、泡なし（統合前の水たまりは泡を出さなかった）。
@@ -909,6 +909,12 @@ function waterRow(st, i) {
   revChk.checked = !!st.reverse;
   revChk.onchange = () => { st.reverse = revChk.checked; changed(); };
   typed.push([revLab, ['river']]);
+  // ひな壇に乗せる（2026-10-08 ユーザー指定：一番後ろのひな壇に川を乗せ、縁で滝にする）。川だけ。既定はオフ（今までどおり、ひな壇を無視して床の高さを流れる）
+  const riserLab = put(checks, '<label title="川を、奏者のいない一番後ろのひな壇の上に乗せる。オンにすると、川の形がその段にかかっている所では段の天面を流れ、段の縁で滝になって下へ落ちる。オフ：ひな壇を無視して床の高さを流れる（今までどおり。段の下に隠れる）。奏者のいる段には乗らない。段の上の水に厚みは付かない（段は掘れないため）"><input type="checkbox"><span>ひな壇に乗せる</span></label>');
+  const riserChk = riserLab.querySelector('input');
+  riserChk.checked = !!st.onRiser;
+  riserChk.onchange = () => { st.onRiser = riserChk.checked; changed(); };
+  typed.push([riserLab, ['river']]);
   const ripRow = put(box, '<label class="sld" title="さざ波の描き方。写実：なめらかな明暗と細かい凹凸。粒：水面の地は平らにして、さざ波の山を明るい横線の粒、谷を暗い横線の粒で描く（照り返しの光の粒と揃う）"><span>さざ波</span><select><option value="real">写実</option><option value="dots">粒</option></select><b></b></label>');
   const ripSel = ripRow.querySelector('select');
   ripSel.value = st.ripple || 'real';
