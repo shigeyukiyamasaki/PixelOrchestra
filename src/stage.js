@@ -1041,7 +1041,8 @@ function pixelPass(renderer, scene, camera) {
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM,
+                  uInvVP: { value: new THREE.Matrix4() }, uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect },   // 水面より下の物に輪郭線を引かないため（2026-10-08）
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
@@ -1052,6 +1053,14 @@ function pixelPass(renderer, scene, camera) {
         uniform float near; uniform float far; uniform float lv; varying vec2 vUv;
         ${PIX_QUANT_GLSL}
         float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
+        // その画素が水面より下か（2026-10-08 ユーザー指定：水の中に沈んでいる物には輪郭線を付けない）。画面の位置と奥行きから世界の位置を出し、
+        // 水面の高さの地図（B：実際の水面の高さ、G：水があるか）と比べる。水は奥行きを書かないので、奥行きは水の下の物の物
+        uniform mat4 uInvVP; uniform sampler2D uWaterTop; uniform vec4 uStepRect;
+        bool pxoUnder(vec2 uv, float dep) {
+          vec4 w = uInvVP * vec4(uv * 2.0 - 1.0, dep * 2.0 - 1.0, 1.0); w /= w.w;
+          vec4 t = texture2D(uWaterTop, (w.xz - uStepRect.xy) * uStepRect.zw);
+          return t.g > 0.5 && w.y < t.b * ${WATER_TOP_SPAN.toFixed(1)} + (${WATER_TOP_LO.toFixed(1)}) - 0.03;
+        }
         void pxoBody() {
           vec4 c = texture2D(tex, vUv);
           float d = texture2D(depth, vUv).r;
@@ -1091,18 +1100,19 @@ function pixelPass(renderer, scene, camera) {
                      || (!hx && ((s0 && l0 < ld - 2.0 * gap) || (s1 && l1 < ld - 2.0 * gap)))
                      || (!hy && ((s2 && l2 < ld - 2.0 * gap) || (s3 && l3 < ld - 2.0 * gap)));
             if (edge && outerOff < 0.5) {   // 手前側の隣（一番近い物）の色で線を引く
-              vec4 fc = c; float fl = ld;
-              if (s0 && l0 < fl) { fl = l0; fc = n0; }
-              if (s1 && l1 < fl) { fl = l1; fc = n1; }
-              if (s2 && l2 < fl) { fl = l2; fc = n2; }
-              if (s3 && l3 < fl) { fl = l3; fc = n3; }
-              c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a);   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
+              vec4 fc = c; float fl = ld, fd = d; vec2 fo = vec2(0.0);   // fo・fd：その手前の物の画素の位置（ずれ）と奥行き
+              if (s0 && l0 < fl) { fl = l0; fc = n0; fo = o0; fd = d0; }
+              if (s1 && l1 < fl) { fl = l1; fc = n1; fo = o1; fd = d1; }
+              if (s2 && l2 < fl) { fl = l2; fc = n2; fo = o2; fd = d2; }
+              if (s3 && l3 < fl) { fl = l3; fc = n3; fo = o3; fd = d3; }
+              // 線を引く画素と、その手前の物の両方が水面より下なら引かない（沈んだ物どうしの線。水から突き出た部分の線は残る）
+              if (!(pxoUnder(vUv, d) && pxoUnder(vUv + fo, fd))) c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a);   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
             } else if (ring > 0.0 && !edge) {
               // 内側の輪郭（2026-10-01 ユーザー指定）：線に接する物の縁の 1 ドット目に、自分の濃い色を線の ring 倍の濃さで重ねる（線→薄い線→物の色のグラデーション）。
               // 外側の線の内側＝隣が背景、内側の線の手前側＝隣が自分よりずっと奥
               bool rim = !s0 || !s1 || !s2 || !s3
                       || (s0 && l0 > ld + 2.0 * gap) || (s1 && l1 > ld + 2.0 * gap) || (s2 && l2 > ld + 2.0 * gap) || (s3 && l3 > ld + 2.0 * gap);
-              if (rim) c.rgb = mix(c.rgb, selOut(c) * c.a, ring * c.a);   // ring：内側の輪郭の濃さ（輪郭の濃さとは別。2026-10-01）
+              if (rim && !pxoUnder(vUv, d)) c.rgb = mix(c.rgb, selOut(c) * c.a, ring * c.a);   // 水面より下の物には付けない   // ring：内側の輪郭の濃さ（輪郭の濃さとは別。2026-10-01）
             }
           } else if (c.a < 0.01) discard;
           // 半透明の物（スカイドーム等）は透明な黒の上に描いたので色に不透明度が掛かっている。割り戻してから重ねる
@@ -1164,6 +1174,7 @@ function renderMainWithPixels(renderer, scene, camera) {
   const u = pix.quad.mat.uniforms;
   u.tex.value = pix.rt.texture; u.depth.value = pix.rt.depthTexture;
   u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
+  u.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // 画面の位置と奥行き → 世界の位置（輪郭線を水面より下に引かないため）
   u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? Math.max(0, Math.min(1, pix.ringAmt ?? 0.5)) : 0; u.outerOff.value = pix.outerOff ? 1 : 0;
   const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
   renderer.autoClear = false;
@@ -2509,6 +2520,7 @@ ${STEP_GLSL}float pxoDirtN( vec2 p ) {   // 向きを回しながら 3 段重ね
   if ( pxoOutsideFloor( P ) ) discard;
   // 地形に沿って切り取る（2026-10-08 ユーザー指定：石畳と同じく、砂・土も）。乗っている高さ uStepLv と、その場所の地面の高さが違えば描かない
   if ( abs( pxoStepH( P.xz, 0.0 ) - uStepLv ) > 0.001 ) discard;
+  ${SHADOW_BLUR_SET('pxoWW')}   // 水の下では、水の厚さに応じて影をぼかす
   // 模様・縁のむらは、中心のまわりに「向き」の分だけ回した座標で描く（地肌と一緒に回る。2026-10-05）
   vec2 rel = P.xz - uRot.zw;
   vec2 q = vec2( rel.x * uRot.x - rel.y * uRot.y, rel.x * uRot.y + rel.y * uRot.x ) + uSeed;
@@ -2574,8 +2586,9 @@ ${kind === 'sand' ? `  // 砂（2026-10-05 ユーザー指定）：明るいベ�
     gl_FragColor.a = pxoQuantA( gl_FragColor.a, uPixLv );
     if ( gl_FragColor.a <= 0.0 ) discard;
   }`);
+    shadowBlurPatch(shader);
   };
-  m.customProgramCacheKey = () => `pxo-${kind}-v9`;
+  m.customProgramCacheKey = () => `pxo-${kind}-v10`;
   return m;
 }
 function buildDirt() {   // 土と砂（2026-10-05）
@@ -2641,7 +2654,11 @@ const stepTex = () => {
   t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
   return t;
 };
-const STEP_U = { uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
+// 水面の高さの地図（2026-10-08 ユーザー指定：水の下の影を、水の厚さに応じてぼかす）。段差と同じ格子に、R：そこにある水面の高さ（床からの高さ。
+// -6〜+4 unit を 8 ビットに）、G：水があるか（0／255）、B：実際の水面の高さ（R と同じ詰め方。川・池は R と同じ、海は床の高さ：R は見た目上の深さなので）を持つ。底の面などは「自分の上に水がどれだけあるか」をこれで知る。buildWater が焼く
+const WATER_TOP_LO = -6, WATER_TOP_SPAN = 10;   // -6〜+4 unit（1 段 ≒ 0.04 unit）。海は見た目上の深さを床の上の高さとして焼くので、床より上まで要る
+const waterTopTex = (() => { const t = new THREE.DataTexture(new Uint8Array(STEP_W * STEP_H * 4), STEP_W, STEP_H, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; })();
+const STEP_U = { uWaterTop: { value: waterTopTex }, uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
   uStepRect: { value: new THREE.Vector4(STEP_X0 - STEP_CELL / 2, STEP_Z0 - STEP_CELL / 2, 1 / (STEP_W * STEP_CELL), 1 / (STEP_H * STEP_CELL)) } };
 const STEP_GLSL = `uniform sampler2D uStepA, uStepB;
 uniform vec4 uStepDA, uStepDB, uStepRect;
@@ -2653,7 +2670,37 @@ float pxoStepH( vec2 p, float grow ) {   // 掘った深さの合計（0 以下�
 bool pxoStepKept( vec2 p ) {   // 掘るはずだったが、奏者の足元・ひな壇をよけて残した所か
   return ( texture2D( uStepB, ( p - uStepRect.xy ) * uStepRect.zw ).a * 255.0 - 128.0 ) / 127.0 <= 0.0;
 }
+uniform sampler2D uWaterTop;
+float pxoWaterAbove( vec3 w ) {   // 世界の位置 w の上にある水の厚さ [unit]（水が無ければ 0）
+  vec4 t = texture2D( uWaterTop, ( w.xz - uStepRect.xy ) * uStepRect.zw );
+  return max( 0.0, t.r * ${WATER_TOP_SPAN.toFixed(1)} + ( ${WATER_TOP_LO.toFixed(1)} ) - w.y ) * t.g;
+}
 `;
+// 水の下の影のぼかし（2026-10-08 ユーザー指定：木の影なども、水の厚さが大きいほど底でぼかす）。影はドット絵に合わせて硬い影（BasicShadowMap：
+// 影の地図を 1 か所読むだけ）にしてあるので、three.js の影の読み取り（shadowmap_pars_fragment）を差し替えた版を用意する：
+//   pxoShBlur（読む幅 [影の地図の画素]）が 0 より大きい時は、中心・内側 4・外側 8 の 13 か所で読んで平均する。0 なら今までどおり 1 か所
+//   pxoShFade（0〜1）：影を薄くする量。水面の板に落ちる影を、水が透けている所で薄くするのに使う（底のぼけた影の上に硬い影を重ねない）
+// 材質は main の頭で pxoShBlur・pxoShFade を決める。対象：床と底の面・石畳・土・砂（ぼかす）、水面（薄くする）
+const SHADOW_BLUR_PX = 4.5;    // 水の厚さ 1 unit あたりの読む幅 [画素]（太陽の影の地図は 1 画素 ≒ 0.033 unit。厚さ 1 で約 0.15 unit）
+const SHADOW_BLUR_MAX = 10;    // 読む幅の上限 [画素]（広げすぎると、13 か所の影がばらけて段々に見える）
+const SHADOW_FADE_MAX = 0.8;   // 水面の板に落ちる影を、最大でこれだけ薄くする
+let shadowBlurChunk = null;
+function shadowBlurPatch(shader) {
+  if (shadowBlurChunk == null) {
+    const K = 'shadow = texture2DCompare( shadowMap, shadowCoord.xy, shadowCoord.z );', R = 'return shadow;';
+    const c = THREE.ShaderChunk.shadowmap_pars_fragment, i = c.indexOf('float getShadow('), j = c.indexOf(R, i);
+    if (i < 0 || j < 0 || c.split(K).length !== 2) { console.warn('影のぼかし：three.js の影の読み取りが想定と違うので、差し替えない（影は硬いまま）'); shadowBlurChunk = 'float pxoShBlur = 0.0, pxoShFade = 0.0;\n#include <shadowmap_pars_fragment>'; }   // 変数だけは宣言する（材質が代入しているため）
+    else {
+      const T = (x, y) => `texture2DCompare( shadowMap, shadowCoord.xy + pxoTs * vec2( ${x.toFixed(2)}, ${y.toFixed(2)} ), shadowCoord.z )`;
+      const taps = [[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5], [1, 0], [-1, 0], [0, 1], [0, -1], [0.71, 0.71], [-0.71, 0.71], [0.71, -0.71], [-0.71, -0.71]];
+      shadowBlurChunk = 'float pxoShBlur = 0.0, pxoShFade = 0.0;\n' + (c.slice(0, j) + 'return mix( shadow, 1.0, pxoShFade );' + c.slice(j + R.length))
+        .replace(K, `if ( pxoShBlur > 0.01 ) { vec2 pxoTs = pxoShBlur / shadowMapSize; shadow = ( ${taps.map(([x, y]) => T(x, y)).join(' + ')} ) / ${taps.length}.0; } else ${K}`);
+    }
+  }
+  if (shadowBlurChunk) shader.fragmentShader = shader.fragmentShader.replace('#include <shadowmap_pars_fragment>', shadowBlurChunk);
+}
+const SHADOW_BLUR_SET = (w) => `pxoShBlur = min( pxoWaterAbove( ${w} ) * ${SHADOW_BLUR_PX.toFixed(1)}, ${SHADOW_BLUR_MAX.toFixed(1)} );`;
+
 // 材質に段差の判定を差し込む。mode：'surf'（床・底の面。level の高さの所だけ描く）／'skirt'（床の縁の断面。地面より上を描かない）
 function stepPatch(mat, mode, level = 0) {
   const u = { uStepLv: { value: level } };
@@ -2665,9 +2712,11 @@ function stepPatch(mat, mode, level = 0) {
 ${mode === 'skirt' ? '  if ( pxoSW.y > pxoStepH( pxoSW.xz, 0.0 ) + 0.0005 ) discard;' : `  {
     if ( pxoStepH( pxoSW.xz, 0.0 ) < uStepLv - 0.001 ) discard;                                   // もっと深く掘ってある所
     if ( uStepLv < -0.001 && pxoStepH( pxoSW.xz, ${STEP_GROW.toFixed(3)} ) > uStepLv + 0.001 ) discard;   // ここまで掘っていない所
+    ${SHADOW_BLUR_SET('pxoSW')}   // 水の下では、水の厚さに応じて影をぼかす
   }`}`);
+    if (mode !== 'skirt') shadowBlurPatch(shader);
   };
-  mat.customProgramCacheKey = () => `pxo-step-${mode}-v1`;
+  mat.customProgramCacheKey = () => `pxo-step-${mode}-v2`;
   return mat;
 }
 let stepList = [], STEP_D = new Array(8).fill(0), STEP_DEEP = 0;   // STEP_D：チャンネルごとの深さ、STEP_DEEP：一番深い所
@@ -2948,6 +2997,7 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
   if ( pxoOutsideFloor( P ) ) discard;
   // 地形に沿って切り取る（2026-10-08 ユーザー指定：段差で掘った所の上に石畳が浮いた）。石畳が乗っている高さ uStepLv と、その場所の地面の高さが違えば描かない
   if ( abs( pxoStepH( P.xz, 0.0 ) - uStepLv ) > 0.001 ) discard;
+  ${SHADOW_BLUR_SET('pxoWW')}   // 水の下では、水の厚さに応じて影をぼかす
   // 一番近い中心線の区間に点を下ろし、道に沿った長さ s と横のずれ n を出す
   float best = 1e9, s = 0.0, n = 0.0;
   bool cut = false;
@@ -3019,8 +3069,9 @@ vec3 pxoVoronoi( vec2 x, out vec2 id, out float md2 ) {
 }`)
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   if ( uPixDot.x > 0.0 ) gl_FragColor.rgb = pxoQuant( gl_FragColor.rgb, uPixLv );   // 階調の細かさ（水と同じ）`);
+    shadowBlurPatch(shader);
   };
-  m.customProgramCacheKey = () => 'pxo-road-v5';
+  m.customProgramCacheKey = () => 'pxo-road-v6';
   return m;
 }
 function buildRoad() {
@@ -3757,6 +3808,27 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     vec2 cq = ( pxoP.xz + rf.xz * bed / max( -rf.y, 0.25 ) ) * 3.2;
     float ca = pxoWN( cq + vec2( uWT * 0.35, uWT * 0.21 ) ), cb = pxoWN( cq * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
     float caus = pow( 1.0 - clamp( abs( ca - cb ) * 3.0, 0.0, 1.0 ), 6.0 );
+    // 光の網の影（2026-10-08 ユーザー指定：水が浅くて底が見える時、水面の網の影を底に落とす）。同じ網の形を暗い色で底に描く。
+    // 位置：視線が底に当たる所から、底までの深さの分だけ太陽の側へたどった水面の網。浅いほど網のすぐ下に、深いほど離れて落ちる。
+    // 底までの深さは、厚みのある水（段差の中）では実際の値（水面と、その場所の地面の差）、厚みが無ければ明るい網と同じ仮の深さ。
+    // 明るい網より線を少し太く、浅い所ほど濃い。太陽が沈んでいる時は出さない。海は対象外
+    if ( uType < 1.5 ) {
+      float realBed = uSurfLv - pxoStepH( pxoP.xz, 0.0 ), sBed = realBed > 0.02 ? realBed : bed;
+      // 水面の板に落ちる影（木など）は、厚みがあって透けている所では薄くする：底の面でぼかした影の上に、硬い影を重ねない（2026-10-08）
+      pxoShFade = ${SHADOW_FADE_MAX.toFixed(2)} * clamp( realBed / 0.4, 0.0, 1.0 ) * ( 1.0 - smoothstep( 0.3, 1.2, t ) );
+      vec3 sn = normalize( sunDir );
+      vec2 sq = ( pxoP.xz + rf.xz * sBed / max( -rf.y, 0.25 ) + sn.xz * sBed / max( sn.y, 0.3 ) ) * 3.2;
+      // 水の厚さが大きいほど、影をぼかす（2026-10-08 ユーザー指定）。網を、少しずつ位置をずらした 4 か所で読んで平均する。
+      // ずらす幅は実際の底までの深さに比例（深さ 1 で 0.1 unit ≒ 網目の 1/3。上限 0.25）。厚みの無い水はぼかさない（幅 0＝4 か所が同じ位置）
+      float blurR = min( 0.1 * max( realBed, 0.0 ), 0.25 ) * 3.2, shNet = 0.0;
+      for ( int q = 0; q < 4; q ++ ) {
+        vec2 o = sq + blurR * vec2( q < 2 ? 1.0 : -1.0, q == 0 || q == 3 ? 1.0 : -1.0 );
+        float sa = pxoWN( o + vec2( uWT * 0.35, uWT * 0.21 ) ), sb = pxoWN( o * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
+        shNet += 0.25 * pow( 1.0 - clamp( abs( sa - sb ) * 3.0, 0.0, 1.0 ), 4.0 );
+      }
+      col *= 1.0 - 0.4 * shNet * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * smoothstep( 0.02, 0.2, sn.y );
+    }
+    else pxoShFade = ${SHADOW_FADE_MAX.toFixed(2)} * ( 1.0 - smoothstep( 0.3, 1.2, t ) );   // 海：色が浅く透けている岸の近くでは、水面の板に落ちる影を薄くする（床の影は水面の高さの地図でぼかす。2026-10-08）
     col += caus * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * vec3( 0.6, 0.66, 0.56 ) * ( 0.3 + 0.7 * min( Wc, 1.5 ) );   // 2026-10-03 ユーザー指定で強く（0.32 → 0.6、消える深さ 0.55 → 1.0）
     // 空の映り込み：波の向きで反射した方向に見える空の色（画面の空のグラデーション＋夕焼け）を映す（2026-10-03 ユーザー指定）。
     // 斜めから見るほど強い（シュリックの近似、水の反射率 2%）。空は「見えている色」なので照明を掛けず、発光として足す
@@ -3896,9 +3968,10 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   }
   if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
 }`);
+    shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v57';
+  m.customProgramCacheKey = () => 'pxo-water-v62';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4042,6 +4115,9 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff) {
     F[(j - j0) * w + (i - i0)] = a > 0.3 ? a : f(x, z);   // 水の形から遠い所は調べない
   }
   const V = (i, j) => (i < i0 || i > i1 || j < j0 || j > j1 ? 1 : F[(j - j0) * w + (i - i0)]);
+  // 水面の高さの地図に、この水面の範囲を焼く（水の下の影のぼかし用）。重なる所は高いほうの水面
+  { const T = waterTopTex.image.data, v = Math.max(1, Math.min(255, Math.round(((surf + yOff - WATER_TOP_LO) / WATER_TOP_SPAN) * 255)));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (F[(j - j0) * w + (i - i0)] <= 0) { const q = (j * STEP_W + i) * 4; if (!T[q + 1] || v > T[q]) T[q] = v; if (!T[q + 1] || v > T[q + 2]) T[q + 2] = v; T[q + 1] = 255; } }
   const D = Math.max(0.05, st.depth ?? 1), side = { pos: [], nor: [], col: [] }, fall = { pos: [], nor: [], fall: [] };
   const lineCol = waterDepthCol(0.05 * D).lerp(new THREE.Color('#ffffff'), 0.35);
   const colAt = (y) => waterDepthCol((0.3 + (surf - y) * 0.9) * D);
@@ -4107,6 +4183,7 @@ function buildWater() {
   for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
   g.clear();
   WATER_AVOID = [];
+  waterTopTex.image.data.fill(0);   // 水面の高さの地図（水の下の影のぼかし用）。下の buildWaterSides が焼き、最後に仕上げる
   waterList.forEach((st, ci) => {
     if (st.show === false) return;
     if (st.type === 'sea') { buildSea(st, ci); return; }   // 海（2026-10-04）
@@ -4171,6 +4248,18 @@ function buildWater() {
     if (STEP_DEEP > 0) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
     }
   });
+  // 水面の高さの地図の仕上げ：水の無いますのうち、水のますに隣り合う所へ、隣の高さを写す（水があるか（G）はなめらかに 1 → 0 へ補間されるが、
+  // 高さ（R）まで 0 へ向かって補間されると、縁で厚さが狂うため）
+  { const T = waterTopTex.image.data, add = [];
+    for (let jj = 1; jj < STEP_H - 1; jj++) for (let ii = 1; ii < STEP_W - 1; ii++) {
+      const q = (jj * STEP_W + ii) * 4;
+      if (T[q + 1]) continue;
+      let v = 0, b = 0;
+      for (const o of [-4, 4, -STEP_W * 4, STEP_W * 4, -STEP_W * 4 - 4, -STEP_W * 4 + 4, STEP_W * 4 - 4, STEP_W * 4 + 4]) if (T[q + o + 1]) { v = Math.max(v, T[q + o]); b = Math.max(b, T[q + o + 2]); }
+      if (v) add.push(q, v, b);
+    }
+    for (let n = 0; n < add.length; n += 3) { T[add[n]] = add[n + 1]; T[add[n] + 2] = add[n + 2]; }
+    waterTopTex.needsUpdate = true; }
 }
 // 海（2026-10-04 ユーザー指定）：床全体を覆う細かい格子の面（うねりで上下させるため）。陸側と床の外はシェーダーで描かない
 function buildSea(st, ci) {
@@ -4189,6 +4278,21 @@ function buildSea(st, ci) {
   u.uWindK.value = Math.max(0, Math.min(1, st.windK ?? 1));
   u.uAvoidPl.value = st.avoidPlayers === false ? 0 : 1;
   u.uFlow.value.set(nx, nz);
+  // 水の下の影のぼかし（2026-10-08 ユーザー指定：海にも）。海は床の高さに水面を張るだけで実際の厚さが無いので、岸から沖へ向かう
+  // 「見た目上の深さ」（水面の色を決めているのと同じ値：沖へ 8 × 深くなる距離 unit で「深さ」に届く）を、水面の高さの地図に
+  // 「床の上の高さ」として焼く。床の影は波打ち際でくっきり、沖へ行くほどぼける。うねりの上下は入れない（静かな時の岸線で決める）
+  { const T = waterTopTex.image.data, sea = { px: st.x ?? 0, pz: st.z ?? 0, nx, nz, coast }, reachU = 8 * u.uReach.value, yOff = st.y ?? 0;
+    const vSurf = Math.max(1, Math.min(255, Math.round(((yOff - WATER_TOP_LO) / WATER_TOP_SPAN) * 255)));
+    for (let j = 0; j < STEP_H; j++) for (let i = 0; i < STEP_W; i++) {
+      const x = STEP_X0 + i * STEP_CELL, z = STEP_Z0 + j * STEP_CELL;
+      if (!insideFloor(x, z)) continue;
+      const d = -seaDAt(sea, x, z);   // 岸線から沖への距離（正が海）
+      if (d <= 0) continue;
+      const top = yOff + Math.min(1, d / reachU) * u.uDepth.value, v = Math.max(1, Math.min(255, Math.round(((top - WATER_TOP_LO) / WATER_TOP_SPAN) * 255))), q = (j * STEP_W + i) * 4;
+      if (!T[q + 1] || v > T[q]) T[q] = v;
+      if (!T[q + 1] || vSurf > T[q + 2]) T[q + 2] = vSurf;   // 実際の水面は床の高さ（海の中の物は「沈んでいない」）
+      T[q + 1] = 255;
+    } }
   u.uType.value = 2; u.uRapid.value = 0; u.uSpeed.value = 0;
   u.uFoam.value = Math.max(0, Math.min(1, st.foam ?? 1));
   u.uRipDots.value = st.ripple === 'dots' ? 1 : 0;
