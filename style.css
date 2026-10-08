@@ -177,6 +177,10 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen.gen .note { color: var(--muted); font-size: 11px; }
 #screenBar .screen.gen .sld { grid-template-columns: 7.4em minmax(0, 1fr) auto; }   /* 「縁のなめらかさ」「大きさのばらつき」など長い名前が入る幅（5.4em ではスライダーに重なった。2026-10-03） */
 #screenBar .screen.gen .genChecks { flex-wrap: wrap; gap: 4px 12px; }
+/* スライダーを 2 列にするカード（2026-10-08 ユーザー指定：水のカードの行が増えすぎた）。幅は 1 列のカード（260px）2 枚分＋列の間 */
+#screenBar .screen.gen.two { flex: 0 0 528px; }
+#screenBar .screen.gen .genCols { display: flex; align-items: flex-start; gap: 12px; }
+#screenBar .screen.gen .genCol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
 #windBox:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は揺れの設定を薄く（植物の明るさは常に効く。グレーアウト法則） */
 #windBox .plantSub { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
