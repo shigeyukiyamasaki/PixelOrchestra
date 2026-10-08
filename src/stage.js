@@ -2802,23 +2802,23 @@ function stepContourLines(V, i0, i1, j0, j1) {
   return lines;
 }
 // 水のカード（川・池・湖・水たまり）の「掘る深さ」（2026-10-08 ユーザー指定：川のカード自体に、その形に沿って地面を窪ませる機能を。池や湖にも）：
-// 水の形の範囲を、その深さだけ掘る。「岸の幅」があれば、範囲を外へその分だけ広げる（水際と壁の間に地面が見える）。形は水面と同じ円の並び・
-// 同じつなぎ方なので、岸の幅 0 なら水がちょうど溝の幅になる。段差のカードと同じ枠を使い、重なれば足し算。海は対象外
+// 水の形の範囲を、その深さだけ掘る。形は水面と同じ円の並び・同じつなぎ方なので、水がちょうど溝の幅になる。段差のカードと同じ枠を使い、
+// 重なれば足し算。海は対象外。掘る範囲を外へ広げる「岸の幅」は一度付けたが、不要とのことで外した（同日ユーザー指定）
 function stepDigs() {
   const out = [];
   for (const w of waterList) {
     const depth = Math.max(0, w.dig ?? 0);
     if (w.show === false || w.type === 'sea' || depth <= 0) continue;
-    const cs0 = waterCircles(w), bank = Math.max(0, w.bank ?? 0);
+    const cs = waterCircles(w);
     let rMax = 0;
-    for (const c of cs0) rMax = Math.max(rMax, c[2]);
-    out.push({ cs: cs0.map((c) => [c[0], c[1], c[2] + bank]), depth, k: Math.max(0.02, (w.smooth ?? 0.5) * rMax * 1.2) });   // つなぎ方は水面と同じ値
+    for (const c of cs) rMax = Math.max(rMax, c[2]);
+    out.push({ cs, depth, k: Math.max(0.02, (w.smooth ?? 0.5) * rMax * 1.2) });   // つなぎ方は水面と同じ値
   }
   return out;
 }
 // 掘る形に関わる値の控え（水のスライダーを動かした時、ここが変わった時だけ段差と、その上に乗る物を組み直す）
 const stepDigSig = () => JSON.stringify(waterList.filter((w) => w.show !== false && w.type !== 'sea' && (w.dig ?? 0) > 0)
-  .map((w) => [w.type, w.x, w.z, w.len, w.width, w.meander, w.dir, w.pieces, w.scatter, w.smooth, w.seed, w.pools, w.lakeSize, w.aspect, w.dig, w.bank]));
+  .map((w) => [w.type, w.x, w.z, w.len, w.width, w.meander, w.dir, w.pieces, w.scatter, w.smooth, w.seed, w.pools, w.lakeSize, w.aspect, w.dig]));
 let lastDigSig = '[]';
 /** 掘る物があるか（段差のカード、または水のカードの「掘る深さ」） */
 const anySteps = () => stepList.some((o) => o.show !== false) || lastDigSig !== '[]';
@@ -4350,15 +4350,17 @@ function buildWater() {
     const isLake = st.type === 'lake' || st.type === 'puddle';
     if (isLake) {
       const cnt = new Map(); let best = 0, n = 0;
-      for (const pass of [true, false]) {   // 奏者の足元などをよけて残した所は数えない（全部がそこにある時だけ数える）
-        for (const c of cs) { if (pass && stepKeptAt(c[0], c[1])) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000, q = (cnt.get(L) || 0) + 1; cnt.set(L, q); if (q > n) { n = q; best = L; } }
+      for (const pass of [true, false]) {   // 奏者の足元などをよけて残した所と、舞台の外は数えない（全部がそうである時だけ数える）
+        for (const c of cs) { if (pass && (stepKeptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000, q = (cnt.get(L) || 0) + 1; cnt.set(L, q); if (q > n) { n = q; best = L; } }
         if (cnt.size) break;
       }
       surfOf.set(best, best + Math.min(thick0, -best));
     } else {
       // 段差が奏者の足元・ひな壇をよけて残した所は、水が無い所として数えない（そこに水面を置くと、できた崖へ滝が落ちる。2026-10-08 ユーザー指定）
-      for (const pass of [true, false]) {   // 全部の中心が「残した所」にある時だけ、数えずに済ませず全部を使う
-        for (const c of cs) { if (pass && stepKeptAt(c[0], c[1])) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000; if (!surfOf.has(L)) surfOf.set(L, L + Math.min(thick0, -L)); }
+      for (const pass of [true, false]) {   // 全部の中心が「残した所」か舞台の外にある時だけ、数えずに済ませず全部を使う
+        // 舞台の外にある中心も数えない（2026-10-08 ユーザー指摘：掘った川の縁の地面に、水際の濡れ色と岸の泡だけが残った。舞台の外まで伸びた川の
+        // 中心が、段差の情報の無い所で「掘っていない高さ」と判定され、その高さにも水面が置かれて、縁の地面にはみ出した分だけが描かれていた）
+        for (const c of cs) { if (pass && (stepKeptAt(c[0], c[1]) || !insideFloor(c[0], c[1]))) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000; if (!surfOf.has(L)) surfOf.set(L, L + Math.min(thick0, -L)); }
         if (surfOf.size) break;
       }
       // 水の形の中にある、中心線より低い地面にも水面を置く（水は低い所へ流れ込む。滝が水の無い穴へ落ちて消えないように）。
