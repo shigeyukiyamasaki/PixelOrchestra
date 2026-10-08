@@ -3484,16 +3484,16 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 }, uFlowRev: { value: 0 },   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 }, uFlowRev: { value: 0 }, uCap: { value: 0 },   // uCap：滝の落ち口に貼る面（1）。地面の高さによる切り取りをしない   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
    
     uSea: { value: new THREE.Vector4(0.5, 1, 7, 0.3) }, uSeaP: { value: new THREE.Vector2() }, uSeaW: { value: 0.3 }, uRipDots: { value: 0 } };   // uRipDots：さざ波を粒で描く（2026-10-04）   // 海：(岸線のうねり, 波の高さ, 波の周期 [秒], うねり [unit])、岸線の通る点、白波（2026-10-04）   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
     Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, STEP_U, m.userData.u, { uWBPass: WATER_BLOOM.pass, uWBDepth: WATER_BLOOM.depth, uWBRes: WATER_BLOOM.res, uWBThr: WATER_BLOOM.thr }, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
     // pxoVV：視点から見た座標で、この点からカメラへの向き（2026-10-03：r128 は Lambert に cameraPosition を渡さないので自分で持つ）
-    shader.vertexShader = 'varying vec3 pxoWW, pxoVV;\nuniform vec4 uSea;\nuniform vec2 uSeaP, uFlow;\nuniform float uType, uWT;\n' + SWELL_GLSL + shader.vertexShader
+    shader.vertexShader = 'attribute float aCapOut;\nvarying float pxoCapOut;\nvarying vec3 pxoWW, pxoVV;\nuniform vec4 uSea;\nuniform vec2 uSeaP, uFlow;\nuniform float uType, uWT;\n' + SWELL_GLSL + shader.vertexShader
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec2 pxoSwG; float pxoSwHt = pxoSwell( ( modelMatrix * vec4( position, 1.0 ) ).xz, pxoSwG );\nobjectNormal = normalize( vec3( -pxoSwG.x, 1.0, -pxoSwG.y ) );')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += pxoSwHt;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += pxoSwHt;\npxoCapOut = aCapOut;')   // aCapOut：滝の落ち口に貼る面を、下へ行くほど消す量（0〜1。水面の板は持たない＝0）
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\npxoWW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoVV = -( modelViewMatrix * vec4( transformed, 1.0 ) ).xyz;');
     shader.fragmentShader = `varying vec3 pxoWW, pxoVV;
 uniform vec4 uC[ ${WATER_MAX_C} ];
@@ -3505,7 +3505,8 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv, uFlowRev;
+uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv, uFlowRev, uCap;
+varying float pxoCapOut;
 uniform vec4 uSea;
 uniform vec2 uSeaP;
 uniform float uSeaW;   // 海（2026-10-04）
@@ -3642,15 +3643,21 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
   // 段差（2026-10-08 ユーザー指定）：この水面は「乗っている高さ uStepLv の地面」と「それより高いが水面 uSurfLv より低い地面（水をかぶる浅い段）」にだけ描く。
   // 高い地面には描かない＝溝より太い水は溝の幅で止まる。低い地面にも描かない＝そこは別の水面（段ごとに 1 枚）か、滝が落ちる先。海は対象外
   // 池・湖（uType 1）は水面が 1 枚なので、低い地面にも描く（深い所は水が深くなるだけ。滝は川だけ。2026-10-08 ユーザー指定）
-  if ( uType < 1.5 ) { float gh = pxoStepH( pxoP.xz, 0.0 ); if ( ( uType < 0.5 && gh < uStepLv - 0.001 ) || ( gh > uStepLv + 0.001 && gh > uSurfLv - 0.001 ) ) discard; }
+  // 滝の落ち口に貼る面（uCap 1）は、崖の縁の外（低い地面の上）へ丸く下っていく面なので、この切り取りをしない。
+  // 川の水面は、低い地面との境目を 0.02 だけ越えて描く（落ち口に貼る面と重ねて、境目に隙間を出さない）
+  if ( uType < 1.5 && uCap < 0.5 ) { float gh = pxoStepH( pxoP.xz, 0.0 ); if ( ( uType < 0.5 && pxoStepH( pxoP.xz, -0.02 ) < uStepLv - 0.001 ) || ( gh > uStepLv + 0.001 && gh > uSurfLv - 0.001 ) ) discard; }
   // 段差が奏者の足元・ひな壇をよけて残した所には、水が無いことにする（2026-10-08 ユーザー指定：そこに水面が置かれ、できた崖へ滝が落ちた）
-  if ( uType < 1.5 && pxoStepKept( pxoP.xz ) ) discard;
+  if ( uType < 1.5 && uCap < 0.5 && pxoStepKept( pxoP.xz ) ) discard;
   pxoWhite = 0.0;
   if ( uWBPass > 0.5 && gl_FragCoord.z > texture2D( uWBDepth, gl_FragCoord.xy / uWBRes ).r + 0.00002 ) discard;   // ブルームの素材の時：本編で手前の物に隠れた画素は捨てる
   // 床の奥の弧から 5cm 内側で切る（2026-10-04 ユーザー指摘：境界の線が残った）。弧を覆う一番奥のひな壇の背面は 4° ごとの多角形で、
   // 弧の途中は円より最大 2cm 内側にある。ちょうど円で切ると、その隙間に持ち上がった水面の端が線になって見えた
   { float bz = pxoP.z - ( ${SEAT_SHIFT_Z.toFixed(4)} ); if ( pxoP.x * pxoP.x + bz * bz > ${((FLOOR_BACK_R - 0.05) ** 2).toFixed(4)} ) discard; }
   float sd = pxoWaterSDF( pxoP.xz );
+  // 滝の落ち口に貼る面：崖が川に斜めに当たると、崖の向きに外へ張り出す分だけ川の形の外（岸の線の向こう）へ出る。そこも落ちていく水
+  // なので、形の外として捨てずに描く（2026-10-08 ユーザー指摘：落ち口の端が三角に欠けた）。岸のきわの浅い水の扱いにすると薄くて、
+  // 裏の岸の壁が透けて欠けたように見えたので、岸から離れた所の水として描く
+  if ( uCap > 0.5 ) sd = min( sd, -0.3 );
   if ( sd > ( uType > 1.5 ? pxoSeaRun() + 0.3 : 0.3 ) ) discard;   // 海は駆け上がる範囲（濡れた砂）まで描く。岸の外は、はみ出した・打ち寄せた泡の粒だけ描く（濡れて暗い床の輪はやめた。2026-10-03）
   // 泡：岸に沿った大小の粒の集まり（2026-10-03 ユーザー指定）。粒を置くかどうかは「粒の中心」の位置で決め、粒は丸ごと描く
   // （水の外にはみ出してよい）。こうすると輪郭そのものが丸の並びでできて見える（最初は 1 粒ずつ水の形の線で切っていて、
@@ -3995,11 +4002,13 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     totalEmissiveRadiance *= aw / a2;   // 空の映り込み・照り返しも水の濃さに合わせて薄める（ふちで光だけ残らないように）
   }
   if ( uHL > 0.5 && sd > -0.1 && sd < 0.03 ) diffuseColor = vec4( ${c3('#e2b348')}, 1.0 );   // カードのホバー：岸を金色に
+  // 滝の落ち口に貼る面は、下へ行くほど透明にして消す（同じ区間で滝の白い筋が現れる）。空の映り込み・きらめきも一緒に消す
+  diffuseColor.a *= 1.0 - pxoCapOut; totalEmissiveRadiance *= 1.0 - pxoCapOut;
 }`);
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v66';
+  m.customProgramCacheKey = () => 'pxo-water-v70';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4089,10 +4098,11 @@ const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ
 // 崖の壁とこの外側の面の間が滝の厚み。水が厚いほど遠くへ飛び、滝も厚い。厚さ 0 では壁に沿ってまっすぐ落ちる（直角）
 const WATER_FALL_REACH = 0.8, WATER_FALL_MAX = 1.6;
 const WATER_FALL_SEG = 8;       // 放物線の分割数（落ち口の近くほど細かく取る）
-// 滝の筋が落ちる速さ（2026-10-08 ユーザー指定：下へ行くほど加速）：落ち口での速さ [unit/秒] と加速度 [unit/秒²]（どちらも川の「流れ」1 の時。
-// 「流れ」は滝全体の速さに掛かる）。
+// 滝の筋が落ちる速さ（2026-10-08 ユーザー指定：下へ行くほど加速）：落ち口での速さ [unit/秒]（川の「流れ」1 の時。「流れ」に比例）と、
+// 加速度 [unit/秒²]（川に関係なく一定）。
 // 実物の重力は約 19.6 unit/秒²（1 unit ≒ 50cm）だが、そのままだと速すぎて筋が見えないので、見やすい強さに抑えてある
 const WATER_FALL_V0 = 1.4, WATER_FALL_G = 10;   // 加速度は 7 から 10 へ（同日ユーザー指定：もう少しつけたい）
+const WATER_FALL_LAYER_T = 0.25, WATER_FALL_LAYER_MAX = 5;   // 滝の段：水の厚みこれごとに 1 段、最大の段数
 const WATER_FALL_RATE = 4.5;   // 滝の模様 1 つが通り過ぎる速さ [個/秒]。流れ 1 の落ち口（毎秒 1.4）で、粒の長さが約 0.3 unit
 function waterDepthCol(t) {   // シェーダーの pxoDepthCol と同じ
   const ss = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
@@ -4101,25 +4111,27 @@ function waterDepthCol(t) {   // シェーダーの pxoDepthCol と同じ
   return c.lerp(new THREE.Color('#081a33'), ss(1, 2.6, t) * 0.85);
 }
 // 滝の材質：流れ落ちる白い筋（縦に長いノイズを 2 重に、下へ流す。下へ行くほど加速）。落ち口は水の色、下端は白いしぶき。時刻は水面と同じ（曲と関係なく進む）。
-// 頂点の値 aFall：(輪郭に沿った長さ, 落ち口からの距離, 下端までの距離) [unit]
+// 頂点の値 aFall：(輪郭に沿った長さ, 落ち口からの距離, 下端までの距離 [unit], 現れ方 0〜1)
 function waterFallMaterial() {
-  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide });
-  m.userData.u = { uHL: { value: 0 }, uFallSpeed: { value: 1 } };   // uHL：水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true });
+  m.userData.u = { uHL: { value: 0 }, uFallSpeed: { value: 1 }, uFallAl: { value: 1 } };   // uFallAl：1 段あたりの水の地の濃さ（1 で不透明。buildWaterSides が、全部の段を重ねて水面と同じ濃さになるよう「深さ」から決める）   // uHL：水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, WATER_U, m.userData.u);
-    shader.vertexShader = 'attribute vec3 aFall;\nvarying vec3 pxoFall;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoFall = aFall;');
-    shader.fragmentShader = `varying vec3 pxoFall;
-uniform float uWT, uFallSpeed;
+    shader.vertexShader = 'attribute vec4 aFall;\nvarying vec4 pxoFall;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoFall = aFall;');
+    shader.fragmentShader = `varying vec4 pxoFall;
+uniform float uWT, uFallSpeed, uFallAl;
 ${WATER_NOISE_GLSL}
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 {
   float t = uWT * uFallSpeed;
-  // 下へ行くほど加速する（2026-10-08 ユーザー指定）：落ち口での速さ WATER_FALL_V0 から、一定の加速度 WATER_FALL_G で速くなる。
-  // 川の「流れ」（uFallSpeed）は、滝全体の速さに掛ける（落ち口だけに掛けると、加速ですぐ差が埋もれて、遅い川の滝も速く見えた）。
+  // 下へ行くほど加速する（2026-10-08 ユーザー指定）：落ち口を出る時の速さ v0 から、一定の加速度 WATER_FALL_G で速くなる。
+  // 川の「流れ」（uFallSpeed）が効くのは v0 だけ。加速度は川に関係なく一定（同日ユーザー指摘：川が遅いと水が落ちるのまで遅くなるのはおかしい。
+  // 落下は落下。一度「流れ」を滝全体の速さに掛けたが、戻した）。なので、遅い川と速い川の違いが出るのは落ち口の近くだけで、下は同じ速さになる。
   // 筋の模様は「落ち口からその点まで水が届く時間 tau」で動かす（tau − 時刻 が同じ所に同じ模様）。
   // 粒が、速さに応じて線に伸びる（同日ユーザー指定：筋が流れの遅い時も同じ長さの線で、ゆっくりでも速く見えた）：模様 1 つが通り過ぎる時間を
-  // 一定（1 / WATER_FALL_RATE 秒）にするので、模様の長さはその場の速さに比例する。遅い川・落ち口の近くは短い粒、速い川・滝の下は長い線
-  float tau = ( sqrt( ${(WATER_FALL_V0 * WATER_FALL_V0).toFixed(3)} + 2.0 * ${WATER_FALL_G.toFixed(1)} * pxoFall.y ) - ${WATER_FALL_V0.toFixed(2)} ) / ${WATER_FALL_G.toFixed(1)} / uFallSpeed;
+  // 一定（1 / WATER_FALL_RATE 秒）にするので、模様の長さはその場の速さに比例する。遅い川の落ち口は短い粒、速い川や滝の下は長い線
+  float v0 = ${WATER_FALL_V0.toFixed(2)} * uFallSpeed;
+  float tau = ( sqrt( v0 * v0 + 2.0 * ${WATER_FALL_G.toFixed(1)} * pxoFall.y ) - v0 ) / ${WATER_FALL_G.toFixed(1)};
   float ph = ( tau - uWT ) * ${WATER_FALL_RATE.toFixed(1)};
   float n1 = pxoWN( vec2( pxoFall.x * 7.0, ph ) );
   float n2 = pxoWN( vec2( pxoFall.x * 19.0 + 3.7, ph * 2.0 + 1.9 ) );
@@ -4130,14 +4142,17 @@ ${WATER_NOISE_GLSL}
   float spray = ( 1.0 - smoothstep( 0.0, 0.3, pxoFall.z ) ) * ( 0.55 + 0.45 * pxoWN( vec2( pxoFall.x * 11.0, t * 2.0 ) ) );
   col = mix( col, vec3( 1.0 ), spray );                                                            // 下端：しぶきの白
   diffuseColor.rgb = col;
+  // 透け方（2026-10-08 ユーザー指定：薄い水では、滝の向こうの壁が透けて見えるように）：水の地は uFallAl の濃さ。白い筋と下端のしぶきは
+  // 泡立った水なので透かさない（筋と筋の間から壁が見える）
+  diffuseColor.a = max( uFallAl, max( streak * 0.92, spray ) ) * pxoFall.w;   // w：落ち口に貼った水面の続きと入れ替わる区間で、0 → 1 と現れる
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-waterfall-v4';
+  m.customProgramCacheKey = () => 'pxo-waterfall-v7';
   return m;
 }
 /** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置、
- *  isLake：池・湖・水たまり（水面は 1 枚。低い地面も水面の下で、滝は立てない） */
-function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
+ *  isLake：池・湖・水たまり（水面は 1 枚。低い地面も水面の下で、滝は立てない）、surfMat：この水面の材質（滝の落ち口に貼る面に、同じ絵を使う） */
+function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, surfMat = null) {
   // カードの「高さ」を下げた時（負）は、水面だけを下げる：断面・側面の下端は地面のまま（2026-10-08 ユーザー指摘：断面もまるごと下がって地面の下へ
   // はみ出し、同じ面にある地面の断面と重なってちらついた）。水位が下がった形になる。「高さ」を上げた時（正。ひな壇や物の上に置く）は、
   // 今までどおり水をまるごと持ち上げる。以下、surf は下げた後の水面、yOff は持ち上げる量（0 以上）
@@ -4169,7 +4184,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
   // 水面の高さの地図に、この水面の範囲を焼く（水の下の影のぼかし用）。重なる所は高いほうの水面
   { const T = waterTopTex.image.data, v = Math.max(1, Math.min(255, Math.round(((surf + yOff - WATER_TOP_LO) / WATER_TOP_SPAN) * 255)));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (F[(j - j0) * w + (i - i0)] <= 0) { const q = (j * STEP_W + i) * 4; if (!T[q + 1] || v > T[q]) T[q] = v; if (!T[q + 1] || v > T[q + 2]) T[q + 2] = v; T[q + 1] = 255; } }
-  const D = Math.max(0.05, st.depth ?? 1), side = { pos: [], nor: [], col: [], al: [] }, fall = { pos: [], nor: [], fall: [] };
+  const D = Math.max(0.05, st.depth ?? 1), side = { pos: [], nor: [], col: [], al: [] }, fall = { pos: [], nor: [], fall: [] }, cap = { pos: [], nor: [], out: [] };   // cap：滝の落ち口に貼る水面の続き（out：下へ行くほど消す量）
   const lineCol = waterDepthCol(0.05 * D).lerp(new THREE.Color('#ffffff'), 0.35);
   const colAt = (y) => waterDepthCol((0.3 + (surf - y) * 0.9) * D);
   // 透け方（2026-10-08 ユーザー指定：透明な水の時は、断面も透明に）：水面と同じ式（深さの値 0 で 5 割、0.3 以上で 96% の濃さ）。
@@ -4183,17 +4198,23 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
   // 下端 bot まで落ちる。n 番目の点は 落ちた高さ = H × (n/N)²、離れ = S × (n/N)（S：下端での離れ）＝放物線の上を、落ち口の近くほど細かく取る。
   // 水が薄くて離れがほぼ無い時は、壁に沿ったまっすぐな面。壁と同じ面に重ねないよう、落ち口より下は WATER_FALL_OUT だけ外へ出す
   const fallThick = surf - L;   // 上の段の水の厚さ
-  const fallProfile = (bot) => {
-    const H = surf - bot, S = Math.min(WATER_FALL_REACH * fallThick * Math.sqrt(H), WATER_FALL_MAX), P = [];
-    if (S < 0.02) P.push({ s: 0, y: surf, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });
+  // fr：段の位置（1 が一番外の段、小さいほど内側）。内側の段ほど、水の深い所（水面から 厚さ × (1 − fr) 下）から落ち始め、崖の近くを落ちる
+  const fallProfile = (bot, fr = 1) => {
+    const top = surf - fallThick * (1 - fr), H = top - bot, P = [];
+    if (H < 0.01) return P;
+    const S = Math.min(WATER_FALL_REACH * fallThick * fr * Math.sqrt(H), WATER_FALL_MAX);
+    if (S < 0.02) P.push({ s: 0, y: top, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });
     else for (let n = 0; n <= WATER_FALL_SEG; n++) {
       const t = n / WATER_FALL_SEG, ds = S, dy = 2 * H * t, l = Math.hypot(ds, dy) || 1;   // 接線は (ds, -dy)。面の向き（外・上）はその直角
-      P.push({ s: S * t + (n ? WATER_FALL_OUT : 0), y: surf - H * t * t, ns: dy / l, ny: ds / l });
+      P.push({ s: S * t + (n ? WATER_FALL_OUT : 0), y: top - H * t * t, ns: dy / l, ny: ds / l });
     }
     let d = 0;
     P.forEach((p, n) => { if (n) d += Math.hypot(p.s - P[n - 1].s, p.y - P[n - 1].y); p.d = d; });
     return P;
   };
+  // 滝の段の数（2026-10-08 ユーザー指定：白い線を複数の段で見せる。厚さの分だけ段を増やす）：水の厚み WATER_FALL_LAYER_T ごとに 1 段。
+  // 薄い水は 1 段（外側の面だけ）。段が重なるほど線が密になり、水の色も濃くなる。落ち口の裏（水の厚みの分）も、内側の段が埋める
+  const fallLayers = Math.max(1, Math.min(WATER_FALL_LAYER_MAX, Math.ceil(fallThick / WATER_FALL_LAYER_T - 1e-6)));
   for (const line of stepContourLines(V, i0, i1, j0, j1)) {
     // 線分ごとの外向きの向きと、点ごとの向き（両隣の線分の平均）。滝の面は点ごとの向きで外へずらすので、折れ線の角で面が割れない
     // FB：その線分が滝なら下端の高さ、滝でなければ null。点の向きは滝の線分だけで決める（滝の端の点が、隣の舞台の端や岸の線分に
@@ -4241,6 +4262,18 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
           EP.set(q, [px + tx * lam, pz + tz * lam]);
           const d = (x / l) * e[0] + (z / l) * e[1];
           if (Math.abs(d) > 0.3) return [e[0] / d, e[1] / d];
+        } else {
+          // 岸に当たる滝の端（2026-10-08 ユーザー指摘：落ち口の端が欠けた）：ここでも輪郭の角が格子 1 ますほど面取りされ、滝が岸の壁の
+          // 手前で終わっていた。崖の線の向きに、「上の段に水があり、下の段へ落ちられる」間だけ細かく延ばして、岸の壁まで届かせる
+          const n = a || b;   // その滝の線分の外向き（低い側）
+          const ok = (x, z) => {
+            const ux = x - n[0] * STEP_NUDGE, uz = z - n[1] * STEP_NUDGE, ox = x + n[0] * STEP_NUDGE, oz = z + n[1] * STEP_NUDGE;
+            if (f(ux, uz) >= 0 || !insideFloor(ox, oz) || circlesSd(cs, k, ox, oz) >= 0) return false;
+            const g = stepHAt(ox, oz);
+            return g < surf - 0.01 && g < L - 0.001;
+          };
+          for (let s = 0.005; s <= 0.3; s += 0.005) { if (!ok(px + tx * s, pz + tz * s)) break; lam = s; }
+          if (lam > 0) EP.set(q, [px + tx * lam, pz + tz * lam]);
         }
       }
       return [x / l, z / l];
@@ -4267,15 +4300,42 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
       if (FB[q] != null) {   // 低い側へ水の形が続く：滝（上で決めてある）
         const bot = FB[q];
         // 断面を、a・b それぞれの点の向きで外へずらして帯にする
-        const P = fallProfile(bot), H = P[P.length - 1].d, va = VN[ia], vb = VN[ib];
+        const P = fallProfile(bot), va = VN[ia], vb = VN[ib];   // P：一番外の段の断面（端をふさぐ面にも使う）
         if (EP.has(ia)) [ax, az] = EP.get(ia);   // 舞台の端まで延ばした端
         if (EP.has(ib)) [bx, bz] = EP.get(ib);
         touch(ia, ax, az, va, P, bx, bz); touch(ib, bx, bz, vb, P, ax, az);
         const pt = (x, z, v, p) => [x + v[0] * p.s, p.y + yOff, z + v[1] * p.s, v[0] * p.ns, p.ny, v[1] * p.ns];
-        for (let n = 0; n + 1 < P.length; n++) {
-          const a0 = pt(ax, az, va, P[n]), a1 = pt(ax, az, va, P[n + 1]), b0 = pt(bx, bz, vb, P[n]), b1 = pt(bx, bz, vb, P[n + 1]);
-          for (const [v, uu, pp] of [[a0, ua, P[n]], [a1, ua, P[n + 1]], [b1, ub, P[n + 1]], [a0, ua, P[n]], [b1, ub, P[n + 1]], [b0, ub, P[n]]]) {   // 表（外側）から見て反時計回り
-            fall.pos.push(v[0], v[1], v[2]); fall.nor.push(v[3], v[4], v[5]); fall.fall.push(uu, pp.d, H - pp.d);
+        for (let li = 1; li <= fallLayers; li++) {   // 内側の段から順に（外の段が後に描かれて、手前に重なる）
+          let Q = li === fallLayers ? P : fallProfile(bot, li / fallLayers);
+          if (Q.length < 2) continue;
+          // 一番外の段：落ち口には、滝の白い線ではなく水面の続きを貼る（2026-10-08 ユーザー指定：水面からその底まで、底が隠れるように、
+          // 水面のテクスチャを丸みを帯びた形で貼る。滝が透けると、水の厚さの分だけ落ち口の裏が空洞に見え、上の段の底の縁が見えた）。
+          // 形は滝の放物線そのまま＝水面が丸く縁を越える。水面から上の段の底の高さ gIn までは水面と同じ濃さ、そこから yEnd までで
+          // だんだん透明にして消す。同じ区間で、滝の白い線と水の色をだんだん現す（同日ユーザー指摘：下の境目がくっきりしていた）
+          let fadeIn = null;   // 滝の現れ方（高さ → 0〜1）。null は最初から全部現す
+          if (li === fallLayers && surfMat && gIn < surf - 0.02) {
+            const yEnd = Math.max(bot, gIn - Math.max(0.35, 0.8 * fallThick));
+            Q = Q.slice();
+            for (const y of [gIn, yEnd]) for (let n = 0; n + 1 < Q.length; n++) if (Q[n].y > y + 1e-4 && Q[n + 1].y < y - 1e-4) {   // その高さに点を足す
+              const A = Q[n], B = Q[n + 1], t = (A.y - y) / (A.y - B.y);
+              Q.splice(n + 1, 0, { s: A.s + (B.s - A.s) * t, y, ns: A.ns + (B.ns - A.ns) * t, ny: A.ny + (B.ny - A.ny) * t, d: A.d + (B.d - A.d) * t });
+              break;
+            }
+            fadeIn = (y) => (y >= gIn - 1e-4 ? 0 : Math.min(1, (gIn - y) / Math.max(1e-4, gIn - yEnd)));
+            const top = Q.filter((q) => q.y >= yEnd - 1e-4);
+            // 上端は水面の板と同じ高さ（板は WATER_LIFT だけ浮かせてある）に合わせる（同日ユーザー指摘：上の境目に隙間があいていた）
+            const cp = (x, z, v, q) => { const o = fadeIn(q.y); return [x + v[0] * q.s, q.y + yOff + WATER_LIFT * (1 - o), z + v[1] * q.s, v[0] * q.ns, q.ny, v[1] * q.ns, o]; };
+            for (let n = 0; n + 1 < top.length; n++) {
+              const a0 = cp(ax, az, va, top[n]), a1 = cp(ax, az, va, top[n + 1]), b0 = cp(bx, bz, vb, top[n]), b1 = cp(bx, bz, vb, top[n + 1]);
+              for (const v of [a0, a1, b1, a0, b1, b0]) { cap.pos.push(v[0], v[1], v[2]); cap.nor.push(v[3], v[4], v[5]); cap.out.push(v[6]); }
+            }
+          }
+          const H = Q[Q.length - 1].d, uo = (fallLayers - li) * 13.7;   // uo：段ごとに白い線の模様をずらす
+          for (let n = 0; n + 1 < Q.length; n++) {
+            const a0 = pt(ax, az, va, Q[n]), a1 = pt(ax, az, va, Q[n + 1]), b0 = pt(bx, bz, vb, Q[n]), b1 = pt(bx, bz, vb, Q[n + 1]);
+            for (const [v, uu, pp] of [[a0, ua, Q[n]], [a1, ua, Q[n + 1]], [b1, ub, Q[n + 1]], [a0, ua, Q[n]], [b1, ub, Q[n + 1]], [b0, ub, Q[n]]]) {   // 表（外側）から見て反時計回り
+              fall.pos.push(v[0], v[1], v[2]); fall.nor.push(v[3], v[4], v[5]); fall.fall.push(uu + uo, pp.d, H - pp.d, fadeIn ? fadeIn(pp.y) : 1);
+            }
           }
         }
         continue;
@@ -4329,10 +4389,28 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false) {
   // 影は受けない（2026-10-08 ユーザー指摘：透ける断面に、木などの影が映った。水の切り口は面ではなく水そのものなので、影を映さない）
   add(side, sideMat, (geo) => { geo.setAttribute('color', new THREE.Float32BufferAttribute(side.col, 3)); geo.setAttribute('aAl', new THREE.Float32BufferAttribute(side.al, 1)); }, false);
   const fallMat = waterFallMaterial();
-  fallMat.userData.u.uFallSpeed.value = Math.max(0.3, st.flow ?? 1);   // 流れが速い川ほど、滝の筋も速く落ちる
-  add(fall, fallMat, (geo) => geo.setAttribute('aFall', new THREE.Float32BufferAttribute(fall.fall, 3)));
+  fallMat.userData.u.uFallSpeed.value = Math.max(0.3, st.flow ?? 1);   // 流れが速い川ほど、落ち口を出る時の筋が速い
+  // 滝の透け方（2026-10-08 ユーザー指定：滝の透明具合を、深さスライダーの透明具合に合わせる）：水の地の色の濃さを、水面と同じ式にする
+  //（「深さ」0 で 5 割、0.3 以上で 96%。水面の一番深い所の濃さ）。段を全部重ねた結果がこの濃さになるよう、1 段あたりは割り戻す
+  //（n 段重ねた濃さ = 1 − (1 − 1 段の濃さ)^n）。水の厚さ（段の数）では濃さは変わらず、「深さ」だけで決まる。奥行きは書かない（段どうしが隠し合わないように）
+  { const q = Math.max(0, Math.min(1, D / 0.3)), total = 0.5 + 0.46 * q * q * (3 - 2 * q);
+    fallMat.userData.u.uFallAl.value = 1 - Math.pow(1 - total, 1 / fallLayers); }
+  fallMat.depthWrite = false;
+  add(fall, fallMat, (geo) => geo.setAttribute('aFall', new THREE.Float32BufferAttribute(fall.fall, 4)));
   if (!side.pos.length) sideMat.dispose();
   if (!fall.pos.length) fallMat.dispose();
+  // 滝の落ち口に貼る水面の続き：水面と同じ材質（値を全部写す）で、地面の高さによる切り取りだけ外す。絵は世界の位置から決まるので、水面から途切れずに続く
+  if (cap.pos.length && surfMat) {
+    const capMat = waterMaterial(), cu = capMat.userData.u, su = surfMat.userData.u;
+    for (const key in su) {
+      const a = su[key].value, b = cu[key];
+      if (!b) continue;
+      if (Array.isArray(a)) a.forEach((v, n) => b.value[n].copy(v)); else if (a && a.copy && b.value && b.value.copy) b.value.copy(a); else b.value = a;
+    }
+    cu.uCap.value = 1;
+    capMat.side = THREE.DoubleSide;
+    add(cap, capMat, (geo) => geo.setAttribute('aCapOut', new THREE.Float32BufferAttribute(cap.out, 1)));
+  }
 }
 function buildWater() {
   if (!stageCtx) return;
@@ -4420,7 +4498,7 @@ function buildWater() {
     mesh.layers.enable(WATER_GLOW_LAYER);   // 水の白のブルームのパスでも描く
     mesh.userData.pxoCard = ci;
     g.add(mesh);
-    if (STEP_DEEP > 0) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff, isLake);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
+    if (STEP_DEEP > 0) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff, isLake, mat);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
     }
   });
   // 水面の高さの地図の仕上げ：水の無いますのうち、水のますに隣り合う所へ、隣の高さを写す（水があるか（G）はなめらかに 1 → 0 へ補間されるが、
