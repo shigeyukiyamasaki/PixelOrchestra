@@ -3484,7 +3484,7 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 },   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 }, uFlowRev: { value: 0 },   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
    
     uSea: { value: new THREE.Vector4(0.5, 1, 7, 0.3) }, uSeaP: { value: new THREE.Vector2() }, uSeaW: { value: 0.3 }, uRipDots: { value: 0 } };   // uRipDots：さざ波を粒で描く（2026-10-04）   // 海：(岸線のうねり, 波の高さ, 波の周期 [秒], うねり [unit])、岸線の通る点、白波（2026-10-04）   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
@@ -3505,7 +3505,7 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv;
+uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv, uFlowRev;
 uniform vec4 uSea;
 uniform vec2 uSeaP;
 uniform float uSeaW;   // 海（2026-10-04）
@@ -3559,6 +3559,9 @@ vec2 pxoRiverUV( vec2 p, out vec2 fl ) {
   }
   if ( ws <= 0.0 || length( fa ) < 1e-6 ) { fl = normalize( uFlow ); return vec2( dot( p, fl ), dot( p, vec2( -fl.y, fl.x ) ) ); }
   fl = normalize( fa );
+  // 流れを逆に（2026-10-08 ユーザー指定：滝を作ると、流れを逆にしたい場面がある）：川の形（円の並び）はそのままで、下流の向きと
+  // 中心線に沿った座標だけを逆にする（並び順を入れ替えると、円のつなぎ方がわずかに変わって水の形がずれるので、ここで逆にする）
+  if ( uFlowRev > 0.5 ) { fl = -fl; return -acc / ws; }
   return acc / ws;
 }
 // さざ波の高さ（3 重のなめらかなノイズ）。q：流れの座標、T：流れ方向にずらす量（一定の速さなら uWT × 速さ）
@@ -3996,7 +3999,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v65';
+  m.customProgramCacheKey = () => 'pxo-water-v66';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4086,13 +4089,18 @@ const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ
 // 崖の壁とこの外側の面の間が滝の厚み。水が厚いほど遠くへ飛び、滝も厚い。厚さ 0 では壁に沿ってまっすぐ落ちる（直角）
 const WATER_FALL_REACH = 0.8, WATER_FALL_MAX = 1.6;
 const WATER_FALL_SEG = 8;       // 放物線の分割数（落ち口の近くほど細かく取る）
+// 滝の筋が落ちる速さ（2026-10-08 ユーザー指定：下へ行くほど加速）：落ち口での速さ [unit/秒] と加速度 [unit/秒²]（どちらも川の「流れ」1 の時。
+// 「流れ」は滝全体の速さに掛かる）。
+// 実物の重力は約 19.6 unit/秒²（1 unit ≒ 50cm）だが、そのままだと速すぎて筋が見えないので、見やすい強さに抑えてある
+const WATER_FALL_V0 = 1.4, WATER_FALL_G = 10;   // 加速度は 7 から 10 へ（同日ユーザー指定：もう少しつけたい）
+const WATER_FALL_RATE = 4.5;   // 滝の模様 1 つが通り過ぎる速さ [個/秒]。流れ 1 の落ち口（毎秒 1.4）で、粒の長さが約 0.3 unit
 function waterDepthCol(t) {   // シェーダーの pxoDepthCol と同じ
   const ss = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
   const c = new THREE.Color('#6fc2d6').lerp(new THREE.Color('#2c78ad'), ss(0, 0.45, t));
   c.lerp(new THREE.Color('#1b4a82'), ss(0.45, 1, t));
   return c.lerp(new THREE.Color('#081a33'), ss(1, 2.6, t) * 0.85);
 }
-// 滝の材質：流れ落ちる白い筋（縦に長いノイズを 2 重に、下へ流す）。落ち口は水の色、下端は白いしぶき。時刻は水面と同じ（曲と関係なく進む）。
+// 滝の材質：流れ落ちる白い筋（縦に長いノイズを 2 重に、下へ流す。下へ行くほど加速）。落ち口は水の色、下端は白いしぶき。時刻は水面と同じ（曲と関係なく進む）。
 // 頂点の値 aFall：(輪郭に沿った長さ, 落ち口からの距離, 下端までの距離) [unit]
 function waterFallMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide });
@@ -4106,8 +4114,15 @@ ${WATER_NOISE_GLSL}
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 {
   float t = uWT * uFallSpeed;
-  float n1 = pxoWN( vec2( pxoFall.x * 7.0, pxoFall.y * 1.3 - t * 2.6 ) );
-  float n2 = pxoWN( vec2( pxoFall.x * 19.0 + 3.7, pxoFall.y * 2.6 - t * 3.9 ) );
+  // 下へ行くほど加速する（2026-10-08 ユーザー指定）：落ち口での速さ WATER_FALL_V0 から、一定の加速度 WATER_FALL_G で速くなる。
+  // 川の「流れ」（uFallSpeed）は、滝全体の速さに掛ける（落ち口だけに掛けると、加速ですぐ差が埋もれて、遅い川の滝も速く見えた）。
+  // 筋の模様は「落ち口からその点まで水が届く時間 tau」で動かす（tau − 時刻 が同じ所に同じ模様）。
+  // 粒が、速さに応じて線に伸びる（同日ユーザー指定：筋が流れの遅い時も同じ長さの線で、ゆっくりでも速く見えた）：模様 1 つが通り過ぎる時間を
+  // 一定（1 / WATER_FALL_RATE 秒）にするので、模様の長さはその場の速さに比例する。遅い川・落ち口の近くは短い粒、速い川・滝の下は長い線
+  float tau = ( sqrt( ${(WATER_FALL_V0 * WATER_FALL_V0).toFixed(3)} + 2.0 * ${WATER_FALL_G.toFixed(1)} * pxoFall.y ) - ${WATER_FALL_V0.toFixed(2)} ) / ${WATER_FALL_G.toFixed(1)} / uFallSpeed;
+  float ph = ( tau - uWT ) * ${WATER_FALL_RATE.toFixed(1)};
+  float n1 = pxoWN( vec2( pxoFall.x * 7.0, ph ) );
+  float n2 = pxoWN( vec2( pxoFall.x * 19.0 + 3.7, ph * 2.0 + 1.9 ) );
   float streak = smoothstep( 0.42, 0.72, n1 * 0.62 + n2 * 0.38 );
   vec3 col = mix( ${c3('#2c78ad')}, ${c3('#6fc2d6')}, n1 );
   col = mix( col, vec3( 1.0 ), streak * 0.8 );
@@ -4117,7 +4132,7 @@ ${WATER_NOISE_GLSL}
   diffuseColor.rgb = col;
 }`);
   };
-  m.customProgramCacheKey = () => 'pxo-waterfall-v1';
+  m.customProgramCacheKey = () => 'pxo-waterfall-v4';
   return m;
 }
 /** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置、
@@ -4387,7 +4402,9 @@ function buildWater() {
     u.uGlit.value = Math.max(0, st.glitter ?? 1);   // きらめき（2026-10-03）
     u.uWindK.value = Math.max(0, Math.min(1, st.windK ?? 1));   // 風の影響（2026-10-03）
     u.uAvoidPl.value = st.avoidPlayers === false ? 0 : 1;   // 奏者をよける（2026-10-03）
-    u.uFlow.value.set(Math.cos(deg(st.dir ?? 0)), -Math.sin(deg(st.dir ?? 0)));
+    const rev = !isLake && st.reverse ? -1 : 1;   // 流れを逆に（川だけ）。全体の向き uFlow も逆にする（中心線から外れた所などで使う）
+    u.uFlow.value.set(rev * Math.cos(deg(st.dir ?? 0)), -rev * Math.sin(deg(st.dir ?? 0)));
+    u.uFlowRev.value = rev < 0 ? 1 : 0;
     const type = st.type === 'lake' || st.type === 'puddle' ? 1 : 0;   // 種類：0 川／1 湖・池・水たまり（2026-10-04）
     u.uType.value = type;
     u.uRapid.value = type === 0 ? Math.max(0, Math.min(1, st.rapids ?? 0)) : 0;
