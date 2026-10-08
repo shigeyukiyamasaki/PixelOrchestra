@@ -3971,7 +3971,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v62';
+  m.customProgramCacheKey = () => 'pxo-water-v64';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4056,6 +4056,11 @@ function riverCircles(st, maxW = 5) {   // maxW：太さの上限（川は 5。�
 // 側面・断面の色は水面と同じ「深さの色」（WATER_DEPTH_GLSL と同じ式）：上ほど明るく下ほど濃い。「深さ」スライダーが大きいほど濃い。上端に細い水際の線
 const WATER_SIDE_LINE = 0.04;   // 上端の水際の線の高さ [unit]
 const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ離す量 [unit]（壁と同じ面に重ねない）
+// 滝の形（2026-10-08 ユーザー指定：浅い水は直角に、深い水は丸みを帯びるように。丸める位置は崖の縁に固定し、滝そのものに厚みを出す。放物線で）。
+// 水は崖の縁から水平に飛び出して落ちる：崖からの離れ = WATER_FALL_REACH × 水の厚さ × √落ちた高さ（上限 WATER_FALL_MAX）。
+// 崖の壁とこの外側の面の間が滝の厚み。水が厚いほど遠くへ飛び、滝も厚い。厚さ 0 では壁に沿ってまっすぐ落ちる（直角）
+const WATER_FALL_REACH = 0.8, WATER_FALL_MAX = 1.6;
+const WATER_FALL_SEG = 8;       // 放物線の分割数（落ち口の近くほど細かく取る）
 function waterDepthCol(t) {   // シェーダーの pxoDepthCol と同じ
   const ss = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
   const c = new THREE.Color('#6fc2d6').lerp(new THREE.Color('#2c78ad'), ss(0, 0.45, t));
@@ -4124,17 +4129,84 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff) {
   // 表（法線の向き＝範囲の外側）から見て反時計回りの 2 枚の三角形。高さにはカードの高さ位置 yOff を足す
   const tri = (o, ax, az, bx, bz, yt, yb, nx, nz) => { o.pos.push(ax, yt + yOff, az, ax, yb + yOff, az, bx, yb + yOff, bz, ax, yt + yOff, az, bx, yb + yOff, bz, bx, yt + yOff, bz); for (let q = 0; q < 6; q++) o.nor.push(nx, 0, nz); };
   const quad = (ax, az, bx, bz, yt, yb, ct, cb, nx, nz) => { tri(side, ax, az, bx, bz, yt, yb, nx, nz); for (const c of [ct, cb, cb, ct, cb, ct]) side.col.push(c.r, c.g, c.b); };
+  // 滝の面の断面（崖の縁からの外向きの位置 s・高さ y・面の向き・落ち口からの長さ d）。縁（s = 0）の水面の高さから水平に出て、放物線で
+  // 下端 bot まで落ちる。n 番目の点は 落ちた高さ = H × (n/N)²、離れ = S × (n/N)（S：下端での離れ）＝放物線の上を、落ち口の近くほど細かく取る。
+  // 水が薄くて離れがほぼ無い時は、壁に沿ったまっすぐな面。壁と同じ面に重ねないよう、落ち口より下は WATER_FALL_OUT だけ外へ出す
+  const fallThick = surf - L;   // 上の段の水の厚さ
+  const fallProfile = (bot) => {
+    const H = surf - bot, S = Math.min(WATER_FALL_REACH * fallThick * Math.sqrt(H), WATER_FALL_MAX), P = [];
+    if (S < 0.02) P.push({ s: 0, y: surf, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });
+    else for (let n = 0; n <= WATER_FALL_SEG; n++) {
+      const t = n / WATER_FALL_SEG, ds = S, dy = 2 * H * t, l = Math.hypot(ds, dy) || 1;   // 接線は (ds, -dy)。面の向き（外・上）はその直角
+      P.push({ s: S * t + (n ? WATER_FALL_OUT : 0), y: surf - H * t * t, ns: dy / l, ny: ds / l });
+    }
+    let d = 0;
+    P.forEach((p, n) => { if (n) d += Math.hypot(p.s - P[n - 1].s, p.y - P[n - 1].y); p.d = d; });
+    return P;
+  };
   for (const line of stepContourLines(V, i0, i1, j0, j1)) {
+    // 線分ごとの外向きの向きと、点ごとの向き（両隣の線分の平均）。滝の面は点ごとの向きで外へずらすので、折れ線の角で面が割れない
+    // FB：その線分が滝なら下端の高さ、滝でなければ null。点の向きは滝の線分だけで決める（滝の端の点が、隣の舞台の端や岸の線分に
+    // 引っぱられて斜めに開かないように。端の断面が崖に対してまっすぐ立つ）
+    const SN = [], FB = [];
+    for (let q = 0; q + 1 < line.length; q++) {
+      const [ax, az] = line[q], [bx, bz] = line[q + 1], len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-6) { SN.push(null); FB.push(null); continue; }
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      let nx = -(bz - az) / len, nz = (bx - ax) / len;
+      if (f(mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) < f(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; }
+      SN.push([nx, nz]);
+      const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE;
+      let fb = null;
+      if (insideFloor(ox, oz)) {
+        const gOut = stepHAt(ox, oz);
+        if (gOut < surf - 0.01 && gOut < L - 0.001 && circlesSd(cs, k, ox, oz) < 0) {   // 低い側へ水の形が続く：滝
+          const key = Math.round(gOut * 1000) / 1000, bot = surfOf.has(key) ? surfOf.get(key) : gOut;
+          if (bot < surf - 0.005) fb = bot;
+        }
+      }
+      FB.push(fb);
+    }
+    const closed = line.length > 2 && Math.hypot(line[0][0] - line[line.length - 1][0], line[0][1] - line[line.length - 1][1]) < 1e-6;
+    const EP = new Map();   // 点の番号 → 舞台の端まで延ばした位置（滝の端だけ）
+    const VN = line.map((_, q) => {
+      const qa = q - 1 >= 0 ? q - 1 : (closed ? SN.length - 1 : -1), qb = q < SN.length ? q : (closed ? 0 : -1);
+      const a = qa >= 0 && FB[qa] != null ? SN[qa] : null, b = qb >= 0 && FB[qb] != null ? SN[qb] : null;
+      const x = (a ? a[0] : 0) + (b ? b[0] : 0), z = (a ? a[1] : 0) + (b ? b[1] : 0), l = Math.hypot(x, z) || 1;
+      // 舞台の端の近くにある滝の端（滝の線分が片側だけ）：
+      //   ・端の点を、崖の線の向きに延ばして舞台の端まで届かせる（2026-10-08 ユーザー指摘：滝の端と舞台の端の間に隙間があいた。
+      //     崖の線が舞台の端に当たる角で、輪郭が格子 1 ますほど斜めに面取りされ、滝がその手前の点で終わっていた）。延ばした位置は EP に控える
+      //   ・崖が舞台の端に斜めに当たっていても、端の面が舞台の端の面に沿うよう、ずらす向きを舞台の端に沿った向きにする
+      //     （崖からの離れが変わらないよう、斜めの分だけ長くする）
+      // 手前の辺と左右の辺だけ（奥は弧でひな壇の下）
+      if (!!a !== !!b) {
+        const px = line[q][0], pz = line[q][1], oth = a ? line[qa] : line[qb + 1 < line.length ? qb + 1 : 0];   // oth：その滝の線分の反対側の点
+        let tx = px - oth[0], tz = pz - oth[1];
+        const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;   // 崖の線の、この端へ向かう向き
+        const dX = (Math.sign(px) || 1) * FLOOR_X_HALF - px, dZ = FLOOR_Z_FRONT - pz;   // 左右の辺・手前の辺までの残り
+        let e = null, lam = 0;
+        if (Math.abs(dX) < 0.35 && Math.abs(tx) > 0.3 && dX / tx > -0.02 && dX / tx < 0.6) { e = [0, 1]; lam = dX / tx; }
+        else if (Math.abs(dZ) < 0.35 && Math.abs(tz) > 0.3 && dZ / tz > -0.02 && dZ / tz < 0.6) { e = [1, 0]; lam = dZ / tz; }
+        if (e) {
+          EP.set(q, [px + tx * lam, pz + tz * lam]);
+          const d = (x / l) * e[0] + (z / l) * e[1];
+          if (Math.abs(d) > 0.3) return [e[0] / d, e[1] / d];
+        }
+      }
+      return [x / l, z / l];
+    });
+    const ends = new Map();   // 点の番号 → その点に接する滝の線分の数と、端をふさぐのに使う値（滝の端＝ 1 本だけ接する点）
+    const touch = (ix, x, z, v, P, ox, oz) => { const key = closed && ix === line.length - 1 ? 0 : ix, e = ends.get(key); if (e) e.n++; else ends.set(key, { n: 1, x, z, v, P, ox, oz }); };   // ox・oz：滝の線分の反対側の点（端の面の外向きを決める）
     let u = 0;
     for (let q = 0; q + 1 < line.length; q++) {
-      let [ax, az] = line[q], [bx, bz] = line[q + 1], ua = u;
+      let [ax, az] = line[q], [bx, bz] = line[q + 1], ua = u, ia = q, ib = q + 1;   // ia・ib：a・b の点の番号（下で入れ替わる）
       const len = Math.hypot(bx - ax, bz - az);
       u += len;
       let ub = u;
       if (len < 1e-6) continue;
       const mx = (ax + bx) / 2, mz = (az + bz) / 2;
       let nx = -(bz - az) / len, nz = (bx - ax) / len;   // 線分に直角な向き。範囲の外側（値が大きくなる側）へ向ける
-      if (f(mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) < f(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; [ax, az, bx, bz, ua, ub] = [bx, bz, ax, az, ub, ua]; }
+      if (f(mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) < f(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; [ax, az, bx, bz, ua, ub, ia, ib] = [bx, bz, ax, az, ub, ua, ib, ia]; }
       const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE, gIn = stepHAt(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE);
       if (!insideFloor(ox, oz)) {   // 舞台の端：断面（水面から、内側の地面まで）
         if (gIn < surf - 0.005) { const yl = Math.max(gIn, surf - WATER_SIDE_LINE); quad(ax, az, bx, bz, surf, yl, lineCol, lineCol, nx, nz); if (yl > gIn) quad(ax, az, bx, bz, yl, gIn, colAt(yl), colAt(gIn), nx, nz); }
@@ -4142,12 +4214,20 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff) {
       }
       const gOut = stepHAt(ox, oz);
       if (gOut >= surf - 0.01) continue;   // 岸のほうが高い：岸の壁に隠れる
-      if (gOut < L - 0.001 && circlesSd(cs, k, ox, oz) < 0) {   // 低い側へ水の形が続く：滝
-        const key = Math.round(gOut * 1000) / 1000, bot = surfOf.has(key) ? surfOf.get(key) : gOut;
-        if (bot >= surf - 0.005) continue;
-        const dx = nx * WATER_FALL_OUT, dz = nz * WATER_FALL_OUT, H = surf - bot;
-        tri(fall, ax + dx, az + dz, bx + dx, bz + dz, surf, bot, nx, nz);
-        fall.fall.push(ua, 0, H, ua, H, 0, ub, H, 0, ua, 0, H, ub, H, 0, ub, 0, H);
+      if (FB[q] != null) {   // 低い側へ水の形が続く：滝（上で決めてある）
+        const bot = FB[q];
+        // 断面を、a・b それぞれの点の向きで外へずらして帯にする
+        const P = fallProfile(bot), H = P[P.length - 1].d, va = VN[ia], vb = VN[ib];
+        if (EP.has(ia)) [ax, az] = EP.get(ia);   // 舞台の端まで延ばした端
+        if (EP.has(ib)) [bx, bz] = EP.get(ib);
+        touch(ia, ax, az, va, P, bx, bz); touch(ib, bx, bz, vb, P, ax, az);
+        const pt = (x, z, v, p) => [x + v[0] * p.s, p.y + yOff, z + v[1] * p.s, v[0] * p.ns, p.ny, v[1] * p.ns];
+        for (let n = 0; n + 1 < P.length; n++) {
+          const a0 = pt(ax, az, va, P[n]), a1 = pt(ax, az, va, P[n + 1]), b0 = pt(bx, bz, vb, P[n]), b1 = pt(bx, bz, vb, P[n + 1]);
+          for (const [v, uu, pp] of [[a0, ua, P[n]], [a1, ua, P[n + 1]], [b1, ub, P[n + 1]], [a0, ua, P[n]], [b1, ub, P[n + 1]], [b0, ub, P[n]]]) {   // 表（外側）から見て反時計回り
+            fall.pos.push(v[0], v[1], v[2]); fall.nor.push(v[3], v[4], v[5]); fall.fall.push(uu, pp.d, H - pp.d);
+          }
+        }
         continue;
       }
       const bot = Math.max(gIn, gOut);   // 側面：見えるのは、外側の地面より上の部分だけ
@@ -4155,6 +4235,27 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff) {
       const yl = Math.max(bot, surf - WATER_SIDE_LINE);
       quad(ax, az, bx, bz, surf, yl, lineCol, lineCol, nx, nz);
       if (yl > bot) quad(ax, az, bx, bz, yl, bot, colAt(yl), colAt(bot), nx, nz);
+    }
+    // 滝の端をふさぐ（滝に厚みがあるので、横から見ると壁と外側の面の間が見える）：端の点で、壁（離れ 0）と断面の間を面で埋める。
+    // 描き方は水の側面・舞台の端の断面と同じ（2026-10-08 ユーザー指定：舞台の端で切れた時の断面は、水面の断面と同じ描写でよい）：
+    // 上ほど明るく下ほど濃い水の色。流れ落ちる筋は描かない
+    for (const e of ends.values()) {
+      if (e.n !== 1) continue;
+      const P = e.P;
+      // 面の向き：端の面の中で外向き（滝の線分の反対側の点から離れる側）。舞台の端の断面と同じ明るさになる（内向きだと陰になって暗く見えた）
+      let tx = -e.v[1], tz = e.v[0];
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const flip = tx * (e.x - e.ox) + tz * (e.z - e.oz) < 0;
+      if (flip) { tx = -tx; tz = -tz; }
+      // 三角形の回り順も外向きに合わせる（両面を描く材質は、裏面で向きを反転するため）。下の元の順の表は (v.z, -v.x) の側なので、
+      // それが外向きと逆なら順を入れ替える
+      const rev = (e.v[1] * tx - e.v[0] * tz) < 0;
+      for (let n = 0; n + 1 < P.length; n++) {
+        const i0 = [e.x, P[n].y + yOff, e.z], i1 = [e.x, P[n + 1].y + yOff, e.z];
+        const o0 = [e.x + e.v[0] * P[n].s, P[n].y + yOff, e.z + e.v[1] * P[n].s], o1 = [e.x + e.v[0] * P[n + 1].s, P[n + 1].y + yOff, e.z + e.v[1] * P[n + 1].s];
+        const c0 = n ? colAt(P[n].y) : lineCol, c1 = colAt(P[n + 1].y);
+        for (const [v, c] of rev ? [[i0, c0], [o1, c1], [o0, c0], [i0, c0], [i1, c1], [o1, c1]] : [[i0, c0], [o0, c0], [o1, c1], [i0, c0], [o1, c1], [i1, c1]]) { side.pos.push(v[0], v[1], v[2]); side.nor.push(tx, 0, tz); side.col.push(c.r, c.g, c.b); }
+      }
     }
   }
   const add = (o, mat, extra) => {
