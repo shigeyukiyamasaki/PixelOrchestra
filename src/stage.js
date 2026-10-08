@@ -2618,12 +2618,15 @@ function buildDirt() {   // 土と砂（2026-10-05）
 // ---- 段差（2026-10-08 ユーザー指定：床に、今の高さより凹ませた低い所を作る。低い所を流れる川などのため）----
 // カード 1 枚が「範囲」と「深さ」を持ち、床をその深さだけ掘る。重なった所は足し算（-1 の中に -1 を置くと -2）。岸は垂直の壁。
 // 奏者・指揮者の足元とひな壇は掘らない（奏者の位置は変えない）。盛る方は作らない（階段などの物でやる。同日ユーザー指定）。
-// 範囲は土・水と同じ「円の並び＋なめらかなつなぎ」。0.1 unit の格子に「縁までの距離」をカードごとに焼き（テクスチャ 2 枚の 8 チャンネル＝8 枚まで）、
+// 範囲は土・水と同じ「円の並び＋なめらかなつなぎ」。0.1 unit の格子に「縁までの距離」をカードごとに焼き（テクスチャ 2 枚の 8 チャンネルのうち 7 つ＝7 枚まで）、
 //   ・床と底の面：床と同じ形の板を高さごとに 1 枚ずつ置き、シェーダーがこのテクスチャを見て「その高さの所だけ」描く
 //   ・壁：同じ格子から輪郭を取り出して（マーチングスクエア）板を立てる。面と壁が同じ値を見るので、縁がずれない
 //   ・床の縁の断面：同じテクスチャで「地面より上」を描かない（縁に達した段差は切り欠きになる）
 // 物の高さ（y）は絶対値ではなく、その場所の地面からの高さ。地面の高さは groundYAt(x, z)（ひな壇の天面＋掘った深さ）で引く
-const STEP_MAX = 8;            // カードの数の上限（テクスチャ 2 枚 × 4 チャンネル）
+const STEP_MAX = 7;            // カードの数の上限（テクスチャ 2 枚 × 4 チャンネルのうち 7 つ。最後の 1 つは下の STEP_KEPT）
+// 最後のチャンネル：掘るはずだったが、奏者の足元・ひな壇をよけて残した範囲（負が中）。水はここを「水が無い所」として扱う
+//（2026-10-08 ユーザー指定：奏者をよけてできた崖に水の形がかかると、残した足元に水面が置かれ、そこから滝が落ちた）
+const STEP_KEPT = 7;
 const STEP_CELL = 0.1;         // 格子の細かさ [unit]
 const STEP_GROW = 0.06;        // 底の面を範囲の外へはみ出させる量 [unit]（壁との間に隙間を出さない。はみ出した分は上の床に隠れる）
 const STEP_PAD = 1;            // 格子を床の外へ広げる量 [unit]
@@ -2647,6 +2650,9 @@ float pxoStepH( vec2 p, float grow ) {   // 掘った深さの合計（0 以下�
   vec4 a = ( texture2D( uStepA, uv ) * 255.0 - 128.0 ) / 127.0, b = ( texture2D( uStepB, uv ) * 255.0 - 128.0 ) / 127.0;
   return - dot( uStepDA, step( a, vec4( grow ) ) ) - dot( uStepDB, step( b, vec4( grow ) ) );
 }
+bool pxoStepKept( vec2 p ) {   // 掘るはずだったが、奏者の足元・ひな壇をよけて残した所か
+  return ( texture2D( uStepB, ( p - uStepRect.xy ) * uStepRect.zw ).a * 255.0 - 128.0 ) / 127.0 <= 0.0;
+}
 `;
 // 材質に段差の判定を差し込む。mode：'surf'（床・底の面。level の高さの所だけ描く）／'skirt'（床の縁の断面。地面より上を描かない）
 function stepPatch(mat, mode, level = 0) {
@@ -2664,7 +2670,7 @@ ${mode === 'skirt' ? '  if ( pxoSW.y > pxoStepH( pxoSW.xz, 0.0 ) + 0.0005 ) disc
   mat.customProgramCacheKey = () => `pxo-step-${mode}-v1`;
   return mat;
 }
-let stepList = [], STEP_D = new Array(STEP_MAX).fill(0), STEP_DEEP = 0;   // STEP_D：チャンネルごとの深さ、STEP_DEEP：一番深い所
+let stepList = [], STEP_D = new Array(8).fill(0), STEP_DEEP = 0;   // STEP_D：チャンネルごとの深さ、STEP_DEEP：一番深い所
 /** 段差の一覧。草・木・水は地面の高さに従うので組み直す */
 export function setSteps(list) { stepList = (list || []).map((o) => ({ ...o })); rebuildSteps(); }
 // 段差を組み、その高さに乗る物（水・土・砂・石畳・石・柱・石組み・3D モデル）を組み直す。草・木は呼ぶ側で（奏者をよける設定などの条件があるため）
@@ -2682,6 +2688,7 @@ function stepHAt(x, z) {   // 掘った深さの合計（0 以下）。シェー
   for (let c = 0; c < STEP_MAX; c++) if (STEP_D[c] > 0 && stepSd(c, x, z) <= 0) h -= STEP_D[c];
   return h;
 }
+const stepKeptAt = (x, z) => stepSd(STEP_KEPT, x, z) <= 0;   // 掘るはずだったが、奏者の足元・ひな壇をよけて残した所か（シェーダーの pxoStepKept と同じ）
 /** その場所の地面の高さ [unit]：ひな壇の上なら天面、掘った所ならその底（ひな壇は掘らないので、どちらか片方だけが効く） */
 export function groundYAt(x, z) { return riserTopAt(x, z) + stepHAt(x, z); }
 function stepLevelOf(cs) {   // 円の並び（水場など）が乗っている地面の高さ：円の中心で一番多い高さ
@@ -2709,13 +2716,49 @@ function circlesSd(cs, k, x, z) {   // 円の並びをなめらかにつない�
 const stepCircles = (st) => (st.shape === 'strip' ? riverCircles({ ...st, pieces: 1, scatter: 0 }, STEP_STRIP_W) : lakeCircles(st, true));
 // マーチングスクエア：角の内外（1: 左下 / 2: 右下 / 4: 右上 / 8: 左上）→ 輪郭が通る辺の組（0: 下 / 1: 右 / 2: 上 / 3: 左）。5・10 は真ん中の値で決める
 const STEP_MS = { 1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]], 6: [[0, 2]], 7: [[3, 2]], 8: [[2, 3]], 9: [[0, 2]], 11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]] };
+// 格子の値 V(i, j)（0 以下が中）から、輪郭を折れ線の並びで取り出す（マーチングスクエア）。段差の壁と、水の側面・断面で共有（2026-10-08）。
+// 調べる範囲は格子の番号 i0〜i1・j0〜j1 と、その外側 1 ます。戻り値は [[x, z], …] の配列（線分を、格子の辺を共有する物どうしでつないである）
+function stepContourLines(V, i0, i1, j0, j1) {
+  const X = (i) => STEP_X0 + i * STEP_CELL, Z = (j) => STEP_Z0 + j * STEP_CELL, segs = [], lines = [];
+  for (let j = Math.max(0, j0 - 1); j < Math.min(STEP_H - 1, j1 + 1); j++) for (let i = Math.max(0, i0 - 1); i < Math.min(STEP_W - 1, i1 + 1); i++) {
+    const v0 = V(i, j), v1 = V(i + 1, j), v2 = V(i + 1, j + 1), v3 = V(i, j + 1);
+    const m = (v0 <= 0 ? 1 : 0) | (v1 <= 0 ? 2 : 0) | (v2 <= 0 ? 4 : 0) | (v3 <= 0 ? 8 : 0);
+    if (m === 0 || m === 15) continue;
+    const mid = (v0 + v1 + v2 + v3) / 4 <= 0;
+    const pairs = m === 5 ? (mid ? [[0, 1], [2, 3]] : [[3, 0], [1, 2]]) : m === 10 ? (mid ? [[3, 0], [1, 2]] : [[0, 1], [2, 3]]) : STEP_MS[m];
+    const P = (e) => (e === 0 ? [X(i) + (v0 / (v0 - v1)) * STEP_CELL, Z(j), `h${i},${j}`] : e === 1 ? [X(i + 1), Z(j) + (v1 / (v1 - v2)) * STEP_CELL, `v${i + 1},${j}`]
+      : e === 2 ? [X(i) + (v3 / (v3 - v2)) * STEP_CELL, Z(j + 1), `h${i},${j + 1}`] : [X(i), Z(j) + (v0 / (v0 - v3)) * STEP_CELL, `v${i},${j}`]);
+    for (const [ea, eb] of pairs) { const a = P(ea), b = P(eb); segs.push([a[0], a[1], b[0], b[1], a[2], b[2]]); }
+  }
+  // 線分を、格子の辺を共有する物どうしでつないで折れ線にする（壁の絵の横の位置を、輪郭に沿った長さで決めるため）
+  const byKey = new Map(), used = new Uint8Array(segs.length);
+  segs.forEach((s, n) => { for (const key of [s[4], s[5]]) { if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(n); } });
+  for (let n = 0; n < segs.length; n++) {
+    if (used[n]) continue;
+    used[n] = 1;
+    const s = segs[n], line = [[s[0], s[1]], [s[2], s[3]]];
+    for (const fwd of [true, false]) {
+      let key = fwd ? s[5] : s[4];
+      for (let guard = 0; guard < segs.length; guard++) {
+        const nx = byKey.get(key).find((q) => !used[q]);
+        if (nx == null) break;
+        used[nx] = 1;
+        const t = segs[nx], same = t[4] === key, p = same ? [t[2], t[3]] : [t[0], t[1]];
+        key = same ? t[5] : t[4];
+        if (fwd) line.push(p); else line.unshift(p);
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
 function buildSteps() {
   if (!stageCtx) return;
   const g = stageCtx.steps;
   for (const o of g.children) { if (!o.userData.sharedGeo) o.geometry.dispose(); stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); }
   g.clear();
   stepData(0).fill(255); stepData(4).fill(255);
-  STEP_D = new Array(STEP_MAX).fill(0);
+  STEP_D = new Array(8).fill(0);   // 8 番目（STEP_KEPT）は深さ 0 のまま＝地面の高さには効かない
   const X = (i) => STEP_X0 + i * STEP_CELL, Z = (j) => STEP_Z0 + j * STEP_CELL, cards = [];
   for (const st of stepList) {
     if (cards.length >= STEP_MAX) { console.warn(`段差は ${STEP_MAX} 枚まで。それより後のカードは使わない`); break; }
@@ -2729,10 +2772,14 @@ function buildSteps() {
     const cl = (v, hi) => Math.max(0, Math.min(hi, v));
     const i0 = cl(Math.floor((x0 - pad - STEP_X0) / STEP_CELL), STEP_W - 1), i1 = cl(Math.ceil((x1 + pad - STEP_X0) / STEP_CELL), STEP_W - 1);
     const j0 = cl(Math.floor((z0 - pad - STEP_Z0) / STEP_CELL), STEP_H - 1), j1 = cl(Math.ceil((z1 + pad - STEP_Z0) / STEP_CELL), STEP_H - 1);
-    const c = cards.length, d = stepData(c), o = c & 3;
+    const c = cards.length, d = stepData(c), o = c & 3, kept = stepData(STEP_KEPT);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       let sd = circlesSd(cs, k, X(i), Z(j));
-      if (sd < 0.25) sd = Math.max(sd, -stepExclAt(X(i), Z(j)));   // 奏者の足元・ひな壇は範囲から外す（縁の近くだけ調べる）
+      if (sd < 0.25) {   // 奏者の足元・ひな壇は範囲から外す（縁の近くだけ調べる）
+        const ex = stepExclAt(X(i), Z(j)), q = (j * STEP_W + i) * 4 + 3;
+        kept[q] = Math.min(kept[q], Math.max(0, Math.min(255, Math.round(Math.max(sd, ex) * 127 + 128))));   // 残した範囲＝カードの形の中 かつ よける範囲の中（どのカードの分も重ねる）
+        sd = Math.max(sd, -ex);
+      }
       d[(j * STEP_W + i) * 4 + o] = Math.max(0, Math.min(255, Math.round(sd * 127 + 128)));
     }
     STEP_D[c] = depth;
@@ -2755,35 +2802,8 @@ function buildSteps() {
   // 壁：カードごとに輪郭を取り出してつなぎ、縁の両側の高さの差だけ板を立てる。上端と下端の組ごとに 1 つのメッシュ（壁の絵は高さごとに作る）
   const groups = new Map();   // `${上端}|${下端}` → { pos, nor, uv }
   cards.forEach((cd, c) => {
-    const d = stepData(c), o = c & 3, V = (i, j) => (d[(j * STEP_W + i) * 4 + o] - 128) / 127, segs = [];
-    for (let j = Math.max(0, cd.j0 - 1); j < Math.min(STEP_H - 1, cd.j1 + 1); j++) for (let i = Math.max(0, cd.i0 - 1); i < Math.min(STEP_W - 1, cd.i1 + 1); i++) {
-      const v0 = V(i, j), v1 = V(i + 1, j), v2 = V(i + 1, j + 1), v3 = V(i, j + 1);
-      const m = (v0 <= 0 ? 1 : 0) | (v1 <= 0 ? 2 : 0) | (v2 <= 0 ? 4 : 0) | (v3 <= 0 ? 8 : 0);
-      if (m === 0 || m === 15) continue;
-      const mid = (v0 + v1 + v2 + v3) / 4 <= 0;
-      const pairs = m === 5 ? (mid ? [[0, 1], [2, 3]] : [[3, 0], [1, 2]]) : m === 10 ? (mid ? [[3, 0], [1, 2]] : [[0, 1], [2, 3]]) : STEP_MS[m];
-      const P = (e) => (e === 0 ? [X(i) + (v0 / (v0 - v1)) * STEP_CELL, Z(j), `h${i},${j}`] : e === 1 ? [X(i + 1), Z(j) + (v1 / (v1 - v2)) * STEP_CELL, `v${i + 1},${j}`]
-        : e === 2 ? [X(i) + (v3 / (v3 - v2)) * STEP_CELL, Z(j + 1), `h${i},${j + 1}`] : [X(i), Z(j) + (v0 / (v0 - v3)) * STEP_CELL, `v${i},${j}`]);
-      for (const [ea, eb] of pairs) { const a = P(ea), b = P(eb); segs.push([a[0], a[1], b[0], b[1], a[2], b[2]]); }
-    }
-    // 線分を、格子の辺を共有する物どうしでつないで折れ線にする（壁の絵の横の位置を、輪郭に沿った長さで決めるため）
-    const byKey = new Map(), used = new Uint8Array(segs.length);
-    segs.forEach((s, n) => { for (const key of [s[4], s[5]]) { if (!byKey.has(key)) byKey.set(key, []); byKey.get(key).push(n); } });
-    for (let n = 0; n < segs.length; n++) {
-      if (used[n]) continue;
-      used[n] = 1;
-      const s = segs[n], line = [[s[0], s[1]], [s[2], s[3]]];
-      for (const fwd of [true, false]) {
-        let key = fwd ? s[5] : s[4];
-        for (let guard = 0; guard < segs.length; guard++) {
-          const nx = byKey.get(key).find((q) => !used[q]);
-          if (nx == null) break;
-          used[nx] = 1;
-          const t = segs[nx], same = t[4] === key, p = same ? [t[2], t[3]] : [t[0], t[1]];
-          key = same ? t[5] : t[4];
-          if (fwd) line.push(p); else line.unshift(p);
-        }
-      }
+    const d = stepData(c), o = c & 3, V = (i, j) => (d[(j * STEP_W + i) * 4 + o] - 128) / 127;
+    for (const line of stepContourLines(V, cd.i0, cd.i1, cd.j0, cd.j1)) {
       let u = 0;
       for (let q = 0; q + 1 < line.length; q++) {
         let [ax, az] = line[q], [bx, bz] = line[q + 1], ua = u;
@@ -3389,11 +3409,12 @@ function waterMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.userData.u = { uC: { value: Array.from({ length: WATER_MAX_C }, () => new THREE.Vector4()) }, uN: { value: 0 }, uK: { value: 0.5 },
     uDeep: { value: 1 }, uDepth: { value: 1 }, uJag: { value: 0 }, uGlit: { value: 1 }, uWindK: { value: 1 }, uAvoidPl: { value: 1 }, uFlow: { value: new THREE.Vector2(1, 0) }, uSpeed: { value: 1 }, uHL: { value: 0 },
-    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 },
+    uType: { value: 0 }, uRapid: { value: 0 }, uFoam: { value: 1 }, uReach: { value: 1 }, uStepLv: { value: 0 }, uSurfLv: { value: 0 },   // uStepLv：水が乗っている底の高さ、uSurfLv：水面の高さ（段差。2026-10-08）
+   
     uSea: { value: new THREE.Vector4(0.5, 1, 7, 0.3) }, uSeaP: { value: new THREE.Vector2() }, uSeaW: { value: 0.3 }, uRipDots: { value: 0 } };   // uRipDots：さざ波を粒で描く（2026-10-04）   // 海：(岸線のうねり, 波の高さ, 波の周期 [秒], うねり [unit])、岸線の通る点、白波（2026-10-04）   // uType：0 川／1 湖・池・水たまり、uRapid：川の瀬、uFoam：岸の泡の濃さ（2026-10-04）
   m.onBeforeCompile = (shader) => {
     const su = stageCtx.sky.material.uniforms;   // 夕焼けの層は空の球と同じ値を共有する（太陽の向き・夕焼けの色と強さ・光の広がり）
-    Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, m.userData.u, { uWBPass: WATER_BLOOM.pass, uWBDepth: WATER_BLOOM.depth, uWBRes: WATER_BLOOM.res, uWBThr: WATER_BLOOM.thr }, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
+    Object.assign(shader.uniforms, WATER_U, WATER_PIX, WATER_SKY, WIND_U, WATER_PL, STEP_U, m.userData.u, { uWBPass: WATER_BLOOM.pass, uWBDepth: WATER_BLOOM.depth, uWBRes: WATER_BLOOM.res, uWBThr: WATER_BLOOM.thr }, { sunDir: su.sunDir, glowColor: su.glowColor, glowAmt: su.glowAmt, spread: su.spread || { value: 1 } });
     // pxoVV：視点から見た座標で、この点からカメラへの向き（2026-10-03：r128 は Lambert に cameraPosition を渡さないので自分で持つ）
     shader.vertexShader = 'varying vec3 pxoWW, pxoVV;\nuniform vec4 uSea;\nuniform vec2 uSeaP, uFlow;\nuniform float uType, uWT;\n' + SWELL_GLSL + shader.vertexShader
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvec2 pxoSwG; float pxoSwHt = pxoSwell( ( modelMatrix * vec4( position, 1.0 ) ).xz, pxoSwG );\nobjectNormal = normalize( vec3( -pxoSwG.x, 1.0, -pxoSwG.y ) );')
@@ -3409,7 +3430,7 @@ uniform float vdTime, vdGust, vdStrength;   // 3D モデル欄の風（WIND_U �
 uniform vec2 vdDirection;
 uniform vec2 uFlow, uPixDot;
 uniform float uPixLv;
-uniform float uType, uRapid, uFoam, uReach;
+uniform float uType, uRapid, uFoam, uReach, uStepLv, uSurfLv;
 uniform vec4 uSea;
 uniform vec2 uSeaP;
 uniform float uSeaW;   // 海（2026-10-04）
@@ -3423,7 +3444,7 @@ ${PIX_QUANT_GLSL}
 uniform vec3 uSkyTop, uSkyBot, sunDir, glowColor;
 uniform float uSkyMid, uSkyFlip, glowAmt, spread;
 ${FLOOR_GLSL}
-vec3 pxoSkyColor( vec3 d ) {   // 向き d（世界の座標）に見える空の色：画面の空のグラデーション＋太陽側の夕焼け（空の球と同じ式を簡単にしたもの）
+${STEP_GLSL}vec3 pxoSkyColor( vec3 d ) {   // 向き d（世界の座標）に見える空の色：画面の空のグラデーション＋太陽側の夕焼け（空の球と同じ式を簡単にしたもの）
   float y = uSkyFlip > 0.5 ? -d.y : d.y;
   // 画面に見えている空は地平線からおよそ 30° まで。その高さで上の色に達するように合わせる（2026-10-03：最初は真上を上の色にしていて、
   // ふつうの角度の水面には地平線寄りの色ばかりが映り、空の上の色を変えても水色のままだった）
@@ -3540,6 +3561,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     pxoV += dFdx( pxoVV ) * dc.x + dFdy( pxoVV ) * dc.y;
   }
   if ( pxoOutsideFloor( pxoP ) ) discard;
+  // 段差（2026-10-08 ユーザー指定）：この水面は「乗っている高さ uStepLv の地面」と「それより高いが水面 uSurfLv より低い地面（水をかぶる浅い段）」にだけ描く。
+  // 高い地面には描かない＝溝より太い水は溝の幅で止まる。低い地面にも描かない＝そこは別の水面（段ごとに 1 枚）か、滝が落ちる先。海は対象外
+  if ( uType < 1.5 ) { float gh = pxoStepH( pxoP.xz, 0.0 ); if ( gh < uStepLv - 0.001 || ( gh > uStepLv + 0.001 && gh > uSurfLv - 0.001 ) ) discard; }
+  // 段差が奏者の足元・ひな壇をよけて残した所には、水が無いことにする（2026-10-08 ユーザー指定：そこに水面が置かれ、できた崖へ滝が落ちた）
+  if ( uType < 1.5 && pxoStepKept( pxoP.xz ) ) discard;
   pxoWhite = 0.0;
   if ( uWBPass > 0.5 && gl_FragCoord.z > texture2D( uWBDepth, gl_FragCoord.xy / uWBRes ).r + 0.00002 ) discard;   // ブルームの素材の時：本編で手前の物に隠れた画素は捨てる
   // 床の奥の弧から 5cm 内側で切る（2026-10-04 ユーザー指摘：境界の線が残った）。弧を覆う一番奥のひな壇の背面は 4° ごとの多角形で、
@@ -3872,7 +3898,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
 }`);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v54';
+  m.customProgramCacheKey = () => 'pxo-water-v57';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -3946,6 +3972,134 @@ function riverCircles(st, maxW = 5) {   // maxW：太さの上限（川は 5。�
   }
   return out;
 }
+// 水の厚みと滝（2026-10-08 ユーザー指定）。
+//   厚み：溝を掘った所に水を入れた川に厚みが無く、舞台の端で切れた断面が薄かった → 水面を底から「厚み」だけ持ち上げ、側面と断面を立てる
+//   滝：川が段差に差し掛かると、少ない方の高さでは水が途切れた → 高さごとに水面を置き、低い方へ落ちる境目に滝の面を立てる
+// 高さ L の水面が描かれる範囲（水の形 かつ 床の中 かつ その高さの地面）の輪郭を取り出し、輪郭の外側の様子で立てる物を決める：
+//   床の外            → 断面（水面から底まで）
+//   地面が水面より高い → 立てない（岸の壁に隠れる）
+//   水の形が続いていて地面が低い → 滝（水面から、低い側の水面まで。低い側に水面が無ければ地面まで）
+//   それ以外          → 側面（水面から地面まで。溝より細い川の脇など）
+// 側面・断面の色は水面と同じ「深さの色」（WATER_DEPTH_GLSL と同じ式）：上ほど明るく下ほど濃い。「深さ」スライダーが大きいほど濃い。上端に細い水際の線
+const WATER_SIDE_LINE = 0.04;   // 上端の水際の線の高さ [unit]
+const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ離す量 [unit]（壁と同じ面に重ねない）
+function waterDepthCol(t) {   // シェーダーの pxoDepthCol と同じ
+  const ss = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const c = new THREE.Color('#6fc2d6').lerp(new THREE.Color('#2c78ad'), ss(0, 0.45, t));
+  c.lerp(new THREE.Color('#1b4a82'), ss(0.45, 1, t));
+  return c.lerp(new THREE.Color('#081a33'), ss(1, 2.6, t) * 0.85);
+}
+// 滝の材質：流れ落ちる白い筋（縦に長いノイズを 2 重に、下へ流す）。落ち口は水の色、下端は白いしぶき。時刻は水面と同じ（曲と関係なく進む）。
+// 頂点の値 aFall：(輪郭に沿った長さ, 落ち口からの距離, 下端までの距離) [unit]
+function waterFallMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide });
+  m.userData.u = { uHL: { value: 0 }, uFallSpeed: { value: 1 } };   // uHL：水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WATER_U, m.userData.u);
+    shader.vertexShader = 'attribute vec3 aFall;\nvarying vec3 pxoFall;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoFall = aFall;');
+    shader.fragmentShader = `varying vec3 pxoFall;
+uniform float uWT, uFallSpeed;
+${WATER_NOISE_GLSL}
+` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{
+  float t = uWT * uFallSpeed;
+  float n1 = pxoWN( vec2( pxoFall.x * 7.0, pxoFall.y * 1.3 - t * 2.6 ) );
+  float n2 = pxoWN( vec2( pxoFall.x * 19.0 + 3.7, pxoFall.y * 2.6 - t * 3.9 ) );
+  float streak = smoothstep( 0.42, 0.72, n1 * 0.62 + n2 * 0.38 );
+  vec3 col = mix( ${c3('#2c78ad')}, ${c3('#6fc2d6')}, n1 );
+  col = mix( col, vec3( 1.0 ), streak * 0.8 );
+  col = mix( col, ${c3('#6fc2d6')}, ( 1.0 - smoothstep( 0.0, 0.12, pxoFall.y ) ) * 0.6 );          // 落ち口：水面の色でつなぐ
+  float spray = ( 1.0 - smoothstep( 0.0, 0.3, pxoFall.z ) ) * ( 0.55 + 0.45 * pxoWN( vec2( pxoFall.x * 11.0, t * 2.0 ) ) );
+  col = mix( col, vec3( 1.0 ), spray );                                                            // 下端：しぶきの白
+  diffuseColor.rgb = col;
+}`);
+  };
+  m.customProgramCacheKey = () => 'pxo-waterfall-v1';
+  return m;
+}
+/** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置 */
+function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff) {
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  for (const [x, z, rr] of cs) { x0 = Math.min(x0, x - rr); x1 = Math.max(x1, x + rr); z0 = Math.min(z0, z - rr); z1 = Math.max(z1, z + rr); }
+  const pad = k * 0.75 + 0.3, cl = (v, hi) => Math.max(0, Math.min(hi, v));
+  const i0 = cl(Math.floor((x0 - pad - STEP_X0) / STEP_CELL), STEP_W - 1), i1 = cl(Math.ceil((x1 + pad - STEP_X0) / STEP_CELL), STEP_W - 1);
+  const j0 = cl(Math.floor((z0 - pad - STEP_Z0) / STEP_CELL), STEP_H - 1), j1 = cl(Math.ceil((z1 + pad - STEP_Z0) / STEP_CELL), STEP_H - 1);
+  // この水面が描かれる地面か（シェーダーの判定と同じ）：その高さの地面、または、それより高いが水面より低い地面（水をかぶる浅い段）。
+  // ただし、段差が奏者の足元・ひな壇をよけて残した所は除く（下の lvSd）
+  const member = (h) => h >= L - 0.001 && (h <= L + 0.001 || h < surf - 0.001);
+  // 範囲の中が負になる値：水の形・床の縁・「描かれる地面」の境目（段差のカードの縁）のうち、一番外れている物。
+  // 地面の高さは段差のカードの縁でしか変わらないので、境目までの距離は「一番近いカードの縁までの距離」で足りる
+  const lvSd = (x, z) => {
+    let d = 1;
+    for (let c = 0; c < STEP_MAX; c++) if (STEP_D[c] > 0) d = Math.min(d, Math.abs(stepSd(c, x, z)));
+    d = Math.min(d, Math.abs(stepSd(STEP_KEPT, x, z)));   // 「よけて残した所」の縁も境目
+    return member(stepHAt(x, z)) && !stepKeptAt(x, z) ? -d : Math.max(d, 1e-4);   // 奏者の足元などをよけて残した所は、水が無い所
+  };
+  const f = (x, z) => Math.max(circlesSd(cs, k, x, z), Math.abs(x) - FLOOR_X_HALF, z - FLOOR_Z_FRONT, Math.hypot(x, z - SEAT_SHIFT_Z) - FLOOR_BACK_R, lvSd(x, z));
+  const w = i1 - i0 + 1, F = new Float32Array(w * (j1 - j0 + 1));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const x = STEP_X0 + i * STEP_CELL, z = STEP_Z0 + j * STEP_CELL, a = circlesSd(cs, k, x, z);
+    F[(j - j0) * w + (i - i0)] = a > 0.3 ? a : f(x, z);   // 水の形から遠い所は調べない
+  }
+  const V = (i, j) => (i < i0 || i > i1 || j < j0 || j > j1 ? 1 : F[(j - j0) * w + (i - i0)]);
+  const D = Math.max(0.05, st.depth ?? 1), side = { pos: [], nor: [], col: [] }, fall = { pos: [], nor: [], fall: [] };
+  const lineCol = waterDepthCol(0.05 * D).lerp(new THREE.Color('#ffffff'), 0.35);
+  const colAt = (y) => waterDepthCol((0.3 + (surf - y) * 0.9) * D);
+  // 表（法線の向き＝範囲の外側）から見て反時計回りの 2 枚の三角形。高さにはカードの高さ位置 yOff を足す
+  const tri = (o, ax, az, bx, bz, yt, yb, nx, nz) => { o.pos.push(ax, yt + yOff, az, ax, yb + yOff, az, bx, yb + yOff, bz, ax, yt + yOff, az, bx, yb + yOff, bz, bx, yt + yOff, bz); for (let q = 0; q < 6; q++) o.nor.push(nx, 0, nz); };
+  const quad = (ax, az, bx, bz, yt, yb, ct, cb, nx, nz) => { tri(side, ax, az, bx, bz, yt, yb, nx, nz); for (const c of [ct, cb, cb, ct, cb, ct]) side.col.push(c.r, c.g, c.b); };
+  for (const line of stepContourLines(V, i0, i1, j0, j1)) {
+    let u = 0;
+    for (let q = 0; q + 1 < line.length; q++) {
+      let [ax, az] = line[q], [bx, bz] = line[q + 1], ua = u;
+      const len = Math.hypot(bx - ax, bz - az);
+      u += len;
+      let ub = u;
+      if (len < 1e-6) continue;
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      let nx = -(bz - az) / len, nz = (bx - ax) / len;   // 線分に直角な向き。範囲の外側（値が大きくなる側）へ向ける
+      if (f(mx + nx * STEP_NUDGE, mz + nz * STEP_NUDGE) < f(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE)) { nx = -nx; nz = -nz; [ax, az, bx, bz, ua, ub] = [bx, bz, ax, az, ub, ua]; }
+      const ox = mx + nx * STEP_NUDGE, oz = mz + nz * STEP_NUDGE, gIn = stepHAt(mx - nx * STEP_NUDGE, mz - nz * STEP_NUDGE);
+      if (!insideFloor(ox, oz)) {   // 舞台の端：断面（水面から、内側の地面まで）
+        if (gIn < surf - 0.005) { const yl = Math.max(gIn, surf - WATER_SIDE_LINE); quad(ax, az, bx, bz, surf, yl, lineCol, lineCol, nx, nz); if (yl > gIn) quad(ax, az, bx, bz, yl, gIn, colAt(yl), colAt(gIn), nx, nz); }
+        continue;
+      }
+      const gOut = stepHAt(ox, oz);
+      if (gOut >= surf - 0.01) continue;   // 岸のほうが高い：岸の壁に隠れる
+      if (gOut < L - 0.001 && circlesSd(cs, k, ox, oz) < 0) {   // 低い側へ水の形が続く：滝
+        const key = Math.round(gOut * 1000) / 1000, bot = surfOf.has(key) ? surfOf.get(key) : gOut;
+        if (bot >= surf - 0.005) continue;
+        const dx = nx * WATER_FALL_OUT, dz = nz * WATER_FALL_OUT, H = surf - bot;
+        tri(fall, ax + dx, az + dz, bx + dx, bz + dz, surf, bot, nx, nz);
+        fall.fall.push(ua, 0, H, ua, H, 0, ub, H, 0, ua, 0, H, ub, H, 0, ub, 0, H);
+        continue;
+      }
+      const bot = Math.max(gIn, gOut);   // 側面：見えるのは、外側の地面より上の部分だけ
+      if (bot >= surf - 0.005) continue;
+      const yl = Math.max(bot, surf - WATER_SIDE_LINE);
+      quad(ax, az, bx, bz, surf, yl, lineCol, lineCol, nx, nz);
+      if (yl > bot) quad(ax, az, bx, bz, yl, bot, colAt(yl), colAt(bot), nx, nz);
+    }
+  }
+  const add = (o, mat, extra) => {
+    if (!o.pos.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(o.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(o.nor, 3));
+    extra(geo);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true; mesh.renderOrder = -10; mesh.userData.pxoCard = ci;
+    stageCtx.water.add(mesh);
+  };
+  const sideMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  sideMat.userData.u = { uHL: { value: 0 } };   // 水のグループの子は、カードのホバー（縁の線）でこの値を持つ前提で扱われる
+  add(side, sideMat, (geo) => geo.setAttribute('color', new THREE.Float32BufferAttribute(side.col, 3)));
+  const fallMat = waterFallMaterial();
+  fallMat.userData.u.uFallSpeed.value = Math.max(0.3, st.flow ?? 1);   // 流れが速い川ほど、滝の筋も速く落ちる
+  add(fall, fallMat, (geo) => geo.setAttribute('aFall', new THREE.Float32BufferAttribute(fall.fall, 3)));
+  if (!side.pos.length) sideMat.dispose();
+  if (!fall.pos.length) fallMat.dispose();
+}
 function buildWater() {
   if (!stageCtx) return;
   HL_VER++;
@@ -3965,6 +4119,28 @@ function buildWater() {
     // ふくらみの分が無かった時は、大きな湖で岸が板からはみ出し、直線で切れた（2026-10-04 ユーザー指摘）
     const pad = WATER_WET + 0.2 + Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) * 0.75 + 0.12;
     if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
+    // 段差（2026-10-08 ユーザー指定）：水面は、水場の中心線（円の中心）が通っている地面の高さごとに 1 枚ずつ置く（川が段差に差し掛かると、
+    // 段ごとに水面の高さが変わり、境目は滝になる）。中心線より高い地面（溝の脇の岸など）には置かない＝溝より太い水は溝の幅で止まる。
+    // 「厚み」は水面を底から持ち上げる量。高さごとに、その場所を掘った深さまで（超えた分は使わない＝水面は床の高さより上へ出ない）
+    const kk = Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2), yOff = st.y ?? 0, thick0 = Math.max(0, st.thick ?? 0);
+    const surfOf = new Map();   // 地面の高さ → その高さに置く水面の高さ（どちらも床からの高さ。カードの高さ位置 y は含めない）
+    // 段差が奏者の足元・ひな壇をよけて残した所は、水が無い所として数えない（そこに水面を置くと、できた崖へ滝が落ちる。2026-10-08 ユーザー指定）
+    for (const pass of [true, false]) {   // 全部の中心が「残した所」にある時だけ、数えずに済ませず全部を使う
+      for (const c of cs) { if (pass && stepKeptAt(c[0], c[1])) continue; const L = Math.round(stepHAt(c[0], c[1]) * 1000) / 1000; if (!surfOf.has(L)) surfOf.set(L, L + Math.min(thick0, -L)); }
+      if (surfOf.size) break;
+    }
+    // 水の形の中にある、中心線より低い地面にも水面を置く（水は低い所へ流れ込む。滝が水の無い穴へ落ちて消えないように）。
+    // 中心線より高い地面（岸）には置かない。0.2 unit おきに調べ、4 点以上かかっている高さだけ（かすった程度の所は除く）
+    if (STEP_DEEP > 0) {
+      const top = Math.max(...surfOf.keys()), cnt = new Map();
+      for (let z = z0; z <= z1; z += 0.2) for (let x = x0; x <= x1; x += 0.2) {
+        if (!insideFloor(x, z) || circlesSd(cs, kk, x, z) > -0.1 || stepKeptAt(x, z)) continue;
+        const L = Math.round(stepHAt(x, z) * 1000) / 1000;
+        if (L < top - 0.001 && !surfOf.has(L)) cnt.set(L, (cnt.get(L) || 0) + 1);
+      }
+      for (const [L, n] of cnt) if (n >= 4) surfOf.set(L, L + Math.min(thick0, -L));
+    }
+    for (const [L, surf] of surfOf) {
     const mat = waterMaterial(), u = mat.userData.u;
     cs.forEach(([x, z, rr, sl], i) => u.uC.value[i].set(x, z, rr, sl ?? 0));   // w：川の中心線に沿った長さ（湖・水たまりは 0）
     u.uN.value = cs.length;
@@ -3986,11 +4162,14 @@ function buildWater() {
     const geo = new THREE.PlaneGeometry(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
     geo.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((x0 + x1) / 2, (st.y ?? 0) + WATER_LIFT + stepLevelOf(cs), (z0 + z1) / 2);   // 段差で掘った所にある水場は、その底の高さに乗せる（2026-10-08）
+    u.uStepLv.value = L; u.uSurfLv.value = surf;   // この水面を描く範囲の判定に使う（シェーダー）
+    mesh.position.set((x0 + x1) / 2, yOff + surf + WATER_LIFT, (z0 + z1) / 2);
     mesh.receiveShadow = true; mesh.renderOrder = -10;
     mesh.layers.enable(WATER_GLOW_LAYER);   // 水の白のブルームのパスでも描く
     mesh.userData.pxoCard = ci;
     g.add(mesh);
+    if (STEP_DEEP > 0) buildWaterSides(st, ci, cs, kk, L, surf, surfOf, yOff);   // 側面・舞台の端の断面・滝（段差が無ければ何も立たない）
+    }
   });
 }
 // 海（2026-10-04 ユーザー指定）：床全体を覆う細かい格子の面（うねりで上下させるため）。陸側と床の外はシェーダーで描かない
