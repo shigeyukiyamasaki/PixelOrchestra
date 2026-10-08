@@ -262,6 +262,24 @@ function mergeParts(parts, key = null, material = null) {
   if (parts[0].userData.baseColor) mesh.userData.baseColor = parts[0].userData.baseColor;
   return mesh;
 }
+// 体の部品（上腕と肩の球、胴と上着、手と手首の球、頭と髪）をまとめる時の入口（2026-10-09 ユーザー指定：残りの 4 か所も）。
+// 全部が単純な部品（子を持たない・頂点色つき・ほかの目印を持たない）で、材質の設定が同じ時だけ 1 つにまとめて返す。そうでなければ null
+// （呼ぶ側は今までどおり別々に付ける。衣装が独自の頭や胴を持ち込んでも壊れないように）。
+// まとめた形は、元の形と置き方が同じなら使い回す（同じ体型・同じ顔と髪の奏者を作り直した時など）。倍率は焼き込まないこと（呼ぶ側が、まとめた後に掛ける）
+function tryMerge(parts, name) {
+  if (parts.length < 2 || !parts.every((m) => m && m.isMesh && !m.children.length && !Array.isArray(m.material) && m.visible && !m.name
+    && m.geometry?.attributes?.color && m.geometry.attributes.normal && Object.keys(m.userData).every((k) => k === 'baseColor' || k === 'size'))) return null;
+  const f0 = parts[0].material.onBeforeCompile;
+  const sig = (m) => { const t = m.material; return [t.type, t.vertexColors ? 1 : 0, t.shininess ?? '', t.transparent ? 1 : 0, t.opacity, t.alphaTest, t.side, t.depthWrite ? 1 : 0, t.depthTest ? 1 : 0,
+    t.polygonOffset ? `${t.polygonOffsetFactor},${t.polygonOffsetUnits}` : '', t.map ? t.map.uuid : '', t.color.getHex(), t.emissive ? t.emissive.getHex() : '', t.onBeforeCompile === f0 ? 1 : 0, m.layers.mask, m.renderOrder].join('|'); };
+  const s0 = sig(parts[0]);
+  if (!parts.every((m) => sig(m) === s0)) return null;
+  const key = name + '|' + parts.map((m) => { m.updateMatrix(); return `${m.geometry.uuid}:${m.matrix.elements.map((v) => Math.round(v * 1e4)).join(',')}`; }).join(';');
+  const mesh = mergeParts(parts, key);
+  if (parts[0].userData.size) mesh.userData.size = parts[0].userData.size;
+  mesh.layers.mask = parts[0].layers.mask; mesh.renderOrder = parts[0].renderOrder;
+  return mesh;
+}
 // 楽器の中で動かない部品を、同じ種類の材質ごとに 1 つへまとめる（2026-10-09 ユーザー指定：楽器本体も。考え方は上の mergeParts と同じ）。
 // 楽器（root）の中で動く物は、root.userData に部品そのものが登録されている（swing：銅鑼・シンバルの揺れ、slide：トロンボーンの外管、
 // foot：グランカッサの足）。登録された部品は「別のまとまり」として、その中と外でそれぞれまとめる。位置・向きは、まとまりの根元から見た形に焼き込む。
@@ -714,8 +732,13 @@ export class Puppet {
     if (this.seated) {
       this.body = this.flat ? torsoSeated(o.color || '#c03030') : (K?.torso || torsoFor)(P, accentCol);
       this.body.position.y = 13 * PX;           // 腰＝座面の高さ
-      this.upper.add(this.body);
-      if (!this.flat) { const coat = (K?.coat || coatFor)(P, accentCol, false); coat.position.y = 13 * PX; this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
+      if (this.flat) this.upper.add(this.body);
+      else {   // 胴と上着は 1 つの部品にまとめる（できる時。上の tryMerge）。体型の倍率は、まとめた後に掛ける（横幅・厚みだけなので、高さの位置は変わらない）
+        const coat = (K?.coat || coatFor)(P, accentCol, false); coat.position.y = 13 * PX;
+        const one = tryMerge([this.body, coat], 'torso');
+        if (one) { this.body = one; this.upper.add(one); one.scale.set(P.build, 1, P.build); }
+        else { this.upper.add(this.body); this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); }
+      } // 上着の立体（ラペル・襟・ネクタイ／ベルト）。体型は胴と上着の横幅・厚み
       const ch = chair(); ch.position.set(0, 0, -6 * PX); // 座面は z -6..+6、背もたれは後ろ
       if (this.flat) {
         this.rig.add(ch);
@@ -743,9 +766,10 @@ export class Puppet {
       // 立奏（打楽器・コントラバス・指揮者）：腰から上を spine の下に、脚は rig に直付け。揺れ・呼吸は上半身だけ（2026-09-10 ユーザー指定）
       this.body = (K?.torso || torsoFor)(P, accentCol);
       this.body.position.y = 13 * PX;
-      this.upper.add(this.body);
-      const coat = (K?.coat || coatFor)(P, accentCol, true); coat.position.y = 13 * PX; this.upper.add(coat); // 上着の立体（燕尾つき）
-      this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build);                          // 体型
+      const coat = (K?.coat || coatFor)(P, accentCol, true); coat.position.y = 13 * PX; // 上着の立体（燕尾つき）
+      const one = tryMerge([this.body, coat], 'torsoStand');   // 胴と上着をまとめる（座奏と同じ）
+      if (one) { this.body = one; this.upper.add(one); one.scale.set(P.build, 1, P.build); }
+      else { this.upper.add(this.body); this.upper.add(coat); this.body.scale.set(P.build, 1, P.build); coat.scale.set(P.build, 1, P.build); }   // 体型
       this.rig.add((K?.legs || legsStandingFor)(P));
     }
     this.drumStyle = this.variant === 'bassdrum' ? BASSDRUM_STYLES.find((st) => st.re.test(o.trackName || '')) : null;
@@ -759,8 +783,13 @@ export class Puppet {
     this.headPivot = new THREE.Group();
     this.headPivot.position.set(0, HEAD_Y_PX * PX, 0);
     this.head = this.flat ? head(this.seed, false) : (K?.head || headFor)(P);
-    this.headPivot.add(this.head);
-    if (!this.flat) { this.hair = (K?.hair || hairFor)(P); this.headPivot.add(this.hair); } // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）
+    if (this.flat) this.headPivot.add(this.head);
+    else {   // 髪は別パーツ（顔は平面、髪は立体。2026-09-11）。作った後は、頭と 1 つの部品にまとめる（できる時。tryMerge）
+      this.hair = (K?.hair || hairFor)(P);
+      const one = tryMerge([this.head, this.hair], 'head');
+      if (one) { this.head = one; this.hair = null; this.headPivot.add(one); }
+      else { this.headPivot.add(this.head); this.headPivot.add(this.hair); }
+    }
     this.upper.add(this.headPivot);
 
     // 2関節腕（肩 → 上腕 → 肘 → 前腕＋手）。手首ありなら 肘 → 前腕 → 手首 → 手 の 3 関節
@@ -770,8 +799,10 @@ export class Puppet {
     for (const side of ['L', 'R']) {
       const a = new THREE.Group(); a.position.set(SHOULDER[side][0] * PX, SHOULDER[side][1] * PX, (this.flat ? 3 : 0) * PX);
       const f = new THREE.Group(); f.position.set(0, -ARM_UPPER * PX, 0);
-      a.add(tint(upperArm()), f);
-      if (!this.flat) a.add(tint(shoulderPad())); // 肩関節の球：肩が前に出ても胴と腕の間が空かない
+      // 肩関節の球：肩が前に出ても胴と腕の間が空かない。上腕と 1 つの部品にまとめる（できる時。tryMerge）。色替えは、まとめた後に掛ける
+      const armOne = this.flat ? null : tryMerge([upperArm(), shoulderPad()], 'arm');
+      if (armOne) a.add(tint(armOne), f);
+      else { a.add(tint(upperArm()), f); if (!this.flat) a.add(tint(shoulderPad())); }
       this.upper.add(a);
       this.arm[side] = a; this.fore[side] = f;
       this.hand[side] = [SHOULDER[side][0], SHOULDER[side][1] - ARM_UPPER - ARM_FORE, this.flat ? 3 : 0];
@@ -781,8 +812,11 @@ export class Puppet {
         f.add(tint(foreArmNoHand()));
         const h = new THREE.Group(); h.position.set(0, -FORE_NOHAND * PX, 0);
         const hm = this.flat ? hand() : handFor(P, side, { fingers: withFingers, grip: GRIP_ITEMS.has(this.cfg.held?.[side]) });
-        h.add(hm); f.add(h);
-        if (!this.flat && GRIP_ITEMS.has(this.cfg.held?.[side])) h.add(wristBall(P.skin)); // 手首の関節の球：曲がった所の角が割れて見えない（棒を握る手。2026-09-23）
+        // 手首の関節の球：曲がった所の角が割れて見えない（棒を握る手。2026-09-23）。手と 1 つの部品にまとめる（できる時。指が別の部品の手はまとめない）
+        const ball = !this.flat && GRIP_ITEMS.has(this.cfg.held?.[side]) ? wristBall(P.skin) : null;
+        const handOne = ball ? tryMerge([hm, ball], 'hand') : null;
+        if (handOne) h.add(handOne); else { h.add(hm); if (ball) h.add(ball); }
+        f.add(h);
         this.fingers[side] = hm.userData?.fingers || null;
         this.handGrp[side] = h; holder = h; holdY = -HAND_LEN; // 手持ち物は指先＝手の目標位置
       } else {
