@@ -4741,12 +4741,21 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         vec3 Ld = directionalLights[ li ].direction;
         if ( dot( reflect( -Ld, nRV ), vV ) < 0.85 ) continue;
         const float GS = 0.06;
-        vec2 gb = floor( pxoP.xz / GS );
         float glow = 0.0;
+        // 川では、粒を流れで動かす（2026-10-09 ユーザー指定：粒がその場で静止していた。候補のます目が世界に固定で、さざ波が流れても粒の位置は
+        // 動かなかった）：ます目を流れの向きへずらす。ずらしすぎると歪むので、±GLINT_SHIFT の半分までにして、半周期ずれた 2 枚を入れ替える
+        // （物に当たる泡の点々と同じ方式）。入れ替わりのタイミングは、場所ごとになめらかなむらでずらす。湖・池・海は 1 枚で、ずらさない
+        bool gMv = uType < 0.5 && uSpeed > 0.01;
+        float gT = gMv ? uWT * uSpeed * 0.35 / ${GLINT_SHIFT.toFixed(2)} + pxoWN( pxoP.xz * 0.3 + 11.0 ) : 0.0;
+        for ( int gp = 0; gp < 2; gp ++ ) {
+          if ( gp == 1 && ! gMv ) break;
+          float gPh = fract( gT + 0.5 * float( gp ) ), gW = gMv ? smoothstep( 0.0, 0.5, 1.0 - abs( 1.0 - 2.0 * gPh ) ) : 1.0;   // 現れて、流れて、消える
+          vec2 gSh = gMv ? f * ${GLINT_SHIFT.toFixed(2)} * ( gPh - 0.5 ) : vec2( 0.0 );                                      // このます目のずれ（世界の座標）
+          vec2 gb = floor( ( pxoP.xz - gSh ) / GS ), gOff = gMv ? vec2( floor( gT + 0.5 * float( gp ) ) * 13.7 + 41.0 * float( gp ) ) : vec2( 0.0 );
         for ( int j = -1; j <= 1; j ++ ) for ( int i = -1; i <= 1; i ++ ) {
-          vec2 id = gb + vec2( float( i ), float( j ) );
-          float k1 = pxoWH( id + 3.7 ), k2 = pxoWH( id + 19.3 ), k3 = pxoWH( id + 42.1 ), k4 = pxoWH( id + 77.7 );
-          vec2 cw = ( id + vec2( k1, k2 ) ) * GS, dq = cw - pxoP.xz;
+          vec2 id = gb + vec2( float( i ), float( j ) ), ih = id + gOff;   // ih：乱数を引く番号（入れ替えるたびに別の並びにする）
+          float k1 = pxoWH( ih + 3.7 ), k2 = pxoWH( ih + 19.3 ), k3 = pxoWH( ih + 42.1 ), k4 = pxoWH( ih + 77.7 );
+          vec2 cw = ( id + vec2( k1, k2 ) ) * GS + gSh, dq = cw - pxoP.xz;
           vec2 qd = q + vec2( dot( dq, f ), dot( dq, pp ) );
           float r0 = PXO_R2( qd );
           vec2 gq = vec2( PXO_R2( qd + ex ) - r0, PXO_R2( qd + ey ) - r0 ) / e * 1.5, gwq = f * gq.x + pp * gq.y;
@@ -4757,7 +4766,8 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
           if ( sg < 0.04 ) continue;
           float tw = 0.5 + 0.5 * sin( uWT * mix( 2.0, 5.0, k4 ) + k3 * 6.283 );   // ゆっくり明滅
           float r = GS * 0.55 * sqrt( min( sg, 1.0 ) ) * mix( 0.6, 1.0, k3 ) * mix( 0.5, 1.0, tw );
-          glow = max( glow, ( 1.0 - smoothstep( r - 0.004, r, length( pxoP.xz - cw ) ) ) * min( 3.0, 0.8 + sg ) );
+          glow = max( glow, ( 1.0 - smoothstep( r - 0.004, r, length( pxoP.xz - cw ) ) ) * min( 3.0, 0.8 + sg ) * gW );
+        }
         }
         totalEmissiveRadiance += glow * directionalLights[ li ].color;
         pxoWhite = max( pxoWhite, min( 1.0, glow ) );
@@ -4788,7 +4798,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v86';
+  m.customProgramCacheKey = () => 'pxo-water-v87';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4877,6 +4887,7 @@ const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ
 // 水は崖の縁から水平に飛び出して落ちる：崖からの離れ = WATER_FALL_REACH × 水の厚さ × √落ちた高さ（上限 WATER_FALL_MAX）。
 // 崖の壁とこの外側の面の間が滝の厚み。水が厚いほど遠くへ飛び、滝も厚い。厚さ 0 では壁に沿ってまっすぐ落ちる（直角）
 const WATER_FALL_REACH = 0.8, WATER_FALL_MAX = 1.6;
+const WATER_FALL_FLOW0 = 3, WATER_FALL_FLOW_POW = 0.8;   // 飛び出しが伸び始める流れの速さと、伸び方（（流れ ÷ これ）の何乗か）
 const WATER_FALL_SEG = 8;       // 放物線の分割数（落ち口の近くほど細かく取る）
 // 滝の筋が落ちる速さ（2026-10-08 ユーザー指定：下へ行くほど加速）：落ち口での速さ [unit/秒]（川の「流れ」1 の時。「流れ」に比例）と、
 // 加速度 [unit/秒²]（川に関係なく一定）。
@@ -4938,6 +4949,7 @@ ${WATER_NOISE_GLSL}
 const WATER_SPLASH_N = 150;     // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34 → 60（2026-10-08 ユーザー指定：数を増やす）→ 150（2026-10-09 ユーザー指定：粒を小さくして数で補う。大きさ 0.6 倍・数 2.5 倍）
 const WATER_SPLASH_PW = 2.4;    // 勢いの上限（粒の数・跳ねる高さ・飛ぶ距離に比例。2.4 で高さ約 2 unit）。最初は 1.6（落差 6 で頭打ち）
 const WATER_SPLASH_FLOW = 0.2;  // 流れの速さの効き方（勢いに 流れ^これ を掛ける）。最初は 0.35 で、今の滝（流れ 2.7）が上限近くまで強くなりすぎた（2026-10-09 ユーザー指定で弱めた）
+const GLINT_SHIFT = 0.5;   // 照り返しの光の粒を川の流れで動かす時、1 周期でずらす量 [unit]（速さは 流れ × 0.35 [unit/秒]。泡の点々と同じ）
 const CAUS_FLOW = 0.3;     // 光の網（コースティクス）：川の流れ 1 あたりの、水面の荒れ具合（風 1 ＝ 1）。流れ 2 で網が一番くっきり、6 を超えると崩れる
 const CAUS_SHIFT = 0.8;    // 光の網を下流へ流す時、1 周期でずらす量 [unit]
 const WATER_SPLASH_AL = 0.5;    // 粒の濃さ（1 で不透明）。最初は 1 → 0.7 → 0.5（2026-10-09 ユーザー指定：滝・物に当たる水飛沫とも、透明度を上げる）
@@ -5031,10 +5043,14 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
   // 水が薄くて離れがほぼ無い時は、壁に沿ったまっすぐな面。壁と同じ面に重ねないよう、落ち口より下は WATER_FALL_OUT だけ外へ出す
   const fallThick = surf - L;   // 上の段の水の厚さ
   // fr：段の位置（1 が一番外の段、小さいほど内側）。内側の段ほど、水の深い所（水面から 厚さ × (1 − fr) 下）から落ち始め、崖の近くを落ちる
+  // 激流は、勢いよく前へ飛び出す（2026-10-09 ユーザー指定：流れの上限を 10 に上げた時に、滝の飛び出しを付け忘れていた。離れは水の厚さと落差だけで
+  // 決まっていて、流れの速さが入っていなかった）：離れ（と、その上限）に、流れの速さから決めた倍率を掛ける。前の上限だった流れ 3 までは 1 倍
+  // （今までどおり）、そこから上で伸びる（流れ 6 で 1.74 倍、10 で 2.62 倍）
+  const fallFlowK = Math.pow(Math.max(1, (st.flow ?? 1) / WATER_FALL_FLOW0), WATER_FALL_FLOW_POW);
   const fallProfile = (bot, fr = 1) => {
     const top = surf - fallThick * (1 - fr), H = top - bot, P = [];
     if (H < 0.01) return P;
-    const S = Math.min(WATER_FALL_REACH * fallThick * fr * Math.sqrt(H), WATER_FALL_MAX);
+    const S = Math.min(WATER_FALL_REACH * fallThick * fr * Math.sqrt(H), WATER_FALL_MAX) * fallFlowK;
     if (S < 0.02) P.push({ s: L > 0.001 ? WATER_FALL_OUT : 0, y: top, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });   // ひな壇（L が正）から落ちる滝は、上端も壁から離す（ひな壇の壁は弧で、輪郭の折れ線とわずかにずれるため）
     else for (let n = 0; n <= WATER_FALL_SEG; n++) {
       const t = n / WATER_FALL_SEG, ds = S, dy = 2 * H * t, l = Math.hypot(ds, dy) || 1;   // 接線は (ds, -dy)。面の向き（外・上）はその直角
