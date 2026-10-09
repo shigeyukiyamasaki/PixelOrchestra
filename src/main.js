@@ -2816,6 +2816,31 @@ for (const id of ['midiFile', 'audioFile']) $(id).addEventListener('change', () 
   sel.addEventListener('change', () => { saveConductorCostume(sel.value); buildScene(currentMidi, { keepTime: true }); });
 }
 
+// 右メニューの上下の境界（2026-10-10 ユーザー指定：境界線の高さをドラッグで上下できるように）：上の段（カメラ・レンズ・ドット絵）の高さを、
+// 右メニューの高さに対する割合 [%] で持つ（CSS の --panel-split。窓の大きさを変えても割合が保たれる）。
+// トラックの欄の折りたたみと同じく、このブラウザにだけ覚える（プリセット・共有には入れない）
+{
+  const SPLIT_KEY = 'pixelOrchestra.ui.panelSplit';
+  const SPLIT_MIN = 10, SPLIT_MAX = 85;   // 境界を動かせる範囲 [%]（どちらの段もつぶれきらないように）
+  const panel = $('panel'), bar = $('panelSplit');
+  const apply = (pct) => panel.style.setProperty('--panel-split', `${Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, pct)).toFixed(2)}%`);
+  const saved = parseFloat(LS.getItem(SPLIT_KEY));
+  if (Number.isFinite(saved)) apply(saved);
+  bar.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    bar.setPointerCapture(e.pointerId); bar.classList.add('drag');
+    const grab = e.clientY - bar.getBoundingClientRect().top;   // つまみの中のどこをつかんだか（つかんだ瞬間に跳ねないように）
+    let pct = null;
+    const move = (ev) => { const r = panel.getBoundingClientRect(); if (r.height <= 0) return; pct = Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, ((ev.clientY - grab - r.top) / r.height) * 100)); apply(pct); };
+    const up = () => {
+      bar.classList.remove('drag');
+      bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
+      if (pct != null) LS.setItem(SPLIT_KEY, pct.toFixed(2));
+    };
+    bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
+  });
+}
+
 {
   const FOLD_KEY = 'pixelOrchestra.ui.tracksFolded';
   const hd = $('tracksHd'), mark = hd.querySelector('.foldMark');
