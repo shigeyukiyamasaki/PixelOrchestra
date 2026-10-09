@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261009h">
+  <link rel="stylesheet" href="style.css?v=20261009j">
 </head>
 <body>
   <div id="stageArea">
@@ -32,6 +32,8 @@
       <!-- 視聴モード（?view=プロジェクト名）の覆い：曲名と ▶。最初に 1 回押すと再生（音の自動再生はブラウザが止めるため）。以降の一時停止・再開は映像の上の操作ボタンで。編集画面では出ない（2026-09-18、2026-10-05 変更） -->
       <div id="viewerCover"><div class="vcTitle" id="viewerTitle"></div><div class="vcPlay">▶</div><div class="vcMsg" id="viewerMsg"></div></div>
       <!-- テンポと拍子（左上）。拍子は「今の拍／分母」で、分子が 1 2 3 4 … と進む -->
+      <!-- キャプチャの正方形の枠（2026-10-09 ユーザー指定。正方形モードの時だけ出す。キャプチャには写らない）。枠の中は操作を通す。つまみ（mv）で移動、角（sz）で大きさ -->
+      <div id="capSqFrame" hidden><div class="mv" title="ドラッグで枠を動かす"></div><div class="sz" title="ドラッグで枠の大きさを変える"></div></div>
       <div id="tempoHud"><div class="bpm"></div><div class="sig"></div></div>
       <!-- クレジット（MIDIOrchestra と同じ作り：canvas の上に重ねた DOM。接頭辞付きの行は入力がある時だけ出す） -->
       <div id="credits">
@@ -262,6 +264,19 @@
   <label class="ctl" title="文字の大きさの倍率"><span>大きさ <b data-value-for="tempoScale">1</b></span><input type="range" id="tempoScale" min="0.4" max="3" step="0.05" value="1"></label>
   <label class="ctl" title="不透明度"><span>濃度 <b data-value-for="tempoOpacity">0.9</b></span><input type="range" id="tempoOpacity" min="0.1" max="1" step="0.05" value="0.9"></label>
   </div>
+      </div>
+    </div>
+    <!-- キャプチャ（2026-10-09 ユーザー指定：アプリの中で簡単に撮りたい。静止画・動画・簡単な GIF）。2 段：上＝ボタン／下＝文字のチェックと状態 -->
+    <div class="capWrap">
+      <div class="capRow">
+        <button id="capStill" title="いまの画面を 1 枚、PNG で保存する（空の背景と 3D の絵。再生ボタンなどの操作部品は入らない）">静止画</button>
+        <button id="capVideo" title="録画を始める／止める。止めると動画（mp4。使えないブラウザでは webm）を保存する。音声を読み込んでいれば音も入る。画面に描いたコマをそのまま録るので、フレームレートを落としていれば動画もその刻みになる">録画</button>
+        <button id="capGif" title="GIF の録画を始める／止める。止めると GIF を保存する（幅 960 まで・256 色。4 秒で自動で止まる。音は入らない）。コマ数は、画面のフレームレートに合わせて決まる（60 → 12、30・20・10 → 10、15 → 15、12 → 12、6 → 6 コマ/秒）">GIF</button>
+      </div>
+      <div class="capRow">
+        <label class="chk2" title="キャプチャに、画面に重ねているクレジット（曲名など）とテンポ・拍子の文字も入れる。オフ：空の背景と 3D の絵だけ"><input type="checkbox" id="capText"> 文字も入れる</label>
+        <label class="chk2" title="正方形モード：画面に正方形の枠を出し、その中だけを撮る（静止画・録画・GIF とも）。枠は、上のつまみをドラッグすると動き、右下の角をドラッグすると大きさが変わる。枠の中はふつうにカメラを操作できる。録画・GIF の途中で枠を動かしても、撮る範囲は始めた時のまま。Esc キーで解除できる"><input type="checkbox" id="capSquare"> 正方形</label>
+        <span id="capStatus" class="status"></span>
       </div>
     </div>
     <!-- プリセット：いま保存している設定を丸ごと名前を付けて覚える（2026-09-14 ユーザー指定） -->
@@ -504,6 +519,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>   <!-- 床に置く 3D モデル（GLB。2026-10-01） -->
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20261009n"></script>
+  <script type="module" src="src/main.js?v=20261009r"></script>
 </body>
 </html>

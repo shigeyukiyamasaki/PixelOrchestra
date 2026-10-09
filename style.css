@@ -430,6 +430,18 @@ body.viewer #viewerCover .vcMsg { font-size: 14px; opacity: .85; }
 #topbar .preset button { flex-shrink: 0; white-space: nowrap; }   /* ボタンは押しつぶさない（文字が縦に折り返していた） */
 /* 「設定」：プリセットの左のボタンで、クレジット・テンポ・拍子のポップアップを開閉（2026-09-18 ユーザー指定）。ボタンの真下・右揃えに出す */
 #topbar .settingsWrap { position: relative; margin-right: 10px; }
+/* キャプチャ（2026-10-09）：2 段。録画中のボタンは赤くする */
+#topbar .capWrap { display: flex; flex-direction: column; gap: 5px; margin-right: 10px; }
+#topbar .capRow { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+#topbar .capRow button { padding: 3px 8px; }
+#topbar .capRow button.recOn { background: #a8322f; border-color: #d0524e; color: #fff; }
+#topbar #capStatus { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+/* キャプチャの正方形の枠（2026-10-09）：枠の外を暗くして、撮る範囲を見せる。枠そのものは操作を通し（カメラを回せる）、つまみと角だけが掴める */
+#capSqFrame { position: absolute; z-index: 4; box-sizing: border-box; border: 2px dashed rgba(255, 255, 255, .9); box-shadow: 0 0 0 200vmax rgba(0, 0, 0, .45); pointer-events: none; }
+#capSqFrame[hidden] { display: none; }
+#capSqFrame .mv, #capSqFrame .sz { position: absolute; pointer-events: auto; background: rgba(255, 255, 255, .92); border: 1px solid rgba(0, 0, 0, .6); touch-action: none; }
+#capSqFrame .mv { left: 50%; top: -2px; width: 44px; height: 14px; transform: translate(-50%, -50%); border-radius: 7px; cursor: move; }
+#capSqFrame .sz { right: -2px; bottom: -2px; width: 16px; height: 16px; transform: translate(50%, 50%); cursor: nwse-resize; }
 #topbar #settingsBtn { padding: 4px 10px; font-size: 12px; }
 #topbar #settingsBtn.on { border-color: var(--accent); color: var(--accent); }
 #settingsPop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: flex; align-items: flex-start; gap: 14px;

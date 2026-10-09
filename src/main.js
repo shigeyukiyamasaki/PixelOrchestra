@@ -13,6 +13,7 @@ import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFr
 import { HEAD_Y } from './pianoRoll.js';
 import { PianoRoll } from './pianoRoll.js';
 import { AutoCamera } from './autoCam.js';
+import { createCapture } from './capture.js';
 
 // ---- 視聴モード（公開ページ。index.html?view=プロジェクト名。2026-09-18 ユーザー指定）----
 // 操作パネルを隠して映像だけを出し、projects/<名前>/ を読んで再生する。romashige.com へ公開した時の見せ方。
@@ -2463,6 +2464,7 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
 renderer.toneMapping = THREE.CustomToneMapping;
 // 背景：上下グラデーション（CSS）。中間地点 = 2 色が半分ずつ混ざる高さ [%]（2026-09-10）
 let bgApplied = '';
+let bgParts = null;   // 背景のグラデーション { a：上の色, b：下の色, mid：中間点 % }（キャプチャで同じ空を描くため。2026-10-09）
 // 上下反転（2026-09-14 ユーザー指定）は見た目だけ。上の色・下の色・中間地点の値は動かさない
 // CSS の色に、シェーダーと同じ露出＋トーン圧縮（輝度 0.8 以上だけ 1.0 に漸近）を掛ける（2026-09-16 ユーザー指摘：露出が空に効いていなかった）
 function toneHex(hex, exposure) {
@@ -2479,6 +2481,7 @@ function applyBackground(top, bottom, mid, flip, exposure = 1) {
     : `linear-gradient(to bottom, ${top}, ${mid}%, ${bottom})`;
   if (css === bgApplied) return;
   bgApplied = css;
+  bgParts = flip ? { a: bottom, b: top, mid: 100 - mid } : { a: top, b: bottom, mid };
   $('view').style.background = css;
   setWaterSky(top, bottom, mid, flip);   // 水面に同じ空の色を映す（2026-10-03）
 }
@@ -2928,13 +2931,87 @@ let lastPerf = performance.now();
 // 1 秒に「フレームレート」回へ落とす（60 で制限なし）。次に描く時刻 frameDue まで、このコマは何もしないで戻る（動きの計算も描画もしない＝
 // 奏者・水・草・カメラの動きが全部その刻みになり、描く回数が減った分だけ軽くなる）。時刻は「前に描いた時刻 ＋ 間隔」で進めるので、
 // 画面の書き換え（ふつう 1 秒 60 回）で割り切れない値でも、平均でその回数になる（選べるのは割り切れる数だけにしてある：FPS_STEPS）
+// キャプチャの正方形モード（2026-10-09 ユーザー指定：正方形の大きさを自由に変えられる状態で撮りたい）：画面に正方形の枠を出し、その中だけを撮る。
+// 枠の位置と大きさは、表示の領域に対する割合で持つ（cx・cy：中心。s：一辺 ÷ 領域の短い辺）。領域の大きさが変わっても同じ見え方になる。
+// 上のつまみで移動、右下の角で大きさ（中心は動かさず、中心から角までの離れで決める）。枠は領域からはみ出さない。
+// 値はこの端末に覚える（設定・プロジェクトには入れない：場面の設定ではなく、撮る道具の状態なので）。公開ページでは出さない
+const CAP_SQ_KEY = 'pixelOrchestra.capSquare.v1';
+const CAP_SQ_MIN = 0.1;   // 一辺の下限（領域の短い辺に対する割合）
+const capSq = (() => { try { const o = JSON.parse(LS.getItem(CAP_SQ_KEY) || 'null'); if (o && [o.cx, o.cy, o.s].every(Number.isFinite)) return o; } catch (e) { console.warn('正方形の枠の読込失敗:', e); } return { cx: 0.5, cy: 0.5, s: 0.8 }; })();
+const capSqOn = () => !VIEW_NAME && !!$('capSquare')?.checked;
+function capSqBox() {   // 枠の位置と大きさ（領域の中の CSS の画素）。はみ出さないように収める
+  const v = $('view'), W = v.clientWidth, H = v.clientHeight, m = Math.min(W, H);
+  if (!m) return null;
+  const side = Math.max(CAP_SQ_MIN, Math.min(1, capSq.s)) * m;
+  const x = Math.max(0, Math.min(W - side, capSq.cx * W - side / 2)), y = Math.max(0, Math.min(H - side, capSq.cy * H - side / 2));
+  return { x, y, side, W, H };
+}
+function syncCapSq() {
+  const f = $('capSqFrame');
+  if (!f) return;
+  const b = capSqOn() ? capSqBox() : null;
+  f.hidden = !b;
+  if (b) { f.style.left = b.x + 'px'; f.style.top = b.y + 'px'; f.style.width = f.style.height = b.side + 'px'; }
+}
+{
+  const f = $('capSqFrame'), v = $('view');
+  const drag = (handle, onMove) => {
+    if (!handle) return;
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      const r = v.getBoundingClientRect(), z = r.width / (v.clientWidth || 1);   // 領域が縮小表示されている時の倍率（画面の画素 ÷ 領域の画素）
+      const move = (ev) => { onMove((ev.clientX - r.left) / z, (ev.clientY - r.top) / z); syncCapSq(); };
+      const up = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up); try { LS.setItem(CAP_SQ_KEY, JSON.stringify(capSq)); } catch (err) { console.warn('正方形の枠の保存失敗:', err); } };
+      handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+    });
+  };
+  // 移動：つまみは枠の上の辺の真ん中にあるので、そこがポインタに付いてくるように中心を決める
+  drag(f?.querySelector('.mv'), (px, py) => { const b = capSqBox(); if (!b) return; capSq.cx = Math.max(b.side / 2, Math.min(b.W - b.side / 2, px)) / b.W; capSq.cy = Math.max(b.side / 2, Math.min(b.H - b.side / 2, py + b.side / 2)) / b.H; });
+  // 大きさ：中心からポインタまでの離れ（縦横の大きいほう）の 2 倍を一辺にする
+  drag(f?.querySelector('.sz'), (px, py) => { const b = capSqBox(); if (!b) return; const cxp = b.x + b.side / 2, cyp = b.y + b.side / 2; capSq.cx = cxp / b.W; capSq.cy = cyp / b.H; capSq.s = Math.max(CAP_SQ_MIN, Math.min(1, 2 * Math.max(Math.abs(px - cxp), Math.abs(py - cyp)) / Math.min(b.W, b.H))); });
+  $('capSquare')?.addEventListener('change', syncCapSq);
+  // Esc で正方形モードを解除する（2026-10-09 ユーザー指定）。「設定」のポップアップが開いている時は、そちらを閉じるのを優先する。
+  // チェックを外したら change を出す（設定の自動保存と、枠の表示の更新が、手で外した時と同じに動くように）
+  document.addEventListener('keydown', (e) => {
+    const cb = $('capSquare');
+    if (e.key !== 'Escape' || !cb || !cb.checked || VIEW_NAME || ($('settingsPop') && !$('settingsPop').hidden)) return;
+    cb.checked = false;
+    cb.dispatchEvent(new Event('input', { bubbles: true })); cb.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  window.addEventListener('resize', syncCapSq);
+}
+// キャプチャ（2026-10-09 ユーザー指定）：静止画・動画・GIF。絵の重ね方と保存は capture.js。描画の直後に capture.onFrame を呼ぶ（下の animate）
+const capture = createCapture({
+  view: $('view'), getCanvas: () => renderer.domElement, getBg: () => bgParts, audio,
+  withText: () => !!$('capText')?.checked,
+  getScreenFps: () => screenFps(),   // GIF のコマ数を、画面のフレームレートに合わせて決める
+  getRegion: () => {   // 正方形モード：枠をキャンバスの画素に換算する
+    const b = capSqOn() ? capSqBox() : null, c = renderer.domElement;
+    if (!b) return null;
+    const k = c.width / b.W;
+    return { x: b.x * k, y: b.y * k, w: b.side * k, h: b.side * k };
+  },
+  onState: () => {
+    const st = capture.state(), mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+    const v = $('capVideo'), g = $('capGif'), msg = $('capStatus');
+    if (v) { v.textContent = st.video != null ? `■ ${mmss(st.video)}` : '録画'; v.classList.toggle('recOn', st.video != null); }
+    if (g) { g.textContent = st.gif != null ? `■ ${st.gif.toFixed(1)} / ${st.gifMax}` : 'GIF'; g.classList.toggle('recOn', st.gif != null); }
+    if (msg) { msg.textContent = st.video != null ? (st.videoAudio ? '録画中（音あり）' : '録画中（音なし）') : st.gif != null ? `GIF 録画中（1 秒 ${+st.gifFps.toFixed(1)} コマ）` : st.note; msg.title = msg.textContent; }
+  },
+});
+if ($('capStill')) $('capStill').onclick = () => capture.still();
+if ($('capVideo')) $('capVideo').onclick = () => capture.toggleVideo();
+if ($('capGif')) $('capGif').onclick = () => capture.toggleGif();
+// 画面を描く回数 [コマ/秒]：ドット化がオンの時だけ「フレームレート」のスライダーに従う（スライダーの値は FPS_STEPS の何番目か）。それ以外は 60
+function screenFps() { const v = parseFloat($('pixelFps')?.value); return $('pixelOn')?.checked ? (FPS_STEPS[Math.round(Number.isFinite(v) ? v : FPS_STEPS.length - 1)] ?? 60) : 60; }
 const FPS_FREE = 59.5;   // これ以上は制限なしとして扱う [コマ/秒]
 let frameDue = 0;
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
   const wv = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
-  const fps = $('pixelOn')?.checked ? (FPS_STEPS[Math.round(wv('pixelFps', FPS_STEPS.length - 1))] ?? 60) : 60;   // スライダーの値は FPS_STEPS の何番目か
+  const fps = screenFps();
   if (fps < FPS_FREE) {
     if (now < frameDue - 1) return;   // まだ次のコマの時刻ではない（−1：書き換えの時刻の揺れの分）
     const iv = 1000 / Math.max(1, fps);
@@ -3054,6 +3131,8 @@ function animate() {
   setModelShadowReceivers(playerRoots);
   setWaterPlayers(playerRoots, conductor?.root);   // 水の「奏者をよける」（2026-10-03）
   renderFrame(renderer, scene, camera, lastBloomAll, lastBloomThr);   // 太陽のブルーム・全体のブルームを掛けて描く
+  capture.onFrame(now);   // キャプチャ：描いた直後にだけ、キャンバスの中身を読める
+  syncCapSq();            // 正方形の枠：領域の大きさ・チェックの状態（設定の復元を含む）に合わせる
   undoShake();
 }
 
