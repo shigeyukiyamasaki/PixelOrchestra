@@ -52,6 +52,11 @@ aside#panel { display: flex; flex-direction: column; overflow: hidden; padding: 
 #boxPixel:not(:has(#pixelOn:checked)) > *:not(.hd) { opacity: .45; pointer-events: none; }   /* 見出しのドット化がオフの間は中身全体（2026-10-01） */
 /* 「内側の輪郭だけ」「内側の輪郭の濃さ」は内側の輪郭がオンの時だけ（2026-10-01 ユーザー指定） */
 #boxPixel:not(:has(#outlineRing:checked)) .ringDep { opacity: .45; pointer-events: none; }
+/* 輪郭線がオフの間は、その下の項目（濃さ・明るさ・内側の輪郭・線の足し方）を薄くして触れなくする（.lineDep。2026-10-09 ユーザー指定）。
+   「輪郭線」のチェックそのものは通常のまま（オンに戻せるように）。同じ項目に上の決まりも当たるが、同じ薄さを指定するだけなので二重には薄くならない */
+#boxPixel:not(:has(#outlineOn:checked)) .lineDep { opacity: .45; pointer-events: none; }
+/* 色の差の線の 2 つのスライダーは、「色の差がある所にも線」がオンの時だけ（.colDep。2026-10-09） */
+#boxPixel:not(:has(#outlineColor:checked)) .colDep { opacity: .45; pointer-events: none; }
 #camArea .camCol { display: flex; flex-direction: column; gap: 6px; }
 /* 自動カメラはプレビューの中の右上に重ねる（2026-09-14 ユーザー指定） */
 /* プレビューに重ねる操作の層。端末の画面にぴったり合わせる（位置・大きさは JS が入れる） */

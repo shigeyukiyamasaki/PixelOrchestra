@@ -3127,6 +3127,9 @@ function animate() {
     }
     setPixelPlayers({ on: s2.pixelOn, rows: s2.pixelRows, levels: s2.pixelLevels, quantMode: s2.pixelQuantMode, quantFirst: s2.pixelQuantFirst, quantFirstAmt: s2.pixelQuantFirstAmt, bloomQuant: s2.bloomQuant, ss: 1 + s2.pixelSmooth, outline: s2.pixelOn && s2.outlineOn, lineAmt: s2.outlineAmt, lineDark: s2.outlineDark, ring: s2.outlineRing, ringAmt: s2.outlineRingAmt,
       outerOff: s2.outlineRing && s2.outlineOuterOff,   // 内側の輪郭だけ：内側の輪郭がオンの時だけ効く
+      colorEdge: !!$('outlineColor')?.checked,   // 色の差がある所にも線を引く（2026-10-09）
+      slopeEdge: !!$('outlineSlope')?.checked,   // なだらかな所にも線を引く（2026-10-09）
+      colGapK: wv('outlineColGap', 0.2), colDiff: wv('outlineColDiff', 0.15),   // 色の差の線の 2 つのしきい値（2026-10-09）
       metalPix: !!sc.players, roots }); }
   const playerRoots = [...puppets.map((p) => p.puppet.root), ...(conductor ? [conductor.root] : [])];
   setModelShadowReceivers(playerRoots);

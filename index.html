@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261009j">
+  <link rel="stylesheet" href="style.css?v=20261009l">
 </head>
 <body>
   <div id="stageArea">
@@ -390,11 +390,18 @@
           <div>
       <!-- 輪郭線（3 段目。2026-09-30 ユーザー指定：奏者だけ） -->
       <label class="chk2 pixDep" title="奏者と指揮者の外側と、重なった部分の境目に 1 ドットの線を引く（ドット化がオンの時だけ使える）"><input type="checkbox" id="outlineOn"> 輪郭線</label>
-      <label class="ctl pixDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
-      <label class="ctl pixDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
-      <label class="chk2 pixDep" title="輪郭線の 1 ドット内側に、線より薄い濃い色を重ねる（線 → 薄い線 → 物の色のグラデーション）"><input type="checkbox" id="outlineRing"> 内側の輪郭</label>
-      <label class="ctl pixDep ringDep" title="内側の輪郭の濃さ。0 で無し、1 で物の濃い色そのまま（「内側の輪郭」がオンの時に効く）"><span>内側の輪郭の濃さ <b data-value-for="outlineRingAmt">0.5</b></span><input type="range" id="outlineRingAmt" min="0" max="1" step="0.05" value="0.5"></label>
-      <label class="chk2 pixDep ringDep" title="輪郭の線（外周と、重なった物の境目の両方）を描かず、内側の輪郭（薄い縁取り）だけにする（内側の輪郭がオンの時だけ使える）"><input type="checkbox" id="outlineOuterOff"> 内側の輪郭だけ</label>
+      <label class="ctl pixDep lineDep" title="輪郭線の濃さ。1 で真っ黒、下げるほど薄くなる"><span>輪郭の濃さ <b data-value-for="outlineAmt">1</b></span><input type="range" id="outlineAmt" min="0" max="1" step="0.05" value="1"></label>
+      <label class="ctl pixDep lineDep" title="輪郭線の明るさ。線はその物の色を暗くした色（ドット絵のセルアウト）。0 で真っ黒、1 で物の色そのまま"><span>輪郭の明るさ <b data-value-for="outlineDark">0.35</b></span><input type="range" id="outlineDark" min="0" max="1" step="0.05" value="0.35"></label>
+      <label class="chk2 pixDep lineDep" title="輪郭線の 1 ドット内側に、線より薄い濃い色を重ねる（線 → 薄い線 → 物の色のグラデーション）"><input type="checkbox" id="outlineRing"> 内側の輪郭</label>
+      <label class="ctl pixDep ringDep lineDep" title="内側の輪郭の濃さ。0 で無し、1 で物の濃い色そのまま（「内側の輪郭」がオンの時に効く）"><span>内側の輪郭の濃さ <b data-value-for="outlineRingAmt">0.5</b></span><input type="range" id="outlineRingAmt" min="0" max="1" step="0.05" value="0.5"></label>
+      <label class="chk2 pixDep ringDep lineDep" title="輪郭の線（外周と、重なった物の境目の両方）を描かず、内側の輪郭（薄い縁取り）だけにする（内側の輪郭がオンの時だけ使える）"><input type="checkbox" id="outlineOuterOff"> 内側の輪郭だけ</label>
+      <!-- 色の差がある所にも線を引く（2026-10-09 ユーザー指定：オンオフで試したい。オフで今までどおり＝奥行きの差が大きい所だけ） -->
+      <label class="chk2 pixDep lineDep" title="今までの線（物と物の重なりで、奥行きの差が大きい所）に加えて、奥行きの差が小さい重なりでも、手前の物と奥の物の色に差があれば線を引く。近くに重なっていて今まで線が出なかった物どうし（地面のすぐ上の物、体のすぐ前の腕や楽器など）にも線が出る。同じ面の中の模様には引かない。オフ：今までどおり。輪郭線がオンの時だけ効く"><input type="checkbox" id="outlineColor"> 色の差がある所にも線</label>
+      <!-- 色の差の線の 2 つのしきい値（2026-10-09。丸い石の輪郭をどこまで拾うかの調整用。「色の差がある所にも線」がオフの間はグレー） -->
+      <label class="ctl pixDep lineDep colDep" title="「色の差がある所にも線」で、線を足す奥行きの差の下限。ふつうの線のしきい値（0.25 unit か、距離の 3%）の何倍かで決める。下げるほど、低い石・遠い石の縁のような、わずかな重なりも拾う。下げすぎると、丸い物の表面そのもの（丸みで奥行きが少しずつ折れている所）の色の境目にも線が出る。初期値 0.2"><span>足す線の奥行き <b data-value-for="outlineColGap">0.2</b></span><input type="range" id="outlineColGap" min="0.02" max="1" step="0.02" value="0.2"></label>
+      <label class="ctl pixDep lineDep colDep" title="「色の差がある所にも線」で、線を足す色の差の下限（手前の物と奥の物の、赤・緑・青のうち一番大きい差。0〜1）。下げるほど、色の近い相手との間にも線が出る。下げすぎると、同じ物の中の濃淡でも線になる。初期値 0.15"><span>足す線の色の差 <b data-value-for="outlineColDiff">0.15</b></span><input type="range" id="outlineColDiff" min="0.02" max="0.5" step="0.01" value="0.15"></label>
+      <!-- なだらかな所にも線を引く（2026-10-09 ユーザー指定。オフで今までどおり＝奥行きが急に折れる所だけ） -->
+      <label class="chk2 pixDep lineDep" title="奥行きの差があれば、面がなだらかに続いている所にも線を引く。浅い角度で見た地面や、奥へ傾いた面にも線が出る（遠くの地面は、線が詰まって一面が暗くなることがある）。オフ：奥行きが急に折れる所＝物と物の重なりだけ（今までどおり）。輪郭線がオンの時だけ効く"><input type="checkbox" id="outlineSlope"> なだらかな所にも線</label>
           </div>
         </div>
       </div>
@@ -521,6 +528,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>   <!-- 床に置く 3D モデル（GLB。2026-10-01） -->
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
-  <script type="module" src="src/main.js?v=20261009s"></script>
+  <script type="module" src="src/main.js?v=20261009x"></script>
 </body>
 </html>

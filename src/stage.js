@@ -951,6 +951,9 @@ float pxoQuantA( float a, float lv ) {
   return floor( clamp( a, 0.0, 1.0 ) * ( lv - 1.0 ) + 0.5 ) / ( lv - 1.0 );
 }`;
 const LINE_GAP = 0.25;   // 内側の輪郭線を引く深度の差 [unit]
+// 「色の差がある所にも線を引く」の 2 つのしきい値の初期値（どちらもスライダーで変えられる。2026-10-09：丸い石の輪郭をどこまで拾うかを、場面を見ながら決められるように）
+const COL_EDGE = 0.15;   // 手前の物と奥の物の色の差（赤・緑・青のうち一番大きい差。0〜1）がこれ以上なら、小さな重なりにも線を引く
+const COL_GAP_K = 0.2;   // その時の奥行きの差のしきい値（ふつうの線のしきい値の何倍か。小さいほど、わずかな重なりも拾う）
 // rows：画面の短い方を何ドットに分けるか（2026-09-30 ユーザー指定：画素で決めるとスマホで粗すぎたので、端末に依らないドットの数で決める）
 const pix = { on: false, rows: 330, roots: [], rt: null, quad: null, outline: false, lineAmt: 1, ss: 1, hi: null, down: null, quantFirst: false, quantFirstAmt: 1 };   // ss：ちらつき抑えの細かさ（1＝そのまま）   // quantFirst：階調を、ドットにまとめる前に丸める（ss 2 以上の時だけ効く）。quantFirstAmt：その割合（0〜1）
 /** o = { on（ドット化）, rows（画面の短い方のドット数）, outline（輪郭線）, lineAmt（輪郭の濃さ 0〜1）, roots（奏者の root の配列）}
@@ -1068,12 +1071,12 @@ function pixelPass(renderer, scene, camera) {
   if (!pix.quad) {
     const mat = new THREE.ShaderMaterial({
       uniforms: { tex: { value: null }, depth: { value: null }, texel: { value: new THREE.Vector2() },
-                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM, pre: { value: 0 },
+                  line: { value: 0 }, lineDark: { value: 0.35 }, ring: { value: 0 }, outerOff: { value: 0 }, colEdge: { value: 0 }, slopeEdge: { value: 0 }, colGapK: { value: COL_GAP_K }, colDiff: { value: COL_EDGE }, near: { value: 0.1 }, far: { value: 200 }, lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM, pre: { value: 0 },
                   uInvVP: { value: new THREE.Matrix4() }, uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect },   // 水面より下の物に輪郭線を引かないため（2026-10-08）
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       // 輪郭線（3 段目。2026-09-30 ユーザー指定）：外側＝奏者に接する空の画素を線の色に（深度は隣の奏者の一番手前）。
       // 内側＝隣の画素より LINE_GAP 以上奥にある画素（腕の後ろの胴など）を線の色へ寄せる。太さはどちらも 1 ドット
-      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform float lineDark; uniform float ring; uniform float outerOff;
+      fragmentShader: `uniform sampler2D tex; uniform sampler2D depth; uniform vec2 texel; uniform float line; uniform float lineDark; uniform float ring; uniform float outerOff; uniform float colEdge; uniform float slopeEdge; uniform float colGapK; uniform float colDiff;
         // 輪郭の色（2026-10-01 ユーザー指定：セルアウト）：隣の物の色を lineDark（輪郭の明るさ）倍に暗くした色。0 で黒、1 で物の色そのまま。
         // 以前は黒との混ぜ具合（輪郭の色）も別に持っていたが、黒がほぼ 0 なので明るさとの掛け算になり、同じ働きの重複だった
         vec3 selOut(vec4 n) { return (n.rgb / max(n.a, 0.0001)) * lineDark; }
@@ -1088,6 +1091,11 @@ function pixelPass(renderer, scene, camera) {
           vec4 t = texture2D(uWaterTop, (w.xz - uStepRect.xy) * uStepRect.zw);
           return t.g > 0.5 && w.y < t.b * ${WATER_TOP_SPAN.toFixed(1)} + (${WATER_TOP_LO.toFixed(1)}) - 0.03;
         }
+        // 色の差（colEdge 用。使い方は下の edgeC）。色は透明度を割り戻した値で、赤・緑・青のうち一番大きい差で比べる
+        // （明るさだけで比べると、明るさが同じで色味の違う物どうしが区別できない）。
+        // 経緯（2026-10-09。2 回取り違えた）：① 同じ面の中の明暗の境目にも線を足した → 求められていたのは物と奥の物の間の話。
+        // ② 物どうしの線を、色に差がある時「だけ」引くようにした → 求められていたのは、今までの判定に加えて、色に差がある所「にも」引くこと
+        float pxoColDiff(vec4 a, vec4 b) { vec3 d = abs(a.rgb / max(a.a, 0.0001) - b.rgb / max(b.a, 0.0001)); return max(d.r, max(d.g, d.b)); }
         bool pxoLined = false;   // この画素に輪郭線を引いたか（引いた画素だけ、まとめる前に丸めた割合に関係なく、ここで丸める分を残す）
         void pxoBody() {
           vec4 c = texture2D(tex, vUv);
@@ -1127,14 +1135,28 @@ function pixelPass(renderer, scene, camera) {
             bool edge = (hx && ld - 0.5 * (l0 + l1) > gap) || (hy && ld - 0.5 * (l2 + l3) > gap)
                      || (!hx && ((s0 && l0 < ld - 2.0 * gap) || (s1 && l1 < ld - 2.0 * gap)))
                      || (!hy && ((s2 && l2 < ld - 2.0 * gap) || (s3 && l3 < ld - 2.0 * gap)));
-            if (edge && outerOff < 0.5) {   // 手前側の隣（一番近い物）の色で線を引く
+            // なだらかな所にも線を引く（slopeEdge。2026-10-09 ユーザー指定：チェックで切り替え）：上の判定は、なだらかに奥へ続く面を線にしないよう、
+            // 両隣の平均との差で見ている。オンの時は、隣のどれかが自分より gap 以上手前にあれば、なだらかに続いていても線にする
+            // （浅い角度で見た地面や、奥へ傾いた面にも線が出る。2026-09-30 に「遠くの地面が一面の線になった」ので外した見え方を、選べるようにする）
+            if (!edge && slopeEdge > 0.5) edge = (s0 && l0 < ld - gap) || (s1 && l1 < ld - gap) || (s2 && l2 < ld - gap) || (s3 && l3 < ld - gap);
+            // 色の差がある所にも線を引く（colEdge。2026-10-09 ユーザー指定：今までの判定に加えて）：奥行きの差が上のしきい値に届かない小さな重なりでも、
+            // しきい値の COL_GAP_K 倍を超えていて、手前の物と自分（奥の物）の色に差があれば線にする。奥行きがなだらかに続く同じ面の中には引かない。
+            // 画面には「どの物か」の情報が無いので、物の境目は「奥行きが折れている所」で見分ける（ぴったり接していて奥行きが続く所は拾えない）
+            bool edgeC = false;
+            if (!edge && colEdge > 0.5) {
+              float g2 = gap * colGapK;
+              edgeC = (hx && ld - 0.5 * (l0 + l1) > g2) || (hy && ld - 0.5 * (l2 + l3) > g2)
+                   || (!hx && ((s0 && l0 < ld - 2.0 * g2) || (s1 && l1 < ld - 2.0 * g2)))
+                   || (!hy && ((s2 && l2 < ld - 2.0 * g2) || (s3 && l3 < ld - 2.0 * g2)));
+            }
+            if ((edge || edgeC) && outerOff < 0.5) {   // 手前側の隣（一番近い物）の色で線を引く
               vec4 fc = c; float fl = ld, fd = d; vec2 fo = vec2(0.0);   // fo・fd：その手前の物の画素の位置（ずれ）と奥行き
               if (s0 && l0 < fl) { fl = l0; fc = n0; fo = o0; fd = d0; }
               if (s1 && l1 < fl) { fl = l1; fc = n1; fo = o1; fd = d1; }
               if (s2 && l2 < fl) { fl = l2; fc = n2; fo = o2; fd = d2; }
               if (s3 && l3 < fl) { fl = l3; fc = n3; fo = o3; fd = d3; }
               // 線を引く画素と、その手前の物の両方が水面より下なら引かない（沈んだ物どうしの線。水から突き出た部分の線は残る）
-              if (!(pxoUnder(vUv, d) && pxoUnder(vUv + fo, fd))) { c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a); pxoLined = true; }   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
+              if (!(pxoUnder(vUv, d) && pxoUnder(vUv + fo, fd)) && (edge || pxoColDiff(c, fc) >= colDiff)) { c.rgb = mix(c.rgb, selOut(fc) * c.a, line * c.a); pxoLined = true; }   // 小さな重なり（edgeC）は、色に差がある時だけ   // 内側の線も自分の透明度に比例（c.rgb は透明度が掛かった値なので線の色にも掛ける）
             } else if (ring > 0.0 && !edge) {
               // 内側の輪郭（2026-10-01 ユーザー指定）：線に接する物の縁の 1 ドット目に、自分の濃い色を線の ring 倍の濃さで重ねる（線→薄い線→物の色のグラデーション）。
               // 外側の線の内側＝隣が背景、内側の線の手前側＝隣が自分よりずっと奥
@@ -1207,7 +1229,7 @@ function renderMainWithPixels(renderer, scene, camera) {
   u.pre.value = pix.quantFirst && pix.on && Math.round(pix.ss || 1) > 1 ? Math.max(0, Math.min(1, pix.quantFirstAmt ?? 1)) : 0;   // まとめる前に丸めた割合（ちらつき抑えが 1 以上＝ pixelPass の ss が 2 以上の時だけ）。その分、ここでは丸めない
   u.texel.value.set(1 / pix.rt.width, 1 / pix.rt.height); u.line.value = pix.outline ? Math.max(0, Math.min(1, pix.lineAmt ?? 1)) : 0;
   u.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // 画面の位置と奥行き → 世界の位置（輪郭線を水面より下に引かないため）
-  u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? Math.max(0, Math.min(1, pix.ringAmt ?? 0.5)) : 0; u.outerOff.value = pix.outerOff ? 1 : 0;
+  u.near.value = camera.near; u.far.value = camera.far; u.lineDark.value = Math.max(0, Math.min(1, pix.lineDark ?? 0.35)); u.ring.value = pix.ring ? Math.max(0, Math.min(1, pix.ringAmt ?? 0.5)) : 0; u.outerOff.value = pix.outerOff ? 1 : 0; u.colEdge.value = pix.colorEdge ? 1 : 0; u.slopeEdge.value = pix.slopeEdge ? 1 : 0; u.colGapK.value = Math.max(0.01, Math.min(1, pix.colGapK ?? COL_GAP_K)); u.colDiff.value = Math.max(0, Math.min(1, pix.colDiff ?? COL_EDGE));
   const autoClear = renderer.autoClear, autoShadow = renderer.shadowMap.autoUpdate;
   renderer.autoClear = false;
   renderer.render(pix.quad.scene, pix.quad.cam);
