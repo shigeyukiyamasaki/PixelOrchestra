@@ -1541,7 +1541,7 @@ export function setStageDepthWrite(on) {
 export function buildFloorSkirt() {
   if (!stageCtx) return;
   const { skirt, stageMat } = stageCtx;
-  skirt.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
+  skirt.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); if (o.material.normalMap?.__disposable) o.material.normalMap.dispose(); o.material.dispose(); } });
   skirt.clear();
   const h = Math.max(ROWS.woodwind.h, STEP_DEEP + 0.5);       // 1 段目と同じ高さ。段差の一番深い底より 0.5 下までは伸ばす（2026-10-08）
   const X = FLOOR_X_HALF, F = FLOOR_Z_FRONT, R = FLOOR_BACK_R, cy = -SEAT_SHIFT_Z;
@@ -1612,7 +1612,7 @@ export function buildRisers(seats) {
   const { stageMat, risers } = stageCtx;
   RISER_FOOT = [];   // 段ごとの範囲（草をひな壇の上に生やすため。2026-10-04）
   queueMicrotask(() => { syncRiserU(); buildFloorSkirt(); if (anySteps()) buildStepsAndRiders(); else buildWater(); if (grassList.length) buildGrass(); if (treeList.length) buildTrees(); });   // 組み終わったら、草・木をひな壇の高さに合わせて並べ直す
-  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); } });
+  risers.traverse((o) => { o.geometry?.dispose?.(); if (o.material) { stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); if (o.material.normalMap?.__disposable) o.material.normalMap.dispose(); o.material.dispose(); } });
   risers.clear();
 
   // 後列（打楽器）から前列（木管）の順に描く：前列の天面の下に隠れる後列の壁の下部が、天面を塗り潰さないようにする。
@@ -1644,7 +1644,10 @@ export function buildRisers(seats) {
     // clipX 指定の段は x = ±clipX の垂直面で切る。扇の弧は clipX の外まで作っておき、はみ出しをクリップで落とす
     const cx = row.clipX;
     const clip = cx ? [new THREE.Plane(new THREE.Vector3(-1, 0, 0), cx), new THREE.Plane(new THREE.Vector3(1, 0, 0), cx)] : null;
-    const matC = (o) => { const m = stageMat(o); if (clip) m.clippingPlanes = clip; return m; };
+    const matC = (o) => { const m = stageMat(o); if (clip) { m.clippingPlanes = clip; m.clipShadows = true; } return m; };   // clipShadows：切り口の外は、影も落とさない
+    // ひな壇が影を落とす（2026-10-09 ユーザー指定：ひな壇が影を落としていなかった。太陽の影を入れた時から、地形は影を受けるだけだった）：
+    // 壁（前・後ろ・両端）に影を落とさせる。天面は落とさせない：段の外（下の段・床）に落ちる影は、光が必ずどれかの壁を通るので壁だけで全部できる。
+    // 天面まで落とさせると、広い平らな面が自分の影を拾って縞が出やすい
 
     // 天面：RingGeometry の角 a と世界角 θ（-z から）は a = π/2 - θ（rotation.x = -π/2 のため）
     // 絵は床の物をそのまま使う（2026-10-05：段ごとに複製すると、2048 ドットの草原の絵がその数だけグラフィックのメモリを食い、スマホで木が出なくなった）。
@@ -1661,14 +1664,14 @@ export function buildRisers(seats) {
       matC({ ...wallSkin(rIn * (thMax - thMin), row.h, '#5f4c2f'), side: THREE.DoubleSide }),
     );
     front.position.y = row.h / 2;
-    front.renderOrder = ro; front.receiveShadow = true; risers.add(front);
+    front.renderOrder = ro; front.receiveShadow = true; front.castShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
       new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
       matC({ ...wallSkin(rOut * (thMax - thMin), row.h, '#58452a'), side: THREE.DoubleSide }),
     );
     back.position.y = row.h / 2;
-    back.renderOrder = ro; back.receiveShadow = true; risers.add(back);
+    back.renderOrder = ro; back.receiveShadow = true; back.castShadow = true; risers.add(back);
     // 両端の側面。clipX 指定なら x = ±clipX の垂直な切り口（内径・外径との交点で幅が決まる）、
     // そうでなければ従来どおり扇の切り口
     if (cx) {
@@ -1678,7 +1681,7 @@ export function buildRisers(seats) {
         const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ ...wallSkin(Math.abs(z2 - z1), row.h, '#514026'), side: THREE.DoubleSide }));
         side.position.set(sx, row.h / 2, (z1 + z2) / 2);
         side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
-        side.renderOrder = ro + 0.1; risers.add(side);
+        side.renderOrder = ro + 0.1; side.castShadow = true; risers.add(side);
       }
     } else {
       for (const th of [thMin, thMax]) {
@@ -1686,7 +1689,7 @@ export function buildRisers(seats) {
         const rm = (rIn + rOut) / 2;
         side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
         side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
-        side.renderOrder = ro + 0.1; risers.add(side);
+        side.renderOrder = ro + 0.1; side.castShadow = true; risers.add(side);
       }
     }
     // 段の縁（見切り線）：Torus は rotation.z で開始角を回す（Euler XYZ では z が先に掛かる）
@@ -3294,7 +3297,7 @@ const anySteps = () => stepList.some((o) => o.show !== false) || lastDigSig !== 
 function buildSteps() {
   if (!stageCtx) return;
   const g = stageCtx.steps;
-  for (const o of g.children) { if (!o.userData.sharedGeo) o.geometry.dispose(); stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); o.material.dispose(); }
+  for (const o of g.children) { if (!o.userData.sharedGeo) o.geometry.dispose(); stageMats.delete(o.material); if (o.material.map?.__disposable) o.material.map.dispose(); if (o.material.normalMap?.__disposable) o.material.normalMap.dispose(); o.material.dispose(); }
   g.clear();
   stepData(0).fill(255); stepData(4).fill(255);
   STEP_D = new Array(8).fill(0);   // 8 番目（STEP_KEPT）は深さ 0 のまま＝地面の高さには効かない
@@ -3388,7 +3391,9 @@ function buildSteps() {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(G.uv, 2));
     // 壁の絵はひな壇・床の縁と同じ（上端が草との境目）。横は 1 unit を 1 として渡してあるので、輪郭に沿った長さがそのまま絵の位置になる
     const m = new THREE.Mesh(geo, stageCtx.stageMat({ ...wallSkin(1, G.top - G.bot, '#5f4c2f'), side: THREE.DoubleSide }));
-    m.receiveShadow = true; m.renderOrder = -40;
+    // 崖が影を落とす（2026-10-09 ユーザー指定。ひな壇と同じく、地形は影を受けるだけだった）：掘った底・水面に、崖の影が落ちる。
+    // 底へ届く光は、掘った口を通るか崖の壁に当たるかのどちらかなので、壁だけで影は全部できる（床の面に影を落とさせる必要は無い）
+    m.receiveShadow = true; m.castShadow = true; m.renderOrder = -40;
     g.add(m);
   }
   // 一番深い所が変わったら、床の縁の断面を組み直す（断面は一番深い底より下まで要る）
@@ -6916,7 +6921,13 @@ const CLIFF_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const CLIFF_SPLIT = [0.5, 0.35];   // 岩の大きさのばらつき：ます目をそのまま 1 個の塊にする割合と、2 個に割る割合（残りは 3 個に割る）
 const CLIFF_DITHER = 0.9, CLIFF_FINE = 0.12;   // ならす前の模様：色の境目のディザの幅（段）と、4 ドット刻みの細かいノイズの強さ
 const CLIFF_SOFT = 4, CLIFF_STEPS = 2;   // ならす幅 [ドット]（ディザの格子が 4 ドット周期なので、4 でちょうど粒が消える。1 でならさない）と、色と色の間を何等分するか（2 で 7 色 → 13 段）
-const cliffCache = new Map();   // 「行数|草の色の組|草の垂れの有無」 → canvas
+// 岩の凸凹（2026-10-09 ユーザー指定：シートを貼っただけに見えるので立体に。まず「光だけ立体にする」＝壁の形は平らなまま）：
+// 絵と同じ塊の形から「高さ」を作り、そこから面の向きの絵（法線マップ）を作って壁の材質に渡す。光の当たり方は材質が画素ごとに計算するので、
+// 太陽の向きに合わせて、塊の光の側が明るく、反対側と割れ目が暗くなる。絵そのものには光の向きを描き込まない（2026-10-08 の指定のまま）。
+// 高さ（0〜1）：割れ目は 0。塊の縁から CLIFF_BEVEL ドット内側までで丸く盛り上がり、塊の中心がわずかに高い。上端の草と表土は平ら
+const CLIFF_BEVEL = 8;      // 塊の縁の丸みの幅 [ドット]（縁からこの距離で、ほぼ塊の高さに達する）
+const CLIFF_BUMP = 3.2;     // 凸凹の強さ：高さ 1 が何ドット分の出っ張りに当たるか（大きいほど陰影が強い。0 で平ら）
+const cliffCache = new Map();   // 「行数|草の色の組|草の垂れの有無」 → canvas（__normal に、同じ大きさの面の向きの絵を持つ）
 /** fringe：上端に草の垂れと表土を描く。上に別の壁が載って同じ面でつながる所（段の真下の、床の縁の断面）は false＝上端から岩 */
 function cliffCanvas(rows, palette = 'normal', fringe = true) {
   const key = `${rows}|${palette}|${fringe}`;
@@ -6952,6 +6963,7 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
   const site = (gx, gy) => Math.max(0, Math.min(SRN - 1, gy - SR0)) * CLIFF_COLS + wrap(gx, CLIFF_COLS);
   const put = (x, y, col) => { const o = (y * W + x) * 4; D[o] = col[0]; D[o + 1] = col[1]; D[o + 2] = col[2]; D[o + 3] = 255; };
   const V = new Float32Array(W * H).fill(-1);   // 岩の色の番号（0〜6。ならす前）。草の葉の所は -1（ならさない）
+  const HT = new Float32Array(W * H);           // 岩の高さ（0〜1。面の向きの絵のもと）。草の葉・表土・割れ目は 0
   // 草の垂れ：2 ドット幅の葉ごとに長さを決める（房の多い所は長め）
   const blade = new Int32Array(W);
   for (let x = 0; x < W; x++) { const b = x >> 1; blade[x] = fringe ? Math.min(H, Math.round(2 + 9 * hash(b, 0, 11) * (0.45 + 0.9 * noise(x, 0, 32, 12)))) : -9; }
@@ -7003,6 +7015,10 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
       if (Math.abs(noise(x, y * 5, 32, 9) - 0.5) < 0.012 && e > 2.5) v -= 0.22;       // 塊の中の横の細いひび
     }
     const soil = blade[x] + 2 + 7 + 7 * noise(x, 0, 16, 10);   // 表土（草のすぐ下の暗い層）の下端
+    if (e > 0) {   // 高さ：縁から丸く盛り上がる × 中心ほどわずかに高い ＋ 面のゆるい起伏。表土の下端から 6 ドットかけて立ち上げる（表土は平ら）
+      const be = Math.min(1, e / CLIFF_BEVEL), up = fringe ? Math.max(0, Math.min(1, (y - soil) / 6)) : 1;
+      HT[y * W + x] = ((1 - (1 - be) * (1 - be)) * (0.78 + 0.22 * (1 - Math.min(1, d1 / 17))) + 0.08 * (noise(x, y, 16, 15) - 0.5)) * up;
+    }
     if (fringe && y < soil + (CLIFF_DITHER > 0 ? bay * 5 : 2.5)) v = Math.min(v, CLIFF_FINE > 0 ? 0.2 + 0.1 * noise(x, y, 4, 14) : 0.22);
     V[y * W + x] = Math.max(0, Math.min(6, Math.floor(v * 7 + (bay - 0.5) * CLIFF_DITHER)));
   }
@@ -7016,6 +7032,16 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
       put(x, y, [Math.round(A[0] + (B[0] - A[0]) * t), Math.round(A[1] + (B[1] - A[1]) * t), Math.round(A[2] + (B[2] - A[2]) * t)]);
     } }
   g.putImageData(img, 0, 0);
+  // 面の向きの絵：高さの傾きから。x が壁に沿った横（絵の右）、y が上（絵は下向きに進むので符号を返す）、z が壁から手前。横は一周、上下は端で止める
+  { const nc = document.createElement('canvas'); nc.width = W; nc.height = H;
+    const ng = nc.getContext('2d'), nimg = ng.createImageData(W, H), N = nimg.data;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dx = (HT[y * W + wrap(x + 1, W)] - HT[y * W + wrap(x - 1, W)]) / 2, dy = (HT[Math.min(H - 1, y + 1) * W + x] - HT[Math.max(0, y - 1) * W + x]) / 2;
+      const nx = -CLIFF_BUMP * dx, ny = CLIFF_BUMP * dy, nl = Math.hypot(nx, ny, 1), o = (y * W + x) * 4;
+      N[o] = Math.round((nx / nl * 0.5 + 0.5) * 255); N[o + 1] = Math.round((ny / nl * 0.5 + 0.5) * 255); N[o + 2] = Math.round((1 / nl * 0.5 + 0.5) * 255); N[o + 3] = 255;
+    }
+    ng.putImageData(nimg, 0, 0);
+    c.__normal = nc; }
   cliffCache.set(key, c);
   return c;
 }
@@ -7027,14 +7053,20 @@ function wallSkin(uLen, vLen, col, { fringe = true, uOff = 0 } = {}) {   // frin
   if (!isGrass) return { color: col };
   if (!WALL_CUSTOM) {   // 岩の崖（コードで描く。2026-10-08）。ドットは草原の床と同じ細かさで、遠くは床と同じく平均の色にする（ちらつき防止）
     const rows = Math.max(1, Math.ceil(vLen * CLIFF_DPU - 1e-6));
-    const m = new THREE.CanvasTexture(cliffCanvas(rows, stageCtx.groundTex === stageCtx.grassDarkTex ? 'dark' : 'normal', fringe));
+    const cv = cliffCanvas(rows, stageCtx.groundTex === stageCtx.grassDarkTex ? 'dark' : 'normal', fringe);
+    const m = new THREE.CanvasTexture(cv);
     m.magFilter = THREE.NearestFilter; m.minFilter = THREE.NearestMipmapLinearFilter;
     m.wrapS = m.wrapT = THREE.RepeatWrapping;
     const tw = CLIFF_W / CLIFF_DPU, th = rows / CLIFF_DPU;
     m.repeat.set(uLen / tw, vLen / th);
     m.offset.set(uOff / tw, 1 - vLen / th);   // 絵の上端（草との境目）を壁の上端に合わせる
     m.__disposable = true;
-    return { map: m, color: '#ffffff' };
+    // 岩の凸凹：面の向きの絵（絵と同じ貼り方。貼る位置・くり返しは map の物がそのまま使われる）。遠くでは平均されて、凸凹が自然に消える
+    const nm = new THREE.CanvasTexture(cv.__normal);
+    nm.magFilter = THREE.NearestFilter; nm.minFilter = THREE.NearestMipmapLinearFilter;
+    nm.wrapS = nm.wrapT = THREE.RepeatWrapping;
+    nm.__disposable = true;
+    return { map: m, color: '#ffffff', normalMap: nm };
   }
   if (!img) return { color: col };
   const dpu = WALL_DPU * (stageCtx.groundTex.wallScale ?? stageCtx.groundTex.tileScale ?? 1);   // 草原は絵を作り直した時に tileScale が変わったので、壁は wallScale で同じ大きさを保つ（2026-10-05）   // 草原のタイルを細かくしたら壁のドットも同じ大きさに（2026-09-17 ユーザー指定）
