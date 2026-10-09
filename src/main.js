@@ -319,6 +319,21 @@ function applyGenPatterns(list) {
 }
 const stoneNote = () => (stonePatternCount ? `形：石1〜${stonePatternCount}${rockPatternCount ? `、大きい物は岩1〜${rockPatternCount}` : ''}（${STONE_DIR}）` : `形が見つかりません（${STONE_DIR} に 石1.glb などを置いてください）`);
 // カードにマウスが乗っている間、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）
+// まとまりの見出し（.genHead。2026-10-09 ユーザー指定：スライダーを内容ごとにグルーピングして見出しを付ける）の出し隠し：
+// 種類ごとにスライダーを出し隠しするカード（水）では、中身が全部隠れているまとまりの見出しも隠す。
+// カードの中の表示の変化を見張って、そのつど合わせ直す（種類を切り替える処理のほうには手を入れない）
+function watchGenHeads(box) {
+  const sync = () => {
+    for (const h of box.querySelectorAll('.genHead')) {
+      let any = false;
+      for (let e = h.nextElementSibling; e && !e.classList.contains('genHead'); e = e.nextElementSibling) if (e.style.display !== 'none' && !e.hidden) { any = true; break; }
+      const d = any ? '' : 'none';
+      if (h.style.display !== d) h.style.display = d;
+    }
+  };
+  sync();
+  new MutationObserver(sync).observe(box, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'hidden'] });
+}
 // スライダー・数値欄・上下矢印を操作している間は輪郭を消す（2026-10-03 ユーザー指定：見たい所が線で隠れる）。
 // 放した時にまだカードの上なら戻す（ドラッグ中にカードの外へ出ても、放すまでは消したまま）
 let hlDragging = false;
@@ -345,7 +360,7 @@ function stoneRow(st, i) {
   name.value = st.name || `石${i + 1}`;
   name.oninput = () => { st.name = name.value; saveStones(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この群れを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この群れを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const slider = (label, key, min, max, step, digits, title) => {
@@ -371,11 +386,11 @@ function stoneRow(st, i) {
   slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '散らばる範囲の広さ [unit]。中心ほど多く、外ほどまばら（ほぼこの値の 1.5 倍までに収まる）');
   head('水辺', '川・池の岸に沿って石を並べる時の設定');
   // 水辺に並べる（2026-10-09 ユーザー指定：川や池の岸に沿って石を自動で置く）
-  const shoreChk = put(col, '<label class="genChk" title="石を、川・池の岸に沿って並べる。オンにすると、この群れの範囲（横位置・奥行き・ばらけ具合）の中にある岸へ石を寄せて置く。川全体に並べたい時は、ばらけ具合を大きくする。海には並べない"><input type="checkbox"><span>水辺に並べる</span></label>').querySelector('input');
+  const shoreChk = put(col, '<label class="genChk" title="石を、川・池の岸に沿って並べる。オンにすると、この群れの範囲（横位置・奥行き・ばらけ具合）の中にある岸へ石を寄せて置く。川全体に並べたい時は、ばらけ具合を大きくする。海には並べない"><input type="checkbox" class="shoreCb"><span>水辺に並べる</span></label>').querySelector('input');
   shoreChk.checked = !!st.shore;
   shoreChk.onchange = () => { st.shore = shoreChk.checked; changed(); };
-  slider('岸からの幅', 'shoreW', 0.1, 4, 0.05, 2, '「水辺に並べる」の時、岸から陸の側へどこまで石を置くか [unit]。岸のきわほど多く、離れるほどまばら。水の中へは、この 6 割の幅まで');
-  slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る');
+  slider('岸からの幅', 'shoreW', 0.1, 4, 0.05, 2, '「水辺に並べる」の時、岸から陸の側へどこまで石を置くか [unit]。岸のきわほど多く、離れるほどまばら。水の中へは、この 6 割の幅まで').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
+  slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
   col = colR;   // 右の列：大きさ・色・形
   head('大きさ');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率。1 で 3D モデルと同じ（石1 の幅 32cm を実物の 1.25 倍で置く）。幅が 45〜80cm（GLB の寸法。舞台の見た目では 56〜100cm）の石は岩の形が混ざり、それより大きいと全部岩になる');
@@ -387,11 +402,12 @@ function stoneRow(st, i) {
   // 形の作り方（2026-10-09 ユーザー指定：石の GLB をコードだけで再現して比べたい）。群れごとに選ぶ。既定は今までどおり 3D モデル
   const kindRow = put(col, '<label class="sld" title="石の形の作り方。3D モデル：素材フォルダの 石1.glb などを使う（今までどおり。大きい石は岩の形に替わる）。コードで作る：同じ作り方（丸い塊を平らな面で切り落とす）をコードで行い、8 種類の形を使い回す。肌の点々は大きさに依らず同じ実寸で、素材のファイルが要らない"><span>形の作り方</span><select><option value="glb">3D モデル</option><option value="proc">コードで作る</option></select><b></b></label>');
   const kindSel = kindRow.querySelector('select');
+  kindSel.classList.add('kindSel');
   kindSel.value = st.kind === 'proc' ? 'proc' : 'glb';
   kindSel.onkeydown = (e) => e.stopPropagation();
   kindSel.onchange = () => { st.kind = kindSel.value; changed(); };
-  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合（形の作り方が「コードで作る」の時だけ効く）。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石、0.2 が 3D モデルの小さい石に近い形');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合（形の作り方が「コードで作る」の時だけ効く）。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石、0.2 が 3D モデルの小さい石に近い形').classList.add('rugDep');   // 形の作り方が「3D モデル」の間はグレー（style.css）
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この群れを複製する（設定ごと。右隣に入る）">複製</button>');
@@ -431,7 +447,7 @@ function grassRow(st, i) {
   name.value = st.name || `草${i + 1}`;
   name.oninput = () => { st.name = name.value; saveGrass(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この群れを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この群れを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   // 奏者をよける（2026-10-04 ユーザー指定）：水と同じく、名前の下の段に置く
@@ -450,17 +466,22 @@ function grassRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：どこに・いくつ
+  put(col, '<div class="genHead">位置</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '群れの中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
+  put(col, '<div class="genHead">数と広がり</div>');
   slider('個数', 'count', 1, 1000, 1, 0, '草の株の数（上限 1000。2026-10-04 ユーザー指定）。中心が床の外になる株は置かない（はみ出した分は床の縁で消える）');
   slider('ばらけ具合', 'spread', 0, 30, 0.1, 1, '生える範囲の広さ（中心からの半径）[unit]。範囲の中に均一に散らばる（2026-10-04 ユーザー指定）。30 で床とひな壇の全体に行き渡る（上限 30）。床の外になる株は置かない');
   slider('群生', 'clump', 0, 1, 0.05, 2, '群生のまとまり。0 で全体にまんべんなく、1 でところどころ小さな塊になって生える');
   col = colR;   // 右の列：大きさと色、草の種類ごとの割合
+  put(col, '<div class="genHead">大きさ</div>');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '草の大きさの倍率。1 で 3D モデルと同じ（書き出した大きさの 1.25 倍）');
   slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/4〜4 倍）');
+  put(col, '<div class="genHead">色</div>');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '草の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
   slider('色のばらつき', 'shadeVar', 0, 1, 0.05, 2, '株ごとの色の濃さのばらつき。0 で全部同じ、1 で明るさ 1/2〜2 倍ほど');
+  put(col, '<div class="genHead">草の種類の割合</div>');
   // 使う草の割合（2026-10-03 ユーザー指定）。草（草1・草2…）ごとに 0〜1。全部の合計に対する比で混ぜる（0 で使わない）。名前ごとに覚える
   for (const nm of grassPatternNames) {
     const lab = put(col, `<label class="sld" title="${nm} を混ぜる割合。全部の草の合計に対する比で混ざる（0 で使わない）。割合を変えても株の位置は変わらない"><span>${nm}</span><input type="range" min="0" max="1" step="0.05"><b></b></label>`);
@@ -469,7 +490,7 @@ function grassRow(st, i) {
     const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(2) });
     el.oninput = () => { (st.mix ||= {})[nm] = +el.value; box2.show(); changed(); };
   }
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この群れを複製する（設定ごと。右隣に入る）">複製</button>');
@@ -549,7 +570,7 @@ function dirtRow(st, i, kind = 'dirt') {
   name.value = st.name || `${G.label}${i + 1}`;
   name.oninput = () => { st.name = name.value; G.save(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, `<label title="この${G.label}の${G.what}を表示する"><input type="checkbox"><span>表示</span></label>`).querySelector('input');
+  const show = put(top, `<label title="この${G.label}の${G.what}を表示する"><input type="checkbox" class="showCb"><span>表示</span></label>`).querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const checks = put(box, '<div class="stoneTop genChecks"></div>');
@@ -571,19 +592,23 @@ function dirtRow(st, i, kind = 'dirt') {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：位置と形
+  put(col, '<div class="genHead">位置</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  put(col, '<div class="genHead">形</div>');
   slider('数', 'pools', 1, 16, 1, 0, `${G.what}の数。1 で 1 つの広い${G.what}。増やして「大きさ」を小さくすると、点々とした${G.what}が散らばる（2 つ以上の時は 1 つずつ大きさ・向き・位置がばらつく）`);
   slider('大きさ', 'lakeSize', 0.1, 20, 0.05, 2, `${G.what} 1 つの大きさ（丸い時の半径）[unit]。縦横比で細長くしても面積はほぼ同じ`);
   slider('縦横比', 'aspect', 1, 4, 0.05, 2, '細長さ。1 で丸く、大きいほど「向き」の方へ細長い');
   slider('向き', 'dir', -180, 180, 1, 0, `細長い向き [度]。0 で客席から見て右へ、90 で奥へ${kind === 'sand' ? '。風紋の筋もこの向きに合わせて回る' : ''}`);
   col = colR;   // 右の列：散らばり・縁・色
+  put(col, '<div class="genHead">散らばりと縁</div>');
   slider('散らばり', 'scatter', 0, 40, 0.1, 1, `${G.what}が散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い`);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '縁の形。1 でなめらかな丸み、0 でゴツゴツ。縁はさらに細かいむらで崩れながら床に溶ける');
+  put(col, '<div class="genHead">色と模様</div>');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, `${G.label}の色の濃さ。1 で元の色（${G.color}）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）`);
   slider('縁の濃さ', 'edgeDark', 0, 1, 0.05, 2, '縁から 30cm ほど内側にかけて色を暗くする強さ。0 で暗くしない、1 で縁が一番暗い（2026-10-05 ユーザー指定）');
   if (kind === 'sand') slider('風紋', 'ripple', 0, 1, 0.05, 2, '風でできる砂の筋の強さ。0 で筋なし、1 で一番くっきり。筋は「向き」の方へ並び、ところどころ途切れる（2026-10-05）');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（輪郭・散らばる位置・まだら）だけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, `<button title="この${G.label}を複製する（設定ごと。右隣に入る）">複製</button>`);
@@ -616,7 +641,7 @@ function stepRow(st, i) {
   name.value = st.name || `段差${i + 1}`;
   name.oninput = () => { st.name = name.value; saveSteps(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この段差を表示する（外すと掘らない）"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この段差を表示する（外すと掘らない）"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const shape = put(box, '<label class="sld" title="範囲の形。池の形：丸〜細長い形を 1 つ以上／帯：中心線から幅一定の細長い形（川床など）"><span>形</span><select><option value="pool">池の形</option><option value="strip">帯</option></select></label>').querySelector('select');
@@ -633,12 +658,15 @@ function stepRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：深さ・位置・向き
+  put(col, '<div class="genHead">深さ</div>');
   slider('深さ', 'depth', 0.05, 4, 0.05, 2, '掘る深さ [unit]（1 unit ≒ 50cm）。ほかの段差と重なった所は足し算（1 の中に 1 を置くと、そこだけ 2）');
+  put(col, '<div class="genHead">位置と向き</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   const strip = (st.shape ?? STEP_BASE.shape) === 'strip';
   slider('向き', 'dir', -180, 180, 1, 0, strip ? '帯の向き [度]。0 で客席から見て右へ、90 で奥へ' : '細長い向き [度]。0 で客席から見て右へ、90 で奥へ');
   col = colR;   // 右の列：形（帯／池の形）と縁
+  put(col, '<div class="genHead">形</div>');
   if (strip) {
     slider('長さ', 'len', 1, 80, 0.5, 1, '帯の長さ [unit]。床の縁を越えた分は、縁の断面の切り欠きになる');
     slider('幅', 'width', 0.5, 30, 0.05, 2, '帯の幅 [unit]（30 まで。2026-10-08 ユーザー指定：川の 5 より広く）');
@@ -649,8 +677,9 @@ function stepRow(st, i) {
     slider('縦横比', 'aspect', 1, 4, 0.05, 2, '細長さ。1 で丸く、大きいほど「向き」の方へ細長い');
     slider('散らばり', 'scatter', 0, 40, 0.1, 1, '掘る所が散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い');
   }
+  put(col, '<div class="genHead">縁</div>');
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '縁の形。1 でなめらかな丸み、0 でゴツゴツ');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（輪郭・散らばる位置）だけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この段差を複製する（設定ごと。右隣に入る）">複製</button>');
@@ -683,7 +712,7 @@ function roadRow(st, i) {
   name.value = st.name || `石畳${i + 1}`;
   name.oninput = () => { st.name = name.value; saveRoad(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この石畳を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この石畳を表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const checks = put(box, '<div class="stoneTop genChecks"></div>');
@@ -714,17 +743,21 @@ function roadRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：位置と道の形
+  put(col, '<div class="genHead">位置</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '道の真ん中の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '道の真ん中の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  put(col, '<div class="genHead">形</div>');
   slider('長さ', 'len', 0.5, 60, 0.1, 1, '道の長さ [unit]（1 unit ≒ 50cm）。床の外にはみ出した所は描かない');
   slider('幅', 'width', 0.5, 8, 0.05, 2, '道の幅 [unit]（縁石を含む）');
   slider('曲がり', 'meander', 0, 1, 0.05, 2, '道のゆるい曲がり。0 でまっすぐ。「作り直し」で曲がり方が変わる');
   slider('向き', 'dir', -180, 180, 1, 0, '道の向き [度]。0 で客席から見て左右、90 で奥へ');
   col = colR;   // 右の列：石の見た目
+  put(col, '<div class="genHead">石</div>');
   slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '石 1 つの大きさの倍率。1 で 15〜18cm ほど（多角形は 20cm ほど）');
   slider('角の丸み', 'round', 0, 1, 0.05, 2, '石の角の丸み。0 で角が尖り、1 で一番丸い。四角・多角形・縁石のどれにも効く（2026-10-05 ユーザー指定）');
+  put(col, '<div class="genHead">色</div>');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色（グレー）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、曲がり方と石の並び・明るさのばらつきだけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この石畳を複製する（設定ごと。右隣に入る）">複製</button>');
@@ -758,7 +791,7 @@ function pillarRow(st, i) {
   name.value = st.name || `柱${i + 1}`;
   name.oninput = () => { st.name = name.value; savePillars(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この柱を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この柱を表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const select = (label, key, opts, title) => {
@@ -788,20 +821,25 @@ function pillarRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：位置と並べ方
+  put(col, '<div class="genHead">位置と向き</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '柱の並びの真ん中の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '柱の並びの真ん中の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('向き', 'dir', -180, 180, 1, 0, '柱を並べる向き [度]。0 で客席から見て左右、90 で奥へ');
+  put(col, '<div class="genHead">並べ方</div>');
   slider('本数', 'count', 1, 16, 1, 0, '1 列の柱の本数');
   slider('間隔', 'spacing', 0.3, 12, 0.05, 2, '隣の柱との間隔 [unit]（中心から中心）');
   slider('列の間隔', 'rowGap', 0.5, 24, 0.1, 1, '2 列の時の、向かい合う列どうしの間隔 [unit]');
   col = colR;   // 右の列：柱の形と石の見た目
+  put(col, '<div class="genHead">柱の形</div>');
   slider('高さ', 'height', 0.3, 20, 0.05, 2, '柱の高さ [unit]（1 unit ≒ 50cm。柱頭・柱礎を含む）');
   slider('太さ', 'radius', 0.1, 3, 0.05, 2, '柱の太さ（半径。角柱は幅の半分）[unit]');
   slider('崩れ', 'ruin', 0, 1, 0.05, 2, '柱ごとに高さをばらつかせて、折れた柱にする。0 で崩れなし。低く折れた柱は柱頭が無くなる。「作り直し」で崩れ方が変わる');
+  put(col, '<div class="genHead">石</div>');
   slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '積んだ石 1 つの大きさの倍率（石畳と同じ）');
   slider('角の丸み', 'round', 0, 1, 0.05, 2, '角柱のブロックの角の丸み（石畳と同じ）');
+  put(col, '<div class="genHead">色</div>');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色（グレー）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、崩れ方と石の明るさのばらつきだけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この柱の並びを複製する（設定ごと。右隣に入る）">複製</button>');
@@ -837,7 +875,7 @@ function masonryRow(st, i) {
   name.value = st.name || `${label}${i + 1}`;
   name.oninput = () => { st.name = name.value; saveMasonry(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="これを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="これを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const select = (lab, key, opts, title, rerender = false) => {
@@ -858,11 +896,13 @@ function masonryRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：位置と向き
+  put(col, '<div class="genHead">位置と向き</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '真ん中の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '真ん中の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ位置', 'y', 0, 20, 0.05, 2, '置く高さ [unit]。0 で床の上。屋根は柱の高さに合わせると柱の上に乗る');
   slider('向き', 'dir', -180, 180, 1, 0, '向き [度]。0 で客席から見て左右に長く、90 で奥へ長く');
   col = colR;   // 右の列：形（種類ごと）と石の見た目
+  put(col, '<div class="genHead">形</div>');
   if (st.type === 'stairs') {
     slider('幅', 'width', 0.3, 20, 0.05, 2, '階段の幅 [unit]（1 unit ≒ 50cm）');
     slider('段数', 'steps', 1, 30, 1, 0, '段の数。手前から奥へ上る');
@@ -883,10 +923,12 @@ function masonryRow(st, i) {
     slider('広がり', 'spread', 0, 15, 0.1, 1, '石が散らばる範囲の半径 [unit]');
     slider('大きさ', 'size', 0.1, 3, 0.05, 2, '石 1 つの大きさ [unit]（ばらつく）');
   }
+  put(col, '<div class="genHead">石</div>');
   slider('石の大きさ', 'stone', 0.5, 2, 0.05, 2, '積んだ石 1 つの大きさの倍率（石畳・柱と同じ）');
   slider('角の丸み', 'round', 0, 1, 0.05, 2, '石の角の丸み（石畳・柱と同じ）');
+  put(col, '<div class="genHead">色</div>');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色（グレー）。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、崩れ方・散らばり方と石の明るさのばらつきだけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="これを複製する（設定ごと。右隣に入る）">複製</button>');
@@ -905,7 +947,7 @@ function waterRow(st, i) {
   name.value = st.name || `水${i + 1}`;
   name.oninput = () => { st.name = name.value; saveWater(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(top, '<label title="この水場を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(top, '<label title="この水場を表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
   const checks = put(box, '<div class="stoneTop genChecks"></div>');   // よけるチェックは名前の下の段（上の段だと名前の欄がつぶれた。2026-10-03）
@@ -957,8 +999,10 @@ function waterRow(st, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）。左：どこに・どんな形／右：高さ・水の見た目
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   col = colL;   // 左の列：位置と形
+  put(col, '<div class="genHead">位置</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '水場の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '水場の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  put(col, '<div class="genHead">形</div>');
   // 川
   slider('長さ', 'len', 0, 60, 0.1, 1, '川の長さ [unit]', R);
   slider('太さ', 'width', 0.2, 5, 0.05, 2, '川の幅 [unit]。細くすれば小川、太くすれば大河（5 まで。それより太いと川に見えない。2026-10-04 ユーザー指定）', R);
@@ -970,27 +1014,32 @@ function waterRow(st, i) {
   // 海（2026-10-04）。横位置・奥行きは岸線が通る点
   slider('岸線のうねり', 'coast', 0, 1, 0.05, 2, '岸線の出入り（入り江・岬の大きさ）。0 でまっすぐな岸', S);
   slider('向き', 'dir', -180, 180, 1, 0, '川：流れる向き [度]。湖・池・水たまり：細長い向き。海：沖の向き（海がある側）。0 で客席から見て右へ、90 で奥へ', ['river', 'lake', 'sea']);
+  put(col, '<div class="genHead">分かれと縁</div>');
   slider('分かれ', 'pieces', 1, 4, 1, 0, '水のかたまりの数。1 で 1 本の川。増やすと、川の小さな切れ端（水たまり）が散らばる（4 まで。2026-10-04 ユーザー指定）', R);
   slider('散らばり', 'scatter', 0, 20, 0.1, 1, '分かれた切れ端（水たまり）が散らばる広さ [unit]（「分かれ」が 2 以上の時）', R);
   slider('散らばり', 'scatter', 0, 40, 0.1, 1, '湖・池・水たまりが散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い。40 で床いっぱいに散らばる', L);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ', ['river', 'lake']);
   col = colR;   // 右の列：上下方向（高さ → 厚み → 深さ・深くなる距離。2026-10-08 ユーザー指定でまとめた）と、流れ・波・泡・光
+  put(col, '<div class="genHead">高さと深さ</div>');
   slider('高さ', 'y', -2, 10, 0.05, 2, '水面をまるごと上下に動かす量 [unit]。ひな壇や物の上に水を置く時に使う。0 で、その場所の地面（段差で掘った所ではその底）に張る。水面を動かすだけで、側面・断面は付かない。水に厚みを持たせるには下の「厚み」を使う');
   slider('掘る深さ', 'dig', 0, 4, 0.05, 2, 'この水の形に沿って、地面をこの深さだけ窪ませる [unit]。0 で掘らない。水がちょうど溝の幅になる。岸は垂直の壁、舞台の端では切り欠きになり、奏者の足元は掘らずに残る。段差のカードと重なった所は足し算。段差は水の分も合わせて 7 枚まで（2026-10-08 ユーザー指定）', ['river', 'lake']);
   slider('厚み', 'thick', 0, 4, 0.05, 2, '水の厚み [unit]。段差で掘った所にある水場の水面を、底からこの分だけ持ち上げ、側面と（舞台の端で切れた所の）断面を付ける。掘った深さより大きくしても、床の高さで止まる。掘っていない所では効かない。断面の色の濃さは「深さ」に連動する（2026-10-08 ユーザー指定）', ['river', 'lake']);
   slider('深さ', 'depth', 0.1, 3, 0.05, 2, '水の深さ（一番深い所の色の濃さ）。深くするほど色が濃くなる。浅くすると水全体が透けて、水底のゆらめく光が広く出る');
   slider('深くなる距離', 'reach', 0.05, 1.5, 0.05, 2, '岸から「深さ」に届くまでの距離。1 で水の中心でちょうど届く（今まで通り）。小さいほど岸のすぐ近くで深くなり、その奥はずっと同じ深さ。1 より大きいと中心でも届かない（2026-10-04 ユーザー指定）');
+  put(col, '<div class="genHead">流れと波</div>');
   slider('流れ', 'flow', 0, 3, 0.05, 2, '流れの速さ（「向き」に沿って流れる）。中央ほど速く、岸際は遅い', R);
   slider('瀬', 'rapids', 0, 1, 0.05, 2, '瀬（流れの速い所に立つ白い筋）の多さ。0 で無し。流れが速いほど強く出る', R);
   slider('波の高さ', 'waveH', 0, 2, 0.05, 2, '寄せる波の大きさ。砕ける波の白さと、砂浜を駆け上がる距離（0.3 + 1.2 × 波の高さ unit）が変わる。0 で波が寄せない', S);
   slider('波の周期', 'period', 3, 15, 0.5, 1, '波が寄せる間隔 [秒]', S);
   slider('うねり', 'swell', 0, 1, 0.05, 2, '水面そのものの上下（沖から岸へ進むうねり）の高さ [unit]。波打ち際では平らに戻る。0 で平らな水面', S);
   slider('白波', 'white', 0, 1, 0.05, 2, '沖の白波の多さ（風が無くても立つ）。強風の白波はこれとは別に足される', S);
+  put(col, '<div class="genHead">泡・光・風</div>');
   slider('岸の泡', 'foam', 0, 1, 0.05, 2, '岸に沿った泡の粒の濃さ。0 で泡なし、1 でいちばん濃い（今までの見た目）。瀬の筋・強風の白波は別（2026-10-04 ユーザー指定）', ['river', 'lake', 'sea']);
   slider('きらめき', 'glitter', 0, 2, 0.05, 2, '水面のきらめき。さざ波の山のところどころで小さな光の点が瞬く（どの角度からでも見える演出）。0 で無し、上げるほど多く明るい。太陽・月の光に合わせて明るさが変わる');
   slider('風の影響', 'windK', 0, 1, 0.05, 2, '「風・植物」の風をどれだけ受けるか。1 で風どおりに波立ち（向き・速さ・突風の風紋・風下の岸の打ち寄せ・強風の白波）、0 で風を受けない静かな水面');
   showTyped();
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  watchGenHeads(box);
+  const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、形のゆらぎ（蛇行・岸・水たまりの位置）だけ変える">作り直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この水場を複製する（設定ごと。右隣に入る）">複製</button>');
@@ -1317,15 +1366,18 @@ function screenRow(sc, i) {
     return lab;
   };
   const px = screenInfo(i);
+  put(box, '<div class="genHead">位置と大きさ</div>');
   slider('奥行き', 'pos', 0, 1, 0.01, 2, 'ひな壇の奥行きの中での位置。0 = 手前の辺、1 = 奥の辺');
   slider('大きさ', 'scale', 0.1, 6, 0.05, 2,
     `素材の実寸に対する倍率。1 で素材のドットが奏者のドットと同じ大きさ${px ? `（この素材は ${px.w}×${px.h} ドット）` : ''}`);
   slider('横位置', 'at', -1, 1, 0.01, 2, '-1 = 左端、0 = 中央、1 = 右端');
   slider('縦位置', 'lift', -6, 24, 0.1, 1, 'ひな壇の天面からの高さ [unit]。0 で天面に立ち、上げると宙に浮く');
+  put(box, '<div class="genHead">見た目</div>');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度。1 で完全に不透明、下げるほど後ろが透ける');
   slider('明度', 'bright', 0, 2, 0.05, 2, '絵の明るさの倍率。1 でそのまま、下げると暗く、上げると明るくなる（照明・影はそのまま効く）');
   slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '左右の両端で絵をなだらかに消す幅（絵の幅に対する割合。繰返の時は弧の両端）。0 でくっきり切れる');
   // 雲のように横へ流す（2026-09-13 ユーザー指定）。繰り返しは「大きさ」の幅ごとなので絵は歪まない
+  put(box, '<div class="genHead">動き</div>');
   flowCheck(slider('速度', 'speed', -10, 10, 0.1, 1, 'チェック：オフで流さない（速さの値は残る）\n横に流れる速さ [unit/秒]。プラスで右から左へ、マイナスで逆。0 で止まる。「繰返」と併せて使う'), sc, changed);
   // 繰返間隔：行の頭に「繰返」のチェック（以前は最下行にあった。2026-09-18 ユーザー指定）。文字を押してもチェックが切り替わる
   {
@@ -1336,12 +1388,13 @@ function screenRow(sc, i) {
     row.querySelector('span').prepend(loop);
   }
   // 抜く強さ：一番下。ラベル文字の代わりに、抜く色の色玉を置く（2026-09-18 ユーザー指定）
+  put(box, '<div class="genHead">色を抜く</div>');
   putKeyColor(slider('', 'thr', 0, 1, 0.01, 2, '抜く強さ：キー色にどれだけ近い画素まで抜くか。0 で抜かない。mp4 は色がにじむので 0.4〜0.5 ほど要る'),
     sc, changed, '抜く色（緑背景の色）。透過 PNG なら抜く強さ 0 のままでよい');
 
   // サムネイルの右の列：表示・反転・削除
   const foot = side;
-  const show = put(foot, '<label title="このスクリーンを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(foot, '<label title="このスクリーンを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = sc.show !== false;
   show.onchange = () => { sc.show = show.checked; changed(); };
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');
@@ -1418,7 +1471,7 @@ function treeRow(m, i) {
   name.value = m.name || `木${i + 1}`;
   name.oninput = () => { m.name = name.value; saveTrees(); };
   name.onkeydown = (e) => e.stopPropagation();
-  const show = put(row, '<label title="この木を表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(row, '<label title="この木を表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = m.show !== false;
   show.onchange = () => { m.show = show.checked; changed(); };
   const checks = put(box, '<div class="stoneTop genChecks"></div>');
@@ -1436,8 +1489,10 @@ function treeRow(m, i) {
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   let col = colL;   // スライダーを入れる先。左の列：配置、木の種類・高さ・葉、ばらつき、落ち葉（GLB の木は配置だけ）
+  put(col, '<div class="genHead">位置</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '範囲の中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '範囲の中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
+  put(col, '<div class="genHead">数と広がり</div>');
   slider('本数', 'count', 1, 60, 1, 0, '木の本数（間隔や床の外・よける物のせいで置けない分は少なくなる）');
   slider('広がり', 'spread', 0, 40, 0.1, 1, '木を散らす範囲の半径 [unit]');
   slider('間隔', 'gap', 0, 10, 0.05, 2, '木どうしをこれより近づけない [unit]（幹の中心どうし）');
@@ -1447,28 +1502,33 @@ function treeRow(m, i) {
       el.value = m[key] ?? TREE_BASE[key];
       el.onchange = () => { m[key] = el.value; changed(); };
     };
+    put(col, '<div class="genHead">木の形</div>');
     sel('種類', 'species', [['broad', '広葉樹'], ['conifer', '針葉樹'], ['palm', 'ヤシ'], ['dead', '枯れ木']], '木の種類');
     sel('葉の色', 'season', [['fresh', '新緑'], ['deep', '深緑'], ['autumn', '紅葉'], ['yellow', '黄葉']], '葉の色（枯れ木には効かない）');
     slider('高さ', 'height', 1, 30, 0.1, 1, '木の高さ [unit]（1 unit ≒ 50cm）。「ばらつき」で 1 本ずつ変わる');
     slider('葉の量', 'leaf', 0.3, 2, 0.05, 2, '葉の塊（針葉樹は段、ヤシは葉）の多さ');
     col = colR;   // 右の列：枝と幹
+    put(col, '<div class="genHead">枝</div>');
     slider('枝の広がり', 'branchSpread', 0.3, 1.5, 0.05, 2, '広葉樹の枝の広がり。1 で標準。下げると枝が短く上向きになり、細身の木になる（2026-10-05 ユーザー指定）');
     slider('枝の向き', 'branchAngle', 0, 30, 1, 0, '広葉樹の枝の角度 [度]。0 で標準（最低）、プラスで上向き（2026-10-06 ユーザー指定：0° を最低に）');
     slider('枝分かれ', 'branchDepth', 0, 2, 1, 0, '広葉樹の枝分かれの段数。0：枝だけ（前の形）、1：枝から小枝を出す、2：小枝からさらに孫枝を出す。葉は一番先の枝に付く（2026-10-06 ユーザー指定）');
     slider('小枝の長さ', 'twigLen', 0.5, 2.5, 0.05, 2, '枝から出る小枝（と孫枝）の長さの倍率。1 で標準。枝分かれが 1 以上の時に効く（2026-10-06 ユーザー指定）');
+    slider('枝の折れ', 'branchBend', 0, 1, 0.05, 2, '枝・小枝が、小枝・孫枝の出る所（節）で向きを変える強さ。節と節の間はまっすぐ。0 で 8〜18° ほど、1 で 30〜70° ほど折れる（孫枝はまっすぐ。2026-10-06 ユーザー指定）');
+    put(col, '<div class="genHead">幹</div>');
     slider('幹の太さ', 'trunkThick', 0.5, 3, 0.05, 2, '広葉樹の幹の太さの倍率。1 で標準、3 で 3 倍。枝も合わせて太くなる（2026-10-06 ユーザー指定）');
     slider('先の細り', 'tipTaper', 0, 1, 0.05, 2, '幹・枝・小枝の 1 本の中で、先へ向かって細くなる度合い。0 で標準、1 で先がぐっと細い。幹 1 本の木にも効く（2026-10-06 ユーザー指定）');
     slider('幹の本数', 'trunks', 1, 3, 1, 0, '広葉樹の幹の本数。2・3 で途中から幹が分かれ、外側へ少し傾いててっぺんへ伸びる（2026-10-06 ユーザー指定）');
     slider('分かれる高さ %', 'forkPct', 10, 45, 1, 0, '幹が分かれる高さ（木の高さに対するパーセント）。幹の本数が 2 以上の時だけ効く（2026-10-06 ユーザー指定：% で）');
     slider('幹の曲がり', 'bend', 0, 1, 0.05, 2, '広葉樹の幹のうねり。0 でまっすぐ、1 で大きくうねる。分かれた幹も曲がる。「作り直し」で曲がり方が変わる（2026-10-06 ユーザー指定）');
-    slider('枝の折れ', 'branchBend', 0, 1, 0.05, 2, '枝・小枝が、小枝・孫枝の出る所（節）で向きを変える強さ。節と節の間はまっすぐ。0 で 8〜18° ほど、1 で 30〜70° ほど折れる（孫枝はまっすぐ。2026-10-06 ユーザー指定）');
     col = colL;
-  } else { col = colR; slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）'); }   // GLB の木：右の列は大きさ・ばらつき・落ち葉
+    put(col, '<div class="genHead">大きさ</div>');
+  } else { col = colR; put(col, '<div class="genHead">大きさ</div>'); slider('大きさ', 'scale', 0.2, 8, 0.05, 2, '木の大きさ（3D モデルの「大きさ」と同じ倍率）'); }   // GLB の木：右の列は大きさ・ばらつき・落ち葉
   slider('ばらつき', 'scaleVar', 0, 1, 0.05, 2, '大きさのばらつき。0.3 で ±30%');
+  put(col, '<div class="genHead">落葉</div>');
   // 落ち葉（2026-10-05 ユーザー指定）
   slider('落葉の量', 'leafFall', 0, 1, 0.05, 2, '樹冠から落ちる葉の多さ。0 で落ちない。葉の色は木の葉の色（GLB の木は濃い緑）。枯れ木からは落ちない');
   slider('落ちる速さ', 'fallSpeed', 0.3, 2, 0.05, 2, '葉の落ちる速さとひらひらの速さ。1 で 1 秒に約 45cm。風は 3D モデルの風の向き・強さに流される');
-  const btns = put(box, '<div class="stoneBtns"></div>');
+  const btns = put(row, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、木の位置・向き・大きさのばらつきだけ変える">作り直し</button>');
   again.onclick = () => { m.seed = ((m.seed ?? 1) % 1000000) + 1; changed(); };
   const dup = put(btns, '<button title="この木を複製する（設定ごと。右隣に入る）。別の木を選べば種類を混ぜられる">複製</button>');
@@ -1521,14 +1581,16 @@ function modelRow(m, i) {
     el.oninput = () => { m[key] = +el.value; box2.show(); changed(); };
     return lab;
   };
+  put(box, '<div class="genHead">位置と向き</div>');
   slider('横位置', 'x', -30, 30, 0.1, 1, '左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '前後の位置 [unit]。プラスが客席側、マイナスが奥（指揮台は約 −2）');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床（根元）に立つ');
   slider('向き', 'rot', -180, 180, 1, 0, '縦の軸まわりの向き [度]');
+  put(box, '<div class="genHead">大きさと粗さ</div>');
   slider('大きさ', 'scale', 0.1, 5, 0.05, 2, '大きさの倍率。1 で書き出した時の大きさ（メートル単位）の 1.25 倍。楽器と同じく実物より少し大きめにそろえてある');
   slider('粗さ', 'texPix', 0, 1, 0.05, 2, 'テクスチャの粗さ。0 で元のまま、上げるほどテクスチャだけドットになる（形の輪郭はなめらかなまま。葉の形が絵の透明部分でできている所は、縁もドットになる）。0.5 で一辺 128 画素');
 
-  const show = put(side, '<label title="このモデルを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(side, '<label title="このモデルを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = m.show !== false;
   show.onchange = () => { m.show = show.checked; changed(); };
   const dup = put(side, '<button class="dup" title="このモデルを複製する（設定ごと。右隣に入る）">複製</button>');
@@ -1577,18 +1639,22 @@ function domeRow(d, i) {
     el.oninput = () => { d[key] = +el.value; box2.show(); changed(); };
     return lab;
   };
+  put(box, '<div class="genHead">形</div>');
   slider('半径', 'r', 10, 50, 0.5, 1, '舞台の中心からの距離。大きいほど遠くに見える');
   slider('高さ', 'y', -60, 40, 0.5, 1, 'ドームの中心の高さ。下げると地平線が下がる');
   slider('範囲', 'span', 40, 360, 5, 0, '横に何度ぶん覆うか。180 で半円（客席から見える側だけ）');
   slider('枚数', 'tiles', 0.5, 10, 0.1, 1, '範囲の中に素材を何枚並べるか。増やすと絵が小さくなる');
+  put(box, '<div class="genHead">見た目</div>');
   slider('端のぼかし', 'fade', 0, 0.45, 0.01, 2, '範囲の両端で絵をなだらかに消す幅（範囲に対する割合）。0 でくっきり切れる');
   slider('濃度', 'opacity', 0.05, 1, 0.05, 2, '不透明度');
+  put(box, '<div class="genHead">動き</div>');
   flowCheck(slider('速度', 'speed', -30, 30, 0.5, 1, 'チェック：オフで流さない（速さの値は残る）\n横に流れる速さ [度/秒]。プラスで右から左へ'), d, changed);   // 色玉の行のすぐ上に（2026-09-18 ユーザー指定）
   // 抜く強さ：ラベル文字の代わりに、抜く色の色玉を置く（2026-09-18 ユーザー指定）
+  put(box, '<div class="genHead">色を抜く</div>');
   putKeyColor(slider('', 'thr', 0, 1, 0.01, 2, '抜く強さ：キー色にどれだけ近い画素まで抜くか。0 で抜かない'), d, changed, '抜く色（緑背景の色）');
 
   const foot = side;   // サムネイルの右の列
-  const show = put(foot, '<label title="このドームを表示する"><input type="checkbox"><span>表示</span></label>').querySelector('input');
+  const show = put(foot, '<label title="このドームを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = d.show !== false;
   show.onchange = () => { d.show = show.checked; changed(); };
   const flip = put(foot, '<label title="素材を左右反転して映す"><input type="checkbox"><span>反転</span></label>').querySelector('input');

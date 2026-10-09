@@ -169,7 +169,10 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #modelRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 #stoneRows, #grassRows, #waterRows, #dirtRows, #sandRows, #roadRows, #pillarRows, #masonryRows, #treeRows, #stepRows { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 #screenBar .screen.gen .stoneTop { display: flex; align-items: center; gap: 6px; }
-#screenBar .screen.gen .stoneTop .name { flex: 1 1 0; min-width: 0; }
+/* 上の段：名前の欄の右に「表示」とボタン群（作り直し・複製・削除）を並べる（2026-10-09 ユーザー指定：ボタン群をカードの下から上の段へ）。
+   名前の欄は、残った幅を成り行きで全部使う（同日：最初は 9 文字ぶんに狭めたが、そこまで狭くしなくてよい） */
+#screenBar .screen.gen .stoneTop .name { flex: 1 1 0; min-width: 4em; }
+#screenBar .screen.gen .stoneTop .stoneBtns { gap: 4px; }
 #screenBar .screen.gen .stoneTop label { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
 #screenBar .screen.gen .stoneBtns { display: flex; gap: 6px; }
 #screenBar .screen.gen .stoneBtns .del { margin-left: auto; background: #8e2f2f; border-color: #b04a4a; color: #fff; }
@@ -183,8 +186,19 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen.gen .genCol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
 /* スライダーのまとまりの見出し（2026-10-09 ユーザー指定：内容ごとにグルーピングして見出しを付ける。まず石のタブから。ほかのタブも同じ物を使う）。
    列（.genCol）の中に置く。下に細い線を引き、2 つ目以降は上に間を空けて、まとまりの切れ目が分かるようにする */
-#screenBar .screen.gen .genHead { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding-bottom: 2px; margin-top: 8px; border-bottom: 1px solid var(--line); }
+#screenBar .screen .genHead { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding-bottom: 2px; margin-top: 8px; border-bottom: 1px solid var(--line); }   /* 2 列のカード（.gen）にも、1 列のカード（スカイドーム・スクリーン・3D モデル）にも使う */
 #screenBar .screen.gen .genCol > .genHead:first-child { margin-top: 0; }
+/* グレーアウト（2026-10-09 ユーザー指定。グレーアウトの法則：チェックそのものとそのラベルは通常のまま、配下だけを薄くして触れなくする）：
+   ・「表示」がオフのカード：名前・表示・ボタン群の段（.stoneTop）、素材の絵の段（.top）、下の段（.foot）、名前の欄は通常のまま。それ以外を全部薄く。
+     よけるチェックの段（.genChecks）は .stoneTop と同じ形だが配下なので薄くする
+   ・石の「水辺に並べる」がオフ：岸からの幅・水の中の割合（.shoreDep）
+   ・石の「形の作り方」が 3D モデル：ごつごつ（.rugDep。コードで作る時だけ効く）
+   カードごと薄い時は、中の個別の薄さを重ねない（二重に掛けると見えなくなる） */
+#screenBar .screen:has(.showCb:not(:checked)) > *:not(.stoneTop):not(.top):not(.foot):not(.name),
+#screenBar .screen:has(.showCb:not(:checked)) > .genChecks { opacity: .45; pointer-events: none; }
+#screenBar .screen .genCol:has(.shoreCb:not(:checked)) .shoreDep,
+#screenBar .screen .genCol:has(.kindSel > option[value="glb"]:checked) .rugDep { opacity: .45; pointer-events: none; }
+#screenBar .screen:has(.showCb:not(:checked)) .shoreDep, #screenBar .screen:has(.showCb:not(:checked)) .rugDep { opacity: 1; }
 /* まとまりの中に置くチェック（列の中の 1 行。上の段のチェックと同じ見た目） */
 #screenBar .screen.gen .genCol > .genChk { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
