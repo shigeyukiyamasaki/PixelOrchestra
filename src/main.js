@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, TREE_BROAD_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSteps, setSand, setRoad, setPillars, setMasonry, setTrees, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setCliffBulge, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, TREE_BROAD_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSteps, setSand, setRoad, setPillars, setMasonry, setTrees, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -3029,6 +3029,7 @@ function animate() {
   tickReal(tickWater);   // 水の波（2026-10-03。曲と関係なく実時間で）   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
   // 床の絵も MIDI と関係なく当てる（2026-10-05 ユーザー指定：下の曲の処理の中だけで当てていて、MIDI を読むまで板目のままだった）
   setFloorStyle(['grass', 'grassDark'].includes($('floorStyle')?.value) ? $('floorStyle').value : 'plank');   // 変わった時だけ作り直す
+  setCliffBulge(wv('cliffBulge', 0.06));   // 岩の出っ張り（2026-10-09。スライダーが止まってから 1 回だけ壁を作り直す）
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
   controls.update();
 

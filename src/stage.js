@@ -1550,7 +1550,8 @@ export function buildFloorSkirt() {
   const mat = (uLen, opt) => stepPatch(stageMat({ ...wallSkin(uLen, h, '#5f4c2f', opt), side: THREE.DoubleSide }), 'skirt');   // 段差が縁に達した所は、地面より上を描かない（切り欠き）
   const add = (mesh) => { mesh.receiveShadow = true; mesh.renderOrder = -41; skirt.add(mesh); };
   // 前（z = +F、+z を向く）
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(2 * X, h), mat(2 * X));
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(2 * X, h, bulgeSegs(2 * X), bulgeSegs(h)), mat(2 * X));
+  bulgeWall(front, 1);   // 岩の出っ張り（面の向きがそのまま外向き。左右・奥も同じ）
   front.position.set(0, -h / 2, F); add(front);
   // 左右（x = ±X、外向き）。z は +F 〜 −yEdge。縁のすぐ内側に段が載っている区間と、床が見えている区間に分けて作る
   const sideLen = F + yEdge;
@@ -1563,7 +1564,8 @@ export function buildFloorSkirt() {
       const a = cuts[q], b = cuts[q + 1], len = b - a;
       if (len < 0.01) continue;
       // 面の横の向き：右（+x）の面は手前から奥へ、左の面は奥から手前へ進む。模様がつながるよう、面の左端の位置を uOff に渡す
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h), mat(len, { fringe: !under((a + b) / 2), uOff: sgn > 0 ? a : sideLen - b }));
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h, bulgeSegs(len), bulgeSegs(h)), mat(len, { fringe: !under((a + b) / 2), uOff: sgn > 0 ? a : sideLen - b }));
+      bulgeWall(m, 1);
       m.position.set(sgn * X, -h / 2, F - (a + b) / 2);
       m.rotation.y = sgn * Math.PI / 2;
       add(m);
@@ -1572,7 +1574,8 @@ export function buildFloorSkirt() {
   // 奥の弧（中心 (0, SEAT_SHIFT_Z)・半径 R）。ひな壇の壁と同じく CylinderGeometry の角 φ = π − θ（θ は −z から）。一番奥の段の背面と同じ面なので草は描かない
   const thE = Math.atan2(X, yEdge - cy);
   const segs = Math.max(8, Math.ceil((2 * thE) / deg(4)));
-  const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, segs, 1, true, Math.PI - thE, 2 * thE), mat(R * 2 * thE, { fringe: riserTopAt(0, SEAT_SHIFT_Z - R + 0.05) <= 0 }));
+  const back = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, Math.max(segs, bulgeSegs(R * 2 * thE)), bulgeSegs(h), true, Math.PI - thE, 2 * thE), mat(R * 2 * thE, { fringe: riserTopAt(0, SEAT_SHIFT_Z - R + 0.05) <= 0 }));
+  bulgeWall(back, 1);
   back.position.set(0, -h / 2, SEAT_SHIFT_Z); add(back);
 }
 
@@ -1659,17 +1662,21 @@ export function buildRisers(seats) {
     top.position.y = row.h;
     top.renderOrder = ro + 0.2; top.receiveShadow = true; risers.add(top);      // 同じ段では 壁 → 側面 → 天面 → 縁 の順
     // 前面（内径側の壁）：CylinderGeometry の角 φ は φ = π - θ
+    // 壁を分ける数（岩の出っ張りがオンの時だけ細かく）：横は、天面の輪の分け方（segs）の整数倍にして、天面の縁と壁の上端の頂点をそろえる
+    const wSeg = (arc) => segs * Math.max(1, Math.ceil(bulgeSegs(arc) / segs)), hSeg = bulgeSegs(row.h);
     const front = new THREE.Mesh(
-      new THREE.CylinderGeometry(rIn, rIn, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
+      new THREE.CylinderGeometry(rIn, rIn, row.h, wSeg(rIn * (thMax - thMin)), hSeg, true, Math.PI - thMax, thMax - thMin),
       matC({ ...wallSkin(rIn * (thMax - thMin), row.h, '#5f4c2f'), side: THREE.DoubleSide }),
     );
+    bulgeWall(front, -1);   // 前の壁は弧の内側が表
     front.position.y = row.h / 2;
     front.renderOrder = ro; front.receiveShadow = true; front.castShadow = true; risers.add(front);
     // 背面（外径側の壁）：後ろから見た時に中が見えないように（2026-09-10 ユーザー指摘）
     const back = new THREE.Mesh(
-      new THREE.CylinderGeometry(rOut, rOut, row.h, segs, 1, true, Math.PI - thMax, thMax - thMin),
+      new THREE.CylinderGeometry(rOut, rOut, row.h, wSeg(rOut * (thMax - thMin)), hSeg, true, Math.PI - thMax, thMax - thMin),
       matC({ ...wallSkin(rOut * (thMax - thMin), row.h, '#58452a'), side: THREE.DoubleSide }),
     );
+    bulgeWall(back, 1);
     back.position.y = row.h / 2;
     back.renderOrder = ro; back.receiveShadow = true; back.castShadow = true; risers.add(back);
     // 両端の側面。clipX 指定なら x = ±clipX の垂直な切り口（内径・外径との交点で幅が決まる）、
@@ -1678,14 +1685,16 @@ export function buildRisers(seats) {
       const z1 = -Math.sqrt(Math.max(0, rIn * rIn - cx * cx));   // 内径との交点
       const z2 = -Math.sqrt(Math.max(0, rOut * rOut - cx * cx)); // 外径との交点
       for (const sx of [-cx, cx]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h), stageMat({ ...wallSkin(Math.abs(z2 - z1), row.h, '#514026'), side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(z2 - z1), row.h, bulgeSegs(Math.abs(z2 - z1)), hSeg), stageMat({ ...wallSkin(Math.abs(z2 - z1), row.h, '#514026'), side: THREE.DoubleSide }));
+        bulgeWall(side, Math.sign(sx));   // 面の向きは +x。右（+x）の切り口はそのまま外向き、左は逆
         side.position.set(sx, row.h / 2, (z1 + z2) / 2);
         side.rotation.y = Math.PI / 2;                            // 面の法線を x 方向へ
         side.renderOrder = ro + 0.1; side.castShadow = true; risers.add(side);
       }
     } else {
       for (const th of [thMin, thMax]) {
-        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h), stageMat({ ...wallSkin(rOut - rIn, row.h, '#514026'), side: THREE.DoubleSide }));
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(rOut - rIn, row.h, bulgeSegs(rOut - rIn), hSeg), stageMat({ ...wallSkin(rOut - rIn, row.h, '#514026'), side: THREE.DoubleSide }));
+        bulgeWall(side, th === thMax ? 1 : -1);   // 面の向きは角度の増える側。大きい角度の端はそのまま外向き、小さい角度の端は逆
         const rm = (rIn + rOut) / 2;
         side.position.set(rm * Math.sin(th), row.h / 2, -rm * Math.cos(th));
         side.rotation.y = -th + Math.PI / 2; // 面の法線を接線方向へ
@@ -3375,12 +3384,16 @@ function buildSteps() {
           if (first !== c) continue;
         }
         const key = `${top}|${bot}`;
-        if (!groups.has(key)) groups.set(key, { top, bot, pos: [], nor: [], uv: [] });
+        if (!groups.has(key)) groups.set(key, { top, bot, pos: [], nor: [], uv: [], idx: [] });
         const G = groups.get(key);
-        // 表（法線の向き＝掘ってある側）から見て反時計回りになる順に 2 枚の三角形
-        G.pos.push(ax, top, az, ax, bot, az, bx, bot, bz, ax, top, az, bx, bot, bz, bx, top, bz);
-        for (let w = 0; w < 6; w++) G.nor.push(nx, 0, nz);
-        G.uv.push(ua, 1, ua, 0, ub, 0, ua, 1, ub, 0, ub, 1);
+        // 表（法線の向き＝掘ってある側）から見て反時計回りになる順に 2 枚の三角形。岩の出っ張りがオンの時は、縦に分けて帯を重ねる（横は輪郭の線分がすでに細かい）
+        // 頂点は線分の両端の縦の列（上から下へ）を 1 回ずつ持ち、三角形は番号で指す（重複して持つと、崖だけで頂点が 40 万を超えた）
+        const vr = bulgeSegs(top - bot), i0 = G.pos.length / 3;
+        for (let r = 0; r <= vr; r++) {
+          const v = 1 - r / vr, y = bot + (top - bot) * v;
+          G.pos.push(ax, y, az, bx, y, bz); G.nor.push(nx, 0, nz, nx, 0, nz); G.uv.push(ua, v, ub, v);
+        }
+        for (let r = 0; r < vr; r++) { const a1 = i0 + r * 2, b1 = a1 + 1, a0 = a1 + 2, b0 = a1 + 3; G.idx.push(a1, a0, b0, a1, b0, b1); }
       }
     }
   });
@@ -3389,8 +3402,10 @@ function buildSteps() {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(G.pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(G.nor, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(G.uv, 2));
+    geo.setIndex(G.idx);
     // 壁の絵はひな壇・床の縁と同じ（上端が草との境目）。横は 1 unit を 1 として渡してあるので、輪郭に沿った長さがそのまま絵の位置になる
     const m = new THREE.Mesh(geo, stageCtx.stageMat({ ...wallSkin(1, G.top - G.bot, '#5f4c2f'), side: THREE.DoubleSide }));
+    bulgeWall(m, 1, false);   // 岩の出っ張り（輪郭に沿った帯なので、左右の端では 0 に戻さない）
     // 崖が影を落とす（2026-10-09 ユーザー指定。ひな壇と同じく、地形は影を受けるだけだった）：掘った底・水面に、崖の影が落ちる。
     // 底へ届く光は、掘った口を通るか崖の壁に当たるかのどちらかなので、壁だけで影は全部できる（床の面に影を落とさせる必要は無い）
     m.receiveShadow = true; m.castShadow = true; m.renderOrder = -40;
@@ -4882,7 +4897,10 @@ function riverCircles(st, maxW = 5) {   // maxW：太さの上限（川は 5。�
 //   それ以外          → 側面（水面から地面まで。溝より細い川の脇など）
 // 側面・断面の色は水面と同じ「深さの色」（WATER_DEPTH_GLSL と同じ式）：上ほど明るく下ほど濃い。「深さ」スライダーが大きいほど濃い。上端に細い水際の線
 const WATER_SIDE_LINE = 0.04;   // 上端の水際の線の高さ [unit]
-const WATER_FALL_OUT = 0.03;    // 滝の面を、段差の壁から低い側へ離す量 [unit]（壁と同じ面に重ねない）
+const WATER_FALL_OUT0 = 0.03;   // 滝の面を、段差の壁から低い側へ離す量 [unit]（壁と同じ面に重ねない）
+// 岩の出っ張りがオンの時は、岩が滝の面を突き抜けないよう、離す量に出っ張りの分を足す。ただし足すのは、壁に沿って落ちる滝だけ：
+// 前へ弧を描いて落ちる滝（下端での離れ S が 0.3 以上）は、もともと壁から離れていくので足さない（足すと、落ち口の端に隙間の線が見えた）
+const fallOut = (S = 0) => WATER_FALL_OUT0 + (bulgeOn() ? CLIFF_BULGE * Math.max(0, 1 - S / 0.3) : 0);
 // 滝の形（2026-10-08 ユーザー指定：浅い水は直角に、深い水は丸みを帯びるように。丸める位置は崖の縁に固定し、滝そのものに厚みを出す。放物線で）。
 // 水は崖の縁から水平に飛び出して落ちる：崖からの離れ = WATER_FALL_REACH × 水の厚さ × √落ちた高さ（上限 WATER_FALL_MAX）。
 // 崖の壁とこの外側の面の間が滝の厚み。水が厚いほど遠くへ飛び、滝も厚い。厚さ 0 では壁に沿ってまっすぐ落ちる（直角）
@@ -5040,7 +5058,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
   const quad = (ax, az, bx, bz, yt, yb, ct, cb, nx, nz, at, ab) => { tri(side, ax, az, bx, bz, yt, yb, nx, nz); for (const c of [ct, cb, cb, ct, cb, ct]) side.col.push(c.r, c.g, c.b); side.al.push(at, ab, ab, at, ab, at); };   // at・ab：上端・下端の濃さ（1 で不透明）
   // 滝の面の断面（崖の縁からの外向きの位置 s・高さ y・面の向き・落ち口からの長さ d）。縁（s = 0）の水面の高さから水平に出て、放物線で
   // 下端 bot まで落ちる。n 番目の点は 落ちた高さ = H × (n/N)²、離れ = S × (n/N)（S：下端での離れ）＝放物線の上を、落ち口の近くほど細かく取る。
-  // 水が薄くて離れがほぼ無い時は、壁に沿ったまっすぐな面。壁と同じ面に重ねないよう、落ち口より下は WATER_FALL_OUT だけ外へ出す
+  // 水が薄くて離れがほぼ無い時は、壁に沿ったまっすぐな面。壁と同じ面に重ねないよう、落ち口より下は fallOut() だけ外へ出す
   const fallThick = surf - L;   // 上の段の水の厚さ
   // fr：段の位置（1 が一番外の段、小さいほど内側）。内側の段ほど、水の深い所（水面から 厚さ × (1 − fr) 下）から落ち始め、崖の近くを落ちる
   // 激流は、勢いよく前へ飛び出す（2026-10-09 ユーザー指定：流れの上限を 10 に上げた時に、滝の飛び出しを付け忘れていた。離れは水の厚さと落差だけで
@@ -5051,10 +5069,10 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
     const top = surf - fallThick * (1 - fr), H = top - bot, P = [];
     if (H < 0.01) return P;
     const S = Math.min(WATER_FALL_REACH * fallThick * fr * Math.sqrt(H), WATER_FALL_MAX) * fallFlowK;
-    if (S < 0.02) P.push({ s: L > 0.001 ? WATER_FALL_OUT : 0, y: top, ns: 1, ny: 0 }, { s: WATER_FALL_OUT, y: bot, ns: 1, ny: 0 });   // ひな壇（L が正）から落ちる滝は、上端も壁から離す（ひな壇の壁は弧で、輪郭の折れ線とわずかにずれるため）
+    if (S < 0.02) P.push({ s: L > 0.001 ? fallOut() : 0, y: top, ns: 1, ny: 0 }, { s: fallOut(), y: bot, ns: 1, ny: 0 });   // ひな壇（L が正）から落ちる滝は、上端も壁から離す（ひな壇の壁は弧で、輪郭の折れ線とわずかにずれるため）
     else for (let n = 0; n <= WATER_FALL_SEG; n++) {
       const t = n / WATER_FALL_SEG, ds = S, dy = 2 * H * t, l = Math.hypot(ds, dy) || 1;   // 接線は (ds, -dy)。面の向き（外・上）はその直角
-      P.push({ s: S * t + (n ? WATER_FALL_OUT : 0), y: top - H * t * t, ns: dy / l, ny: ds / l });
+      P.push({ s: S * t + (n ? fallOut(S) : 0), y: top - H * t * t, ns: dy / l, ny: ds / l });
     }
     let d = 0;
     P.forEach((p, n) => { if (n) d += Math.hypot(p.s - P[n - 1].s, p.y - P[n - 1].y); p.d = d; });
@@ -7057,9 +7075,76 @@ function cliffCanvas(rows, palette = 'normal', fringe = true) {
       N[o] = Math.round((nx / nl * 0.5 + 0.5) * 255); N[o + 1] = Math.round((ny / nl * 0.5 + 0.5) * 255); N[o + 2] = Math.round((1 / nl * 0.5 + 0.5) * 255); N[o + 3] = 255;
     }
     ng.putImageData(nimg, 0, 0);
-    c.__normal = nc; }
+    c.__normal = nc; c.__ht = HT; }   // __ht：高さそのもの（壁の形をふくらませるのに使う。下の bulgeWall）
   cliffCache.set(key, c);
   return c;
+}
+
+// 岩の出っ張り（2026-10-09 ユーザー指定：崖の岩の次の段階。光だけの凸凹から、壁の形そのものを凸凹に）：
+// 壁を細かい面（BULGE_CELL ごと）に分けておき、頂点を、絵と同じ「岩の高さ」の分だけ壁の表の側へ動かす。絵・陰影（面の向きの絵）・形が、
+// 同じ高さから作られるので一致する。光の計算に使う面の向きは平らな壁のまま（凸凹の陰影は面の向きの絵が付ける。二重に掛けない）。
+//  ・出っ張りの量 CLIFF_BULGE [unit]：高さ 1 の所が、これだけ出る。0 なら平らな壁（分ける数も 1 に戻す＝軽い）
+//  ・端では 0 に戻す：壁の上下の縁から BULGE_FADE 以内（と、板・弧の壁は左右の端から同じ幅）は、出っ張りをなだらかに 0 へ。
+//    壁どうし・天面・床との継ぎ目で、隙間や段ができないように（ひな壇の背面と床の縁の断面のように、同じ面で上下につながる壁もある）
+//  ・sign：壁の表が、形の面の向きと同じ側なら 1、逆なら −1（ひな壇の前の壁は、弧の内側が表）
+//  ・fadeEnds：左右の端でも 0 に戻すか。段差の崖は輪郭に沿った帯で、線分どうしが続いているので戻さない。その代わり、同じ位置の頂点は
+//    面の向きを平均した向きへ動かす（線分ごとに向きが違うので、そのままだと継ぎ目が開く）
+// 草原の床の「岩の崖」の時だけ効く（板目・画像の壁には高さが無い）
+const BULGE_CELL = 0.1;     // 壁を分ける細かさ [unit]（岩 1 個が約 0.7 unit、縁の丸みが約 0.16 unit）
+const BULGE_FADE = 0.12;    // 端で出っ張りを 0 に戻す幅 [unit]
+const BULGE_MAX = 0.3;      // 出っ張りの上限 [unit]
+let CLIFF_BULGE = 0.06, bulgeWant = 0.06, bulgeAt = 0;   // 今の値／スライダーの値／スライダーが最後に動いた時刻
+const bulgeOn = () => CLIFF_BULGE > 0 && !WALL_CUSTOM && !!stageCtx && (stageCtx.groundTex === stageCtx.grassTex || stageCtx.groundTex === stageCtx.grassDarkTex);
+const bulgeSegs = (len) => (bulgeOn() ? Math.max(1, Math.ceil(len / BULGE_CELL)) : 1);
+/** 岩の出っ張りの量 [unit]。毎コマ呼んでよい：スライダーを動かしている間は作り直さず、止まって 0.25 秒たってから 1 回だけ壁を作り直す */
+export function setCliffBulge(v) {
+  v = Math.max(0, Math.min(BULGE_MAX, Number.isFinite(v) ? v : 0.06));
+  if (v !== bulgeWant) { bulgeWant = v; bulgeAt = performance.now(); }
+  if (bulgeWant === CLIFF_BULGE || performance.now() - bulgeAt < 250 || !stageCtx) return;
+  CLIFF_BULGE = bulgeWant;
+  if (stageCtx.seats) buildRisers(stageCtx.seats);   // ひな壇 → 続けて床の縁の断面・段差の崖・水も作り直される（滝が壁から離れる量も変わる）
+}
+function bulgeWall(mesh, sign = 1, fadeEnds = true) {
+  const info = mesh.material?.map?.__h;
+  if (!info || !bulgeOn()) return;
+  const { ht, W, rows, uLen, vLen, uOff } = info, geo = mesh.geometry, P = geo.attributes.position, N = geo.attributes.normal, U = geo.attributes.uv;
+  const sm = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  const hAt = (xd, yd) => {   // 高さ（絵のドットの座標で。横は一周、上下は端で止める。4 点の間をなめらかに）
+    xd = ((xd % W) + W) % W; yd = Math.max(0, Math.min(rows - 1, yd));
+    const x0 = Math.floor(xd), y0 = Math.floor(yd), x1 = (x0 + 1) % W, y1 = Math.min(rows - 1, y0 + 1), tx = xd - x0, ty = yd - y0;
+    return (ht[y0 * W + x0] * (1 - tx) + ht[y0 * W + x1] * tx) * (1 - ty) + (ht[y1 * W + x0] * (1 - tx) + ht[y1 * W + x1] * tx) * ty;
+  };
+  let avg = null, ends = null;
+  if (!fadeEnds) {   // 同じ位置（上から見て）の頂点の、面の向きの平均（a[3]：その位置の頂点の数）
+    avg = new Map();
+    for (let i = 0; i < P.count; i++) {
+      const k = Math.round(P.getX(i) * 1000) + '|' + Math.round(P.getZ(i) * 1000), a = avg.get(k) || [0, 0, 0, 0, P.getX(i), P.getZ(i)];
+      a[0] += N.getX(i); a[1] += N.getY(i); a[2] += N.getZ(i); a[3]++; avg.set(k, a);
+    }
+    // 帯の端：線分が 1 本しかつながっていない位置（頂点の数が、縦 1 列ぶんしか無い）。その近くでは出っ張りを 0 に戻す。
+    // 崖の帯は高さの組（上端・下端）ごとに別の形で、滝の落ち口などで帯が切り替わる。帯ごとに岩の高さが違うので、端で 0 に戻さないと、
+    // 継ぎ目が段になって黒い線に見えた（2026-10-09）
+    const col = bulgeSegs(vLen) + 1;
+    ends = [];
+    for (const a of avg.values()) if (a[3] <= col) ends.push(a[4], a[5]);
+  }
+  for (let i = 0; i < P.count; i++) {
+    const u = U.getX(i), v = U.getY(i);
+    const h = hAt((uOff + u * uLen) * CLIFF_DPU - 0.5, (1 - v) * vLen * CLIFF_DPU - 0.5);
+    let f = sm(Math.min(v, 1 - v) * vLen / BULGE_FADE) * (fadeEnds ? sm(Math.min(u, 1 - u) * uLen / BULGE_FADE) : 1);
+    if (ends && f > 0) {
+      let de = 1e9;
+      for (let q = 0; q < ends.length; q += 2) { const dx = P.getX(i) - ends[q], dz = P.getZ(i) - ends[q + 1], dd = dx * dx + dz * dz; if (dd < de) de = dd; }
+      f *= sm(Math.sqrt(de) / BULGE_FADE);
+    }
+    const d = sign * CLIFF_BULGE * Math.max(0, h) * f;
+    if (d === 0) continue;
+    let nx = N.getX(i), ny = N.getY(i), nz = N.getZ(i);
+    if (avg) { const a = avg.get(Math.round(P.getX(i) * 1000) + '|' + Math.round(P.getZ(i) * 1000)), l = Math.hypot(a[0], a[1], a[2]) || 1; nx = a[0] / l; ny = a[1] / l; nz = a[2] / l; }
+    P.setXYZ(i, P.getX(i) + nx * d, P.getY(i) + ny * d, P.getZ(i) + nz * d);
+  }
+  P.needsUpdate = true;
+  geo.computeBoundingSphere(); geo.computeBoundingBox();
 }
 
 /** 壁 1 枚ぶんの材質。草原の時は土の絵、板目の時は従来どおりの無地（2026-09-13 ユーザー指定） */
@@ -7082,7 +7167,11 @@ function wallSkin(uLen, vLen, col, { fringe = true, uOff = 0 } = {}) {   // frin
     nm.magFilter = THREE.NearestFilter; nm.minFilter = THREE.NearestMipmapLinearFilter;
     nm.wrapS = nm.wrapT = THREE.RepeatWrapping;
     nm.__disposable = true;
-    return { map: m, color: '#ffffff', normalMap: nm };
+    // 壁の形をふくらませる時に、頂点の位置から高さを引けるよう、貼り方を控える（bulgeWall）
+    m.__h = { ht: cv.__ht, W: CLIFF_W, rows, uLen, vLen, uOff };
+    // 出っ張りを陰影の基準（CLIFF_BUMP ドット分）より大きくした時は、陰影もその分だけ強める（形と陰影の釣り合いを保つ）
+    const nk = Math.max(1, CLIFF_BULGE / (CLIFF_BUMP / CLIFF_DPU));
+    return { map: m, color: '#ffffff', normalMap: nm, normalScale: new THREE.Vector2(nk, nk) };
   }
   if (!img) return { color: col };
   const dpu = WALL_DPU * (stageCtx.groundTex.wallScale ?? stageCtx.groundTex.tileScale ?? 1);   // 草原は絵を作り直した時に tileScale が変わったので、壁は wallScale で同じ大きさを保つ（2026-10-05）   // 草原のタイルを細かくしたら壁のドットも同じ大きさに（2026-09-17 ユーザー指定）
