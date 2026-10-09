@@ -1984,15 +1984,30 @@ vec3 pxoMoss( vec3 col, vec3 n, vec3 p, float amt, float shade ) {
   return mix( col, moss, m );
 }
 `;
+// 濡れ色（2026-10-09 ユーザー指定：水際の石の下のほうを暗くする）：水面の高さの地図（uWaterTop。G：水があるか、B：実際の水面の高さ）を読み、
+// 水のある所（と、そのすぐ隣）にある石の面のうち、水面から少し上までの帯を暗くする。帯の上端はノイズで少し波打たせる（まっすぐな線にしない）。
+// w：世界の位置、amt：濃さ（0〜1）。苔の上にも掛ける（濡れた苔も暗くなる）。STONE_MOSS_GLSL のノイズを使うので、その後ろに置く
+const stoneWetGlsl = () => `uniform sampler2D uWaterTop;
+uniform vec4 uStepRect;
+vec3 pxoWet( vec3 col, vec3 w, float amt ) {
+  if ( amt <= 0.001 ) return col;
+  vec4 t = texture2D( uWaterTop, ( w.xz - uStepRect.xy ) * uStepRect.zw );
+  if ( t.g < 0.15 ) return col;   // 0.15：水のますの隣（補間で薄く残る所）まで＝水際に立つ石の、水に面した裾も濡らす
+  float surf = t.b * ${WATER_TOP_SPAN.toFixed(1)} + ( ${WATER_TOP_LO.toFixed(1)} );
+  float band = 0.08 + 0.07 * pxoMsN( w * 9.0 );
+  return col * mix( 1.0, 0.5, amt * step( w.y, surf + band ) );
+}
+`;
 const STONE_CAP_MAT = (() => {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
   const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
   m.onBeforeCompile = (shader) => {
-    shader.vertexShader = 'attribute float pxoScale, pxoShade, pxoMossA;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS, pxoCapK, pxoCapM;\n' + shader.vertexShader
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale; pxoCapK = pxoShade; pxoCapM = pxoMossA;');
+    Object.assign(shader.uniforms, { uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect });
+    shader.vertexShader = 'attribute float pxoScale, pxoShade, pxoMossA, pxoWetA;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS, pxoCapK, pxoCapM, pxoCapWt;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale; pxoCapK = pxoShade; pxoCapM = pxoMossA; pxoCapWt = pxoWetA;');
     shader.fragmentShader = `varying vec3 pxoCapW, pxoCapN;
-varying float pxoCapS, pxoCapK, pxoCapM;
-${STONE_MOSS_GLSL}float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+varying float pxoCapS, pxoCapK, pxoCapM, pxoCapWt;
+${STONE_MOSS_GLSL}${stoneWetGlsl()}float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 n = normalize( pxoCapN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
   vec2 g = vec2( dot( pxoCapW, t ), dot( pxoCapW, bt ) ) / max( 1e-4, pxoCapS / ${STONE_DOTS_PER_M.toFixed(1)} ), id = floor( g ), f = fract( g ) - 0.5;
@@ -2000,9 +2015,9 @@ ${STONE_MOSS_GLSL}float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1
   float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );   // 点の半分の幅（ます目に対する割合。焼き込みのボロノイと同じ値）
   vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
   float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
-  diffuseColor.rgb = pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoCapK, n, pxoCapW / max( 1e-4, pxoCapS ), pxoCapM, pxoCapK ); }`);   // pxoCapK：石ごとの色の濃さ（表面と同じ倍率）、pxoCapM：苔の量（コードで作る石だけ。GLB の石の断面は 0）
+  diffuseColor.rgb = pxoWet( pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoCapK, n, pxoCapW / max( 1e-4, pxoCapS ), pxoCapM, pxoCapK ), pxoCapW, pxoCapWt ); }`);   // pxoCapK：石ごとの色の濃さ（表面と同じ倍率）、pxoCapM：苔の量（コードで作る石だけ。GLB の石の断面は 0）
   };
-  m.customProgramCacheKey = () => 'pxo-stonecap-v4';
+  m.customProgramCacheKey = () => 'pxo-stonecap-v5';
   return m;
 })();
 // 床の縁の平面（外向きの法線 n・n·p ≤ d が床の側）のうち、中心 (x, z)・半径 rc の円にかかるもの。全部外なら null
@@ -2160,15 +2175,18 @@ const STONE_PROC_MAT = (() => {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
   const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
   m.onBeforeCompile = (shader) => {
-    shader.vertexShader = 'varying vec3 pxoStL, pxoStN;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    Object.assign(shader.uniforms, { uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect });
+    shader.vertexShader = 'varying vec3 pxoStL, pxoStN, pxoStW;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
 #ifdef USE_INSTANCING
   pxoStL = transformed * ( length( instanceMatrix[ 0 ].xyz ) / ${MODEL_M.toFixed(4)} );   // 石の中の位置 [m]（置いた大きさで）
+  pxoStW = ( modelMatrix * instanceMatrix * vec4( transformed, 1.0 ) ).xyz;   // 世界の位置（濡れ色）
 #else
   pxoStL = transformed;
+  pxoStW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 #endif
   pxoStN = objectNormal;`);
-    shader.fragmentShader = `varying vec3 pxoStL, pxoStN;
-${STONE_MOSS_GLSL}float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+    shader.fragmentShader = `varying vec3 pxoStL, pxoStN, pxoStW;
+${STONE_MOSS_GLSL}${stoneWetGlsl()}float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 n = normalize( pxoStN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
   vec2 g = vec2( dot( pxoStL, t ), dot( pxoStL, bt ) ) * ${STONE_DOTS_PER_M.toFixed(1)} + floor( n.xz * 7.0 + n.y * 3.0 ) * 13.7, id = floor( g ), f = fract( g ) - 0.5;   // 面の向きごとに並びをずらす
@@ -2176,15 +2194,15 @@ ${STONE_MOSS_GLSL}float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0
   float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );
   vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
   float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
-  // 石ごとの色（まとめ描きの instanceColor）は、r に色の濃さ、g に苔の量を入れてある（buildStones）。標準の処理はこれを色として掛けてしまうので、掛け直す
+  // 石ごとの色（まとめ描きの instanceColor）は、r に色の濃さ、g に苔の量、b に濡れ色の濃さを入れてある（buildStones）。標準の処理はこれを色として掛けてしまうので、掛け直す
 #ifdef USE_COLOR
-  float pxoShd = vColor.r, pxoMsA = vColor.g;
+  float pxoShd = vColor.r, pxoMsA = vColor.g, pxoWtA = vColor.b;
 #else
-  float pxoShd = 1.0, pxoMsA = 0.0;
+  float pxoShd = 1.0, pxoMsA = 0.0, pxoWtA = 0.0;
 #endif
-  diffuseColor.rgb = pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoShd, n, pxoStL, pxoMsA, pxoShd ); }`);
+  diffuseColor.rgb = pxoWet( pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoShd, n, pxoStL, pxoMsA, pxoShd ), pxoStW, pxoWtA ); }`);
   };
-  m.customProgramCacheKey = () => 'pxo-stoneproc-v3';
+  m.customProgramCacheKey = () => 'pxo-stoneproc-v4';
   return m;
 })();
 // ごつごつのばらつき（2026-10-09 ユーザー指定）：群れのごつごつの値を中心に、上下へ 5 段階に広げた値（0.05 きざみの番号。同じ番号は 1 つにまとめる）。
@@ -2209,7 +2227,7 @@ function procStones(rug = 0.2) {
   return list;
 }
 // 1 個の石を世界の座標に置いて、床の縁で切った 2 つの形（表面・断面）にする
-function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0) {
+function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0, wet = 0) {
   const g = shape.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
   const nm = new THREE.Matrix3().getNormalMatrix(matrix);
   const vert = (i) => ({ p: new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(matrix), n: na ? new THREE.Vector3().fromBufferAttribute(na, i).applyMatrix3(nm).normalize() : new THREE.Vector3(0, 1, 0), uv: ua ? new THREE.Vector2().fromBufferAttribute(ua, i) : null });
@@ -2231,6 +2249,7 @@ function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0) {
       geo.setAttribute('pxoScale', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(scale), 1));
       geo.setAttribute('pxoShade', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(shade), 1));
       geo.setAttribute('pxoMossA', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(moss), 1));
+      geo.setAttribute('pxoWetA', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(wet), 1));
     }
     return geo;
   };
@@ -2241,6 +2260,72 @@ function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0) {
   return meshes;
 }
 let STONE_EDGE = [];   // 縁で切った石の形（組み直すたびに作り直して、前のは捨てる）
+// 流れの跡（2026-10-09 ユーザー指定：水の中の石の下流側に、白い泡を出す）：水面を横切っている石ごとに、水面の高さへ水平な板を 1 枚置き、
+// 石のまわりの泡の輪と、下流へ伸びる 2 本の筋・その間の乱れを、小さなます目の点々で描く。点々の並びは流れの速さで下流へ流す。
+// 流れの無い水（湖・池）では輪だけで、点々はその場で入れ替わる。板は群れごとに 1 つの形にまとめる（描く回数は群れごとに 1 回）。
+//   position：板の隅の世界の位置、aWk：(下流への位置 u, 横の位置 v, 水面での石の半径 R, 乱数) [unit]、aWk2：(流れの速さ, 濃さ, 水面の高さ)
+// 水の無い所・別の段の水面にかかった部分は描かない（水面の高さの地図で判定）。水と同じく奥行きは書かない半透明（輪郭線を付けない）
+let STONE_WAKE = [];   // 流れの跡の板（水のグループに入れる。組み直すたびに作り直す）
+const WAKE_CELL = 0.045;   // 泡の点々のます目 [unit]
+// 下流へ伸びる長さ（石の水面での半径の何倍か）。sp：流れの速さ。最初は 2.5 + 1.5 × 速さ（最大 5.5 倍）で、速い川では水面いっぱいのもやになった
+const WAKE_LEN = '( 1.6 + 0.7 * min( sp, 2.0 ) )', wakeLen = (sp) => 1.6 + 0.7 * Math.min(sp, 2);
+function stoneWakeMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, depthWrite: false });
+  m.userData.u = { uHL: { value: 0 } };   // 水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, WATER_U, m.userData.u, { uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect });
+    shader.vertexShader = 'attribute vec4 aWk;\nattribute vec3 aWk2;\nvarying vec4 pxoWk;\nvarying vec3 pxoWk2, pxoWkW;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoWk = aWk; pxoWk2 = aWk2; pxoWkW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = `varying vec4 pxoWk;
+varying vec3 pxoWk2, pxoWkW;
+uniform float uWT;
+uniform sampler2D uWaterTop;
+uniform vec4 uStepRect;
+float pxoWkH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{ vec4 t = texture2D( uWaterTop, ( pxoWkW.xz - uStepRect.xy ) * uStepRect.zw );
+  if ( t.g < 0.5 || abs( t.b * ${WATER_TOP_SPAN.toFixed(1)} + ( ${WATER_TOP_LO.toFixed(1)} ) - pxoWk2.z ) > 0.08 ) discard;   // 水の無い所・別の段の水面
+  vec2 q = pxoWk.xy; float R = pxoWk.z, sp = pxoWk2.x, d = length( q );
+  float moving = step( 0.01, sp );
+  vec2 id = floor( vec2( q.x - uWT * sp * 0.35, q.y ) / ${WAKE_CELL.toFixed(3)} ) + pxoWk.w * 91.7;   // 点々の並びを下流へ流す
+  float h = moving > 0.5 ? pxoWkH( id ) : pxoWkH( id + floor( uWT * 1.5 + pxoWkH( id ) * 7.0 ) * 3.1 );   // 流れの無い水：その場で入れ替わる
+  // 石のまわりの輪（石の縁の少し内側〜外側。内側は石に隠れる）。流れのある水では、上流側（水が当たる側）を濃く、下流側を薄く
+  float ring = smoothstep( R * 1.25, R * 1.0, d ) * smoothstep( R * 0.5, R * 0.8, d );
+  float p = ring * 0.75 * mix( 1.0, mix( 1.0, 0.3, smoothstep( -0.3, 0.6, q.x / max( d, 1e-4 ) ) ), moving );
+  if ( moving > 0.5 && q.x > 0.0 ) {   // 下流：石の両脇から伸びて、すぼまりながら消える 2 本の筋と、その間のまばらな乱れ
+    float L = ${WAKE_LEN}, u = q.x / R / L, fade = clamp( 1.0 - u, 0.0, 1.0 );
+    float streak = smoothstep( 0.28 * R, 0.0, abs( abs( q.y ) - R * mix( 0.85, 0.35, clamp( u, 0.0, 1.0 ) ) ) );
+    float mid = smoothstep( R * 0.6, 0.0, abs( q.y ) ) * 0.14 * smoothstep( 0.0, 0.25, u );
+    p = max( p, ( streak * 0.85 + mid ) * pow( fade, 1.4 ) );
+  }
+  if ( h > p * pxoWk2.y ) discard;
+  diffuseColor = vec4( ${c3('#eef8ff')}, 1.0 ); }`);
+  };
+  m.customProgramCacheKey = () => 'pxo-stonewake-v3';
+  return m;
+}
+// その場所の水（川・池）と、流れの向き・速さ。水の形の中（余白 pad まで）に無ければ null。向きはシェーダーの pxoRiverUV と同じ式
+//（川の中心線の区間ごとの向きを、近い区間ほど重く混ぜる）。湖・池・水たまりは速さ 0
+function waterFlowAt(x, z, pad = 0) {
+  let best = null, bd = pad;
+  for (const w of WATER_SHORE) { const d = circlesSd(w.cs, w.k, x, z); if (d < bd) { bd = d; best = w; } }
+  if (!best) return null;
+  const st = best.st || {}, isLake = st.type === 'lake' || st.type === 'puddle', rev = !isLake && st.reverse ? -1 : 1;
+  if (isLake) return { fx: 1, fz: 0, speed: 0 };
+  let fx = 0, fz = 0, ws = 0;
+  for (let i = 0; i < best.cs.length - 1; i++) {
+    const c0 = best.cs[i], c1 = best.cs[i + 1];
+    if ((c1[3] ?? 0) <= (c0[3] ?? 0)) continue;   // 切れ端の境目
+    const ax = c1[0] - c0[0], az = c1[1] - c0[1], L2 = ax * ax + az * az;
+    if (L2 < 1e-6) continue;
+    const t = Math.max(0, Math.min(1, ((x - c0[0]) * ax + (z - c0[1]) * az) / L2)), L = Math.sqrt(L2);
+    const wgt = 1 / Math.pow(Math.hypot(x - (c0[0] + ax * t), z - (c0[1] + az * t)) + c0[2], 3);
+    fx += wgt * ax / L; fz += wgt * az / L; ws += wgt;
+  }
+  const fl = Math.hypot(fx, fz);
+  if (ws <= 0 || fl < 1e-6) { fx = Math.cos(deg(st.dir ?? 0)); fz = -Math.sin(deg(st.dir ?? 0)); } else { fx /= fl; fz /= fl; }
+  return { fx: fx * rev, fz: fz * rev, speed: Math.max(0, st.flow ?? 1) };
+}
 function rng32(seed) {   // mulberry32（種から決まる乱数）
   let a = (seed >>> 0) || 1;
   return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -2254,6 +2339,8 @@ function buildStones() {
   HL_VER++;
   for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
+  for (const m of STONE_WAKE) { m.parent?.remove(m); m.geometry.dispose(); m.material.dispose(); }   // 流れの跡の板（水を組み直した時は、水の側ですでに捨てられている）
+  STONE_WAKE = [];
   stoneList.forEach((st, ci) => {
     if (st.show === false) return;
     const onShore = !!st.shore && WATER_SHORE.length > 0, shoreW = Math.max(0.05, st.shoreW ?? 0.8), shoreIn = Math.max(0, Math.min(1, st.shoreIn ?? 0.3));   // 水辺に並べる：岸からの幅 [unit]、水の中に置く割合
@@ -2268,6 +2355,26 @@ function buildStones() {
     const per = shapes.map(() => []), perShade = shapes.map(() => []), perMoss = shapes.map(() => []);
     // 埋まり具合・苔（2026-10-09 ユーザー指定）：石ごとに少しばらつかせる。並び・色とは別の乱数を使う（これらを足す前に作った群れの並びと色が変わらないように）
     const buryAmt = Math.max(0, Math.min(0.95, st.bury ?? 0)), mossAmt = Math.max(0, Math.min(1, st.moss ?? 0));
+    // 濡れ色・流れの跡（同日ユーザー指定）
+    const wetAmt = Math.max(0, Math.min(1, st.wet ?? 0)), wakeAmt = Math.max(0, Math.min(1, st.wake ?? 0));
+    const wake = { pos: [], nor: [], wk: [], wk2: [], idx: [] };
+    // 水面を横切っている石に、流れの跡の板を足す。y0：石の底の高さ、rad：半径、h：高さ。水面は、石の中心とまわり 4 点のうち最初に水のある所で読む。
+    // 水面での石の半径は、石を半分の楕円とみなして出す（深く浸かった石ほど、水面に出ている部分は細い）
+    const wakeAt = (x, z, y0, rad, h) => {
+      if (wakeAmt <= 0 || h <= 0) return;
+      let ws = null, wx = x, wz = z;
+      for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = waterSurfAt(x + dx * rad * 0.8, z + dz * rad * 0.8); if (v != null) { ws = v; wx = x + dx * rad * 0.8; wz = z + dz * rad * 0.8; break; } }
+      if (ws == null || y0 > ws - 0.01 || y0 + h < ws + 0.02) return;   // 水が無い・水面より上に乗っている・すっかり沈んでいる
+      const fl = waterFlowAt(wx, wz, rad);
+      if (!fl) return;
+      const R = Math.max(0.3 * rad, rad * Math.sqrt(Math.max(0, 1 - ((ws - y0) / h) ** 2)) * 0.8);   // 0.8：rad は一番張り出した所の半径で、石の実際の輪郭はそれより内側
+      const L = fl.speed > 0.01 ? wakeLen(fl.speed) : 1.3, y = ws + 0.012, seed = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1, n0 = wake.pos.length / 3;   // 乱数は石の位置から（苔・埋まり具合の乱数 rb を使うと、流れの跡を入れただけで苔の付き方が変わる）
+      for (const [u, v] of [[-1.3 * R, -1.3 * R], [L * R, -1.3 * R], [L * R, 1.3 * R], [-1.3 * R, 1.3 * R]]) {
+        wake.pos.push(x + fl.fx * u - fl.fz * v, y, z + fl.fz * u + fl.fx * v); wake.nor.push(0, 1, 0);
+        wake.wk.push(u, v, R, seed); wake.wk2.push(fl.speed, wakeAmt, ws);
+      }
+      wake.idx.push(n0, n0 + 2, n0 + 1, n0, n0 + 3, n0 + 2);   // 上から見て表になる順
+    };
     const mossVar = Math.max(0, Math.min(1, st.mossVar ?? 0.25));   // 苔のばらつき（同日ユーザー指定）：石ごとに 1 ± これ倍。0.25 が今までの固定値（0.75〜1.25 倍）、1 で苔なし〜2 倍
     const rb = rng32(((st.seed ?? 1) ^ 0x51ed270b) >>> 0);
     // 色の濃さ（2026-10-03 ユーザー指定）：1 で元の色、1 上がるごとに明るさが半分。ばらつきは石ごと（±2σ まで）。
@@ -2406,9 +2513,10 @@ function buildStones() {
         if (!planes) continue;                                                             // 丸ごと床の外：置かない
         if (avoidOn && avoidSd(c.x, c.z) < c.rad * (crowd === 'push' ? 0.9 : 1)) continue;   // よける範囲に残った石：置かない（押し広げた後は、押し出しの誤差の分だけ甘く見る）
         const shade = shadeOf();
+        wakeAt(c.x, c.z, groundY - bur * c.h, c.rad, c.h);
         if (planes.length) {
           const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
-          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
+          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo, wetAmt)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
           continue;
         }
         per[pi].push(mat); perShade[pi].push(shade); perMoss[pi].push(mo);
@@ -2478,9 +2586,10 @@ function buildStones() {
         if (onShore) { if ((DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone', true) < rad) continue; }   // 水辺の石：水はよけない。土・石畳・柱にかかったら別の場所で試す
         else if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
+        wakeAt(x, z, groundY - bur * (shapes[pi].s.h ?? 0) * k * MODEL_M, rad, (shapes[pi].s.h ?? 0) * k * MODEL_M);
         if (planes.length) {   // 縁にかかる：切った形で置く。沈めた石は、床の下の部分も切る（切らないと、床の縁の断面から石の下半分が覗く。真下向きの平面は切り口の座標軸が取れないので、わずかに傾けた向きで）
           const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
-          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
+          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo, wetAmt)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
           break;
         }
         per[pi].push(mat); perShade[pi].push(shade); perMoss[pi].push(mo);           // 床の中：まとめて描く
@@ -2501,12 +2610,21 @@ function buildStones() {
         STONE_POOL.set(key, im);
       }
       im.count = per[pi].length;
-      // 石ごとの色：r に色の濃さ、g に苔の量（材質がそう読む。STONE_PROC_MAT）
-      per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setRGB(perShade[pi][i], perMoss[pi][i], 0)); });
+      // 石ごとの色：r に色の濃さ、g に苔の量、b に濡れ色の濃さ（材質がそう読む。STONE_PROC_MAT）
+      per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setRGB(perShade[pi][i], perMoss[pi][i], wetAmt)); });
       im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
       im.userData.pxoCard = ci;
       g.add(im);
     });
+    if (wake.idx.length) {   // 流れの跡：この群れの板をまとめて 1 つの形に。水のグループへ入れる（水面と同じ順で描く。飛沫と同じ -9）
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(wake.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(wake.nor, 3));
+      geo.setAttribute('aWk', new THREE.Float32BufferAttribute(wake.wk, 4)); geo.setAttribute('aWk2', new THREE.Float32BufferAttribute(wake.wk2, 3));
+      geo.setIndex(wake.idx);
+      const wm = new THREE.Mesh(geo, stoneWakeMaterial());
+      wm.renderOrder = -9; wm.frustumCulled = false;
+      STONE_WAKE.push(wm); stageCtx.water.add(wm);
+    }
   });
 }
 // ---- 草のジェネレーター（2026-10-03 ユーザー指定）----
@@ -3786,7 +3904,7 @@ export function setWater(list) {
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
 // 川・池の形の全部（「草・石をよける」の設定に関係なく。石を水辺に並べるのに使う。2026-10-09）。海は入れない
-let WATER_SHORE = [];   // [{ cs, k }]
+let WATER_SHORE = [];   // [{ cs, k, st }]
 function waterSurfAt(x, z) {   // その場所の水面の高さ [unit]（水面の高さの地図から。水が無ければ null）。石を水面より下へ置かない判定に使う
   const i = Math.round((x - STEP_X0) / STEP_CELL), j = Math.round((z - STEP_Z0) / STEP_CELL);
   if (i < 0 || j < 0 || i >= STEP_W || j >= STEP_H) return null;
@@ -4947,7 +5065,7 @@ function buildWater() {
     // ふくらみの分が無かった時は、大きな湖で岸が板からはみ出し、直線で切れた（2026-10-04 ユーザー指摘）
     const pad = WATER_WET + 0.2 + Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) * 0.75 + 0.12;
     if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
-    WATER_SHORE.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 石を水辺に並べる時の岸の形
+    WATER_SHORE.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2), st });   // 石を水辺に並べる時の岸の形（st：流れの跡の向き・速さに使う）
     // 段差（2026-10-08 ユーザー指定）：水面は、水場の中心線（円の中心）が通っている地面の高さごとに 1 枚ずつ置く（川が段差に差し掛かると、
     // 段ごとに水面の高さが変わり、境目は滝になる）。中心線より高い地面（溝の脇の岸など）には置かない＝溝より太い水は溝の幅で止まる。
     // 「厚み」は水面を底から持ち上げる量。高さごとに、その場所を掘った深さまで（超えた分は使わない＝水面は床の高さより上へ出ない）

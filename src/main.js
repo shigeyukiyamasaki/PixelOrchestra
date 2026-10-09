@@ -278,7 +278,7 @@ let models = (() => {
 })();
 // 石のジェネレーター（2026-10-03 ユーザー指定）。x・z は群れの中心、y は床からの高さ、spread はばらけ具合 [unit]、
 // count は個数、size は大きさの倍率、sizeVar は大きさのばらつき（0〜1）、seed は並び（並べ直しで変わる）
-const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true, rug: 0.2, shore: false, shoreW: 0.8, shoreIn: 0.3, bury: 0, moss: 0, mossVar: 0.25, rugVar: 0, crowd: 'drop' };   // mossVar：苔のばらつき、rugVar：ごつごつのばらつき（2026-10-09）   // bury：埋まり具合、moss：苔（2026-10-09）   // shore：水辺に並べる、shoreW：岸からの幅、shoreIn：水の中の割合（2026-10-09）   // 形はコードで作る（最初は GLB と選べて kind で持っていた。2026-10-09 ユーザー指定で GLB を削除。古い設定に残る kind は読まない）   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
+const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true, rug: 0.2, shore: false, shoreW: 0.8, shoreIn: 0.3, bury: 0, moss: 0, mossVar: 0.25, rugVar: 0, wet: 0, wake: 0, crowd: 'drop' };   // wet：濡れ色、wake：流れの跡（2026-10-09）   // mossVar：苔のばらつき、rugVar：ごつごつのばらつき（2026-10-09）   // bury：埋まり具合、moss：苔（2026-10-09）   // shore：水辺に並べる、shoreW：岸からの幅、shoreIn：水の中の割合（2026-10-09）   // 形はコードで作る（最初は GLB と選べて kind で持っていた。2026-10-09 ユーザー指定で GLB を削除。古い設定に残る kind は読まない）   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
 const stoneDefaults = (o) => ({ ...STONE_BASE, ...o });
 let stones = (() => {
   try { const a = JSON.parse(LS.getItem(STONES_KEY) || 'null'); if (Array.isArray(a)) return a.map(stoneDefaults); } catch (e) { console.warn('石の設定の読込失敗:', e); }
@@ -394,6 +394,9 @@ function stoneRow(st, i) {
   shoreChk.onchange = () => { st.shore = shoreChk.checked; changed(); };
   slider('岸からの幅', 'shoreW', 0.1, 4, 0.05, 2, '「水辺に並べる」の時、岸から陸の側へどこまで石を置くか [unit]。岸のきわほど多く、離れるほどまばら。水の中へは、この 6 割の幅まで').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
   slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
+  // 濡れ色・流れの跡（2026-10-09 ユーザー指定）。「水辺に並べる」と関係なく、水にかかっている石に効く（グレーにしない）
+  slider('濡れ色', 'wet', 0, 1, 0.05, 2, '水にかかっている石の、水面から少し上までを暗くする（濡れた色）。0 でなし。「水辺に並べる」がオフでも、水にかかった石には効く');
+  slider('流れの跡', 'wake', 0, 1, 0.05, 2, '水面を横切っている石のまわりに白い泡を出す。川では下流へ筋が伸び、流れの速さで流れる。湖・池では石のまわりの輪だけ。0 でなし。すっかり沈んだ石・水面より上の石には出ない');
   col = colR;   // 右の列：大きさ・色・形
   head('大きさ');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率');
