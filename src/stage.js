@@ -4570,9 +4570,27 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     vec3 vW = normalize( transpose( mat3( viewMatrix ) ) * vV );   // この点からカメラへの向き（世界の座標）
     vec3 rf = refract( -vW, n, 0.75 );
     vec2 swG; float bed = 0.1 + 0.5 * t + pxoSwell( pxoP.xz, swG );
-    vec2 cq = ( pxoP.xz + rf.xz * bed / max( -rf.y, 0.25 ) ) * 3.2;
-    float ca = pxoWN( cq + vec2( uWT * 0.35, uWT * 0.21 ) ), cb = pxoWN( cq * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
-    float caus = pow( 1.0 - clamp( abs( ca - cb ) * 3.0, 0.0, 1.0 ), 6.0 );
+    // 水面の荒れ具合で、網の出方を変える（2026-10-09 ユーザー指定：実際のコースティクスに寄せる）。最初は「風が強いほど明るく足す」だけで、
+    // 無風でも 0.3 倍残り、強風でも増え続け、足すだけなので水全体が明るくなった（「風の影響」を上げると水が明るくなる原因の 1 つ）。
+    //  ・荒れ具合 cAg ＝ 風（Wc：0〜2）＋ 川なら流れ × CAUS_FLOW（流れが水面を揺らす分。湖・池・海は風だけ）
+    //  ・強さ cStr：山形。静かな水（0）では出ない → ゆるい波（0.5〜0.8）で最大 → 荒れるほど崩れて 3 割まで落ちる
+    //  ・荒れるほど（cRo）：線がぼやけ（指数 6 → 2.5）、網目が細かく（1.5 倍まで）、揺らぎが速くなる
+    //  ・川：網を下流へ流す（泡と同じく、世界の座標を流れの向きへ ±CAUS_SHIFT の半分までずらして、半周期ずれた 2 枚を入れ替える。
+    //    川の中心線に沿った座標は、切れ端が重なる所で進まないので使わない）。流れの向きに少しずらした 2 か所の平均で、網を流れの向きへ伸ばす
+    //  ・明暗の釣り合い（下で足す時）：網の平均の明るさ cMean を引く＝線は明るく、線の間は暗く、水全体の明るさは変えない。
+    //    平均は 0.81 ÷（指数 ＋ 1）（2026-10-09 に 40 万点で測定：指数 6 で 0.118、4 で 0.163、2.5 で 0.230）
+    float cAg = Wc + ( uType < 0.5 ? ${CAUS_FLOW.toFixed(2)} * uSpeed : 0.0 );
+    float cStr = smoothstep( 0.0, 0.5, cAg ) * mix( 1.0, 0.3, smoothstep( 0.8, 2.5, cAg ) ), cRo = smoothstep( 0.6, 2.5, cAg );
+    float cE = mix( 6.0, 2.5, cRo ), cT = uWT * ( 1.0 + 0.6 * min( cAg, 2.5 ) ), cSc = 3.2 * mix( 1.0, 1.5, cRo ), cMean = 0.81 / ( cE + 1.0 );
+    #define PXO_CAUS( c ) pow( 1.0 - clamp( abs( pxoWN( ( c ) + vec2( cT * 0.35, cT * 0.21 ) ) - pxoWN( ( c ) * 1.13 + vec2( -cT * 0.27, cT * 0.31 ) + 5.0 ) ) * 3.0, 0.0, 1.0 ), cE )
+    vec2 cp = pxoP.xz + rf.xz * bed / max( -rf.y, 0.25 );
+    float caus;
+    if ( uType < 0.5 && uSpeed > 0.01 ) {
+      float cv = min( uSpeed, 3.0 ) * 0.25, ct = uWT * cv / ${CAUS_SHIFT.toFixed(2)}, c0 = fract( ct ), c1 = fract( ct + 0.5 ), cw = 1.0 - abs( 1.0 - 2.0 * c0 );   // 流す速さ [unit/秒]：流れ × 0.25（流れ 3 で頭打ち）
+      vec2 cd = f * 0.06 * min( uSpeed, 3.0 ) * cSc;   // 流れの向きへ伸ばす幅（流れ 3 で ±0.18 unit）
+      vec2 a0 = ( cp - f * ${CAUS_SHIFT.toFixed(2)} * ( c0 - 0.5 ) ) * cSc + floor( ct ) * 7.3, a1 = ( cp - f * ${CAUS_SHIFT.toFixed(2)} * ( c1 - 0.5 ) ) * cSc + floor( ct + 0.5 ) * 7.3 + 31.0;
+      caus = 0.5 * ( cw * ( PXO_CAUS( a0 + cd ) + PXO_CAUS( a0 - cd ) ) + ( 1.0 - cw ) * ( PXO_CAUS( a1 + cd ) + PXO_CAUS( a1 - cd ) ) );
+    } else caus = PXO_CAUS( cp * cSc );
     // 光の網の影（2026-10-08 ユーザー指定：水が浅くて底が見える時、水面の網の影を底に落とす）。同じ網の形を暗い色で底に描く。
     // 位置：視線が底に当たる所から、底までの深さの分だけ太陽の側へたどった水面の網。浅いほど網のすぐ下に、深いほど離れて落ちる。
     // 底までの深さは、厚みのある水（段差の中）では実際の値（水面と、その場所の地面の差）、厚みが無ければ明るい網と同じ仮の深さ。
@@ -4591,10 +4609,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         float sa = pxoWN( o + vec2( uWT * 0.35, uWT * 0.21 ) ), sb = pxoWN( o * 1.13 + vec2( -uWT * 0.27, uWT * 0.31 ) + 5.0 );
         shNet += 0.25 * pow( 1.0 - clamp( abs( sa - sb ) * 3.0, 0.0, 1.0 ), 4.0 );
       }
-      col *= 1.0 - 0.4 * shNet * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * smoothstep( 0.02, 0.2, sn.y );
+      col *= 1.0 - 0.4 * shNet * cStr * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * smoothstep( 0.02, 0.2, sn.y );   // 網が出ない静かな水では、網の影も出さない（cStr。2026-10-09）
     }
     else pxoShFade = ${SHADOW_FADE_MAX.toFixed(2)} * ( 1.0 - smoothstep( 0.3, 1.2, t ) );   // 海：色が浅く透けている岸の近くでは、水面の板に落ちる影を薄くする（床の影は水面の高さの地図でぼかす。2026-10-08）
-    col += caus * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * vec3( 0.6, 0.66, 0.56 ) * ( 0.3 + 0.7 * min( Wc, 1.5 ) );   // 2026-10-03 ユーザー指定で強く（0.32 → 0.6、消える深さ 0.55 → 1.0）
+    // 2026-10-03 ユーザー指定で強く（0.32 → 0.6、消える深さ 0.55 → 1.0）。2026-10-09：平均を引いて足す（上の説明）。1.15 は、平均を引いた分だけ線の明るさを補う倍率
+    col = max( col + ( caus - cMean ) * ( 1.0 - smoothstep( 0.0, 1.0, t ) ) * vec3( 0.6, 0.66, 0.56 ) * 1.15 * cStr, 0.0 );
     // 空の映り込み：波の向きで反射した方向に見える空の色（画面の空のグラデーション＋夕焼け）を映す（2026-10-03 ユーザー指定）。
     // 斜めから見るほど強い（シュリックの近似、水の反射率 2%）。空は「見えている色」なので照明を掛けず、発光として足す
     vec3 rW = transpose( mat3( viewMatrix ) ) * reflect( -vV, nV );   // 反射の向き（世界の座標）
@@ -4764,7 +4783,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v85';
+  m.customProgramCacheKey = () => 'pxo-water-v86';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4914,6 +4933,8 @@ ${WATER_NOISE_GLSL}
 const WATER_SPLASH_N = 150;     // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34 → 60（2026-10-08 ユーザー指定：数を増やす）→ 150（2026-10-09 ユーザー指定：粒を小さくして数で補う。大きさ 0.6 倍・数 2.5 倍）
 const WATER_SPLASH_PW = 2.4;    // 勢いの上限（粒の数・跳ねる高さ・飛ぶ距離に比例。2.4 で高さ約 2 unit）。最初は 1.6（落差 6 で頭打ち）
 const WATER_SPLASH_FLOW = 0.2;  // 流れの速さの効き方（勢いに 流れ^これ を掛ける）。最初は 0.35 で、今の滝（流れ 2.7）が上限近くまで強くなりすぎた（2026-10-09 ユーザー指定で弱めた）
+const CAUS_FLOW = 0.3;     // 光の網（コースティクス）：川の流れ 1 あたりの、水面の荒れ具合（風 1 ＝ 1）。流れ 2 で網が一番くっきり、6 を超えると崩れる
+const CAUS_SHIFT = 0.8;    // 光の網を下流へ流す時、1 周期でずらす量 [unit]
 const WATER_SPLASH_AL = 0.5;    // 粒の濃さ（1 で不透明）。最初は 1 → 0.7 → 0.5（2026-10-09 ユーザー指定：滝・物に当たる水飛沫とも、透明度を上げる）
 const WATER_SPLASH_G = 9;       // 粒を落とす加速度 [unit/秒²]
 function waterSplashMaterial() {
