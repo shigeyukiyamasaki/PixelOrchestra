@@ -843,17 +843,24 @@ function ensurePost(renderer) {
     });
     post.compMat = new THREE.ShaderMaterial({
       uniforms: { mainTex: { value: null }, bloom: { value: null }, strength: { value: 1 }, bloomAll: { value: null }, strengthAll: { value: 0 },
+                  lv: WATER_PIX.uPixLv, uPixQM: WATER_PIX.uPixQM, bq: { value: 0 }, dots: { value: new THREE.Vector2() },   // ブルームを階調に丸める（下記）
                   sunUv: { value: new THREE.Vector2(0.5, 0.5) }, aspect: { value: 1.78 }, veil: { value: 0 }, veilR: { value: 0.1 }, veilCol: { value: new THREE.Color(1, 1, 1) },
                   streak: { value: 0 }, streakL: { value: 0.3 }, rayRot: { value: 0 } },
       vertexShader: QUAD_VS,
       fragmentShader: `uniform sampler2D mainTex; uniform sampler2D bloom; uniform float strength; uniform sampler2D bloomAll; uniform float strengthAll;
         uniform vec2 sunUv; uniform float aspect; uniform float veil; uniform float veilR; uniform vec3 veilCol; uniform float streak; uniform float streakL; uniform float rayRot; varying vec2 vUv;
+        uniform float lv; uniform float bq; uniform vec2 dots;
+        ${PIX_QUANT_GLSL}
         void main(){
           vec4 m = texture2D(mainTex, vUv);              // 本編（premultiplied）。等倍・最近傍なのでそのまま
-          vec3 b = texture2D(bloom, vUv).rgb * strength; // ぼかした太陽を加算
+          // ブルームを階調に丸める（2026-10-09 ユーザー指定：階調の細かさで決めた階調で、ブルームも表現する）：足す光（太陽のにじみ・光のかぶり・光条・
+          // 画面全体のブルーム）を、ドットの真ん中の位置で読んで（段の境目をドットの形にそろえる）、足す前に同じ段数へ丸める。
+          // 本編には手を付けない（ドット化の範囲に入れていない物まで丸めないため）。RGB ごとの丸めなら、段の色どうしの和も段の色になる
+          vec2 uvB = bq > 0.5 && dots.x > 0.0 ? ( floor( vUv * dots ) + 0.5 ) / dots : vUv;
+          vec3 b = texture2D(bloom, uvB).rgb * strength; // ぼかした太陽を加算
           // 光のかぶり（ヴェイリング・グレア。2026-09-17 ユーザー指定）：太陽からの距離 d（画面の高さ = 1）に対して 1/(1+(d/r)²) の長い裾で
           // 画面全体に白っぽい光を足す。手前の物の上にも乗る（目・レンズの散乱の再現）。veil は見えている割合と眩しさで決まる
-          vec2 dv = (vUv - sunUv) * vec2(aspect, 1.0);
+          vec2 dv = (uvB - sunUv) * vec2(aspect, 1.0);
           float d = length(dv);
           float g = veil / (1.0 + (d * d) / (veilR * veilR));
           // 放射状の光条（2026-09-17 ユーザー指定：巨大な太陽でなく、直視できない眩しさ）。回折の再現。
@@ -883,7 +890,8 @@ function ensurePost(renderer) {
           float core = streak * 0.9 * exp(-(d * d) / (0.035 * 0.035));
           rays *= streak * 0.75 * smoothstep(0.02, 0.12, d);
           vec3 v = veilCol * (g + core + rays);
-          vec3 add = b + v + texture2D(bloomAll, vUv).rgb * strengthAll;   // 画面全体のブルーム（カメラ側）
+          vec3 add = b + v + texture2D(bloomAll, uvB).rgb * strengthAll;   // 画面全体のブルーム（カメラ側）
+          if ( bq > 0.5 ) add = pxoQuant( add, lv );
           float al = max(add.r, max(add.g, add.b));
           gl_FragColor = vec4(m.rgb + add, min(1.0, m.a + al));
         }`,
@@ -1047,6 +1055,7 @@ function pixelPass(renderer, scene, camera) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   // 1 ドットの大きさ [画素]（画面の画素より小さくはしない）
   const k = pix.on ? Math.max(1, Math.min(size.x, size.y) / Math.max(1, pix.rows || 330)) : 1, lw = Math.max(1, Math.round(size.x / k)), lh = Math.max(1, Math.round(size.y / k));
+  pix.lw = lw; pix.lh = lh;   // ドットの数（ブルームを階調に丸める時、光をドットの位置で読むのに使う）
   if (!pix.rt || pix.rt.width !== lw || pix.rt.height !== lh) {
     pix.rt?.dispose();
     pix.rt = new THREE.WebGLRenderTarget(lw, lh, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false });
@@ -1346,6 +1355,8 @@ export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.
   post.compMat.uniforms.bloom.value = post.a.texture;
   post.compMat.uniforms.bloomAll.value = post.c.texture;
   post.compMat.uniforms.strengthAll.value = bloomAll > 0.001 ? 1.6 * bloomAll : 0;
+  post.compMat.uniforms.bq.value = pix.on && pix.bloomQuant ? 1 : 0;   // ブルームを階調に丸める（ドット化がオンの時だけ）
+  post.compMat.uniforms.dots.value.set(pix.on ? pix.lw || 0 : 0, pix.on ? pix.lh || 0 : 0);
   post.compMat.uniforms.strength.value = vis * (0.5 + 14.0 * high) * renderer.toneMappingExposure * gain;   // 高い太陽ほど強く（8.5→14。夕日は下限 0.5 のまま。2026-09-17 ユーザー指定）
   // 光のかぶり：太陽の画面位置を中心に。高い太陽ほど強く、夕日は弱い。隠れている割合で消える
   const cu = post.compMat.uniforms;
