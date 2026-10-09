@@ -201,6 +201,16 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen:has(.showCb:not(:checked)) > *:not(.stoneTop):not(.top):not(.foot):not(.name),
 #screenBar .screen:has(.showCb:not(:checked)) > .genChecks { opacity: .45; pointer-events: none; }
 #screenBar .screen .genCol:has(.shoreCb:not(:checked)) .shoreDep { opacity: .45; pointer-events: none; }
+/* 石のカードの「崖の石に使用中」（水のカードに見た目として選ばれている間。2026-10-10） */
+#screenBar .screen .lentNote { font-size: 11px; color: #f0c060; white-space: nowrap; }
+/* 「石の見た目」のポップアップ（水のカードの「編集」から開く。2026-10-10）。カードと同じ見た目の箱を、開いた水のカードの上に重ねる。
+   背面は暗くしない（3D の画面で石の変化を見ながら動かすため）。位置は main.js の openStoneLook が決める */
+#screenBar dialog.stoneLook { position: fixed; margin: 0; width: 528px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--panel); color: var(--text); box-shadow: 0 6px 24px rgba(0, 0, 0, .6); border-color: var(--accent); }
+#screenBar dialog.stoneLook::backdrop { background: transparent; }
+#screenBar dialog.stoneLook .lookTitle { flex: 1 1 0; font-size: 12px; }
+#screenBar .screen .rsEdit { padding: 1px 8px; font-size: 11px; }
+/* 水の「崖の石」：石の見た目が「なし」の間は、「編集」ボタンを薄く（石の大きさ・量はポップアップへ移した。2026-10-10）（.rsDep。2026-10-09） */
+#screenBar .screen .genCol:has(.rsSel > option[value="-1"]:checked) .rsDep { opacity: .45; pointer-events: none; }
 #screenBar .screen:has(.showCb:not(:checked)) .shoreDep { opacity: 1; }
 /* まとまりの中に置くチェック（列の中の 1 行。上の段のチェックと同じ見た目） */
 #screenBar .screen.gen .genCol > .genChk { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }

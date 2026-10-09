@@ -1997,6 +1997,12 @@ function updateModelShadow(renderer, scene) {
 // 1 群れ = { x, z, y（中心と高さ [unit]）, spread（ばらけ具合 [unit]）, count, size（大きさの倍率）, sizeVar（0〜1）, seed, show }
 const STONE_MAX = 400;          // 1 群れ・1 形あたりの上限（個数スライダーの最大と同じ）
 const STONE_TRIES = 30;         // 重ならない場所を探す回数（見つからなければその石は置かない）
+const CLIFF_STONE_REACH = 0.9;  // 崖の石：水の円の中の点から、この距離 [unit] までにある段差の縁を「その水の崖」とみなす（段差の地図が持てる距離は 1 まで）
+const CLIFF_STONE_NEAR = 1.0;   // 崖の石：壁が、その水の岸からこの距離 [unit] より離れていたら置かない（川と関係のない段差の壁に付けない）
+const CLIFF_STONE_MIN_H = 0.1;  // 崖の石：壁の高さ [unit] がこれ未満の所には置かない（掘っていない所・浅すぎる所）
+const CLIFF_STONE_GAP = 0.55;   // 崖の石：重なりの判定の甘さ（半径の和 × これ未満なら重なり。小さいほど詰まる）
+const CLIFF_STONE_MISS = 3000;  // 崖の石：これだけ続けて置けなかったら「壁が埋まった」とみなして終える
+const CLIFF_STONE_TOTAL = 1200; // 崖の石：1 つの水で置く数の上限
 const STONE_GAP = 0.85;         // 重なりの判定の甘さ（外接円の半径の和 × これ未満なら重なりとみなす。1 未満で少し寄り添える）
 const STONE_LAND_MIN = 0.35;    // 水辺：陸の石を岸の縁から離す量の下限（半径に対する割合。岸からの幅が最小の時の値）
 let stoneList = [];
@@ -2344,7 +2350,19 @@ function buildStones() {
   HL_VER++;
   for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
-  stoneList.forEach((st, ci) => {
+  // 川・湖のカードの「崖の石」（2026-10-09 ユーザー指定：岸の上に並べるのではなく、崖の壁を石で埋める。岸からの幅という考え方は要らない）：
+  // 水のカードが「石の見た目」に選んだ石のカード（stoneSrc：石のカードの番号）の設定を借りて、その水を掘った崖の壁に石を埋め込む群れを足す。
+  // 借りる石のカードは「表示」がオフでもよい（見た目の型としてだけ使える）。番号は石のカードの並びの後ろに振る（石のカードのホバーには反応しない）
+  // 水のカードに選ばれている石のカードは、石のカードとしては描かない（2026-10-10 ユーザー指定：元の石を非表示にしないと二重に出ていた）。
+  // 選ばれている限り隠す：その水が非表示でも、石の量が 0 でも同じ。選択を解除するか、その水のカードを消すまで
+  const lent = new Set(waterList.filter((w) => w.type !== 'sea' && Number.isInteger(w.stoneSrc) && w.stoneSrc >= 0).map((w) => w.stoneSrc));
+  const groups = stoneList.map((st, ci) => ({ st: lent.has(ci) ? { ...st, show: false } : st, ci }));
+  WATER_SHORE.forEach((w, wi) => {
+    const src = w.st?.stoneSrc, tpl = Number.isInteger(src) && src >= 0 ? stoneList[src] : null;
+    if (!tpl || !((w.st?.cliffStone ?? 0) > 0)) return;
+    groups.push({ ci: stoneList.length + wi, st: { ...tpl, show: true, shore: false, seed: (Math.imul((tpl.seed ?? 1) | 0, 31) + wi * 7919 + 17) >>> 0, __ws: w } });
+  });
+  groups.forEach(({ st, ci }) => {
     if (st.show === false) return;
     const onShore = !!st.shore && WATER_SHORE.length > 0, shoreW = Math.max(0.05, st.shoreW ?? 0.8), shoreIn = Math.max(0, Math.min(1, st.shoreIn ?? 0.3));   // 水辺に並べる：岸からの幅 [unit]、水の中に置く割合
     const rugKeys = procRugKeys(st);
@@ -2390,7 +2408,50 @@ function buildStones() {
       return (st.y ?? 0) + low + rb() * Math.max(0, hi - low - 0.5 * h);
     };
     const shoreGrad = (x, z) => { const sd = shoreSdAt(x, z), gx = shoreSdAt(x + 0.05, z) - sd, gz = shoreSdAt(x, z + 0.05) - sd, gl = Math.hypot(gx, gz); return gl > 1e-6 ? [sd, gx / gl, gz / gl, gl / 0.05] : [sd, 0, 0, 1]; };   // [岸までの距離, 陸の側への向き x, z, 距離の進み方]
-    if (crowd !== 'drop') {
+    if (st.__ws) {
+      // 崖の石：その水を掘った崖の壁（段差の縁。水のカードの「掘る深さ」も段差のカードも同じ地図に入っている）に、石を埋め込む。
+      //  ・場所：水の円の中〜少し外の点から一番近い段差の縁へ寄せた所。高さは、壁の下端（川底）〜上端の間でばらつかせる（水面の下にも置く）
+      //  ・向き：石は立てたまま（底を下に）。中心を壁の線の上に置くので、陸の側の半分は崖の中に入り、川の側の半分が壁から顔を出す。
+      //    借りた石のカードの「埋まり具合」は、ふつうの石と同じく下へ沈める量（最初は壁の奥へ寄せる量にしたが、両岸の石が左右へ広がって見えた。2026-10-10 ユーザー指定）。
+      //    最初は横倒しにして底を壁へ向けたが、2026-10-09 ユーザー指定で立てたままに
+      //  ・大きさ：水のカードの「石の大きさ」（cliffSize）。借りた石のカードの大きさは使わない（ばらつきは借りる）。壁の高さでの頭打ちはしない
+      //   （同日ユーザー指定：壁より大きい石は、岸の上へ顔を出す）
+      //  ・量：重ならない場所が見つからなくなるまで置いた数（＝壁が埋まった状態）のうち、「石の量」の割合だけ使う
+      // 滝の面（壁の上の側にも水がある所）と、その水の岸から離れた壁には置かない
+      const ws = st.__ws, amt = Math.max(0, Math.min(1, ws.st.cliffStone ?? 0)), E = STEP_CELL;
+      const grad = (c, x, z) => { const gx = stepSd(c, x + E, z) - stepSd(c, x - E, z), gz = stepSd(c, x, z + E) - stepSd(c, x, z - E), gl = Math.hypot(gx, gz); return gl > 1e-6 ? [gx / gl, gz / gl] : null; };   // 縁に垂直な向き（掘っていない側＝壁の奥へ）
+      const out = [], cSize = Math.max(0.01, ws.st.cliffSize ?? 1);
+      for (let miss = 0, tries = 0; miss < CLIFF_STONE_MISS && out.length < CLIFF_STONE_TOTAL && tries < 80000; tries++) {
+        miss++;
+        const cc = ws.cs[Math.floor(r() * ws.cs.length) % ws.cs.length], a = r() * Math.PI * 2, rr = cc[2] * (0.5 + 0.9 * r());
+        let x = cc[0] + Math.cos(a) * rr, z = cc[1] + Math.sin(a) * rr, bc = -1, bd = CLIFF_STONE_REACH;
+        for (let c = 0; c < STEP_MAX; c++) if (STEP_D[c] > 0) { const d = Math.abs(stepSd(c, x, z)); if (d < bd) { bd = d; bc = c; } }
+        if (bc < 0) continue;
+        let n = null;
+        for (let it = 0; it < 5; it++) { const d = stepSd(bc, x, z); n = grad(bc, x, z); if (!n || Math.abs(d) < 0.01) break; x -= n[0] * d; z -= n[1] * d; }   // 縁の上へ寄せる
+        if (!n || Math.abs(stepSd(bc, x, z)) > 0.04 || !insideFloor(x, z)) continue;
+        if (circlesSd(ws.cs, ws.k, x, z) > CLIFF_STONE_NEAR) continue;
+        const hx = x + n[0] * 1.5 * E, hz = z + n[1] * 1.5 * E, hi = stepHAt(hx, hz), lo = stepHAt(x - n[0] * 1.5 * E, z - n[1] * 1.5 * E), H = hi - lo;
+        if (H < CLIFF_STONE_MIN_H) continue;
+        if (waterSurfAt(x + n[0] * 0.3, z + n[1] * 0.3) != null) continue;   // 壁の上の側にも水がある＝滝の面
+        const pi = procPick(), rot = r() * Math.PI * 2, sh = shapes[pi].s;
+        const k = cSize * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar * 1.5);
+        const rad = sh.r * k * MODEL_M, h = (sh.h ?? 0) * k * MODEL_M;
+        const y = riserTopAt(hx, hz) + lo + r() * Math.max(0, H - 0.5 * h);   // 石の底の高さ：川底 〜「壁の上端 − 石の高さの半分」（壁より背の高い石は川底に置く）
+        if (out.some((q) => Math.hypot(q.x - x, q.z - z, q.y - y) < (q.rad + rad) * CLIFF_STONE_GAP)) continue;
+        if (per[pi].length + out.filter((q) => q.pi === pi).length >= STONE_MAX) continue;
+        out.push({ x, z, y, rad, h, k, pi, rot });
+        miss = 0;
+      }
+      out.slice(0, Math.round(out.length * amt)).forEach((q) => {
+        const bur = Math.min(0.92, buryAmt * (0.7 + 0.6 * rb())), mo = mossAmt > 0 ? Math.max(0, Math.min(1, mossAmt * (1 + (rb() * 2 - 1) * mossVar))) : 0, shade = shadeOf(), sh = shapes[q.pi].s;
+        const mat = _sm.compose(_sp.set(q.x, q.y - bur * q.h, q.z), _sq.setFromAxisAngle(_sy, q.rot), _ss.setScalar(q.k * MODEL_M)).clone();   // 埋まり具合：石の高さに対する割合だけ下へ沈める（ふつうの石と同じ）
+        const planes = floorPlanesFor(q.x, q.z, sh.rc * q.k * MODEL_M);
+        if (!planes) return;
+        if (planes.length) { for (const m of cutStoneMeshes(sh, mat, planes, MODEL_M, shade, mo, wetAmt)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } return; }
+        per[q.pi].push(mat); perShade[q.pi].push(shade); perMoss[q.pi].push(mo);
+      });
+    } else if (crowd !== 'drop') {
       const C = [];
       for (let i = 0; i < count; i++) {   // 候補（'drop' の 1 回目の試しと同じ決め方）
         const rad0 = onShore ? 1.5 * spread * Math.sqrt(r()) : Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;

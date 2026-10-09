@@ -347,6 +347,76 @@ function hoverHighlight(box, kind, i) {
   box.addEventListener('focusout', () => { if (over && !hlDragging) setHighlight({ kind, index: i }); });   // 数値欄の入力を終えたら戻す
   box.addEventListener('focusin', (e) => { if (e.target.matches('input.num')) setHighlight(null); });     // 数値欄に打ち込んでいる間も消す
 }
+// 石の「見た目」の項目（2026-10-10）：石のカードと、水のカードから開く「石の見た目」のポップアップ（openStoneLook）の両方で使う。
+// 片方にだけ項目を足して食い違わないよう、名前・範囲・説明はここにだけ書く。鍵 → [名前, 最小, 最大, きざみ, 小数の桁, 説明]
+const STONE_SLD = {
+  bury: ['埋まり具合', 0, 0.9, 0.05, 2, '石を地面に沈める深さ（石の高さに対する割合）。0 で地面の上に乗る、0.5 で半分埋まる。石ごとに少しばらつく。地面から顔を出した岩になる'],
+  wet: ['濡れ色', 0, 1, 0.05, 2, '水にかかっている石の、水面から少し上までを暗くする（濡れた色）。0 でなし。「水辺に並べる」がオフでも、水にかかった石には効く'],
+  sizeVar: ['大きさのばらつき', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/8〜8 倍）'],
+  shade: ['色の濃さ', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）'],
+  shadeVar: ['色のばらつき', 0, 1, 0.05, 2, '石ごとの色の濃さのばらつき。0 で全部同じ、1 で濃さが ±1 ほどばらつく（明るさ 1/2〜2 倍）'],
+  moss: ['苔', 0, 1, 0.05, 2, '苔の量。上を向いた面ほど付き、上げるほど側面まで広がる。0 で苔なし'],
+  mossVar: ['苔のばらつき', 0, 1, 0.05, 2, '石ごとの苔の量のばらつき。0 で全部同じ、0.25 で 0.75〜1.25 倍、1 で苔の無い石から 2 倍の石まで混ざる'],
+  rug: ['ごつごつ', 0, 1, 0.05, 2, '石のごつごつ具合。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石'],
+  rugVar: ['ごつごつのばらつき', 0, 1, 0.05, 2, '石ごとのごつごつ具合のばらつき。0 で全部同じ、1 でごつごつの値 ±0.5 の範囲（5 段階）から石ごとに選ぶ。上げると形の種類が最大 5 倍になり、その分だけ描く回数が増える'],
+};
+// 「石の見た目」のポップアップ（2026-10-10 ユーザー指定：水のカードから、借りている石のカードの設定を見て変えられるように。変えた値は本家の石のカードとつながる）。
+// 石のカードの設定そのもの（stones[i]）を書き換えるので、値を 2 つ持たない。出すのは崖の石に効く項目だけ（位置・個数・ばらけ具合・密集した時・水辺・大きさは効かないので出さない）。
+// 開いている間はほかを操作できない（<dialog> のモーダル。同日ユーザー指定：石のカードと同時に動かして表示が食い違うのを防ぐ）。Esc か「閉じる」で閉じ、
+// 閉じた時にカードを作り直して、石のカードのスライダーの表示を新しい値に合わせる。置き場所は、開いた水のカードの上（3D の画面を隠さない）
+const CLIFF_SLD = { cliffSize: ['石の大きさ', 0.1, 5, 0.05, 2, '崖に埋める石の大きさの倍率。借りた石のカードの「大きさ」は使わない（ばらつきは借りる）。壁より大きい石は、岸の上へ顔を出す'], cliffStone: ['石の量', 0, 1, 0.05, 2, '崖の壁を石で埋める割合。1 で、重ならずに置ける所が無くなるまで埋める。0 で置かない。滝の面には置かない'] };   // 水のカードの値（崖の石の大きさ・量）。鍵 → [名前, 最小, 最大, きざみ, 小数の桁, 説明]
+function openStoneLook(i, anchorBox, wst) {
+  const st = stones[i];
+  if (!st) return;
+  const dlg = Object.assign(document.createElement('dialog'), { className: 'screen gen two stoneLook' });
+  const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
+  const changed = () => { setStones(stones); saveStones(); };
+  const top = put(dlg, '<div class="stoneTop"><b class="lookTitle"></b><div class="stoneBtns"><button class="again" title="同じ設定のまま、石の並び（位置・向き・形の割り当て）だけ変える">並べ直し</button><button class="close" title="閉じる（Esc でも閉じる）">閉じる</button></div></div>');
+  top.querySelector('.lookTitle').textContent = `石の見た目：${st.name || `石${i + 1}`}`;
+  const cols = put(dlg, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
+  const head = (col, text) => put(col, `<div class="genHead">${text}</div>`);
+  // 1 本のスライダー：o＝書き換える設定（石のカード st か、水のカード wst）、base＝値が無い時の既定、done＝変えた時の反映
+  const row = (col, o, key, [label, min, max, step, digits, title], base, done) => {
+    const lab = put(col, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
+    const el = lab.querySelector('input');
+    el.value = o[key] ?? base[key] ?? +min;
+    const box2 = numBoxFor(el, lab.querySelector('b'), { toText: (v) => (+v).toFixed(digits) });
+    el.oninput = () => { o[key] = +el.value; box2.show(); done(); };
+  };
+  const sld = (col, key) => row(col, st, key, STONE_SLD[key], STONE_BASE, changed);
+  // 大きさ・量は水のカードの値（同日ユーザー指定：水のカードに出ていた 2 本も、このポップアップに含める）。水ごとに別々に持つ
+  const wChanged = () => { setWater(water); saveWater(); };
+  head(colL, '大きさと量');
+  row(colL, wst, 'cliffSize', CLIFF_SLD.cliffSize, WATER_BASE, wChanged);
+  row(colL, wst, 'cliffStone', CLIFF_SLD.cliffStone, WATER_BASE, wChanged);
+  head(colL, '色'); for (const k of ['shade', 'shadeVar', 'moss', 'mossVar', 'wet']) sld(colL, k);
+  head(colR, '形'); for (const k of ['rug', 'rugVar']) sld(colR, k);
+  head(colR, 'ばらつきと埋まり'); for (const k of ['sizeVar', 'bury']) sld(colR, k);
+  put(dlg, '<div class="note">「石の大きさ」「石の量」はこの水だけの値。それ以外は、石のカードの設定そのものに入る（同じ石を選んだほかの水にも効く）</div>');
+  top.querySelector('.again').onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
+  top.querySelector('.close').onclick = () => dlg.close();
+  dlg.addEventListener('keydown', (e) => e.stopPropagation());   // 再生などのショートカットへ流さない（Esc で閉じるのはブラウザの動き）
+  dlg.addEventListener('close', () => {
+    const rows = document.getElementById('waterRows'), sx = rows ? rows.scrollLeft : 0;
+    dlg.remove(); renderScreens();
+    const rows2 = document.getElementById('waterRows'); if (rows2) rows2.scrollLeft = sx;   // 作り直しで横の位置が戻らないように
+  });
+  document.getElementById('screenBar').appendChild(dlg);
+  dlg.showModal();
+  const r = anchorBox.getBoundingClientRect(), w = dlg.offsetWidth, h = dlg.offsetHeight;
+  dlg.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
+  dlg.style.top = `${Math.max(8, Math.min(window.innerHeight - h - 8, r.bottom - h))}px`;
+}
+// 石のカードの「崖の石に使用中」の表示（2026-10-10 ユーザー指定）：水のカード（川・湖）の「石の見た目」に選ばれている石のカードは、
+// 石のカードとしては出ない（stage.js の buildStones）。「表示」にチェックがあるのに石が出ない理由が分かるよう、どの水が使っているかを出す。
+// 項目のグレーアウトはしない（同日ユーザー指定：石をどちらのカードで操作するか、まだ決めていない）
+function refreshStoneLent() {
+  for (const el of document.querySelectorAll('.lentNote')) {
+    const i = +el.dataset.i, by = water.map((w, n) => (w.type !== 'sea' && w.stoneSrc === i ? String(w.name || `水${n + 1}`) : null)).filter(Boolean);
+    el.hidden = !by.length;
+    el.textContent = by.length ? `崖の石に使用中（${by.join('、')}）` : '';
+  }
+}
 function stoneRow(st, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen stone gen two' });
   hoverHighlight(box, 'stone', i);
@@ -360,6 +430,8 @@ function stoneRow(st, i) {
   const show = put(top, '<label title="この群れを表示する"><input type="checkbox" class="showCb"><span>表示</span></label>').querySelector('input');
   show.checked = st.show !== false;
   show.onchange = () => { st.show = show.checked; changed(); };
+  put(top, `<span class="lentNote" data-i="${i}" hidden title="この石のカードは、水のカードの「崖の石」の見た目に選ばれている。その間は、石のカードとしては出ない（「表示」のチェックに関係なく）。出したい時は、水のカードの「石の見た目」を「なし」か別の石にする"></span>`);
+  queueMicrotask(refreshStoneLent);   // カードが画面に入ってから中身を入れる
   const slider = (label, key, min, max, step, digits, title) => {
     const lab = put(col, `<label class="sld" title="${title}"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}"><b></b></label>`);
     const el = lab.querySelector('input');
@@ -368,6 +440,7 @@ function stoneRow(st, i) {
     el.oninput = () => { st[key] = +el.value; box2.show(); changed(); };
     return lab;
   };
+  const sld = (key) => slider(STONE_SLD[key][0], key, ...STONE_SLD[key].slice(1));   // 見た目の項目（表 STONE_SLD から。ポップアップと共用）
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
   // スライダーは内容ごとのまとまりに分けて、見出しを付ける（2026-10-09 ユーザー指定：全体の UI の設計を改善する。まず石のタブから）。
@@ -378,7 +451,7 @@ function stoneRow(st, i) {
   slider('横位置', 'x', -30, 30, 0.1, 1, '群れの中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
-  slider('埋まり具合', 'bury', 0, 0.9, 0.05, 2, '石を地面に沈める深さ（石の高さに対する割合）。0 で地面の上に乗る、0.5 で半分埋まる。石ごとに少しばらつく。地面から顔を出した岩になる');
+  sld('bury');
   head('数と広がり');
   slider('個数', 'count', 1, 400, 1, 0, '石の数。重ならない場所が見つからない石は置かないので、狭い範囲に多くすると少なめになる');
   slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '散らばる範囲の広さ [unit]。中心ほど多く、外ほどまばら（ほぼこの値の 1.5 倍までに収まる）');
@@ -396,19 +469,19 @@ function stoneRow(st, i) {
   slider('岸からの幅', 'shoreW', 0.1, 4, 0.05, 2, '「水辺に並べる」の時、岸から陸の側へどこまで石を置くか [unit]。岸のきわほど多く、離れるほどまばら。水の中へは、この 6 割の幅まで').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
   slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
   // 濡れ色（2026-10-09 ユーザー指定）。「水辺に並べる」と関係なく、水にかかっている石に効く（グレーにしない）
-  slider('濡れ色', 'wet', 0, 1, 0.05, 2, '水にかかっている石の、水面から少し上までを暗くする（濡れた色）。0 でなし。「水辺に並べる」がオフでも、水にかかった石には効く');
+  sld('wet');
   col = colR;   // 右の列：大きさ・色・形
   head('大きさ');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率');
-  slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/8〜8 倍）');
+  sld('sizeVar');
   head('色');
-  slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
-  slider('色のばらつき', 'shadeVar', 0, 1, 0.05, 2, '石ごとの色の濃さのばらつき。0 で全部同じ、1 で濃さが ±1 ほどばらつく（明るさ 1/2〜2 倍）');
-  slider('苔', 'moss', 0, 1, 0.05, 2, '苔の量。上を向いた面ほど付き、上げるほど側面まで広がる。0 で苔なし');
-  slider('苔のばらつき', 'mossVar', 0, 1, 0.05, 2, '石ごとの苔の量のばらつき。0 で全部同じ、0.25 で 0.75〜1.25 倍、1 で苔の無い石から 2 倍の石まで混ざる');
+  sld('shade');
+  sld('shadeVar');
+  sld('moss');
+  sld('mossVar');
   head('形');
-  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石');
-  slider('ごつごつのばらつき', 'rugVar', 0, 1, 0.05, 2, '石ごとのごつごつ具合のばらつき。0 で全部同じ、1 でごつごつの値 ±0.5 の範囲（5 段階）から石ごとに選ぶ。上げると形の種類が最大 5 倍になり、その分だけ描く回数が増える');
+  sld('rug');
+  sld('rugVar');
   const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
@@ -505,7 +578,7 @@ function grassRow(st, i) {
 // 水のジェネレーター（2026-10-03 ユーザー指定）。種類（川／湖・池／水たまり）ごとに形の決め方と水面の動きが変わる（2026-10-04）
 const WATER_BASE = { name: '', type: 'river', x: 0, z: 0, y: 0, len: 60, width: 3, meander: 0.8, dir: 0, pieces: 2, scatter: 20, smooth: 0.3, flow: 1.5, depth: 1, glitter: 2, windK: 1, avoid: false, avoidPlayers: false, seed: 1, show: true,
   rapids: 0.2, foam: 1, reach: 1, thick: 0, dig: 0, reverse: false, onRiser: false, ripple: 'real', coast: 0.5, waveH: 1, period: 7, swell: 0.3, white: 0.3,   // 海：岸線のうねり・波の高さ・波の周期 [秒]・うねり [unit]・白波（2026-10-04）
-  lakeSize: 10, aspect: 1, pools: 1 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池・水たまり。水たまり puddle は 2026-10-04 に統合）。rapids：川の瀬、foam：岸の泡、lakeSize・aspect・pools：湖の大きさ・縦横比・数。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
+  lakeSize: 10, aspect: 1, pools: 1 , stoneSrc: -1, cliffStone: 0.7, cliffSize: 1 };   // 種類（2026-10-04 ユーザー指定）：type＝river（川）／lake（湖・池・水たまり。水たまり puddle は 2026-10-04 に統合）。rapids：川の瀬、foam：岸の泡、lakeSize・aspect・pools：湖の大きさ・縦横比・数。川・湖の初期値はユーザーの水1 に合わせた（2026-10-04 ユーザー指定）   // avoid：草・石をよける、avoidPlayers：奏者をよける（2026-10-03）   // depth：深さ、glitter：きらめき、windK：風の影響（2026-10-03）。岸のギザギザは最大で固定（スライダーは外した）
 // 種類が無い（2026-10-04 より前の）水場は、流れが 0 なら湖・池、それ以外は川にする（分かれがあっても川のまま。見た目を変えないため瀬は 0）
 // 水たまり（puddle）は湖・池・水たまり（lake）にまとめた（2026-10-04 ユーザー指定）：数・大きさを引き継ぎ、泡なし（統合前の水たまりは泡を出さなかった）。
 // それまでの湖・池と川は数 1
@@ -943,7 +1016,7 @@ function waterRow(st, i) {
   const box = Object.assign(document.createElement('div'), { className: 'screen water gen two' });   // two：スライダーを 2 列に（2026-10-08 ユーザー指定：行が増えすぎた）
   hoverHighlight(box, 'water', i);
   const put = (parent, html) => { const x = document.createElement('div'); x.innerHTML = html; return parent.appendChild(x.firstElementChild); };
-  const changed = () => { setWater(water); saveWater(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）
+  const changed = () => { setWater(water); saveWater(); refreshStoneLent(); };   // 動かしている間もその場で形を変える（保存だけ遅らせる）。石のカードの「崖の石に使用中」も合わせる
   const top = put(box, '<div class="stoneTop"></div>');
   const name = top.appendChild(Object.assign(document.createElement('input'), { type: 'text', className: 'name', title: '名前（覚え書き）' }));
   name.value = st.name || `水${i + 1}`;
@@ -1021,6 +1094,17 @@ function waterRow(st, i) {
   slider('散らばり', 'scatter', 0, 20, 0.1, 1, '分かれた切れ端（水たまり）が散らばる広さ [unit]（「分かれ」が 2 以上の時）', R);
   slider('散らばり', 'scatter', 0, 40, 0.1, 1, '湖・池・水たまりが散らばる広さ [unit]（「数」が 2 以上の時）。中心ほど多い。40 で床いっぱいに散らばる', L);
   slider('縁のなめらかさ', 'smooth', 0, 1, 0.05, 2, '岸の形。1 でなめらかな丸み、0 でゴツゴツ', ['river', 'lake']);
+  // 崖の石（2026-10-09 ユーザー指定：岸の上に並べるのではなく、崖の壁を石で埋める。岸からの幅は要らない）。見た目は石のカードから借りる（番号で選ぶ）。
+  // 石のカードを増やす・消す・並べ替えると番号がずれるので、その時は選び直す
+  put(col, '<div class="genHead">崖の石</div>');
+  { const row = put(col, '<label class="sld" title="この水を掘った崖の壁を、石で埋める（「掘る深さ」や段差で掘った所だけ。掘っていない水には出ない）。石は壁の線の上に立ち、半分が崖の中に入って、川の側が壁から顔を出す。石の見た目（ごつごつ・苔・色・濡れ色・大きさのばらつき）は、ここで選んだ石のカードの設定を借りる。大きさ・量と見た目は、右の「編集」で開いて決める（石のカードの大きさは使わない）。その石のカードの「埋まり具合」は、ふつうの石と同じく下へ沈める量になる。ここで選んだ石のカードは、石のカードとしては出なくなる（見た目の型としてだけ使う。「なし」に戻すか、この水のカードを消すまで）。「なし」で置かない。石のカードを増やす・消すと番号がずれるので、その時は選び直す"><span>石の見た目</span><select class="rsSel"></select><button type="button" class="rsEdit rsDep" title="崖の石の大きさ・量と、選んだ石のカードの見た目（色・苔・濡れ色・ごつごつ・大きさのばらつき・埋まり具合）を、ここで開いて変える。見た目の値は、石のカードの設定そのものに入る。開いている間は、ほかを操作できない">編集</button></label>');
+    const sel = row.querySelector('select');
+    sel.innerHTML = '<option value="-1">なし</option>' + stones.map((sc, n) => `<option value="${n}">${n + 1}：${String(sc.name || `石${n + 1}`).replace(/[<>&"]/g, '')}</option>`).join('');
+    sel.value = String(Number.isInteger(st.stoneSrc) && st.stoneSrc >= 0 && st.stoneSrc < stones.length ? st.stoneSrc : -1);
+    sel.onkeydown = (e) => e.stopPropagation();
+    sel.onchange = () => { st.stoneSrc = parseInt(sel.value, 10); changed(); };
+    row.querySelector('.rsEdit').onclick = (e) => { e.preventDefault(); openStoneLook(st.stoneSrc, box, st); };
+    typed.push([row, ['river', 'lake']]); }
   col = colR;   // 右の列：上下方向（高さ → 厚み → 深さ・深くなる距離。2026-10-08 ユーザー指定でまとめた）と、流れ・波・泡・光
   put(col, '<div class="genHead">高さと深さ</div>');
   slider('高さ', 'y', -2, 10, 0.05, 2, '水面をまるごと上下に動かす量 [unit]。ひな壇や物の上に水を置く時に使う。0 で、その場所の地面（段差で掘った所ではその底）に張る。水面を動かすだけで、側面・断面は付かない。水に厚みを持たせるには下の「厚み」を使う');
