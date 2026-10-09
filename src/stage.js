@@ -1213,6 +1213,7 @@ function renderMainWithPixels(renderer, scene, camera) {
 
 export function renderFrame(renderer, scene, camera, bloomAll = 0, bloomThr = 0.7) {
   updateModelShadow(renderer, scene);   // 3D モデルの影（奏者に落とす分）を先に描く
+  updateObsFoam(renderer, scene);       // 物に当たる泡の地図（物を組み直した後に 1 回だけ）
   updateHighlight(renderer);            // カードのホバーで輪郭（2026-10-03）
   const sunPass = !!(stageCtx?.sunOnly.visible && stageCtx.bloom.vis > 0.001);
   const pixOn = pixelPass(renderer, scene, camera);
@@ -2260,50 +2261,8 @@ function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0, wet =
   return meshes;
 }
 let STONE_EDGE = [];   // 縁で切った石の形（組み直すたびに作り直して、前のは捨てる）
-// 流れの跡（2026-10-09 ユーザー指定：水の中の石の下流側に、白い泡を出す）：水面を横切っている石ごとに、水面の高さへ水平な板を 1 枚置き、
-// 石のまわりの泡の輪と、下流へ伸びる 2 本の筋・その間の乱れを、小さなます目の点々で描く。点々の並びは流れの速さで下流へ流す。
-// 流れの無い水（湖・池）では輪だけで、点々はその場で入れ替わる。板は群れごとに 1 つの形にまとめる（描く回数は群れごとに 1 回）。
-//   position：板の隅の世界の位置、aWk：(下流への位置 u, 横の位置 v, 水面での石の半径 R, 乱数) [unit]、aWk2：(流れの速さ, 濃さ, 水面の高さ)
-// 水の無い所・別の段の水面にかかった部分は描かない（水面の高さの地図で判定）。水と同じく奥行きは書かない半透明（輪郭線を付けない）
-let STONE_WAKE = [];   // 流れの跡の板（水のグループに入れる。組み直すたびに作り直す）
-const WAKE_CELL = 0.045;   // 泡の点々のます目 [unit]
-// 下流へ伸びる長さ（石の水面での半径の何倍か）。sp：流れの速さ。最初は 2.5 + 1.5 × 速さ（最大 5.5 倍）で、速い川では水面いっぱいのもやになった
-const WAKE_LEN = '( 1.6 + 0.7 * min( sp, 2.0 ) )', wakeLen = (sp) => 1.6 + 0.7 * Math.min(sp, 2);
-function stoneWakeMaterial() {
-  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, depthWrite: false });
-  m.userData.u = { uHL: { value: 0 } };   // 水のグループの子は、カードのホバーでこの値を持つ前提で扱われる
-  m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, WATER_U, m.userData.u, { uWaterTop: STEP_U.uWaterTop, uStepRect: STEP_U.uStepRect });
-    shader.vertexShader = 'attribute vec4 aWk;\nattribute vec3 aWk2;\nvarying vec4 pxoWk;\nvarying vec3 pxoWk2, pxoWkW;\n' + shader.vertexShader
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  pxoWk = aWk; pxoWk2 = aWk2; pxoWkW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
-    shader.fragmentShader = `varying vec4 pxoWk;
-varying vec3 pxoWk2, pxoWkW;
-uniform float uWT;
-uniform sampler2D uWaterTop;
-uniform vec4 uStepRect;
-float pxoWkH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
-` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-{ vec4 t = texture2D( uWaterTop, ( pxoWkW.xz - uStepRect.xy ) * uStepRect.zw );
-  if ( t.g < 0.5 || abs( t.b * ${WATER_TOP_SPAN.toFixed(1)} + ( ${WATER_TOP_LO.toFixed(1)} ) - pxoWk2.z ) > 0.08 ) discard;   // 水の無い所・別の段の水面
-  vec2 q = pxoWk.xy; float R = pxoWk.z, sp = pxoWk2.x, d = length( q );
-  float moving = step( 0.01, sp );
-  vec2 id = floor( vec2( q.x - uWT * sp * 0.35, q.y ) / ${WAKE_CELL.toFixed(3)} ) + pxoWk.w * 91.7;   // 点々の並びを下流へ流す
-  float h = moving > 0.5 ? pxoWkH( id ) : pxoWkH( id + floor( uWT * 1.5 + pxoWkH( id ) * 7.0 ) * 3.1 );   // 流れの無い水：その場で入れ替わる
-  // 石のまわりの輪（石の縁の少し内側〜外側。内側は石に隠れる）。流れのある水では、上流側（水が当たる側）を濃く、下流側を薄く
-  float ring = smoothstep( R * 1.25, R * 1.0, d ) * smoothstep( R * 0.5, R * 0.8, d );
-  float p = ring * 0.75 * mix( 1.0, mix( 1.0, 0.3, smoothstep( -0.3, 0.6, q.x / max( d, 1e-4 ) ) ), moving );
-  if ( moving > 0.5 && q.x > 0.0 ) {   // 下流：石の両脇から伸びて、すぼまりながら消える 2 本の筋と、その間のまばらな乱れ
-    float L = ${WAKE_LEN}, u = q.x / R / L, fade = clamp( 1.0 - u, 0.0, 1.0 );
-    float streak = smoothstep( 0.28 * R, 0.0, abs( abs( q.y ) - R * mix( 0.85, 0.35, clamp( u, 0.0, 1.0 ) ) ) );
-    float mid = smoothstep( R * 0.6, 0.0, abs( q.y ) ) * 0.14 * smoothstep( 0.0, 0.25, u );
-    p = max( p, ( streak * 0.85 + mid ) * pow( fade, 1.4 ) );
-  }
-  if ( h > p * pxoWk2.y ) discard;
-  diffuseColor = vec4( ${c3('#eef8ff')}, 1.0 ); }`);
-  };
-  m.customProgramCacheKey = () => 'pxo-stonewake-v3';
-  return m;
-}
+// 物に当たる泡の、下流へ伸びる長さ（物の幅の半分の何倍か）。sp：流れの速さ。最初は 2.5 + 1.5 × 速さ（最大 5.5 倍）で、速い川では水面いっぱいのもやになった
+const wakeLen = (sp) => 1.6 + 0.7 * Math.min(sp, 2);
 // その場所の水（川・池）と、流れの向き・速さ。水の形の中（余白 pad まで）に無ければ null。向きはシェーダーの pxoRiverUV と同じ式
 //（川の中心線の区間ごとの向きを、近い区間ほど重く混ぜる）。湖・池・水たまりは速さ 0
 function waterFlowAt(x, z, pad = 0) {
@@ -2334,13 +2293,12 @@ function gauss(r) { return Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math
 const _sc = new THREE.Color(), _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
 function buildStones() {
   if (!stageCtx) return;
+  markObsFoam();   // 物に当たる泡の地図を作り直す
   const g = stageCtx.stones;
   g.clear();   // プールの InstancedMesh は捨てずに使い回す
   HL_VER++;
   for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
-  for (const m of STONE_WAKE) { m.parent?.remove(m); m.geometry.dispose(); m.material.dispose(); }   // 流れの跡の板（水を組み直した時は、水の側ですでに捨てられている）
-  STONE_WAKE = [];
   stoneList.forEach((st, ci) => {
     if (st.show === false) return;
     const onShore = !!st.shore && WATER_SHORE.length > 0, shoreW = Math.max(0.05, st.shoreW ?? 0.8), shoreIn = Math.max(0, Math.min(1, st.shoreIn ?? 0.3));   // 水辺に並べる：岸からの幅 [unit]、水の中に置く割合
@@ -2355,26 +2313,7 @@ function buildStones() {
     const per = shapes.map(() => []), perShade = shapes.map(() => []), perMoss = shapes.map(() => []);
     // 埋まり具合・苔（2026-10-09 ユーザー指定）：石ごとに少しばらつかせる。並び・色とは別の乱数を使う（これらを足す前に作った群れの並びと色が変わらないように）
     const buryAmt = Math.max(0, Math.min(0.95, st.bury ?? 0)), mossAmt = Math.max(0, Math.min(1, st.moss ?? 0));
-    // 濡れ色・流れの跡（同日ユーザー指定）
-    const wetAmt = Math.max(0, Math.min(1, st.wet ?? 0)), wakeAmt = Math.max(0, Math.min(1, st.wake ?? 0));
-    const wake = { pos: [], nor: [], wk: [], wk2: [], idx: [] };
-    // 水面を横切っている石に、流れの跡の板を足す。y0：石の底の高さ、rad：半径、h：高さ。水面は、石の中心とまわり 4 点のうち最初に水のある所で読む。
-    // 水面での石の半径は、石を半分の楕円とみなして出す（深く浸かった石ほど、水面に出ている部分は細い）
-    const wakeAt = (x, z, y0, rad, h) => {
-      if (wakeAmt <= 0 || h <= 0) return;
-      let ws = null, wx = x, wz = z;
-      for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = waterSurfAt(x + dx * rad * 0.8, z + dz * rad * 0.8); if (v != null) { ws = v; wx = x + dx * rad * 0.8; wz = z + dz * rad * 0.8; break; } }
-      if (ws == null || y0 > ws - 0.01 || y0 + h < ws + 0.02) return;   // 水が無い・水面より上に乗っている・すっかり沈んでいる
-      const fl = waterFlowAt(wx, wz, rad);
-      if (!fl) return;
-      const R = Math.max(0.3 * rad, rad * Math.sqrt(Math.max(0, 1 - ((ws - y0) / h) ** 2)) * 0.8);   // 0.8：rad は一番張り出した所の半径で、石の実際の輪郭はそれより内側
-      const L = fl.speed > 0.01 ? wakeLen(fl.speed) : 1.3, y = ws + 0.012, seed = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1, n0 = wake.pos.length / 3;   // 乱数は石の位置から（苔・埋まり具合の乱数 rb を使うと、流れの跡を入れただけで苔の付き方が変わる）
-      for (const [u, v] of [[-1.3 * R, -1.3 * R], [L * R, -1.3 * R], [L * R, 1.3 * R], [-1.3 * R, 1.3 * R]]) {
-        wake.pos.push(x + fl.fx * u - fl.fz * v, y, z + fl.fz * u + fl.fx * v); wake.nor.push(0, 1, 0);
-        wake.wk.push(u, v, R, seed); wake.wk2.push(fl.speed, wakeAmt, ws);
-      }
-      wake.idx.push(n0, n0 + 2, n0 + 1, n0, n0 + 3, n0 + 2);   // 上から見て表になる順
-    };
+    const wetAmt = Math.max(0, Math.min(1, st.wet ?? 0));   // 濡れ色（同日ユーザー指定）
     const mossVar = Math.max(0, Math.min(1, st.mossVar ?? 0.25));   // 苔のばらつき（同日ユーザー指定）：石ごとに 1 ± これ倍。0.25 が今までの固定値（0.75〜1.25 倍）、1 で苔なし〜2 倍
     const rb = rng32(((st.seed ?? 1) ^ 0x51ed270b) >>> 0);
     // 色の濃さ（2026-10-03 ユーザー指定）：1 で元の色、1 上がるごとに明るさが半分。ばらつきは石ごと（±2σ まで）。
@@ -2513,7 +2452,6 @@ function buildStones() {
         if (!planes) continue;                                                             // 丸ごと床の外：置かない
         if (avoidOn && avoidSd(c.x, c.z) < c.rad * (crowd === 'push' ? 0.9 : 1)) continue;   // よける範囲に残った石：置かない（押し広げた後は、押し出しの誤差の分だけ甘く見る）
         const shade = shadeOf();
-        wakeAt(c.x, c.z, groundY - bur * c.h, c.rad, c.h);
         if (planes.length) {
           const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
           for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo, wetAmt)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
@@ -2586,7 +2524,6 @@ function buildStones() {
         if (onShore) { if ((DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone', true) < rad) continue; }   // 水辺の石：水はよけない。土・石畳・柱にかかったら別の場所で試す
         else if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
-        wakeAt(x, z, groundY - bur * (shapes[pi].s.h ?? 0) * k * MODEL_M, rad, (shapes[pi].s.h ?? 0) * k * MODEL_M);
         if (planes.length) {   // 縁にかかる：切った形で置く。沈めた石は、床の下の部分も切る（切らないと、床の縁の断面から石の下半分が覗く。真下向きの平面は切り口の座標軸が取れないので、わずかに傾けた向きで）
           const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
           for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo, wetAmt)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
@@ -2616,15 +2553,6 @@ function buildStones() {
       im.userData.pxoCard = ci;
       g.add(im);
     });
-    if (wake.idx.length) {   // 流れの跡：この群れの板をまとめて 1 つの形に。水のグループへ入れる（水面と同じ順で描く。飛沫と同じ -9）
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(wake.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(wake.nor, 3));
-      geo.setAttribute('aWk', new THREE.Float32BufferAttribute(wake.wk, 4)); geo.setAttribute('aWk2', new THREE.Float32BufferAttribute(wake.wk2, 3));
-      geo.setIndex(wake.idx);
-      const wm = new THREE.Mesh(geo, stoneWakeMaterial());
-      wm.renderOrder = -9; wm.frustumCulled = false;
-      STONE_WAKE.push(wm); stageCtx.water.add(wm);
-    }
   });
 }
 // ---- 草のジェネレーター（2026-10-03 ユーザー指定）----
@@ -3140,7 +3068,12 @@ const stepTex = () => {
 // -6〜+4 unit を 8 ビットに）、G：水があるか（0／255）、B：実際の水面の高さ（R と同じ詰め方。川・池は R と同じ、海は床の高さ：R は見た目上の深さなので）を持つ。底の面などは「自分の上に水がどれだけあるか」をこれで知る。buildWater が焼く
 const WATER_TOP_LO = -6, WATER_TOP_SPAN = 10;   // -6〜+4 unit（1 段 ≒ 0.04 unit）。海は見た目上の深さを床の上の高さとして焼くので、床より上まで要る
 const waterTopTex = (() => { const t = new THREE.DataTexture(new Uint8Array(STEP_W * STEP_H * 4), STEP_W, STEP_H, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; })();
-const STEP_U = { uWaterTop: { value: waterTopTex }, uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
+// 物に当たる泡の地図（2026-10-09 ユーザー指定。下の「物に当たる泡」）：段差の格子と同じ範囲を、OBS_SUB 倍の細かさで持つ。
+// R：物のまわりの輪の濃さ、G：下流の筋・乱れの濃さ（どちらも 0〜1 の「点が出る確率」）。
+// B・A：泡が進む向き（x, z。−1〜1 を 0〜1 に詰める。長さは 1 以下で、向きの定まらない所ほど短い）。水のシェーダーが読む
+const OBS_SUB = 2, OBS_W = STEP_W * OBS_SUB, OBS_H = STEP_H * OBS_SUB, OBS_CELL = STEP_CELL / OBS_SUB;
+const obsFoamTex = (() => { const t = new THREE.DataTexture(new Uint8Array(OBS_W * OBS_H * 4), OBS_W, OBS_H, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; })();
+const STEP_U = { uWaterTop: { value: waterTopTex }, uObsFoam: { value: obsFoamTex }, uStepA: { value: stepTex() }, uStepB: { value: stepTex() }, uStepDA: { value: new THREE.Vector4() }, uStepDB: { value: new THREE.Vector4() },
   uStepRect: { value: new THREE.Vector4(STEP_X0 - STEP_CELL / 2, STEP_Z0 - STEP_CELL / 2, 1 / (STEP_W * STEP_CELL), 1 / (STEP_H * STEP_CELL)) },
   // 奏者のいない後ろのひな壇（川を乗せられる段。2026-10-08）：段ごとに (内径, 外径, 角度の下限, 上限) と (高さ, x の切り口（0 で無し）, 0, 0)。高さ 0 は空き
   uRiserA: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uRiserB: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) } };
@@ -3757,6 +3690,7 @@ ${STONE_D_GLSL}
 }
 function buildPillars() {
   if (!stageCtx) return;
+  markObsFoam();
   HL_VER++;
   const g = stageCtx.pillars;
   g.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
@@ -3806,6 +3740,7 @@ let MASONRY_AVOID = [];
 export function setMasonry(list) { masonryList = (list || []).map((o) => ({ ...o })); buildMasonry(); buildStones(); buildGrass(); }
 function buildMasonry() {
   if (!stageCtx) return;
+  markObsFoam();
   HL_VER++;
   const g = stageCtx.masonry;
   g.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
@@ -3915,6 +3850,176 @@ function shoreSdAt(x, z) {   // 一番近い川・池の岸までの距離（負
   let best = 1e9;
   for (const w of WATER_SHORE) best = Math.min(best, circlesSd(w.cs, w.k, x, z));
   return best;
+}
+// ---- 物に当たる泡（2026-10-09 ユーザー指定）----
+// 水面を突き抜けている物（石・柱・石積み・3D モデル）のまわりと下流に、白い泡を出す。最初は石ごとに泡の面を作っていたが、
+// 石以外（崩れたレンガ・柱など）にも出したいので、物に依らない作りに変えた：
+//   1. 対象の物だけを、真上と真下から 1 回ずつ「高さ」として描く（奥行きを色に詰める材質に差し替えて描き、読み戻す）。
+//      真上からは物の一番高い所、真下からは一番低い所が取れる。水面がその間にあれば、そこは水面を突き抜けている物
+//      （水の上に張り出しているだけの物は、一番低い所が水面より上なので入らない）
+//   2. その形から、縁までの距離（→ 輪。流れのある水では上流側を濃く、下流側を薄く）と、下流へたどった跡（→ 筋と乱れ）を、
+//      絵（obsFoamTex）に焼く。筋は跡の両脇、乱れは跡の中。跡は下流へ行くほどすぼまる（物の幅の半分 × wakeLen で閉じる）
+//   3. 水のシェーダーがその絵を読んで、流れに乗る点々を出す（量は水のカードの「泡」）
+// 物を組み直した時だけ作り直す（markObsFoam）。スライダーを動かしている間は、止まって OBS_WAIT ミリ秒たってから 1 回だけ。
+// 作り直しは 1 回で約 0.09 秒（2026-10-09 に測定：描いて読み戻すのに 28 ミリ秒、焼き込みに 61 ミリ秒。地図は 1002×802 ます）
+// 木は入れない（落ち葉など、上から下まで続く物を「突き抜けている物」と見誤るため）。動く物（奏者）も入れない
+const OBS_LAYER = 7;        // 対象の物だけを描くためのレイヤー（描く間だけ付ける）
+const OBS_WAIT = 150;       // 最後の組み直しから、地図を作り直すまでの待ち [ミリ秒]
+const OBS_Y = 50, OBS_NEAR = 0.1, OBS_FAR = 100;   // 高さを取るカメラ：上下 ±OBS_Y に置き、奥行き OBS_NEAR〜OBS_FAR
+const OBS_BAND = 0.2;       // 輪の幅 [unit]（物の縁から外へ）
+const OBS_SHIFT = 0.5;      // 点々のます目を 1 周期でずらす量 [unit]（大きいほど点が長く流れるが、曲がる所で歪む）
+const OBS_LMAX = 1.6;       // 下流の跡をたどる長さの上限 [unit]。最初は 3 で、岸に石が並んだ川では跡が川幅いっぱいに広がり、水面全体に点が散った
+const OBS = { dirty: false, at: 0, rtTop: null, rtBot: null, cam: null, mat: null, top: null, bot: null };
+function markObsFoam() { OBS.dirty = true; OBS.at = performance.now(); }
+function updateObsFoam(renderer, scene) {
+  if (!OBS.dirty || !stageCtx || performance.now() - OBS.at < OBS_WAIT) return;
+  OBS.dirty = false;
+  const groups = [stageCtx.stones, stageCtx.pillars, stageCtx.masonry, stageCtx.models].filter((g) => g && g.visible && g.children.length);
+  if (!WATER_SHORE.length || !groups.length) { obsFoamTex.image.data.fill(0); obsFoamTex.needsUpdate = true; return; }
+  const w = STEP_W * STEP_CELL, h = STEP_H * STEP_CELL, cx = STEP_X0 - STEP_CELL / 2 + w / 2, cz = STEP_Z0 - STEP_CELL / 2 + h / 2;
+  if (!OBS.cam) {
+    const opt = { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false };
+    OBS.rtTop = new THREE.WebGLRenderTarget(OBS_W, OBS_H, opt); OBS.rtBot = new THREE.WebGLRenderTarget(OBS_W, OBS_H, opt);
+    OBS.cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, OBS_NEAR, OBS_FAR); OBS.cam.layers.set(OBS_LAYER);
+    OBS.mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+    OBS.top = new Uint8Array(OBS_W * OBS_H * 4); OBS.bot = new Uint8Array(OBS_W * OBS_H * 4);
+  }
+  const marked = [];
+  for (const g of groups) g.traverse((o) => { if (o.isMesh) { o.layers.enable(OBS_LAYER); marked.push(o); } });
+  const prevRT = renderer.getRenderTarget(), autoShadow = renderer.shadowMap.autoUpdate, prevOver = scene.overrideMaterial, prevCol = renderer.getClearColor(new THREE.Color()), prevAl = renderer.getClearAlpha();
+  renderer.shadowMap.autoUpdate = false; scene.overrideMaterial = OBS.mat; renderer.setClearColor(0xffffff, 1);   // 何も無い所は白＝一番奥
+  const c = OBS.cam;
+  // 真上から（画面の上が −z）：一番高い所
+  c.up.set(0, 0, -1); c.position.set(cx, OBS_Y, cz); c.lookAt(cx, 0, cz); c.updateMatrixWorld();
+  renderer.setRenderTarget(OBS.rtTop); renderer.clear(); renderer.render(scene, c);
+  renderer.readRenderTargetPixels(OBS.rtTop, 0, 0, OBS_W, OBS_H, OBS.top);
+  // 真下から（画面の上が +z）：一番低い所
+  c.up.set(0, 0, 1); c.position.set(cx, -OBS_Y, cz); c.lookAt(cx, 0, cz); c.updateMatrixWorld();
+  renderer.setRenderTarget(OBS.rtBot); renderer.clear(); renderer.render(scene, c);
+  renderer.readRenderTargetPixels(OBS.rtBot, 0, 0, OBS_W, OBS_H, OBS.bot);
+  renderer.setRenderTarget(prevRT); renderer.shadowMap.autoUpdate = autoShadow; scene.overrideMaterial = prevOver; renderer.setClearColor(prevCol, prevAl);
+  for (const o of marked) o.layers.disable(OBS_LAYER);
+  bakeObsFoam(OBS.top, OBS.bot);
+}
+function bakeObsFoam(top, bot) {
+  const W = OBS_W, H = OBS_H, c = OBS_CELL, x0 = STEP_X0 - STEP_CELL / 2 + c / 2, z0 = STEP_Z0 - STEP_CELL / 2 + c / 2;
+  const out = obsFoamTex.image.data;
+  for (let q = 0; q < out.length; q += 4) { out[q] = 0; out[q + 1] = 0; out[q + 2] = 128; out[q + 3] = 128; }   // 泡なし・向きなし（128 ＝ 0）
+  const un = (B, q) => (B[q] / 4278190080 + B[q + 1] / 16711680 + B[q + 2] / 65280 + B[q + 3] / 255) * (255 / 256);   // 色に詰めた奥行き（0〜1）を戻す
+  const span = OBS_FAR - OBS_NEAR;
+  // 1. 水面を突き抜けている物のます
+  const obs = new Uint8Array(W * H);
+  let any = false;
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const qT = ((H - 1 - j) * W + i) * 4;   // 真上からの絵は、上の行ほど −z
+    if (top[qT + 3] === 255 && top[qT + 2] === 255) continue;   // 何も描かれていない
+    const ws = waterSurfAt(x0 + i * c, z0 + j * c);
+    if (ws == null) continue;
+    const hi = OBS_Y - (OBS_NEAR + un(top, qT) * span), lo = -OBS_Y + (OBS_NEAR + un(bot, (j * W + i) * 4) * span);
+    if (hi > ws + 0.02 && lo < ws - 0.01) { obs[j * W + i] = 1; any = true; }
+  }
+  if (!any) { obsFoamTex.needsUpdate = true; return; }
+  // 流れの向きと速さ（粗います目ごとに 1 回だけ求めて使い回す）
+  const flows = new Map(), still = { fx: 1, fz: 0, speed: 0 };
+  const flowAt = (x, z) => { const k = Math.round(x / 0.2) * 100003 + Math.round(z / 0.2); let f = flows.get(k); if (f === undefined) { f = waterFlowAt(x, z, 0.3) || still; flows.set(k, f); } return f; };
+  const cellOf = (x, z) => { const i = Math.round((x - x0) / c), j = Math.round((z - z0) / c); return i < 0 || j < 0 || i >= W || j >= H ? -1 : j * W + i; };
+  // 2. 縁までの距離と、縁から外への向き
+  const RB = Math.ceil(OBS_BAND / c), dist = new Float32Array(W * H).fill(1e9), nx = new Float32Array(W * H), nz = new Float32Array(W * H), edge = [];
+  for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) {
+    const k = j * W + i;
+    if (!obs[k] || (obs[k - 1] && obs[k + 1] && obs[k - W] && obs[k + W])) continue;
+    edge.push(k);
+    for (let dj = -RB; dj <= RB; dj++) for (let di = -RB; di <= RB; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= W || jj >= H) continue;
+      const t = jj * W + ii, d = Math.hypot(di, dj);
+      if (obs[t] || d > RB || d * c >= dist[t]) continue;
+      dist[t] = d * c; nx[t] = di / d; nz[t] = dj / d;
+    }
+  }
+  const sm = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  for (let k = 0; k < W * H; k++) {
+    if (obs[k]) { out[k * 4] = 191; continue; }   // 物の中：縁の値を保つ（絵をなめらかに読んだ時、縁で薄まらないように。水面は物に隠れて見えない）
+    if (dist[k] > 1e8) continue;
+    const x = x0 + (k % W) * c, z = z0 + Math.floor(k / W) * c;
+    if (waterSurfAt(x, z) == null) continue;
+    const fl = flowAt(x, z);
+    const bow = fl.speed > 0.01 ? 1 - 0.7 * sm(-0.3, 0.6, nx[k] * fl.fx + nz[k] * fl.fz) : 1;   // 上流側（水が当たる側）を濃く、下流側は 3 割
+    out[k * 4] = Math.round(255 * 0.75 * (1 - sm(0.03, OBS_BAND, dist[k])) * bow);
+  }
+  // 3. 下流の跡：縁のますから流れに沿ってたどり、物を出てからの長さを控える
+  const raw = new Float32Array(W * H).fill(-1), stp = c * 0.8;
+  for (const k of edge) {
+    let px = x0 + (k % W) * c, pz = z0 + Math.floor(k / W) * c, d = 0;
+    if (flowAt(px, pz).speed <= 0.01) continue;   // 流れの無い水：輪だけ
+    for (let s = 0; s < 400; s++) {
+      const f = flowAt(px, pz);
+      px += f.fx * stp; pz += f.fz * stp;
+      const t = cellOf(px, pz);
+      if (t < 0) break;
+      if (obs[t]) { d = 0; continue; }   // 物の中を通っている間は数えない
+      if (waterSurfAt(px, pz) == null) break;
+      d += stp;
+      if (d > OBS_LMAX) break;
+      if (raw[t] < 0 || d < raw[t]) raw[t] = d;
+    }
+  }
+  for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) {   // たどった線の間に抜けたますを埋める
+    const k = j * W + i;
+    if (raw[k] >= 0 || obs[k]) continue;
+    if (raw[k - 1] >= 0 && raw[k + 1] >= 0) raw[k] = -2 - (raw[k - 1] + raw[k + 1]) / 2;
+    else if (raw[k - W] >= 0 && raw[k + W] >= 0) raw[k] = -2 - (raw[k - W] + raw[k + W]) / 2;
+  }
+  for (let k = 0; k < W * H; k++) if (raw[k] <= -2) raw[k] = -2 - raw[k];
+  // 跡の中か：その点と、流れに垂直な両脇（離れ ＝ たどった長さ ÷ wakeLen）のどちらにも、跡か物がある（下流へ行くほどすぼまる）
+  const has = (x, z) => { const t = cellOf(x, z); return t >= 0 && (obs[t] === 1 || raw[t] >= 0); };
+  for (let k = 0; k < W * H; k++) {
+    const d = raw[k];
+    if (d < 0) continue;
+    const x = x0 + (k % W) * c, z = z0 + Math.floor(k / W) * c, fl = flowAt(x, z);
+    if (fl.speed <= 0.01) continue;
+    const px = -fl.fz, pz = fl.fx, off = d / wakeLen(fl.speed);
+    const ins = (sx, sz) => has(sx, sz) && has(sx + px * off, sz + pz * off) && has(sx - px * off, sz - pz * off);
+    if (!ins(x, z)) continue;
+    const fade = Math.pow(Math.max(0, 1 - d / OBS_LMAX), 1.4);
+    const side = !(ins(x + px * 0.1, z + pz * 0.1) && ins(x - px * 0.1, z - pz * 0.1));   // 跡の脇（0.1 以内に跡の外がある）＝筋
+    out[k * 4 + 1] = Math.round(255 * (side ? 0.7 : 0.05 * sm(0.05, 0.2, d)) * fade);   // 筋は 7 割、跡の中の乱れはごく薄く（最初は 0.14 で、広い跡では水面のもやになった）
+  }
+  // 4. 泡が進む向き。点々は、世界にまっすぐ並んだ四角います目のまま、この向きへ少しずつずらして動かす（水のシェーダー）。
+  // ここまでの経緯（2026-10-09。どれもユーザーの指摘で直した）：
+  //  ・川の中心線に沿った座標（pxoRiverUV）で並べた → 川の切れ端が重なる所で座標が進まず、点々が何十倍にも伸びて速く流れた
+  //  ・流れの向きに測った位置を焼いて並べた → 点々が石に沿って曲がらず、まっすぐ石に突っ込んだ
+  //  ・輪郭に沿った長さを焼いて並べた（ますごとにさかのぼる／上流から補間／縁づたいの道のり）→ 点の形は座標のます目そのものなので、
+  //    座標が少しでも曲がると点が歪な線になった。縁づたいの道のりでは、点々が石の後ろまで回り続けて、下流へ離れなかった
+  // そこで座標を焼くのをやめ、向きだけを焼く。向き：輪の中では、縁に沿った下流側の向き。縁から外への向きが下流を向くにつれて（＝物の脇を
+  // 過ぎるにつれて）流れの向きへ移る＝回り込んだあと下流へ離れる。輪の外の跡は流れの向き。最後に隣どうしでならす（流れが正面から当たる所では
+  // 左右の向きが打ち消し合って短くなる＝そこでは点々がよどむ）
+  {
+    const vx = new Float32Array(W * H), vz = new Float32Array(W * H), on = new Uint8Array(W * H);
+    for (let k = 0; k < W * H; k++) {
+      if (obs[k] || (!out[k * 4] && !out[k * 4 + 1])) continue;
+      const fl = flowAt(x0 + (k % W) * c, z0 + Math.floor(k / W) * c);
+      if (fl.speed <= 0.01) continue;   // 流れの無い水：向きは使わない
+      on[k] = 1;
+      if (dist[k] > 1e8) { vx[k] = fl.fx; vz[k] = fl.fz; continue; }
+      const nf = nx[k] * fl.fx + nz[k] * fl.fz;
+      let tx = -nz[k], tz = nx[k];
+      if (tx * fl.fx + tz * fl.fz < 0) { tx = -tx; tz = -tz; }
+      const w = sm(-0.1, 0.6, nf), ax = tx * (1 - w) + fl.fx * w, az = tz * (1 - w) + fl.fz * w, al = Math.hypot(ax, az) || 1;
+      vx[k] = ax / al; vz[k] = az / al;
+    }
+    for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) {   // ならす（まわり 8 ますと平均。長さはそのまま＝向きのそろわない所は短くなる）
+      const k = j * W + i;
+      if (!on[k]) continue;
+      let sx = 0, sz = 0, n = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const t = k + b * W + a; if (on[t]) { sx += vx[t]; sz += vz[t]; n++; } }
+      out[k * 4 + 2] = Math.round((sx / n * 0.5 + 0.5) * 255); out[k * 4 + 3] = Math.round((sz / n * 0.5 + 0.5) * 255);
+    }
+  }
+  for (const k of edge) {   // 物の縁のます：隣の水のますの向きを写す（絵をなめらかに読んだ時、縁で向きが 0 へ引っ張られないように）
+    for (const o of [-1, 1, -W, W, -W - 1, -W + 1, W - 1, W + 1]) { const t = k + o; if (!obs[t] && (out[t * 4] || out[t * 4 + 1])) { out[k * 4 + 2] = out[t * 4 + 2]; out[k * 4 + 3] = out[t * 4 + 3]; break; } }
+  }
+  obsFoamTex.needsUpdate = true;
 }
 let DIRT_AVOID = [];    // 土の「草・石をよける」（形は水と同じ持ち方。2026-10-05）
 // シェーダーの pxoWH / pxoWN と同じ式（海の岸線を JS でも同じ形にする。2026-10-04）
@@ -4053,6 +4158,7 @@ uniform float uRipDots;   // さざ波の描き方：0 写実／1 粒（2026-10-
 uniform float uWBPass, uWBThr;
 uniform sampler2D uWBDepth;
 uniform vec2 uWBRes;   // 水の白のブルーム（2026-10-04）
+uniform sampler2D uObsFoam;   // 物に当たる泡の地図（R：輪、G：下流の筋・乱れ。2026-10-09）
 float pxoWhite;   // この画素の白い要素の濃さ（泡・照り返しの粒・きらめき）。ブルームの素材の時だけ使う
 ${SWELL_GLSL}   // 種類（0 川／1 湖・池・水たまり）、川の瀬、岸の泡の濃さ（2026-10-04）
 ${PIX_QUANT_GLSL}
@@ -4237,6 +4343,9 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 流れていく粒が、岸からの距離の境で急に出たり消えたりしないよう、川だけ境をなだらかにする（下の soft）
     bool riv = uType < 0.5;
     vec2 q0 = p0, fF = vec2( 1.0, 0.0 ), fP = vec2( 0.0, 1.0 );   // q0：ます目を取る座標での、この点の位置
+    // 流れが岸へ向かってぶつかる所ほど、泡を濃くする（2026-10-09 ユーザー指定：岸・崖に当たる泡も、物に当たる泡と同じ考え方で）。
+    // 流れの向きと岸の外向きが同じ向きほど濃く（曲がりの外側・流れの正面の岸）、平行・離れていく岸は今までより薄く。速い川ほど差が付く
+    float imp = 1.0;
     float gs = 1.0;   // 川：岸からの距離の値の進み方（川の岸は円のつなぎ目で、実際の距離の 6〜7 割しか進まない。そのままだと粒が岸に垂直に伸びた）
     if ( riv ) {
       const float KS = 1.25;
@@ -4245,6 +4354,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       // 補正の幅はしぼる：川の切れ端どうしの境目では、長さの座標が別の切れ端の値と混ざって乱れ、そのまま補正すると粒が細い線になった
       float a = clamp( ( pxoRiverUV( p0 + tg * 0.03, fl2 ).x - r0.x ) / 0.03, 0.6, 1.3 );
       gs = clamp( gLen, 0.6, 1.0 );
+      imp = mix( 0.55, 1.2 + 0.25 * min( uSpeed, 4.0 ), smoothstep( 0.0, 0.6, dot( fl, gn ) ) );
       q0 = vec2( r0.x * KS - uWT * 0.25 * uSpeed, sd0 - gs * sa * 0.5 + ( r0.y > 0.0 ? 37.3 : -41.9 ) );
       fF = tg / ( KS * a ); fP = gn / gs;
     }
@@ -4256,7 +4366,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         vec2 cs = ( fid + vec2( f4, f3 ) ) * 0.07, cw = riv ? p0 + fF * ( cs.x - q0.x ) + fP * ( cs.y - q0.y ) : cs;   // 元の中心（cs：ます目の座標、cw：世界の座標）
         float sdc = sd0 + gs * dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.015 || sdc < -0.25 ) continue;
-        float dens = min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 );   // きわほど多い
+        float dens = min( 1.0, pow( 1.0 - clamp( -sdc / 0.25, 0.0, 1.0 ), 2.0 ) * 2.4 * imp );   // きわほど多い
         if ( f1 > dens ) continue;
         float soft = riv ? smoothstep( 0.0, 0.15, dens - f1 ) * ( 1.0 - smoothstep( 0.008, 0.015, sdc ) ) : 1.0;
         float th = uWT * 1.2 + pxoWN( cs * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
@@ -4275,7 +4385,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
         vec2 cs = ( bid + vec2( b4, b3 ) ) * 0.16 - 0.37, cw = riv ? p0 + fF * ( cs.x - q0.x ) + fP * ( cs.y - q0.y ) : cs;
         float sdc = sd0 + gs * dot( gn, cw - p ) + pxoJag( cw );
         if ( sdc > 0.03 || sdc < -0.3 ) continue;
-        float dens = pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8;
+        float dens = pow( 1.0 - clamp( -sdc / 0.3, 0.0, 1.0 ), 1.4 ) * 1.8 * imp;
         if ( b1 > dens ) continue;
         float soft = riv ? smoothstep( 0.0, 0.15, dens - b1 ) * ( 1.0 - smoothstep( 0.02, 0.03, sdc ) ) : 1.0;
         float th = uWT * 1.2 + pxoWN( cs * 0.6 ) * 6.283, surge = 0.5 + 0.5 * sin( th );
@@ -4379,9 +4489,11 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     // 2 枚の層の重み w0・w1 とずらし T0・T1（川以外は 1 枚：T0 ＝ 一定の速さ）
     float w0 = 1.0, w1 = 0.0, T0 = uWT * sp, T1 = 0.0;
     if ( uType < 0.5 ) {
-      float ph0 = fract( uWT * 0.2 ), ph1 = fract( uWT * 0.2 + 0.5 );
+      // 激流（2026-10-09 ユーザー指定：流れの上限を 3 → 10 に）：速さが 3 を超えた分は、巻き戻す間隔を短くする（速さ 10 で 1.5 秒）。
+      // 5 秒のままだと、その間に中央と岸際の模様のずれが大きくなりすぎて、模様が引き伸ばされる。3 以下は今までどおり 5 秒
+      float rate = 0.2 * max( 1.0, sp / 3.0 ), ph0 = fract( uWT * rate ), ph1 = fract( uWT * rate + 0.5 );
       w0 = 1.0 - abs( 1.0 - 2.0 * ph0 ); w1 = 1.0 - w0;
-      T0 = ph0 * 5.0 * sp * prof; T1 = ph1 * 5.0 * sp * prof + 17.3;
+      T0 = ph0 / rate * sp * prof; T1 = ph1 / rate * sp * prof + 17.3;
     }
     #define PXO_HQ( qq ) ( w0 * pxoRip( qq, T0 ) + ( w1 > 0.0 ? w1 * pxoRip( qq, T1 ) : 0.0 ) )
     // さざ波の大きい方の 2 段だけ（照り返しの粒・さざ波の粒の位置で使う。軽くするため 1 枚の層だけ）
@@ -4511,6 +4623,28 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       }
       foam = max( foam, rsd * 0.9 );
     }
+    // 物に当たる泡（2026-10-09 ユーザー指定）：水面を突き抜けている物のまわりの輪と、下流の筋・乱れ。地図の値は「点が出る確率」。
+    // 小さなます目の点々で描き、川では下流へ流す。流れの無い水では、その場で入れ替わる。量は「泡」（uFoam）
+    if ( uType < 1.5 && uFoam > 0.001 ) {
+      vec4 ob = texture2D( uObsFoam, ( pxoP.xz - uStepRect.xy ) * uStepRect.zw );
+      float op = max( ob.r, ob.g ) * uFoam;
+      if ( op > 0.004 ) {
+        if ( uType < 0.5 && uSpeed > 0.01 ) {
+          // 流れる水：世界にまっすぐ並んだ四角います目を、地図に焼いた向きへずらして動かす。ずらしすぎるとます目が歪むので、
+          // ずらす量は ±OBS_SHIFT の半分までにして、半周期ずれた 2 枚を、ずらしの小さい間だけ濃くして入れ替える（点は現れて、流れて、消える）。
+          // 1 周期で OBS_SHIFT 進むので、速さは「流れ × 0.35」[unit/秒]
+          vec2 od = ob.ba * 2.0 - 1.0;
+          float ot = uWT * uSpeed * 0.35 / ${OBS_SHIFT.toFixed(2)}, p0 = fract( ot ), p1 = fract( ot + 0.5 );
+          vec2 i0 = floor( ( pxoP.xz - od * ${OBS_SHIFT.toFixed(2)} * ( p0 - 0.5 ) ) / 0.045 ) + floor( ot ) * 13.7;
+          vec2 i1 = floor( ( pxoP.xz - od * ${OBS_SHIFT.toFixed(2)} * ( p1 - 0.5 ) ) / 0.045 ) + floor( ot + 0.5 ) * 13.7 + 71.3;
+          float w0 = smoothstep( 0.0, 0.6, 1.0 - abs( 1.0 - 2.0 * p0 ) ), w1 = smoothstep( 0.0, 0.6, 1.0 - abs( 1.0 - 2.0 * p1 ) );
+          foam = max( foam, min( 1.0, step( pxoWH( i0 ), op ) * w0 + step( pxoWH( i1 ), op ) * w1 ) );
+        } else {   // 止まった水：世界の座標のます目で、その場で入れ替わる
+          vec2 oid = floor( pxoP.xz / 0.045 );
+          foam = max( foam, step( pxoWH( oid + floor( uWT * 1.5 + pxoWH( oid ) * 7.0 ) * 3.1 ), op ) );
+        }
+      }
+    }
     col = mix( col, vec3( 0.95, 0.98, 1.0 ), foam );   // 泡（上で計算）
     pxoWhite = foam;
     // 水のふちは 10cm かけて透明にし、その下の地面は「濡れて暗い」として重ねる（2026-10-03 ユーザー指摘：ふちを 2cm で消していて、
@@ -4574,7 +4708,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v77';
+  m.customProgramCacheKey = () => 'pxo-water-v84';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4721,7 +4855,9 @@ ${WATER_NOISE_GLSL}
 //   position：落ちた所の位置（粒の 4 隅とも同じ）、aSpDir：(滝の外向き x, z, 勢い)、aSpSeed：粒ごとの乱数 4 つ、aSpCorner：四角の隅（±1）
 // 勢いは落差で決まる（buildWaterSides）。粒はカメラのほうを向く板で、光は上向きの面として受ける（滝の白い筋と同じく、夜は暗くなる）。
 // 水と同じく奥行きは書かない半透明（ドット化の輪郭線が粒の周りに付かないように。輪郭線は奥行きを書いた物にだけ引かれる）
-const WATER_SPLASH_N = 60;      // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34（2026-10-08 ユーザー指定：数を増やす）
+const WATER_SPLASH_N = 150;     // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34 → 60（2026-10-08 ユーザー指定：数を増やす）→ 150（2026-10-09 ユーザー指定：粒を小さくして数で補う。大きさ 0.6 倍・数 2.5 倍）
+const WATER_SPLASH_PW = 2.4;    // 勢いの上限（粒の数・跳ねる高さ・飛ぶ距離に比例。2.4 で高さ約 2 unit）。最初は 1.6（落差 6 で頭打ち）
+const WATER_SPLASH_FLOW = 0.2;  // 流れの速さの効き方（勢いに 流れ^これ を掛ける）。最初は 0.35 で、今の滝（流れ 2.7）が上限近くまで強くなりすぎた（2026-10-09 ユーザー指定で弱めた）
 const WATER_SPLASH_G = 9;       // 粒を落とす加速度 [unit/秒²]
 function waterSplashMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, depthWrite: false });
@@ -4745,14 +4881,14 @@ float pxoSpSize;
   transformed += vec3( aSpDir.x, 0.0, aSpDir.y ) * vo * t + vec3( -aSpDir.y, 0.0, aSpDir.x ) * vl * t;
   transformed.y += vy * t - 0.5 * ${WATER_SPLASH_G.toFixed(1)} * t * t;
   pxoSpPh = ph;
-  pxoSpSize = sqrt( pw ) * mix( 0.03, 0.065, fract( aSpSeed.y * 5.71 ) ) * ( 1.0 - 0.55 * ph );   // 粒の一辺の半分 [unit]。落ちるにつれ小さく
+  pxoSpSize = sqrt( pw ) * mix( 0.018, 0.039, fract( aSpSeed.y * 5.71 ) ) * ( 1.0 - 0.55 * ph );   // 粒の一辺の半分 [unit]。落ちるにつれ小さく。最初は 0.03〜0.065（2026-10-09：0.6 倍に）
 }`).replace('#include <project_vertex>', `vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
 mvPosition.xy += aSpCorner * pxoSpSize;   // カメラのほうを向く四角
 gl_Position = projectionMatrix * mvPosition;`);
     shader.fragmentShader = 'varying float pxoSpPh;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
   diffuseColor = vec4( ${c3('#eef8ff')}, 1.0 - smoothstep( 0.8, 1.0, pxoSpPh ) );   // 落ちきる手前で消える`);
   };
-  m.customProgramCacheKey = () => 'pxo-watersplash-v2';
+  m.customProgramCacheKey = () => 'pxo-watersplash-v3';
   return m;
 }
 /** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置、
@@ -4918,7 +5054,9 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
         if (EP.has(ib)) [bx, bz] = EP.get(ib);
         touch(ia, ax, az, va, P, bx, bz); touch(ib, bx, bz, vb, P, ax, az);
         if (P.length >= 2) {   // 飛沫：この線分の滝が落ちた所（断面の下端。内側の段の分は、崖寄りにも散らす）に粒を置く
-          const drop = surf - bot, pw = Math.min(1.6, 0.5 + 0.45 * Math.sqrt(drop)), sEnd = P[P.length - 1].s;   // pw：勢い（落差が大きいほど高く・大きく）
+          // pw：勢い（落差が大きいほど、流れが速いほど、高く・大きく・多く）。流れの速さは WATER_SPLASH_FLOW 乗で掛ける（1 で今までどおり、3 で 1.25 倍、10 で 1.58 倍。
+          // 2026-10-09 ユーザー指定：流れの上限を 10 にしても飛沫が変わらなかった）。上限は WATER_SPLASH_PW
+          const drop = surf - bot, pw = Math.min(WATER_SPLASH_PW, (0.5 + 0.45 * Math.sqrt(drop)) * Math.pow(Math.max(0.3, st.flow ?? 1), WATER_SPLASH_FLOW)), sEnd = P[P.length - 1].s;
           const want = Math.hypot(bx - ax, bz - az) * WATER_SPLASH_N * pw, cnt = Math.floor(want) + (spRnd() < want - Math.floor(want) ? 1 : 0);
           for (let k = 0; k < cnt; k++) {
             const r = spRnd(), sl = sEnd * (0.4 + 0.6 * spRnd());
@@ -5047,6 +5185,7 @@ function buildWaterSides(st, ci, cs, k, L, surf, surfOf, yOff, isLake = false, s
 }
 function buildWater() {
   if (!stageCtx) return;
+  markObsFoam();
   HL_VER++;
   const g = stageCtx.water;
   for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
@@ -5460,6 +5599,7 @@ function pixMaterial(m, size) {
 }
 function buildModels() {
   if (!stageCtx) return;
+  markObsFoam();
   const g = stageCtx.models;
   g.clear();   // 形と材質は GLB の読み込み結果を使い回すので捨てない
   HL_VER++;   // 作り直すと輪郭（カードのホバー）の付け先が変わる
