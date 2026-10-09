@@ -3869,13 +3869,18 @@ const OBS_Y = 50, OBS_NEAR = 0.1, OBS_FAR = 100;   // 高さを取るカメラ�
 const OBS_BAND = 0.2;       // 輪の幅 [unit]（物の縁から外へ）
 const OBS_SHIFT = 0.5;      // 点々のます目を 1 周期でずらす量 [unit]（大きいほど点が長く流れるが、曲がる所で歪む）
 const OBS_LMAX = 1.6;       // 下流の跡をたどる長さの上限 [unit]。最初は 3 で、岸に石が並んだ川では跡が川幅いっぱいに広がり、水面全体に点が散った
-const OBS = { dirty: false, at: 0, rtTop: null, rtBot: null, cam: null, mat: null, top: null, bot: null };
+// 激流の水飛沫（2026-10-09 ユーザー指定：流れが 6 あたりから、物に当たった所に滝のような粒の水飛沫。流れ 10 で最大）：
+// 物の縁のうち、流れが当たる側を向いたますに、滝の飛沫と同じ粒（waterSplashMaterial）を置く。量と勢いは川の「流れ」で決める
+const OBS_SPLASH_FROM = 5.5, OBS_SPLASH_FULL = 10;   // 出始める流れ（これ以下は無し）と、最大になる流れ
+const OBS_SPLASH_N = 110;   // 流れが正面から当たる縁 1 unit あたりの粒の数（流れ最大の時）。最初は 70 で、石の列に薄く散るだけで目立たなかった
+const OBS = { dirty: false, at: 0, rtTop: null, rtBot: null, cam: null, mat: null, top: null, bot: null, splash: null };
+function clearObsSplash() { const m = OBS.splash; if (!m) return; m.parent?.remove(m); m.geometry.dispose(); m.material.dispose(); OBS.splash = null; }   // 水を組み直した時は、水の側ですでに外されている
 function markObsFoam() { OBS.dirty = true; OBS.at = performance.now(); }
 function updateObsFoam(renderer, scene) {
   if (!OBS.dirty || !stageCtx || performance.now() - OBS.at < OBS_WAIT) return;
   OBS.dirty = false;
   const groups = [stageCtx.stones, stageCtx.pillars, stageCtx.masonry, stageCtx.models].filter((g) => g && g.visible && g.children.length);
-  if (!WATER_SHORE.length || !groups.length) { obsFoamTex.image.data.fill(0); obsFoamTex.needsUpdate = true; return; }
+  if (!WATER_SHORE.length || !groups.length) { clearObsSplash(); obsFoamTex.image.data.fill(0); obsFoamTex.needsUpdate = true; return; }
   const w = STEP_W * STEP_CELL, h = STEP_H * STEP_CELL, cx = STEP_X0 - STEP_CELL / 2 + w / 2, cz = STEP_Z0 - STEP_CELL / 2 + h / 2;
   if (!OBS.cam) {
     const opt = { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true, stencilBuffer: false };
@@ -3903,6 +3908,7 @@ function updateObsFoam(renderer, scene) {
 }
 function bakeObsFoam(top, bot) {
   const W = OBS_W, H = OBS_H, c = OBS_CELL, x0 = STEP_X0 - STEP_CELL / 2 + c / 2, z0 = STEP_Z0 - STEP_CELL / 2 + c / 2;
+  clearObsSplash();
   const out = obsFoamTex.image.data;
   for (let q = 0; q < out.length; q += 4) { out[q] = 0; out[q + 1] = 0; out[q + 2] = 128; out[q + 3] = 128; }   // 泡なし・向きなし（128 ＝ 0）
   const un = (B, q) => (B[q] / 4278190080 + B[q + 1] / 16711680 + B[q + 2] / 65280 + B[q + 3] / 255) * (255 / 256);   // 色に詰めた奥行き（0〜1）を戻す
@@ -4014,6 +4020,41 @@ function bakeObsFoam(top, bot) {
       let sx = 0, sz = 0, n = 0;
       for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const t = k + b * W + a; if (on[t]) { sx += vx[t]; sz += vz[t]; n++; } }
       out[k * 4 + 2] = Math.round((sx / n * 0.5 + 0.5) * 255); out[k * 4 + 3] = Math.round((sz / n * 0.5 + 0.5) * 255);
+    }
+  }
+  // 5. 激流の水飛沫：流れが当たる側の縁に粒を置く。縁から外への向きは、まわり 8 ますのうち物でないますの向きの平均。
+  // 流れとその向きが逆（＝水が当たる）ほど多く、勢いも強い。粒は縁から外（上流側）へ跳ね上がる
+  {
+    const sp = { pos: [], nor: [], dir: [], seed: [], corner: [] };
+    let rs = 987654321;
+    const rnd = () => (rs = (Math.imul(rs, 1103515245) + 12345) >>> 0) / 4294967296;
+    for (const k of edge) {
+      const i = k % W, j = Math.floor(k / W), x = x0 + i * c, z = z0 + j * c, fl = flowAt(x, z);
+      const amt = Math.max(0, Math.min(1, (fl.speed - OBS_SPLASH_FROM) / (OBS_SPLASH_FULL - OBS_SPLASH_FROM)));
+      if (amt <= 0) continue;
+      let ox = 0, oz = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if ((a || b) && !obs[k + b * W + a]) { ox += a; oz += b; }
+      const ol = Math.hypot(ox, oz);
+      if (ol < 1e-6) continue;
+      ox /= ol; oz /= ol;
+      const imp = -(ox * fl.fx + oz * fl.fz);   // 1：流れが正面から当たる、0：流れと平行
+      if (imp < 0.25) continue;
+      const ws = waterSurfAt(x + ox * c, z + oz * c);
+      if (ws == null) continue;
+      const want = OBS_SPLASH_N * c * amt * imp, cnt = Math.floor(want) + (rnd() < want - Math.floor(want) ? 1 : 0);
+      const pw = (0.5 + 1.0 * amt) * (0.6 + 0.4 * imp);   // 勢い（滝の飛沫と同じ意味：跳ねる高さ・飛ぶ距離・粒の大きさ）
+      for (let q = 0; q < cnt; q++) {
+        const px = x + ox * c * 0.6 + (rnd() - 0.5) * c, pz = z + oz * c * 0.6 + (rnd() - 0.5) * c, sd = [rnd(), rnd(), rnd(), rnd()];
+        for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]]) { sp.pos.push(px, ws + 0.02, pz); sp.nor.push(0, 1, 0); sp.dir.push(ox, oz, pw); sp.seed.push(sd[0], sd[1], sd[2], sd[3]); sp.corner.push(cx, cy); }
+      }
+    }
+    if (sp.pos.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(sp.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(sp.nor, 3));
+      geo.setAttribute('aSpDir', new THREE.Float32BufferAttribute(sp.dir, 3)); geo.setAttribute('aSpSeed', new THREE.Float32BufferAttribute(sp.seed, 4)); geo.setAttribute('aSpCorner', new THREE.Float32BufferAttribute(sp.corner, 2));
+      const mesh = new THREE.Mesh(geo, waterSplashMaterial());
+      mesh.renderOrder = -9; mesh.frustumCulled = false;   // 滝の飛沫と同じ扱い
+      OBS.splash = mesh; stageCtx.water.add(mesh);
     }
   }
   for (const k of edge) {   // 物の縁のます：隣の水のますの向きを写す（絵をなめらかに読んだ時、縁で向きが 0 へ引っ張られないように）
@@ -4631,14 +4672,18 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
       if ( op > 0.004 ) {
         if ( uType < 0.5 && uSpeed > 0.01 ) {
           // 流れる水：世界にまっすぐ並んだ四角います目を、地図に焼いた向きへずらして動かす。ずらしすぎるとます目が歪むので、
-          // ずらす量は ±OBS_SHIFT の半分までにして、半周期ずれた 2 枚を、ずらしの小さい間だけ濃くして入れ替える（点は現れて、流れて、消える）。
+          // ずらす量は ±OBS_SHIFT の半分までにして、半周期ずれた 2 枚を、ずらしの小さい間だけ見せて入れ替える（点は現れて、流れて、消える）。
           // 1 周期で OBS_SHIFT 進むので、速さは「流れ × 0.35」[unit/秒]
           vec2 od = ob.ba * 2.0 - 1.0;
-          float ot = uWT * uSpeed * 0.35 / ${OBS_SHIFT.toFixed(2)}, p0 = fract( ot ), p1 = fract( ot + 0.5 );
+          // 入れ替わりを規則的に見せない（2026-10-09 ユーザー指定：明るくなったり暗くなったりが規則的すぎる）：
+          //  ・場所ごとに、入れ替わりのタイミングをなめらかなむらでずらす（川全体が同時に入れ替わらない。ずらし方がきついと、ます目が歪むのでゆるく）
+          //  ・点ごとに、見えている間を乱数で決める（下の w0・w1 との比べ）。2 枚の重みの和は常に 1 なので、見えている点の数はどの瞬間もほぼ同じ
+          //    （最初は 2 枚をそれぞれなだらかに濃くしていて、両方が半分見えている瞬間に点の数が倍になり、1 周期に 2 回、全体が明るくなった）
+          float ot = uWT * uSpeed * 0.35 / ${OBS_SHIFT.toFixed(2)} + pxoWN( pxoP.xz * 0.3 ), p0 = fract( ot ), p1 = fract( ot + 0.5 );
           vec2 i0 = floor( ( pxoP.xz - od * ${OBS_SHIFT.toFixed(2)} * ( p0 - 0.5 ) ) / 0.045 ) + floor( ot ) * 13.7;
           vec2 i1 = floor( ( pxoP.xz - od * ${OBS_SHIFT.toFixed(2)} * ( p1 - 0.5 ) ) / 0.045 ) + floor( ot + 0.5 ) * 13.7 + 71.3;
-          float w0 = smoothstep( 0.0, 0.6, 1.0 - abs( 1.0 - 2.0 * p0 ) ), w1 = smoothstep( 0.0, 0.6, 1.0 - abs( 1.0 - 2.0 * p1 ) );
-          foam = max( foam, min( 1.0, step( pxoWH( i0 ), op ) * w0 + step( pxoWH( i1 ), op ) * w1 ) );
+          float w0 = 1.0 - abs( 1.0 - 2.0 * p0 ), w1 = 1.0 - w0;   // ずらしが小さい間ほど大きい。点は、自分の乱数がこれを下回っている間だけ見える（パッと現れて、流れて、パッと消える）
+          foam = max( foam, max( step( pxoWH( i0 ), op ) * step( pxoWH( i0 + 31.7 ), w0 ), step( pxoWH( i1 ), op ) * step( pxoWH( i1 + 57.1 ), w1 ) ) );
         } else {   // 止まった水：世界の座標のます目で、その場で入れ替わる
           vec2 oid = floor( pxoP.xz / 0.045 );
           foam = max( foam, step( pxoWH( oid + floor( uWT * 1.5 + pxoWH( oid ) * 7.0 ) * 3.1 ), op ) );
@@ -4708,7 +4753,7 @@ float pxoWaterSDF( vec2 p ) { return pxoWaterSDF0( p ) + pxoJag( p ); }
     shadowBlurPatch(shader);
   };
   m.extensions = { derivatives: true };   // dFdx（WebGL1 用。WebGL2 では標準）
-  m.customProgramCacheKey = () => 'pxo-water-v84';
+  m.customProgramCacheKey = () => 'pxo-water-v85';
   return m;
 }
 function waterCircles(st) {   // 水場の円の並び（[x, z, r]）。種類ごとに決め方が違う（2026-10-04）
@@ -4858,6 +4903,7 @@ ${WATER_NOISE_GLSL}
 const WATER_SPLASH_N = 150;     // 滝の幅 1 unit あたりの粒の数（落差が大きいほど増やす）。最初は 34 → 60（2026-10-08 ユーザー指定：数を増やす）→ 150（2026-10-09 ユーザー指定：粒を小さくして数で補う。大きさ 0.6 倍・数 2.5 倍）
 const WATER_SPLASH_PW = 2.4;    // 勢いの上限（粒の数・跳ねる高さ・飛ぶ距離に比例。2.4 で高さ約 2 unit）。最初は 1.6（落差 6 で頭打ち）
 const WATER_SPLASH_FLOW = 0.2;  // 流れの速さの効き方（勢いに 流れ^これ を掛ける）。最初は 0.35 で、今の滝（流れ 2.7）が上限近くまで強くなりすぎた（2026-10-09 ユーザー指定で弱めた）
+const WATER_SPLASH_AL = 0.5;    // 粒の濃さ（1 で不透明）。最初は 1 → 0.7 → 0.5（2026-10-09 ユーザー指定：滝・物に当たる水飛沫とも、透明度を上げる）
 const WATER_SPLASH_G = 9;       // 粒を落とす加速度 [unit/秒²]
 function waterSplashMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, depthWrite: false });
@@ -4886,9 +4932,9 @@ float pxoSpSize;
 mvPosition.xy += aSpCorner * pxoSpSize;   // カメラのほうを向く四角
 gl_Position = projectionMatrix * mvPosition;`);
     shader.fragmentShader = 'varying float pxoSpPh;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-  diffuseColor = vec4( ${c3('#eef8ff')}, 1.0 - smoothstep( 0.8, 1.0, pxoSpPh ) );   // 落ちきる手前で消える`);
+  diffuseColor = vec4( ${c3('#eef8ff')}, ${WATER_SPLASH_AL.toFixed(2)} * ( 1.0 - smoothstep( 0.8, 1.0, pxoSpPh ) ) );   // 落ちきる手前で消える`);
   };
-  m.customProgramCacheKey = () => 'pxo-watersplash-v3';
+  m.customProgramCacheKey = () => 'pxo-watersplash-v5';
   return m;
 }
 /** L：この水面が乗っている地面の高さ、surf：水面の高さ、surfOf：地面の高さ → 水面の高さ（このカードの全部の水面）、yOff：カードの高さ位置、
