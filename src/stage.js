@@ -2077,6 +2077,126 @@ function clipClosed(tris, pl) {
   }
   return out;
 }
+// ---- コードで作る石（2026-10-09 ユーザー指定：石の GLB をコードだけで再現して比べたい。今の石に近い物を）----
+// 今の石（石1〜.glb）は Blender のスクリプト（tools/blender/make_stone.py）で作った物なので、同じ手順をここで行う：
+//   楕円の球（20 面体を細かく割った物）→ ゆるい凹凸（なめらかなノイズ）→ 面の割れ（ます目ごとの点までの距離）
+//   → 平らな切り落とし 5〜7 か所（その向きに一番出ている所から 14〜28% 削る）→ 底を平らに → 原点を底の中央へ → 一番長い辺を 0.3 m に
+// 切り落としは、床の縁で石を切る処理（clipClosed：平面で切って切り口に面を張る）をそのまま使う。面は平らに塗る（面ごとの向き）。
+// 肌は絵を貼らず、断面と同じ四角い点々をシェーダーで描く（STONE_PROC_MAT）。点の実寸は石の大きさに依らず一定（GLB は絵なので、大きくすると点も大きくなった）。
+// 形は PROC_STONE_N 種類を種から作って使い回す（同じ形をまとめて 1 回で描く作りを保つ。全部を別の形にすると、石の数だけ描く回数が増える）
+// ごつごつ（rug 0〜1。2026-10-09 ユーザー指定：ごつごつ具合を出すスライダー）：上げるほど、凹凸と面の割れを強くし、細かい割れ・細かい凹凸を重ね、
+// 切り落としを増やし、もとの球の面も細かくする（岩のスクリプト make_rock.py がやっていたことを、1 本のつまみで連続に）。0.2 が最初に作った見た目
+const PROC_STONE_N = 8;
+const PROC_STONES = new Map();   // ごつごつの値（0.05 刻み）→ 形の一覧
+function procStoneGeometry(seed, rug = 0.2) {
+  const r = rng32(seed * 7919 + 13);
+  const h3 = (x, y, z, k) => { let v = Math.imul(x * 374761393 + y * 668265263 + z * 1274126177 + (seed + k) * 2147483647, 1103515245) >>> 0; v ^= v >>> 13; v = Math.imul(v, 1274126177) >>> 0; return ((v ^ (v >>> 16)) >>> 0) / 4294967296; };
+  const vnoise = (x, y, z, k) => {   // なめらかなノイズ（0〜1）
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z); let fx = x - ix, fy = y - iy, fz = z - iz;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+    const q = (a, b, c) => h3(ix + a, iy + b, iz + c, k), L = (a, b, t) => a + (b - a) * t;
+    return L(L(L(q(0, 0, 0), q(1, 0, 0), fx), L(q(0, 1, 0), q(1, 1, 0), fx), fy), L(L(q(0, 0, 1), q(1, 0, 1), fx), L(q(0, 1, 1), q(1, 1, 1), fx), fy), fz);
+  };
+  const cell = (x, y, z) => {   // ます目ごとに置いた点までの、一番近い距離（面の割れ）
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z); let best = 9;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const dx = ix + a + h3(ix + a, iy + b, iz + c, 11) - x, dy = iy + b + h3(ix + a, iy + b, iz + c, 12) - y, dz = iz + c + h3(ix + a, iy + b, iz + c, 13) - z;
+      best = Math.min(best, Math.hypot(dx, dy, dz));
+    }
+    return best;
+  };
+  // 形の比率（横・高さ・奥行き）。スクリプトの既定（1.1・0.6・0.85）を中心に、種ごとに少し振る
+  const R = [1.1 * (0.85 + 0.3 * r()), 0.6 * (0.8 + 0.45 * r()), 0.85 * (0.85 + 0.3 * r())];
+  const off = [r() * 100 - 50, r() * 100 - 50, r() * 100 - 50];   // ノイズをずらす量（種ごとに別の形）
+  const ico0 = new THREE.IcosahedronGeometry(0.5, 4 + Math.floor(3 * rug + 0.2)), ico = ico0.index ? ico0.toNonIndexed() : ico0, pa = ico.attributes.position;   // 500 面（ごつごつ 1 で 1,280 面）
+  // ごつごつ 0.2 で 凹凸 0.1・割れ 0.05（スクリプトの石と同じ）。それより上は割れを強めに伸ばす（最初は一次式で、最大でも岩ほど荒くならなかった）
+  const hi = Math.max(0, rug - 0.2), aBump = 0.06 + 0.2 * rug, aCrack = 0.03 + 0.1 * rug + 0.2 * hi * hi, aCrack2 = 0.16 * rug * rug, aFine = 0.06 * rug;
+  const vert = (i) => {
+    const p = new THREE.Vector3(pa.getX(i) * R[0], pa.getY(i) * R[1], pa.getZ(i) * R[2]);
+    const n = new THREE.Vector3(pa.getX(i) / R[0], pa.getY(i) / R[1], pa.getZ(i) / R[2]).normalize();   // 楕円の球の外向き
+    const q = [p.x + off[0], p.y + off[1], p.z + off[2]];
+    const d = (vnoise(q[0] / 0.7, q[1] / 0.7, q[2] / 0.7, 1) * 0.65 + vnoise(q[0] / 0.35, q[1] / 0.35, q[2] / 0.35, 2) * 0.35 - 0.5) * aBump   // ゆるい凹凸
+      + (cell(q[0] / 0.4, q[1] / 0.4, q[2] / 0.4) - 0.5) * aCrack                                                                         // 面の割れ
+      + (aCrack2 > 0 ? (cell(q[0] / 0.2 + 7.3, q[1] / 0.2 + 1.1, q[2] / 0.2 + 4.7) - 0.5) * aCrack2 : 0)                                  // 細かい割れ
+      + (aFine > 0 ? (vnoise(q[0] / 0.12, q[1] / 0.12, q[2] / 0.12, 3) - 0.5) * aFine : 0);                                               // 細かい凹凸
+    return { p: p.addScaledVector(n, d), n, uv: null };
+  };
+  let tris = [];
+  for (let i = 0; i < pa.count; i += 3) tris.push([vert(i), vert(i + 1), vert(i + 2), false]);
+  ico.dispose();
+  const reach = (n) => { let m = -1e9; for (const t of tris) for (let k = 0; k < 3; k++) m = Math.max(m, t[k].p.dot(n)); return m; };
+  const cuts = 5 + Math.floor(r() * 3) + Math.round(4 * Math.max(0, rug - 0.2));   // 切り落とし 5〜7 か所（ごつごつを上げると増やす）
+  for (let c = 0; c < cuts; c++) {
+    const n = new THREE.Vector3(r() * 2 - 1, r() * 0.8, r() * 2 - 1).normalize();
+    tris = clipClosed(tris, { n, d: reach(n) * (0.72 + 0.14 * r()) });
+  }
+  // 底を平らに（床に座る）。切り口の面は床に隠れるが、閉じた形にしておく（床の縁で切る時に閉じた形が要る）。
+  // 真下向きの平面だと clipClosed の切り口の座標軸が取れないので、わずかに傾けた向きで切ってから、底の高さを揃える
+  const down = new THREE.Vector3(1e-3, -1, 0).normalize();
+  { let ymin = 1e9; for (const t of tris) for (let k = 0; k < 3; k++) ymin = Math.min(ymin, t[k].p.y); tris = clipClosed(tris, { n: down, d: -(ymin + 0.12) }); }
+  // 原点を底の中央へ。一番長い辺を 0.3 m に
+  const mn = new THREE.Vector3(1e9, 1e9, 1e9), mx = new THREE.Vector3(-1e9, -1e9, -1e9);
+  const seen = new Set();
+  for (const t of tris) for (let k = 0; k < 3; k++) if (!seen.has(t[k])) { seen.add(t[k]); mn.min(t[k].p); mx.max(t[k].p); }
+  const c0 = new THREE.Vector3((mn.x + mx.x) / 2, mn.y, (mn.z + mx.z) / 2), sc = 0.3 / Math.max(mx.x - mn.x, mx.y - mn.y, mx.z - mn.z);
+  const pos = new Float32Array(tris.length * 9), nor = new Float32Array(tris.length * 9);
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), N = new THREE.Vector3();
+  let rc = 0, hx = 0, hz = 0, o = 0;
+  for (const t of tris) {
+    A.copy(t[0].p).sub(c0).multiplyScalar(sc); B.copy(t[1].p).sub(c0).multiplyScalar(sc); C.copy(t[2].p).sub(c0).multiplyScalar(sc);
+    A.y = Math.max(0, A.y); B.y = Math.max(0, B.y); C.y = Math.max(0, C.y);   // 傾けて切った分のわずかなずれを、底の高さに揃える
+    N.copy(B).sub(A).cross(_cv.copy(C).sub(A));
+    if (N.lengthSq() < 1e-14) continue;   // つぶれた三角形は入れない
+    N.normalize();
+    for (const P of [A, B, C]) { pos[o] = P.x; pos[o + 1] = P.y; pos[o + 2] = P.z; nor[o] = N.x; nor[o + 1] = N.y; nor[o + 2] = N.z; o += 3; rc = Math.max(rc, Math.hypot(P.x, P.z)); hx = Math.max(hx, Math.abs(P.x)); hz = Math.max(hz, Math.abs(P.z)); }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, o), 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(nor.subarray(0, o), 3));
+  return { geometry, material: STONE_PROC_MAT, r: Math.max(hx, hz), rc, proc: true };
+}
+const _cv = new THREE.Vector3();
+// コードで作る石の肌：断面（STONE_CAP_MAT）と同じ四角い点々を、石に貼り付いた座標（石の中の位置 × 大きさ）で面ごとに並べる。
+// 石ごとの色の濃さは、まとめ描きの石ごとの色（instanceColor）で掛かる。点の実寸は一定（1 m あたり STONE_DOTS_PER_M ます）
+const STONE_PROC_MAT = (() => {
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+  const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying vec3 pxoStL, pxoStN;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+  pxoStL = transformed * ( length( instanceMatrix[ 0 ].xyz ) / ${MODEL_M.toFixed(4)} );   // 石の中の位置 [m]（置いた大きさで）
+#else
+  pxoStL = transformed;
+#endif
+  pxoStN = objectNormal;`);
+    shader.fragmentShader = `varying vec3 pxoStL, pxoStN;
+float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 n = normalize( pxoStN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
+  vec2 g = vec2( dot( pxoStL, t ), dot( pxoStL, bt ) ) * ${STONE_DOTS_PER_M.toFixed(1)} + floor( n.xz * 7.0 + n.y * 3.0 ) * 13.7, id = floor( g ), f = fract( g ) - 0.5;   // 面の向きごとに並びをずらす
+  float h1 = pxoStHash( id ), h2 = pxoStHash( id + 17.31 ), h3 = pxoStHash( id + 53.77 );
+  float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );
+  vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
+  float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
+  diffuseColor.rgb *= mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ); }`);
+  };
+  m.customProgramCacheKey = () => 'pxo-stoneproc-v1';
+  return m;
+})();
+function procStones(rug = 0.2) {
+  const key = Math.round(Math.max(0, Math.min(1, rug)) * 20);
+  let list = PROC_STONES.get(key);
+  if (!list) {
+    list = Array.from({ length: PROC_STONE_N }, (_, i) => ({ url: `proc:${i}`, s: procStoneGeometry(i + 1, key / 20) }));
+    PROC_STONES.set(key, list);
+    // 控えは今使っている値と、直近の数個だけ残す（スライダーを動かすたびに形が溜まらないように。使っている群れがある値は捨てない）
+    if (PROC_STONES.size > 6) {
+      const inUse = new Set(stoneList.filter((st) => st.kind === 'proc').map((st) => Math.round(Math.max(0, Math.min(1, st.rug ?? 0.2)) * 20)));
+      for (const [k, old] of PROC_STONES) { if (PROC_STONES.size <= 6) break; if (k === key || inUse.has(k)) continue; for (const p of old) p.s.geometry.dispose(); PROC_STONES.delete(k); }
+    }
+  }
+  return list;
+}
 // 1 個の石を世界の座標に置いて、床の縁で切った 2 つの形（表面・断面）にする
 function cutStoneMeshes(shape, matrix, planes, scale, shade = 1) {
   const g = shape.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
@@ -2102,7 +2222,8 @@ function cutStoneMeshes(shape, matrix, planes, scale, shade = 1) {
     }
     return geo;
   };
-  const surf = tris.filter((t) => !t[3]), caps = tris.filter((t) => t[3]);
+  // コードで作る石は絵を持たないので、表面も断面と同じ点々の材質で描く
+  const surf = shape.proc ? [] : tris.filter((t) => !t[3]), caps = shape.proc ? tris : tris.filter((t) => t[3]);
   const meshes = [];
   if (surf.length) {   // 表面：色の濃さを掛けた材質の複製（組み直すたびに捨てる）
     const mat = shape.material.clone(); mat.color.multiplyScalar(shade); mat.userData.pxoOwned = true;
@@ -2128,11 +2249,18 @@ function buildStones() {
   STONE_EDGE = [];
   const stoneShapes = stonePatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
   const rockShapes = rockPatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
-  if (!stoneShapes.length) return;
-  const shapes = [...stoneShapes, ...rockShapes];   // per[] の添字：石が先、岩が後
-  const stoneW = stoneShapes.reduce((a, p) => a + p.s.r * 2, 0) / stoneShapes.length;   // 石の形の平均の幅 [m]（大きさ 1 のとき）
+  const anyProc = stoneList.some((st) => st.kind === 'proc' && st.show !== false);
+  if (!stoneShapes.length && !anyProc) return;
+  const baseShapes = [...stoneShapes, ...rockShapes];   // per[] の添字：石が先、岩、コードで作る石（群れごとに、ごつごつの値で別の形）の順
+  const procAt = baseShapes.length;
+  const stoneW = stoneShapes.length ? stoneShapes.reduce((a, p) => a + p.s.r * 2, 0) / stoneShapes.length : 0.3;   // 石の形の平均の幅 [m]（大きさ 1 のとき）
   stoneList.forEach((st, ci) => {
     if (st.show === false) return;
+    const isProc = st.kind === 'proc';
+    if (!isProc && !stoneShapes.length) return;
+    const onShore = !!st.shore && WATER_SHORE.length > 0, shoreW = Math.max(0.05, st.shoreW ?? 0.8), shoreIn = Math.max(0, Math.min(1, st.shoreIn ?? 0.3));   // 水辺に並べる：岸からの幅 [unit]、水の中に置く割合
+    const procShapes = isProc ? procStones(st.rug ?? 0.2) : [];   // コードで作る石（この群れのごつごつの値の形）
+    const shapes = isProc ? [...baseShapes, ...procShapes] : baseShapes;
     const r = rng32(st.seed ?? 1);
     const count = Math.max(0, Math.min(STONE_MAX, Math.round(st.count ?? 20)));
     const spread = Math.max(0, st.spread ?? 3), size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.4));
@@ -2145,24 +2273,44 @@ function buildStones() {
     for (let i = 0; i < count; i++) {
       for (let t = 0; t < STONE_TRIES; t++) {
         // 中心ほど多く、外ほどまばら（正規分布。σ = ばらけ具合の半分、外れすぎはばらけ具合の 1.5 倍で止める）
-        const rad0 = Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;
-        const x = (st.x ?? 0) + Math.cos(a) * rad0, z = (st.z ?? 0) + Math.sin(a) * rad0;
+        const rad0 = onShore ? 1.5 * spread * Math.sqrt(r()) : Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;   // 水辺：範囲の中をまんべんなく探す
+        let x = (st.x ?? 0) + Math.cos(a) * rad0, z = (st.z ?? 0) + Math.sin(a) * rad0;
         const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar * 1.5);   // 大きさのばらつき：1 で 1/8〜8 倍（±2σ まで）
         const w = stoneW * sc;   // この石の幅 [m]
         const u = Math.max(0, Math.min(1, (w - ROCK_FROM) / (ROCK_TO - ROCK_FROM))), pRock = u * u * (3 - 2 * u);
-        const useRock = rockShapes.length > 0 && r() < pRock;
-        const pi = useRock ? stoneShapes.length + (Math.floor(r() * rockShapes.length) % rockShapes.length) : Math.floor(r() * stoneShapes.length) % stoneShapes.length;
+        const useRock = !isProc && rockShapes.length > 0 && r() < pRock;
+        const pi = isProc ? procAt + (Math.floor(r() * procShapes.length) % procShapes.length) : useRock ? stoneShapes.length + (Math.floor(r() * rockShapes.length) % rockShapes.length) : Math.floor(r() * stoneShapes.length) % stoneShapes.length;
         const rot = r() * Math.PI * 2;
         const k = useRock ? w / (shapes[pi].s.r * 2) : sc;   // 岩は同じ幅になるように縮める
         const rad = shapes[pi].s.r * k * MODEL_M;
+        if (onShore) {
+          // 水辺に並べる（2026-10-09 ユーザー指定：川や池の岸に沿って石を自動で置く）：候補の場所を、一番近い川・池の岸へ寄せる。
+          // 岸からの位置（正が陸、負が水の中）を先に決め、そこへ着くまで岸に垂直な向きへ動かす（岸までの距離の傾きを見て、数回くり返す）。
+          // きわほど多く、離れるほどまばら。水の中へは、陸の側の 6 割の幅まで
+          // 石の大きさの分だけ岸から離す（同日：掘った川の縁ぎりぎりの石が、岸の壁からはみ出して宙に浮いて見えた）：
+          // 陸の石は縁から半径の 7 割、水の中の石は壁から半径ぶん内側から先に置く
+          const u = Math.pow(r(), 1.6), want = r() < shoreIn ? -(rad + u * shoreW * 0.6) : rad * 0.7 + u * shoreW;
+          let ok = false;
+          for (let it = 0; it < 5; it++) {
+            const sd = shoreSdAt(x, z);
+            if (sd > 1e8) break;
+            if (Math.abs(sd - want) < 0.05) { ok = true; break; }
+            const gx = shoreSdAt(x + 0.05, z) - sd, gz = shoreSdAt(x, z + 0.05) - sd, gl = Math.hypot(gx, gz);
+            if (gl < 1e-6) break;
+            const stepLen = (sd - want) / Math.max(0.5, gl / 0.05);   // 円のつなぎ目では距離の進み方が 1 より小さいので、その分だけ大きく動かす（行きすぎないよう下限あり）
+            x -= (gx / gl) * stepLen; z -= (gz / gl) * stepLen;
+          }
+          if (!ok || Math.hypot(x - (st.x ?? 0), z - (st.z ?? 0)) > 1.5 * spread + shoreW) continue;   // 岸に着けなかった・範囲の外へ出た：別の場所で試す
+        }
         if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < (q.rad + rad) * STONE_GAP)) continue;
         placed.push({ x, z, rad });
         const mat = _sm.compose(_sp.set(x, (st.y ?? 0) + stepHAt(x, z), z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();   // 段差で掘った所では、その底に乗せる（2026-10-08。ひな壇の高さは足さない：段の上の物は高さを数字で持たせてあるため）
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
-        if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
+        if (onShore) { if ((DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone', true) < rad) continue; }   // 水辺の石：水はよけない。土・石畳・柱にかかったら別の場所で試す
+        else if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
-        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
+        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, isProc ? MODEL_M : k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
         per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
         break;
       }
@@ -3463,6 +3611,13 @@ export function setWater(list) {
 }   // 「草・石をよける」ため石・草も組み直す
 // 「草・石をよける」水場の形（2026-10-03 ユーザー指定）：画面と同じ「円をなめらかにくっつけた形」を JS でも計算して、石・草を水の上に置かない
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
+// 川・池の形の全部（「草・石をよける」の設定に関係なく。石を水辺に並べるのに使う。2026-10-09）。海は入れない
+let WATER_SHORE = [];   // [{ cs, k }]
+function shoreSdAt(x, z) {   // 一番近い川・池の岸までの距離（負が水の中）。水が無ければ大きな値
+  let best = 1e9;
+  for (const w of WATER_SHORE) best = Math.min(best, circlesSd(w.cs, w.k, x, z));
+  return best;
+}
 let DIRT_AVOID = [];    // 土の「草・石をよける」（形は水と同じ持ち方。2026-10-05）
 // シェーダーの pxoWH / pxoWN と同じ式（海の岸線を JS でも同じ形にする。2026-10-04）
 const fract = (v) => v - Math.floor(v);
@@ -3482,9 +3637,9 @@ function seaDAt(sea, x, z) {   // 海の静かな時の岸線からの距離（�
   const wig = sea.coast * ((wNoise(along * 0.08, 3.7) * 2 - 1) * 3 + (wNoise(along * 0.3, 8.1) * 2 - 1) * 0.8);
   return -((rx * sea.nx + rz * sea.nz) - wig);
 }
-function waterSdfAt(x, z, kind = null) {   // 一番近い「よける」水場・土の縁までの距離（負が中）。無ければ大きな値。kind：'grass' / 'stone'（土は草・石を別々によける。2026-10-05）
+function waterSdfAt(x, z, kind = null, skipWater = false) {   // skipWater：水はよけずに、土・石畳・柱の足元だけを見る（水辺に並べる石）   // 一番近い「よける」水場・土の縁までの距離（負が中）。無ければ大きな値。kind：'grass' / 'stone'（土は草・石を別々によける。2026-10-05）
   let best = 1e9;
-  for (const w of [...WATER_AVOID, ...DIRT_AVOID, ...ROAD_AVOID, ...PILLAR_AVOID, ...MASONRY_AVOID]) {   // 水と土・砂と石畳・柱の足元（2026-10-05）
+  for (const w of [...(skipWater ? [] : WATER_AVOID), ...DIRT_AVOID, ...ROAD_AVOID, ...PILLAR_AVOID, ...MASONRY_AVOID]) {   // 水と土・砂と石畳・柱の足元（2026-10-05）
     if (w.only && kind && !w.only[kind]) continue;   // 土：その種類をよけない設定なら見ない
     if (w.sea) { best = Math.min(best, seaDAt(w.sea, x, z) - w.sea.run); continue; }   // 海は波が駆け上がる所まで水とみなす
     let d = 1e5;
@@ -4598,7 +4753,7 @@ function buildWater() {
   const g = stageCtx.water;
   for (const m of g.children) { m.geometry.dispose(); m.material.dispose(); }
   g.clear();
-  WATER_AVOID = [];
+  WATER_AVOID = []; WATER_SHORE = [];
   waterTopTex.image.data.fill(0);   // 水面の高さの地図（水の下の影のぼかし用）。下の buildWaterSides が焼き、最後に仕上げる
   waterList.forEach((st, ci) => {
     if (st.show === false) return;
@@ -4612,6 +4767,7 @@ function buildWater() {
     // ふくらみの分が無かった時は、大きな湖で岸が板からはみ出し、直線で切れた（2026-10-04 ユーザー指摘）
     const pad = WATER_WET + 0.2 + Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) * 0.75 + 0.12;
     if (st.avoid !== false) WATER_AVOID.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 草・石をよける（既定でオン）
+    WATER_SHORE.push({ cs, k: Math.max(0.02, (st.smooth ?? 0.5) * rMax * 1.2) });   // 石を水辺に並べる時の岸の形
     // 段差（2026-10-08 ユーザー指定）：水面は、水場の中心線（円の中心）が通っている地面の高さごとに 1 枚ずつ置く（川が段差に差し掛かると、
     // 段ごとに水面の高さが変わり、境目は滝になる）。中心線より高い地面（溝の脇の岸など）には置かない＝溝より太い水は溝の幅で止まる。
     // 「厚み」は水面を底から持ち上げる量。高さごとに、その場所を掘った深さまで（超えた分は使わない＝水面は床の高さより上へ出ない）

@@ -181,6 +181,12 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
 #screenBar .screen.gen.two { flex: 0 0 528px; }
 #screenBar .screen.gen .genCols { display: flex; align-items: flex-start; gap: 12px; }
 #screenBar .screen.gen .genCol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+/* スライダーのまとまりの見出し（2026-10-09 ユーザー指定：内容ごとにグルーピングして見出しを付ける。まず石のタブから。ほかのタブも同じ物を使う）。
+   列（.genCol）の中に置く。下に細い線を引き、2 つ目以降は上に間を空けて、まとまりの切れ目が分かるようにする */
+#screenBar .screen.gen .genHead { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding-bottom: 2px; margin-top: 8px; border-bottom: 1px solid var(--line); }
+#screenBar .screen.gen .genCol > .genHead:first-child { margin-top: 0; }
+/* まとまりの中に置くチェック（列の中の 1 行。上の段のチェックと同じ見た目） */
+#screenBar .screen.gen .genCol > .genChk { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
 #windBox:not(:has(#modelWindOn:checked)) .wb { opacity: .45; pointer-events: none; }   /* 風オフの間は揺れの設定を薄く（植物の明るさは常に効く。グレーアウト法則） */
 #windBox .plantSub { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }

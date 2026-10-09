@@ -278,7 +278,7 @@ let models = (() => {
 })();
 // 石のジェネレーター（2026-10-03 ユーザー指定）。x・z は群れの中心、y は床からの高さ、spread はばらけ具合 [unit]、
 // count は個数、size は大きさの倍率（1 で GLB の 1.25 倍＝3D モデルと同じ）、sizeVar は大きさのばらつき（0〜1）、seed は並び（並べ直しで変わる）
-const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true };   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
+const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true, kind: 'glb', rug: 0.2, shore: false, shoreW: 0.8, shoreIn: 0.3 };   // shore：水辺に並べる、shoreW：岸からの幅、shoreIn：水の中の割合（2026-10-09）   // kind：形の作り方（'glb' 3D モデル／'proc' コードで作る。2026-10-09）   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
 const stoneDefaults = (o) => ({ ...STONE_BASE, ...o });
 let stones = (() => {
   try { const a = JSON.parse(LS.getItem(STONES_KEY) || 'null'); if (Array.isArray(a)) return a.map(stoneDefaults); } catch (e) { console.warn('石の設定の読込失敗:', e); }
@@ -358,17 +358,39 @@ function stoneRow(st, i) {
   };
   // スライダーは 2 列（2026-10-08 ユーザー指定：行が増えすぎたので、内容ごとに分ける）
   const cols = put(box, '<div class="genCols"></div>'), colL = put(cols, '<div class="genCol"></div>'), colR = put(cols, '<div class="genCol"></div>');
-  let col = colL;   // スライダーを入れる先。左の列：どこに・いくつ
+  // スライダーは内容ごとのまとまりに分けて、見出しを付ける（2026-10-09 ユーザー指定：全体の UI の設計を改善する。まず石のタブから）。
+  // 見出しは列の中に置く（.genHead。ほかのタブでも同じ物を使う）
+  const head = (text, title = '') => put(col, `<div class="genHead" title="${title}">${text}</div>`);
+  let col = colL;   // スライダーを入れる先。左の列：どこに・いくつ・水辺
+  head('位置');
   slider('横位置', 'x', -30, 30, 0.1, 1, '群れの中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
+  head('数と広がり');
   slider('個数', 'count', 1, 400, 1, 0, '石の数。重ならない場所が見つからない石は置かないので、狭い範囲に多くすると少なめになる');
   slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '散らばる範囲の広さ [unit]。中心ほど多く、外ほどまばら（ほぼこの値の 1.5 倍までに収まる）');
-  col = colR;   // 右の列：大きさと色
+  head('水辺', '川・池の岸に沿って石を並べる時の設定');
+  // 水辺に並べる（2026-10-09 ユーザー指定：川や池の岸に沿って石を自動で置く）
+  const shoreChk = put(col, '<label class="genChk" title="石を、川・池の岸に沿って並べる。オンにすると、この群れの範囲（横位置・奥行き・ばらけ具合）の中にある岸へ石を寄せて置く。川全体に並べたい時は、ばらけ具合を大きくする。海には並べない"><input type="checkbox"><span>水辺に並べる</span></label>').querySelector('input');
+  shoreChk.checked = !!st.shore;
+  shoreChk.onchange = () => { st.shore = shoreChk.checked; changed(); };
+  slider('岸からの幅', 'shoreW', 0.1, 4, 0.05, 2, '「水辺に並べる」の時、岸から陸の側へどこまで石を置くか [unit]。岸のきわほど多く、離れるほどまばら。水の中へは、この 6 割の幅まで');
+  slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る');
+  col = colR;   // 右の列：大きさ・色・形
+  head('大きさ');
   slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率。1 で 3D モデルと同じ（石1 の幅 32cm を実物の 1.25 倍で置く）。幅が 45〜80cm（GLB の寸法。舞台の見た目では 56〜100cm）の石は岩の形が混ざり、それより大きいと全部岩になる');
   slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/8〜8 倍）');
+  head('色');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
   slider('色のばらつき', 'shadeVar', 0, 1, 0.05, 2, '石ごとの色の濃さのばらつき。0 で全部同じ、1 で濃さが ±1 ほどばらつく（明るさ 1/2〜2 倍）');
+  head('形');
+  // 形の作り方（2026-10-09 ユーザー指定：石の GLB をコードだけで再現して比べたい）。群れごとに選ぶ。既定は今までどおり 3D モデル
+  const kindRow = put(col, '<label class="sld" title="石の形の作り方。3D モデル：素材フォルダの 石1.glb などを使う（今までどおり。大きい石は岩の形に替わる）。コードで作る：同じ作り方（丸い塊を平らな面で切り落とす）をコードで行い、8 種類の形を使い回す。肌の点々は大きさに依らず同じ実寸で、素材のファイルが要らない"><span>形の作り方</span><select><option value="glb">3D モデル</option><option value="proc">コードで作る</option></select><b></b></label>');
+  const kindSel = kindRow.querySelector('select');
+  kindSel.value = st.kind === 'proc' ? 'proc' : 'glb';
+  kindSel.onkeydown = (e) => e.stopPropagation();
+  kindSel.onchange = () => { st.kind = kindSel.value; changed(); };
+  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合（形の作り方が「コードで作る」の時だけ効く）。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石、0.2 が 3D モデルの小さい石に近い形');
   const btns = put(box, '<div class="stoneBtns"></div>');
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
