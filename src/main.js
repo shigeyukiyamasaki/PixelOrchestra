@@ -2095,6 +2095,7 @@ for (const id of ['panel', 'topbar', 'camBar', 'viewArea', 'screenBar']) documen
   refreshValueLabels();
 });
 // 値表示（数値入力欄）を付けるスライダー。上のバーの遅延も含む（シークは除く）
+const FPS_STEPS = [6, 10, 12, 15, 20, 30, 60];   // フレームレートの段 [コマ/秒]。画面の書き換え（1 秒 60 回）で割り切れる数だけ。最後の 60 は制限なし
 const RANGE_SEL = '#panel input[type=range][id], #camBar input[type=range][id], #viewArea input[type=range][id], #topbar .dly input[type=range][id], #settingsPop input[type=range][id]';   // #settingsPop：上のバーの「設定」ポップアップ（クレジット・テンポ。2026-09-18）
 // 値表示の書式（2026-09-16 ユーザー指定：時刻は時計表記）。toText: 数値 → 表示、fromText: 入力 → 数値（NaN なら不正）
 const VALUE_FMT = {
@@ -2102,6 +2103,12 @@ const VALUE_FMT = {
   pixelLevels: {
     toText: (v) => (v >= 32 ? '256' : String(Math.round(v))),
     fromText: (t) => { const v = parseFloat(t); return Number.isFinite(v) ? Math.min(32, v) : NaN; },
+  },
+  // フレームレート（2026-10-09 ユーザー指定：60 で割り切れる数だけにする）：スライダーの値は FPS_STEPS の何番目か。表示と入力はコマ数で
+  // （割り切れない値は、2 コマおきと 3 コマおきが混ざってコマの間隔が不ぞろいになる）。打ち込んだ数は、一番近い段へ寄せる
+  pixelFps: {
+    toText: (v) => String(FPS_STEPS[Math.max(0, Math.min(FPS_STEPS.length - 1, Math.round(v)))]),
+    fromText: (t) => { const v = parseFloat(t); if (!Number.isFinite(v)) return NaN; let b = 0; FPS_STEPS.forEach((f, i) => { if (Math.abs(f - v) < Math.abs(FPS_STEPS[b] - v)) b = i; }); return b; },
   },
   sunHour: {
     toText: (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60); return `${h}:${String(m).padStart(2, '0')}`; },
@@ -2917,17 +2924,32 @@ function undoShake() {
 }
 
 let lastPerf = performance.now();
+// フレームレート（2026-10-09 ユーザー指定：ドット絵の所に、フレームレートの操作も入れたい。対象は画面全体）：ドット化がオンの時、画面を描く回数を
+// 1 秒に「フレームレート」回へ落とす（60 で制限なし）。次に描く時刻 frameDue まで、このコマは何もしないで戻る（動きの計算も描画もしない＝
+// 奏者・水・草・カメラの動きが全部その刻みになり、描く回数が減った分だけ軽くなる）。時刻は「前に描いた時刻 ＋ 間隔」で進めるので、
+// 画面の書き換え（ふつう 1 秒 60 回）で割り切れない値でも、平均でその回数になる（選べるのは割り切れる数だけにしてある：FPS_STEPS）
+const FPS_FREE = 59.5;   // これ以上は制限なしとして扱う [コマ/秒]
+let frameDue = 0;
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
-  const dt = Math.min(0.1, (now - lastPerf) / 1000);
-  lastPerf = now;
-  // 3D モデルの風（2026-10-02 ユーザー指定）：曲と関係なく実時間で揺らす。値は毎フレーム入力欄から読む（プリセットの読み込みにもそのまま追従）
   const wv = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
+  const fps = $('pixelOn')?.checked ? (FPS_STEPS[Math.round(wv('pixelFps', FPS_STEPS.length - 1))] ?? 60) : 60;   // スライダーの値は FPS_STEPS の何番目か
+  if (fps < FPS_FREE) {
+    if (now < frameDue - 1) return;   // まだ次のコマの時刻ではない（−1：書き換えの時刻の揺れの分）
+    const iv = 1000 / Math.max(1, fps);
+    frameDue = Math.max(frameDue + iv, now - iv);   // 大きく遅れた時（タブが裏にあった等）は、たまった分を追いかけない
+  } else frameDue = 0;
+  const dtReal = Math.min(1, (now - lastPerf) / 1000);   // 前に描いてからの実時間 [秒]（コマを落としていると 0.1 を超える）
+  const dt = Math.min(0.1, dtReal);                      // 奏者の姿勢の均しなどに渡す分（今までどおり 0.1 まで）
+  lastPerf = now;
+  // 風・水は、コマを落としても進む速さを変えない：1 回に進められるのは 0.1 秒まで（tickWater の中の上限）なので、0.1 秒ずつに分けて進める
+  const tickReal = (fn) => { for (let r = dtReal; r > 1e-6; r -= 0.1) fn(Math.min(0.1, r)); };
+  // 3D モデルの風（2026-10-02 ユーザー指定）：曲と関係なく実時間で揺らす。値は毎フレーム入力欄から読む（プリセットの読み込みにもそのまま追従）
   setModelWind({ on: $('modelWindOn').checked, amp: wv('modelWindAmp', 1), rate: wv('modelWindRate', 1), dirDeg: wv('modelWindDir', 0), gust: wv('modelWindGust', 0.25) });
   setPlantBrightness(wv('plantBright', 1));   // 植物の明るさ（2026-10-03。変わった時だけ材質の色を入れ直す）
-  tickModelWind(dt * wv('modelWindRate', 1));
-  tickWater(dt);   // 水の波（2026-10-03。曲と関係なく実時間で）   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
+  tickReal((d) => tickModelWind(d * wv('modelWindRate', 1)));
+  tickReal(tickWater);   // 水の波（2026-10-03。曲と関係なく実時間で）   // 揺れの速さ：時刻の進み方だけを変える（揺れ幅は変わらない）
   // 床の絵も MIDI と関係なく当てる（2026-10-05 ユーザー指定：下の曲の処理の中だけで当てていて、MIDI を読むまで板目のままだった）
   setFloorStyle(['grass', 'grassDark'].includes($('floorStyle')?.value) ? $('floorStyle').value : 'plank');   // 変わった時だけ作り直す
   stage.resize(); // プレビューの大きさに追従（変わった時だけ設定する。初回の描画サイズ取りこぼし対策も兼ねる）
