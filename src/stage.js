@@ -1945,39 +1945,18 @@ function updateModelShadow(renderer, scene) {
   renderer.setRenderTarget(prevRT); renderer.shadowMap.autoUpdate = autoShadow;
 }
 // ---- 石のジェネレーター（2026-10-03 ユーザー指定）----
-// 石の GLB（石1・石2…）を形のもととして、個数・ばらけ具合・大きさ・大きさのばらつきから並べ方を決め、形ごとにまとめて 1 回で描く
+// コードで作った石の形（procStones）をもとに、個数・ばらけ具合・大きさ・大きさのばらつきから並べ方を決め、形ごとにまとめて 1 回で描く
+// （最初は石の GLB（石1・石2…、大きい物は岩1…）を形のもとにしていた。2026-10-09 ユーザー指定：3D モデルはもう使わないので、読み込み・並べる処理を削除）
 // （InstancedMesh。このアプリの重さは描画の回数で決まるので、数百個でも軽い）。並べ方は種から決まるので、同じ値なら同じ並び。
 // 1 群れ = { x, z, y（中心と高さ [unit]）, spread（ばらけ具合 [unit]）, count, size（大きさの倍率）, sizeVar（0〜1）, seed, show }
 const STONE_MAX = 400;          // 1 群れ・1 形あたりの上限（個数スライダーの最大と同じ）
 const STONE_TRIES = 30;         // 重ならない場所を探す回数（見つからなければその石は置かない）
 const STONE_GAP = 0.85;         // 重なりの判定の甘さ（外接円の半径の和 × これ未満なら重なりとみなす。1 未満で少し寄り添える）
-// 大きい石は岩の形に替える（2026-10-03 ユーザー指定：引き伸ばした小石は粗く、点々も大きくなるため）。
-// 幅 ROCK_FROM〜ROCK_TO [m] の間は、大きいほど岩になる確率を上げて混ぜる（境目で形の種類が急に変わらないように。真ん中の約 60cm で半々）
-const ROCK_FROM = 0.45, ROCK_TO = 0.8;
-let stonePatterns = [], rockPatterns = [], stoneList = [];
-const STONE_POOL = new Map();   // `${群れ}:${url}` → InstancedMesh（作り直さず個数と並びだけ変える）
-/** 石の形のもと（GLB の URL の一覧） */
-export function setStonePatterns(urls, rockUrls = []) { stonePatterns = [...(urls || [])]; rockPatterns = [...(rockUrls || [])]; buildStones(); }
+const STONE_LAND_MIN = 0.35;    // 水辺：陸の石を岸の縁から離す量の下限（半径に対する割合。岸からの幅が最小の時の値）
+let stoneList = [];
+const STONE_POOL = new Map();   // `${群れ}:${群れの中の形の番号}` → InstancedMesh（作り直さず個数と並びだけ変える）
 /** 石の群れの一覧 */
 export function setStones(list) { stoneList = (list || []).map((o) => ({ ...o })); buildStones(); }
-function stoneShape(url) {   // GLB の最初の形を、ノードの位置・向きごと焼き込んで使う
-  const e = loadGlb(url);
-  if (!e.scene) return null;
-  if (!e.stone) {
-    let mesh = null;
-    e.scene.updateMatrixWorld(true);
-    e.scene.traverse((o) => { if (!mesh && o.isMesh) mesh = o; });
-    if (!mesh) return null;
-    const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-    geometry.computeBoundingBox();
-    const b = geometry.boundingBox;
-    const pa = geometry.attributes.position; let rc = 0;
-    for (let i = 0; i < pa.count; i++) rc = Math.max(rc, Math.hypot(pa.getX(i), pa.getZ(i)));
-    // r：並べる時の大きさの目安 [m]、rc：原点（底面の中央）から一番遠い点までの横の距離 [m]（床の縁にかかるかの判定）
-    e.stone = { geometry, material: mesh.material, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, rc };
-  }
-  return e.stone;
-}
 // 床の外に出た部分を切る（2026-10-03 ユーザー指定：床の縁でスパッと切れて断面が見える）。
 // 床の縁にかかった石だけ、形のデータを床の縁で実際に切り、切り口に面を張って閉じた立体にする（本物の断面。影も光も正しく当たる）。
 // 床の形は insideFloor と同じ（手前・左右は直線、奥は弧）。弧は石 1 個の幅ではほぼ直線なので、その石の位置での接線の平面で切る。
@@ -1987,15 +1966,33 @@ const STONE_CAP_DOT = new THREE.Color(0.10, 0.10, 0.10);   // 点の色（make_r
 const STONE_DOTS_PER_M = 46;   // 点の間隔（1m あたりのます目の数。Blender の焼き込みと同じ）
 // 断面の材質：石の表面と同じ四角い点々（ます目ごとに点 1 つ、半分ほど間引き、大きさ・濃さ 30〜70% をばらつかせる）を、
 // 断面の平面上の座標で並べる。ます目の大きさは石ごとの倍率（頂点の pxoScale）に合わせ、表面の焼き込みと同じ実寸にする
+// 苔（2026-10-09 ユーザー指定：コードで作る石に苔を）：上を向いた面ほど付く。量 amt（0〜1）を上げると、付き始める向きが下がって側面まで広がる。
+// 縁はなめらかなノイズでまだらにし、苔そのものも明暗 2 色のまだらにする。色は草原の床より暗い、くすんだ緑（最初は床に近い明るい緑で、苔の多い石が草に溶けて見えた）。
+// n：面の向き（上が +y）、p：石に貼り付いた位置 [m]（置いた大きさで）。断面の材質（STONE_CAP_MAT）と、コードで作る石の材質（STONE_PROC_MAT）で使う
+const STONE_MOSS_GLSL = `float pxoMsH( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); return fract( ( p.x + p.y ) * p.z ); }
+float pxoMsN( vec3 p ) {
+  vec3 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( mix( pxoMsH( i ), pxoMsH( i + vec3( 1, 0, 0 ) ), f.x ), mix( pxoMsH( i + vec3( 0, 1, 0 ) ), pxoMsH( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+              mix( mix( pxoMsH( i + vec3( 0, 0, 1 ) ), pxoMsH( i + vec3( 1, 0, 1 ) ), f.x ), mix( pxoMsH( i + vec3( 0, 1, 1 ) ), pxoMsH( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
+}
+vec3 pxoMoss( vec3 col, vec3 n, vec3 p, float amt, float shade ) {
+  if ( amt <= 0.001 ) return col;
+  float up = n.y + ( pxoMsN( p * 14.0 ) - 0.5 ) * 0.8 + ( pxoMsN( p * 40.0 + 7.3 ) - 0.5 ) * 0.25;   // 上向きほど付く。ノイズで縁をまだらに
+  float th = mix( 1.25, -0.35, amt );
+  float m = smoothstep( th, th + 0.1, up );
+  vec3 moss = mix( vec3( 0.13, 0.25, 0.11 ), vec3( 0.23, 0.36, 0.15 ), step( 0.5, pxoMsN( p * 22.0 + 31.7 ) ) ) * mix( 1.0, shade, 0.5 );   // 石の色の濃さは半分だけ効かせる
+  return mix( col, moss, m );
+}
+`;
 const STONE_CAP_MAT = (() => {
   const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
   const c = (v) => `vec3( ${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)} )`;
   m.onBeforeCompile = (shader) => {
-    shader.vertexShader = 'attribute float pxoScale, pxoShade;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS, pxoCapK;\n' + shader.vertexShader
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale; pxoCapK = pxoShade;');
+    shader.vertexShader = 'attribute float pxoScale, pxoShade, pxoMossA;\nvarying vec3 pxoCapW, pxoCapN;\nvarying float pxoCapS, pxoCapK, pxoCapM;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\npxoCapW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; pxoCapN = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz ); pxoCapS = pxoScale; pxoCapK = pxoShade; pxoCapM = pxoMossA;');
     shader.fragmentShader = `varying vec3 pxoCapW, pxoCapN;
-varying float pxoCapS, pxoCapK;
-float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+varying float pxoCapS, pxoCapK, pxoCapM;
+${STONE_MOSS_GLSL}float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 n = normalize( pxoCapN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
   vec2 g = vec2( dot( pxoCapW, t ), dot( pxoCapW, bt ) ) / max( 1e-4, pxoCapS / ${STONE_DOTS_PER_M.toFixed(1)} ), id = floor( g ), f = fract( g ) - 0.5;
@@ -2003,9 +2000,9 @@ float pxoHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( 
   float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );   // 点の半分の幅（ます目に対する割合。焼き込みのボロノイと同じ値）
   vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
   float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
-  diffuseColor.rgb = mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoCapK; }`);   // pxoCapK：石ごとの色の濃さ（表面と同じ倍率）
+  diffuseColor.rgb = pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoCapK, n, pxoCapW / max( 1e-4, pxoCapS ), pxoCapM, pxoCapK ); }`);   // pxoCapK：石ごとの色の濃さ（表面と同じ倍率）、pxoCapM：苔の量（コードで作る石だけ。GLB の石の断面は 0）
   };
-  m.customProgramCacheKey = () => 'pxo-stonecap-v2';
+  m.customProgramCacheKey = () => 'pxo-stonecap-v4';
   return m;
 })();
 // 床の縁の平面（外向きの法線 n・n·p ≤ d が床の側）のうち、中心 (x, z)・半径 rc の円にかかるもの。全部外なら null
@@ -2153,7 +2150,8 @@ function procStoneGeometry(seed, rug = 0.2) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, o), 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(nor.subarray(0, o), 3));
-  return { geometry, material: STONE_PROC_MAT, r: Math.max(hx, hz), rc, proc: true };
+  let hy = 0; for (let i = 1; i < o; i += 3) hy = Math.max(hy, pos[i]);
+  return { geometry, material: STONE_PROC_MAT, r: Math.max(hx, hz), rc, h: hy, proc: true };   // h：てっぺんまでの高さ [m]（埋まり具合に使う）
 }
 const _cv = new THREE.Vector3();
 // コードで作る石の肌：断面（STONE_CAP_MAT）と同じ四角い点々を、石に貼り付いた座標（石の中の位置 × 大きさ）で面ごとに並べる。
@@ -2170,7 +2168,7 @@ const STONE_PROC_MAT = (() => {
 #endif
   pxoStN = objectNormal;`);
     shader.fragmentShader = `varying vec3 pxoStL, pxoStN;
-float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
+${STONE_MOSS_GLSL}float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 n = normalize( pxoStN ), t = normalize( abs( n.y ) > 0.9 ? vec3( 1.0, 0.0, 0.0 ) : cross( vec3( 0.0, 1.0, 0.0 ), n ) ), bt = cross( n, t );
   vec2 g = vec2( dot( pxoStL, t ), dot( pxoStL, bt ) ) * ${STONE_DOTS_PER_M.toFixed(1)} + floor( n.xz * 7.0 + n.y * 3.0 ) * 13.7, id = floor( g ), f = fract( g ) - 0.5;   // 面の向きごとに並びをずらす
@@ -2178,11 +2176,24 @@ float pxoStHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot
   float rad = mix( 0.057, 0.21, clamp( ( h1 - 0.45 ) / 0.55, 0.0, 1.0 ) );
   vec2 off = ( vec2( h2, h3 ) - 0.5 ) * ( 1.0 - 2.0 * rad );
   float dt = step( 0.45, h1 ) * step( max( abs( f.x - off.x ), abs( f.y - off.y ) ), rad ) * mix( 0.3, 0.7, h3 );
-  diffuseColor.rgb *= mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ); }`);
+  // 石ごとの色（まとめ描きの instanceColor）は、r に色の濃さ、g に苔の量を入れてある（buildStones）。標準の処理はこれを色として掛けてしまうので、掛け直す
+#ifdef USE_COLOR
+  float pxoShd = vColor.r, pxoMsA = vColor.g;
+#else
+  float pxoShd = 1.0, pxoMsA = 0.0;
+#endif
+  diffuseColor.rgb = pxoMoss( mix( ${c(STONE_CAP)}, ${c(STONE_CAP_DOT)}, dt ) * pxoShd, n, pxoStL, pxoMsA, pxoShd ); }`);
   };
-  m.customProgramCacheKey = () => 'pxo-stoneproc-v1';
+  m.customProgramCacheKey = () => 'pxo-stoneproc-v3';
   return m;
 })();
+// ごつごつのばらつき（2026-10-09 ユーザー指定）：群れのごつごつの値を中心に、上下へ 5 段階に広げた値（0.05 きざみの番号。同じ番号は 1 つにまとめる）。
+// 石ごとに、どの段階の形を使うかを選ぶ。ばらつき 0 なら 1 段階だけ＝今までどおり。1 で ±0.5（0〜1 の端で止まる）。
+// 段階ごとに形が PROC_STONE_N 種類あるので、描く回数は最大でその 5 倍になる
+function procRugKeys(st) {
+  const rug = Math.max(0, Math.min(1, st.rug ?? 0.2)), v = Math.max(0, Math.min(1, st.rugVar ?? 0)) * 0.5;
+  return [...new Set([-1, -0.5, 0, 0.5, 1].map((t) => Math.round(Math.max(0, Math.min(1, rug + t * v)) * 20)))];
+}
 function procStones(rug = 0.2) {
   const key = Math.round(Math.max(0, Math.min(1, rug)) * 20);
   let list = PROC_STONES.get(key);
@@ -2191,14 +2202,14 @@ function procStones(rug = 0.2) {
     PROC_STONES.set(key, list);
     // 控えは今使っている値と、直近の数個だけ残す（スライダーを動かすたびに形が溜まらないように。使っている群れがある値は捨てない）
     if (PROC_STONES.size > 6) {
-      const inUse = new Set(stoneList.filter((st) => st.kind === 'proc').map((st) => Math.round(Math.max(0, Math.min(1, st.rug ?? 0.2)) * 20)));
+      const inUse = new Set(stoneList.flatMap(procRugKeys));
       for (const [k, old] of PROC_STONES) { if (PROC_STONES.size <= 6) break; if (k === key || inUse.has(k)) continue; for (const p of old) p.s.geometry.dispose(); PROC_STONES.delete(k); }
     }
   }
   return list;
 }
 // 1 個の石を世界の座標に置いて、床の縁で切った 2 つの形（表面・断面）にする
-function cutStoneMeshes(shape, matrix, planes, scale, shade = 1) {
+function cutStoneMeshes(shape, matrix, planes, scale, shade = 1, moss = 0) {
   const g = shape.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
   const nm = new THREE.Matrix3().getNormalMatrix(matrix);
   const vert = (i) => ({ p: new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(matrix), n: na ? new THREE.Vector3().fromBufferAttribute(na, i).applyMatrix3(nm).normalize() : new THREE.Vector3(0, 1, 0), uv: ua ? new THREE.Vector2().fromBufferAttribute(ua, i) : null });
@@ -2219,17 +2230,13 @@ function cutStoneMeshes(shape, matrix, planes, scale, shade = 1) {
     else {
       geo.setAttribute('pxoScale', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(scale), 1));
       geo.setAttribute('pxoShade', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(shade), 1));
+      geo.setAttribute('pxoMossA', new THREE.BufferAttribute(new Float32Array(list.length * 3).fill(moss), 1));
     }
     return geo;
   };
-  // コードで作る石は絵を持たないので、表面も断面と同じ点々の材質で描く
-  const surf = shape.proc ? [] : tris.filter((t) => !t[3]), caps = shape.proc ? tris : tris.filter((t) => t[3]);
+  // 石は絵を持たないので、表面も断面と同じ点々の材質で描く
   const meshes = [];
-  if (surf.length) {   // 表面：色の濃さを掛けた材質の複製（組み直すたびに捨てる）
-    const mat = shape.material.clone(); mat.color.multiplyScalar(shade); mat.userData.pxoOwned = true;
-    meshes.push(new THREE.Mesh(build(surf, true), mat));
-  }
-  if (caps.length) meshes.push(new THREE.Mesh(build(caps, false), STONE_CAP_MAT));
+  if (tris.length) meshes.push(new THREE.Mesh(build(tris, false), STONE_CAP_MAT));
   for (const m of meshes) { m.castShadow = true; m.receiveShadow = true; m.layers.enable(MODEL_SHADOW_LAYER); }
   return meshes;
 }
@@ -2247,49 +2254,189 @@ function buildStones() {
   HL_VER++;
   for (const m of STONE_EDGE) { m.geometry.dispose(); if (m.material.userData?.pxoOwned) m.material.dispose(); }   // 縁で切った形は毎回作り直す（断面の材質は共有なので捨てない）
   STONE_EDGE = [];
-  const stoneShapes = stonePatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
-  const rockShapes = rockPatterns.map((u) => ({ url: u, s: stoneShape(u) })).filter((p) => p.s);
-  const anyProc = stoneList.some((st) => st.kind === 'proc' && st.show !== false);
-  if (!stoneShapes.length && !anyProc) return;
-  const baseShapes = [...stoneShapes, ...rockShapes];   // per[] の添字：石が先、岩、コードで作る石（群れごとに、ごつごつの値で別の形）の順
-  const procAt = baseShapes.length;
-  const stoneW = stoneShapes.length ? stoneShapes.reduce((a, p) => a + p.s.r * 2, 0) / stoneShapes.length : 0.3;   // 石の形の平均の幅 [m]（大きさ 1 のとき）
   stoneList.forEach((st, ci) => {
     if (st.show === false) return;
-    const isProc = st.kind === 'proc';
-    if (!isProc && !stoneShapes.length) return;
     const onShore = !!st.shore && WATER_SHORE.length > 0, shoreW = Math.max(0.05, st.shoreW ?? 0.8), shoreIn = Math.max(0, Math.min(1, st.shoreIn ?? 0.3));   // 水辺に並べる：岸からの幅 [unit]、水の中に置く割合
-    const procShapes = isProc ? procStones(st.rug ?? 0.2) : [];   // コードで作る石（この群れのごつごつの値の形）
-    const shapes = isProc ? [...baseShapes, ...procShapes] : baseShapes;
+    const rugKeys = procRugKeys(st);
+    const shapes = rugKeys.flatMap((k) => procStones(k / 20));   // この群れのごつごつの値の形。ばらつきがあれば、段階ごとに PROC_STONE_N 種類ずつ
+    const rg = rng32(((st.seed ?? 1) ^ 0x2545f491) >>> 0);   // ごつごつの段階を選ぶ乱数（並びとは別。ばらつきを足す前に作った群れの並びが変わらないように）
+    const procPick = () => (Math.floor(rg() * rugKeys.length) % rugKeys.length) * PROC_STONE_N + (Math.floor(r() * PROC_STONE_N) % PROC_STONE_N);
     const r = rng32(st.seed ?? 1);
     const count = Math.max(0, Math.min(STONE_MAX, Math.round(st.count ?? 20)));
     const spread = Math.max(0, st.spread ?? 3), size = Math.max(0.01, st.size ?? 1), sizeVar = Math.max(0, Math.min(1, st.sizeVar ?? 0.4));
     const placed = [];   // { x, z, rad }
-    const per = shapes.map(() => []), perShade = shapes.map(() => []);
+    const per = shapes.map(() => []), perShade = shapes.map(() => []), perMoss = shapes.map(() => []);
+    // 埋まり具合・苔（2026-10-09 ユーザー指定）：石ごとに少しばらつかせる。並び・色とは別の乱数を使う（これらを足す前に作った群れの並びと色が変わらないように）
+    const buryAmt = Math.max(0, Math.min(0.95, st.bury ?? 0)), mossAmt = Math.max(0, Math.min(1, st.moss ?? 0));
+    const mossVar = Math.max(0, Math.min(1, st.mossVar ?? 0.25));   // 苔のばらつき（同日ユーザー指定）：石ごとに 1 ± これ倍。0.25 が今までの固定値（0.75〜1.25 倍）、1 で苔なし〜2 倍
+    const rb = rng32(((st.seed ?? 1) ^ 0x51ed270b) >>> 0);
     // 色の濃さ（2026-10-03 ユーザー指定）：1 で元の色、1 上がるごとに明るさが半分。ばらつきは石ごと（±2σ まで）。
     // 並びとは別の乱数を使う（このスライダーを足す前に作った群れの並びが変わらないように）
     const rc = rng32(((st.seed ?? 1) ^ 0x9e3779b9) >>> 0);
     const shadeOf = () => Math.pow(0.5, (st.shade ?? 1) + Math.max(-2, Math.min(2, gauss(rc))) * (st.shadeVar ?? 0) * 0.5 - 1);
+    // 密集した時の置き方（crowd。2026-10-09 ユーザー指定：ばらけ具合を小さくして密集した時に石が消えるので、消えずに隣り合う仕様も欲しい）：
+    //   'drop'  今までどおり。重ならない場所を STONE_TRIES 回探し、無ければその石は置かない（下の for。処理は変えていない）
+    //   'push'  押し広げる：重なりを見ずに全部の候補を作ってから、重なった石どうしを少しずつ押し離す（小さい石ほど大きく動く）。
+    //           石をよける範囲（水・土・石畳・柱）に入った石は外へ押し出し、床の外へ出た石は中へ戻す。群れの外形が自然にふくらむ
+    //   'stack' 積む：大きい石から順に置き、すでにある石と重なる石は、その石の丸み（半分の楕円とみなす）に沿った高さへ持ち上げて乗せる。
+    //           石の高さの 2 割だけ食い込ませて、浮いて見えないようにする。置く前に、まわりの低い所へ転がり落とすので、裾のなだらかな山になる
+    // 水辺に並べる石でも使える（同日ユーザー指摘：河原に石を詰めたくて頼んだのに、水辺では使えないようにしていた）：候補を岸へ寄せてから、
+    // 押し広げる時は石を「岸からの幅」の帯の中に留める（帯からはみ出した石は帯へ戻す。行き場の無い石は岸に沿って横へ逃げ、河原に詰まって並ぶ）
+    const crowd = st.crowd === 'push' || st.crowd === 'stack' ? st.crowd : 'drop';
+    const shoreMg = (() => { const mg = Math.max(0, Math.min(1, (shoreW - 0.1) / 0.7)); return mg * mg * (3 - 2 * mg); })();   // 縁から離す量の割合（岸からの幅が最小で 0、0.8 以上で 1。下の 'drop' と同じ式）
+    // 陸の側に決まった石を縁から離す量（半径に対する割合）。幅が最小でも半径の 0.35 倍（STONE_LAND_MIN）は離す（同日ユーザー指摘：水の中の割合が 0 なのに、石が水の上に乗っている。
+    // 幅が最小だと石の中心が縁の真上に来て、大きい石は半分が水の上へ張り出していた）。縁はまたぐので、崖の面には今までどおり埋まる
+    const landMg = STONE_LAND_MIN + (0.7 - STONE_LAND_MIN) * shoreMg;
+    // その岸に、実際に水があるか（同日：川の切れ端の形が、段差が奏者の足元をよけて残した所にかかっていて、水は描かれていないのに石だけ並んだ）。
+    // 岸から水の側へ 0.3 入った点が、よけて残した所でも床の外でもなければ、水があるとみなす（水面を置くかどうかの判定と同じ条件）
+    const shoreWet = (x, z, sd, nx, nz) => { const m = sd + 0.3, wx = x - nx * m, wz = z - nz * m; return insideFloor(wx, wz) && !stepKeptAt(wx, wz); };
+    // 岸の縁をまたいだ石を、崖の面に埋め込む高さ（同日ユーザー指摘：水の中の割合を 0 にしても水中に石が出た）：
+    // 石の幅の中の地面の高さ lo（川底）〜 hi（岸の上）の間でばらつかせる。陸の側に決まった石（wet でない）は、水面より下へは置かない
+    //（石の高さの 3 割までは水に浸かってよい）。水の中に決まった石は川底から。水面の高さは、岸から水の側へ 0.3 入った点で読む
+    const embedY = (x, z, sd, nx, nz, lo, hi, h, wet) => {
+      let low = lo;
+      if (!wet) { const m = sd + 0.3, ws = waterSurfAt(x - nx * m, z - nz * m); if (ws != null) low = Math.max(lo, Math.min(hi - 0.5 * h, ws - (st.y ?? 0) - 0.3 * h)); }
+      return (st.y ?? 0) + low + rb() * Math.max(0, hi - low - 0.5 * h);
+    };
+    const shoreGrad = (x, z) => { const sd = shoreSdAt(x, z), gx = shoreSdAt(x + 0.05, z) - sd, gz = shoreSdAt(x, z + 0.05) - sd, gl = Math.hypot(gx, gz); return gl > 1e-6 ? [sd, gx / gl, gz / gl, gl / 0.05] : [sd, 0, 0, 1]; };   // [岸までの距離, 陸の側への向き x, z, 距離の進み方]
+    if (crowd !== 'drop') {
+      const C = [];
+      for (let i = 0; i < count; i++) {   // 候補（'drop' の 1 回目の試しと同じ決め方）
+        const rad0 = onShore ? 1.5 * spread * Math.sqrt(r()) : Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;
+        const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar * 1.5);
+        const pi = procPick();
+        const rot = r() * Math.PI * 2, k = sc;
+        const c = { x: (st.x ?? 0) + Math.cos(a) * rad0, z: (st.z ?? 0) + Math.sin(a) * rad0, pi, rot, k, rad: shapes[pi].s.r * k * MODEL_M, h: (shapes[pi].s.h ?? 0) * k * MODEL_M, lift: 0, n: i };
+        if (onShore) {   // 水辺：岸へ寄せる。帯（岸からの位置の下限・上限）を石ごとに控える
+          // 帯は、その石が陸の側か水の中かで分ける（同日ユーザー指摘：水の中の割合を 0 にしても、押された石が水の中へ出た。
+          // 最初は帯を「水の中〜陸」の両方にまたがる幅で取っていて、割合を見ていなかった）。陸の石は岸の縁より陸の側、水の中の石は水の側に留まる
+          const u = Math.pow(r(), 1.6), wet = r() < shoreIn; c.wet = wet;
+          const want = wet ? -(c.rad * shoreMg + u * shoreW * 0.6) : c.rad * landMg + u * shoreW;
+          if (wet) { c.lo = -(c.rad * shoreMg + shoreW * 0.6); c.hi = -c.rad * shoreMg; }
+          else { c.lo = c.rad * landMg; c.hi = c.rad * landMg + shoreW; }
+          let ok = false;
+          for (let it = 0; it < 6; it++) {
+            const [sd, gx, gz, gk] = shoreGrad(c.x, c.z);
+            if (sd > 1e8) break;
+            if (Math.abs(sd - want) < 0.05) { ok = true; break; }
+            const m = (sd - want) / Math.max(0.5, gk);
+            c.x -= gx * m; c.z -= gz * m;
+          }
+          if (!ok || Math.hypot(c.x - (st.x ?? 0), c.z - (st.z ?? 0)) > 1.5 * spread + shoreW) continue;   // 岸に着けなかった・範囲の外：この石は置かない
+          { const [sd, gx, gz] = shoreGrad(c.x, c.z); if (!shoreWet(c.x, c.z, sd, gx, gz)) continue; }   // 水の無い岸：置かない
+        }
+        C.push(c);
+      }
+      const avoidOn = onShore ? (DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) : (WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length);   // 水辺の石は、水はよけない
+      const avoidSd = (x, z) => waterSdfAt(x, z, 'stone', onShore);
+      if (crowd === 'push') {
+        for (let it = 0; it < 80; it++) {
+          let moved = false;
+          for (let i = 0; i < C.length; i++) for (let j = i + 1; j < C.length; j++) {
+            const A = C[i], B = C[j], need = (A.rad + B.rad) * STONE_GAP;
+            let dx = B.x - A.x, dz = B.z - A.z, d = Math.hypot(dx, dz);
+            if (d >= need - 1e-3) continue;
+            if (d < 1e-5) { const an = (i * 2.399963 + j * 0.61803) % (Math.PI * 2); dx = Math.cos(an); dz = Math.sin(an); d = 1; }   // 同じ位置：番号から決めた向きへ離す
+            const ov = need - d, wa = B.rad / (A.rad + B.rad);   // 小さい石ほど大きく動かす
+            A.x -= (dx / d) * ov * wa; A.z -= (dz / d) * ov * wa; B.x += (dx / d) * ov * (1 - wa); B.z += (dz / d) * ov * (1 - wa);
+            moved = true;
+          }
+          for (const c of C) {
+            if (avoidOn) {   // よける範囲に入った石：範囲の外向き（距離が増える向き）へ、足りない分だけ押し出す
+              const sd = avoidSd(c.x, c.z);
+              if (sd < c.rad) {
+                const gx = avoidSd(c.x + 0.05, c.z) - sd, gz = avoidSd(c.x, c.z + 0.05) - sd, gl = Math.hypot(gx, gz);
+                if (gl > 1e-6) { const m = Math.min(0.5, c.rad - sd); c.x += (gx / gl) * m; c.z += (gz / gl) * m; moved = true; }
+              }
+            }
+            if (onShore) {   // 水辺：帯からはみ出した石を、岸に垂直な向きへ動かして帯の中へ戻す
+              const [sd, gx, gz, gk] = shoreGrad(c.x, c.z);
+              const over = sd > c.hi ? sd - c.hi : sd < c.lo ? sd - c.lo : 0;
+              if (Math.abs(over) > 0.02 && sd < 1e8) { const m = over / Math.max(0.5, gk); c.x -= gx * m; c.z -= gz * m; moved = true; }
+            }
+            if (!insideFloor(c.x, c.z)) { const dx = (st.x ?? 0) - c.x, dz = (st.z ?? 0) - c.z, dl = Math.hypot(dx, dz) || 1; c.x += (dx / dl) * 0.2; c.z += (dz / dl) * 0.2; moved = true; }   // 床の外へ出た石：群れの中心へ戻す
+          }
+          if (!moved) break;
+        }
+      } else {
+        const order = C.slice().sort((p, q) => q.rad - p.rad || p.n - q.n), done = [];
+        // その場所に置いた時に、石の底が来る高さ（下の石の丸みに沿う。地面なら 0）
+        const liftAt = (c, x, z) => {
+          let lift = 0;
+          for (const q of done) {
+            const d = Math.hypot(q.x - x, q.z - z);
+            if (d >= (q.rad + c.rad) * STONE_GAP) continue;
+            const t = Math.min(1, d / (q.rad + c.rad * 0.5));   // 下の石の中心からの離れ（0 で真上、1 で縁）
+            lift = Math.max(lift, q.lift + q.h * Math.sqrt(1 - t * t) - 0.2 * c.h);
+          }
+          return Math.max(0, lift);
+        };
+        // 転がり落ちる：決めた場所だけでなく、まわり（8 方向 × 石の半径の 0.7〜3.5 倍）も試して、「低くて近い所」に落ち着かせる。
+        // 高さ ＋ 動いた距離 × STACK_SLOPE が一番小さい場所を選ぶ（＝山の斜面がこの傾きより急にならない）。
+        // 最初は乗せる高さだけを決めていて、石が真上へ積み上がり、細い塔になった
+        const STACK_SLOPE = 0.6;
+        for (const c of order) {
+          let bx = c.x, bz = c.z, bl = liftAt(c, c.x, c.z), bs = bl;
+          if (bl > 0) for (let ring = 1; ring <= 5; ring++) for (let dir = 0; dir < 8; dir++) {
+            const an = dir * Math.PI / 4 + ring * 0.4 + c.n, dist = ring * 0.7 * c.rad, x = c.x + Math.cos(an) * dist, z = c.z + Math.sin(an) * dist;
+            if (onShore) { const sd = shoreSdAt(x, z); if (sd < c.lo || sd > c.hi) continue; }   // 水辺：転がり先も、その石の帯（陸の側／水の中）の中だけ
+            const l = liftAt(c, x, z), sc = l + dist * STACK_SLOPE;
+            if (sc < bs - 1e-6) { bs = sc; bx = x; bz = z; bl = l; }
+          }
+          c.x = bx; c.z = bz; c.lift = bl;
+          done.push(c);
+        }
+      }
+      for (const c of C) {   // 置く（'drop' の、場所が決まった後と同じ流れ）
+        const pi = c.pi;
+        // 水辺の陸の石が、帯より水の側に残っていたら置かない（同日ユーザー指摘：水の中の割合が 0 なのに、石が水の上に乗っている。
+        // 入り江のように両岸の石が押し合う所では、押し広げる繰り返しの中で帯へ戻しきれない石が出て、水の上に残っていた）
+        if (onShore && !c.wet && shoreSdAt(c.x, c.z) < c.lo - 0.1) continue;
+        if (onShore && !insideFloor(c.x, c.z)) continue;   // 中心が床の外（川が床の縁から出ていく先の岸）：床の縁で切られた欠片だけが水の上に残るので置かない
+        let groundY = (st.y ?? 0) + stepHAt(c.x, c.z) + c.lift;
+        const bur = buryAmt > 0 && c.lift < 0.01 ? Math.min(0.92, buryAmt * (0.7 + 0.6 * rb())) : 0;   // 埋めるのは地面に乗っている石だけ（上に積んだ石は沈めない）
+        if (onShore && c.lift < 0.01) {   // 岸の段差をまたいだ石は、崖の面に埋め込む（'drop' と同じ）
+          const [sd0, nx, nz] = shoreGrad(c.x, c.z), q = c.rad * 0.6, ga = stepHAt(c.x + nx * q, c.z + nz * q), gb = stepHAt(c.x - nx * q, c.z - nz * q), gc = stepHAt(c.x, c.z);
+          const lo = Math.min(ga, gb, gc), hi = Math.max(ga, gb, gc);
+          if (Math.abs(sd0) < c.rad * 0.6 && hi - lo > 0.05) groundY = embedY(c.x, c.z, sd0, nx, nz, lo, hi, c.h, !!c.wet);
+        }
+        const mo = mossAmt > 0 ? Math.max(0, Math.min(1, mossAmt * (1 + (rb() * 2 - 1) * mossVar))) : 0;
+        const mat = _sm.compose(_sp.set(c.x, groundY - bur * c.h, c.z), _sq.setFromAxisAngle(_sy, c.rot), _ss.setScalar(c.k * MODEL_M)).clone();
+        const planes = floorPlanesFor(c.x, c.z, shapes[pi].s.rc * c.k * MODEL_M);
+        if (!planes) continue;                                                             // 丸ごと床の外：置かない
+        if (avoidOn && avoidSd(c.x, c.z) < c.rad * (crowd === 'push' ? 0.9 : 1)) continue;   // よける範囲に残った石：置かない（押し広げた後は、押し出しの誤差の分だけ甘く見る）
+        const shade = shadeOf();
+        if (planes.length) {
+          const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
+          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
+          continue;
+        }
+        per[pi].push(mat); perShade[pi].push(shade); perMoss[pi].push(mo);
+      }
+    } else
     for (let i = 0; i < count; i++) {
       for (let t = 0; t < STONE_TRIES; t++) {
         // 中心ほど多く、外ほどまばら（正規分布。σ = ばらけ具合の半分、外れすぎはばらけ具合の 1.5 倍で止める）
         const rad0 = onShore ? 1.5 * spread * Math.sqrt(r()) : Math.min(1.5 * spread, Math.abs(gauss(r)) * spread / 2), a = r() * Math.PI * 2;   // 水辺：範囲の中をまんべんなく探す
         let x = (st.x ?? 0) + Math.cos(a) * rad0, z = (st.z ?? 0) + Math.sin(a) * rad0;
         const sc = size * Math.pow(2, Math.max(-2, Math.min(2, gauss(r))) * sizeVar * 1.5);   // 大きさのばらつき：1 で 1/8〜8 倍（±2σ まで）
-        const w = stoneW * sc;   // この石の幅 [m]
-        const u = Math.max(0, Math.min(1, (w - ROCK_FROM) / (ROCK_TO - ROCK_FROM))), pRock = u * u * (3 - 2 * u);
-        const useRock = !isProc && rockShapes.length > 0 && r() < pRock;
-        const pi = isProc ? procAt + (Math.floor(r() * procShapes.length) % procShapes.length) : useRock ? stoneShapes.length + (Math.floor(r() * rockShapes.length) % rockShapes.length) : Math.floor(r() * stoneShapes.length) % stoneShapes.length;
+        const pi = procPick();
         const rot = r() * Math.PI * 2;
-        const k = useRock ? w / (shapes[pi].s.r * 2) : sc;   // 岩は同じ幅になるように縮める
+        const k = sc;
         const rad = shapes[pi].s.r * k * MODEL_M;
+        let shN = null, shSd = 1e9, shWet = false;   // 水辺の石：岸に垂直な向きと、岸までの距離（下で、縁をまたいでいるかを見るのに使う）
         if (onShore) {
           // 水辺に並べる（2026-10-09 ユーザー指定：川や池の岸に沿って石を自動で置く）：候補の場所を、一番近い川・池の岸へ寄せる。
           // 岸からの位置（正が陸、負が水の中）を先に決め、そこへ着くまで岸に垂直な向きへ動かす（岸までの距離の傾きを見て、数回くり返す）。
           // きわほど多く、離れるほどまばら。水の中へは、陸の側の 6 割の幅まで
           // 石の大きさの分だけ岸から離す（同日：掘った川の縁ぎりぎりの石が、岸の壁からはみ出して宙に浮いて見えた）：
-          // 陸の石は縁から半径の 7 割、水の中の石は壁から半径ぶん内側から先に置く
-          const u = Math.pow(r(), 1.6), want = r() < shoreIn ? -(rad + u * shoreW * 0.6) : rad * 0.7 + u * shoreW;
+          // 陸の石は縁から半径の 7 割、水の中の石は壁から半径ぶん内側から先に置く。
+          // ただし、離す量は「岸からの幅」に連動させる（同日ユーザー指定：幅を最小にすると、岸の段差そのものまで寄せられるように。
+          // 崖の断面を石で埋めたい）：幅が最小（0.1）なら、水の中の石は離さず、陸の石は半径の 0.35 倍だけ離す（上の landMg）。0.8 以上で今までどおり。
+          // 縁をまたいだ石は、下で崖の面に埋め込む（宙に浮かせない）
+          const mg = Math.max(0, Math.min(1, (shoreW - 0.1) / 0.7)), mgS = mg * mg * (3 - 2 * mg);
+          const u = Math.pow(r(), 1.6); shWet = r() < shoreIn;
+          const want = shWet ? -(rad * mgS + u * shoreW * 0.6) : rad * landMg + u * shoreW;
           let ok = false;
           for (let it = 0; it < 5; it++) {
             const sd = shoreSdAt(x, z);
@@ -2301,25 +2448,51 @@ function buildStones() {
             x -= (gx / gl) * stepLen; z -= (gz / gl) * stepLen;
           }
           if (!ok || Math.hypot(x - (st.x ?? 0), z - (st.z ?? 0)) > 1.5 * spread + shoreW) continue;   // 岸に着けなかった・範囲の外へ出た：別の場所で試す
+          { const sd = shoreSdAt(x, z), gx = shoreSdAt(x + 0.05, z) - sd, gz = shoreSdAt(x, z + 0.05) - sd, gl = Math.hypot(gx, gz); shN = gl > 1e-6 ? [gx / gl, gz / gl] : null; shSd = sd;   // 岸に垂直な向き（陸の側へ）
+            if (shN && !shoreWet(x, z, sd, shN[0], shN[1])) continue; }   // 水の無い岸：別の場所で試す
+          if (!insideFloor(x, z)) continue;   // 中心が床の外（川が床の縁から出ていく先の岸）：床の縁で切られた欠片だけが水の上に残るので、別の場所で試す
         }
-        if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < (q.rad + rad) * STONE_GAP)) continue;
-        placed.push({ x, z, rad });
-        const mat = _sm.compose(_sp.set(x, (st.y ?? 0) + stepHAt(x, z), z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();   // 段差で掘った所では、その底に乗せる（2026-10-08。ひな壇の高さは足さない：段の上の物は高さを数字で持たせてあるため）
+        // 重なりの判定：ふつうの石は上から見た位置だけで見る。水辺の石は、下で高さを決めてから、高さも含めて見る（崖の面の上下に並べられるように）
+        if (!onShore) { if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < (q.rad + rad) * STONE_GAP)) continue; placed.push({ x, z, rad }); }
+        // 埋まり具合：石の高さに対する割合だけ、地面に沈める（石ごとに 0.7〜1.3 倍。沈めすぎて見えなくならないよう 0.92 まで）
+        let groundY = (st.y ?? 0) + stepHAt(x, z);
+        const bur = buryAmt > 0 ? Math.min(0.92, buryAmt * (0.7 + 0.6 * rb())) : 0;
+        // 岸の段差をまたいだ石（水辺に並べる石だけ）：石の幅の中に地面の高さが 2 つある時（岸の上と川底）、石を崖の面に埋め込む。
+        // 高さは、川底から「岸の上 − 石の高さの半分」までの間でばらつかせる（崖の面のあちこちから石が突き出して、断面が石で埋まる）。
+        // 石の陸の側の半分は崖の中に入って見えないので、宙に浮いては見えない
+        // 埋め込むのは、石が川の岸の縁そのものをまたいでいる時だけ（同日：岸からの幅の中にある別の崖＝段差の壁にも効いて、
+        // 背の高い崖の途中に石が張り付いて見えた）
+        if (shN && Math.abs(shSd) < rad * 0.6) {   // 0.6：下で地面の高さを見る幅と同じ（帯の内側の端＝半径の 0.7 倍にいる石は、またいでいない）
+          const q = rad * 0.6, ga = stepHAt(x + shN[0] * q, z + shN[1] * q), gb = stepHAt(x - shN[0] * q, z - shN[1] * q), gc = stepHAt(x, z);
+          const lo = Math.min(ga, gb, gc), hi = Math.max(ga, gb, gc);
+          if (hi - lo > 0.05) groundY = embedY(x, z, shSd, shN[0], shN[1], lo, hi, (shapes[pi].s.h ?? 0) * k * MODEL_M, shWet);
+        }
+        if (onShore) {   // 水辺の石の重なり：高さも含めた距離で（同日：上から見た位置だけだと、縁の線の上がすぐ満杯になり、崖の面に石を積めなかった）
+          if (placed.some((q) => Math.hypot(q.x - x, q.z - z, (q.y ?? groundY) - groundY) < (q.rad + rad) * STONE_GAP)) continue;
+          placed.push({ x, z, rad, y: groundY });
+        }
+        const mo = mossAmt > 0 ? Math.max(0, Math.min(1, mossAmt * (1 + (rb() * 2 - 1) * mossVar))) : 0;   // 苔の量（石ごとに 1 ± 苔のばらつき 倍）
+        const mat = _sm.compose(_sp.set(x, groundY - bur * (shapes[pi].s.h ?? 0) * k * MODEL_M, z), _sq.setFromAxisAngle(_sy, rot), _ss.setScalar(k * MODEL_M)).clone();   // 段差で掘った所では、その底に乗せる（2026-10-08。ひな壇の高さは足さない：段の上の物は高さを数字で持たせてあるため）
         const planes = floorPlanesFor(x, z, shapes[pi].s.rc * k * MODEL_M);
         if (!planes) break;                                    // 丸ごと床の外：置かない
         if (onShore) { if ((DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone', true) < rad) continue; }   // 水辺の石：水はよけない。土・石畳・柱にかかったら別の場所で試す
         else if ((WATER_AVOID.length || DIRT_AVOID.length || ROAD_AVOID.length || PILLAR_AVOID.length || MASONRY_AVOID.length) && waterSdfAt(x, z, 'stone') < rad) break;   // 「草・石をよける」水場に少しでも重なる：置かない（2026-10-03）
         const shade = shadeOf();
-        if (planes.length) { for (const m of cutStoneMeshes(shapes[pi].s, mat, planes, isProc ? MODEL_M : k * MODEL_M, shade)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); } break; }   // 縁にかかる：切った形で置く
-        per[pi].push(mat); perShade[pi].push(shade);           // 床の中：まとめて描く
+        if (planes.length) {   // 縁にかかる：切った形で置く。沈めた石は、床の下の部分も切る（切らないと、床の縁の断面から石の下半分が覗く。真下向きの平面は切り口の座標軸が取れないので、わずかに傾けた向きで）
+          const pls = bur > 0 ? [...planes, { n: new THREE.Vector3(1e-3, -1, 0).normalize(), d: -groundY }] : planes;
+          for (const m of cutStoneMeshes(shapes[pi].s, mat, pls, MODEL_M, shade, mo)) { m.userData.pxoCard = ci; STONE_EDGE.push(m); g.add(m); }
+          break;
+        }
+        per[pi].push(mat); perShade[pi].push(shade); perMoss[pi].push(mo);           // 床の中：まとめて描く
         break;
       }
     }
     shapes.forEach((p, pi) => {
       if (!per[pi].length) return;
-      const key = `${ci}:${p.url}`;
+      const key = `${ci}:${pi}`;   // 形の番号で引く（url はごつごつの段階が違っても同じ名前なので、段階どうしで取り合いになる）
       let im = STONE_POOL.get(key);
       if (!im || im.geometry !== p.s.geometry) {
+        if (im) im.dispose();   // 形が替わった（ごつごつを動かした）：前の入れ物を捨てる
         im = new THREE.InstancedMesh(p.s.geometry, p.s.material, STONE_MAX);
         im.setColorAt(0, new THREE.Color(1, 1, 1));   // 石ごとの色の入れ物を、上限の個数ぶん先に作る（個数を減らした後に作ると足りなくなる）
         im.castShadow = true; im.receiveShadow = true;
@@ -2328,7 +2501,8 @@ function buildStones() {
         STONE_POOL.set(key, im);
       }
       im.count = per[pi].length;
-      per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setScalar(perShade[pi][i])); });
+      // 石ごとの色：r に色の濃さ、g に苔の量（材質がそう読む。STONE_PROC_MAT）
+      per[pi].forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, _sc.setRGB(perShade[pi][i], perMoss[pi][i], 0)); });
       im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
       im.userData.pxoCard = ci;
       g.add(im);
@@ -3613,6 +3787,12 @@ export function setWater(list) {
 let WATER_AVOID = [];   // [{ cs: [[x, z, r]…], k }]
 // 川・池の形の全部（「草・石をよける」の設定に関係なく。石を水辺に並べるのに使う。2026-10-09）。海は入れない
 let WATER_SHORE = [];   // [{ cs, k }]
+function waterSurfAt(x, z) {   // その場所の水面の高さ [unit]（水面の高さの地図から。水が無ければ null）。石を水面より下へ置かない判定に使う
+  const i = Math.round((x - STEP_X0) / STEP_CELL), j = Math.round((z - STEP_Z0) / STEP_CELL);
+  if (i < 0 || j < 0 || i >= STEP_W || j >= STEP_H) return null;
+  const T = waterTopTex.image.data, q = (j * STEP_W + i) * 4;
+  return T[q + 1] ? (T[q + 2] / 255) * WATER_TOP_SPAN + WATER_TOP_LO : null;
+}
 function shoreSdAt(x, z) {   // 一番近い川・池の岸までの距離（負が水の中）。水が無ければ大きな値
   let best = 1e9;
   for (const w of WATER_SHORE) best = Math.min(best, circlesSd(w.cs, w.k, x, z));

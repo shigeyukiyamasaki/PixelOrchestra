@@ -6,7 +6,7 @@
  * 将来のオフライン書き出し（Remotion 等）でも使い回せるようにする。
  */
 import { MidiEngine, FAMILIES, FAMILY_LABEL, VARIANTS, DYN_SOURCES, midiToNoteName, normalizeVariant } from './midiEngine.js';
-import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, TREE_BROAD_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setStonePatterns, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSteps, setSand, setRoad, setPillars, setMasonry, setTrees, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
+import { createStage, layoutSeats, buildRisers, setStageDepthWrite, setFloorStyle, setScreens, setDomes, updateScreens, setWeather, updateWeather, screenInfo, SCREEN_DEFAULT, DOME_DEFAULT, TREE_BROAD_DEFAULT, CONDUCTOR_Z, PODIUM_H, SEAT_SHIFT_Z, sunFromTime, updateSky, renderFrame, setPixelPlayers, pixelGroups, setModels, modelThumb, setWaterBloomThreshold, setModelWind, tickModelWind, setModelShadowReceivers, setPlantBrightness, setStones, setHighlight, setGrass, setGrassPatterns, setGrassStem, setWater, setDirt, setSteps, setSand, setRoad, setPillars, setMasonry, setTrees, tickWater, setWaterSky, setWaterPlayers } from './stage.js';
 import { Puppet } from './puppet.js';
 import { setVoxelOverrides, COSTUMES } from './costume.js';
 import { nameLabel, setGlowSoftness, setPartStyle, setMetalThreshold, setMetalFresnel, LABEL_FONT, dotPart } from './sprites.js';
@@ -277,8 +277,8 @@ let models = (() => {
   return [];
 })();
 // 石のジェネレーター（2026-10-03 ユーザー指定）。x・z は群れの中心、y は床からの高さ、spread はばらけ具合 [unit]、
-// count は個数、size は大きさの倍率（1 で GLB の 1.25 倍＝3D モデルと同じ）、sizeVar は大きさのばらつき（0〜1）、seed は並び（並べ直しで変わる）
-const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true, kind: 'glb', rug: 0.2, shore: false, shoreW: 0.8, shoreIn: 0.3 };   // shore：水辺に並べる、shoreW：岸からの幅、shoreIn：水の中の割合（2026-10-09）   // kind：形の作り方（'glb' 3D モデル／'proc' コードで作る。2026-10-09）   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
+// count は個数、size は大きさの倍率、sizeVar は大きさのばらつき（0〜1）、seed は並び（並べ直しで変わる）
+const STONE_BASE = { name: '', x: 0, z: 2, y: 0, spread: 3, count: 20, size: 1, sizeVar: 0.4, shade: 1, shadeVar: 0, seed: 1, show: true, rug: 0.2, shore: false, shoreW: 0.8, shoreIn: 0.3, bury: 0, moss: 0, mossVar: 0.25, rugVar: 0, crowd: 'drop' };   // mossVar：苔のばらつき、rugVar：ごつごつのばらつき（2026-10-09）   // bury：埋まり具合、moss：苔（2026-10-09）   // shore：水辺に並べる、shoreW：岸からの幅、shoreIn：水の中の割合（2026-10-09）   // 形はコードで作る（最初は GLB と選べて kind で持っていた。2026-10-09 ユーザー指定で GLB を削除。古い設定に残る kind は読まない）   // shade：色の濃さ、shadeVar：そのばらつき（2026-10-03）
 const stoneDefaults = (o) => ({ ...STONE_BASE, ...o });
 let stones = (() => {
   try { const a = JSON.parse(LS.getItem(STONES_KEY) || 'null'); if (Array.isArray(a)) return a.map(stoneDefaults); } catch (e) { console.warn('石の設定の読込失敗:', e); }
@@ -291,33 +291,29 @@ function saveStones() {
     try { LS.setItem(STONES_KEY, JSON.stringify(stones)); pushSettings(); } catch (e) { console.warn('石の設定の保存失敗:', e); }
   }, 400);
 }
-// 石の形のもと：素材の「PixelOrchestra_ドロップ/3Dモデル」にある「石＋数字.glb」を全部（石4・石5 を足せば自動で増える）
+// 草の形のもと：素材の「PixelOrchestra_ドロップ/3Dモデル」にある「草＋数字.glb」を全部（石も最初はここの 石1.glb・岩1.glb などを使っていた。2026-10-09 に削除）
 const STONE_DIR = 'PixelOrchestra_ドロップ/3Dモデル';
-let stonePatternCount = 0, rockPatternCount = 0, grassPatternCount = 0, grassPatternNames = [];
-let genPatterns = [];   // [{ kind: 'stone'|'rock'|'grass', name, src }]。プロジェクトの保存で GLB ごとコピーする
-async function refreshStonePatterns() {
+let grassPatternCount = 0, grassPatternNames = [];
+let genPatterns = [];   // [{ kind: 'grass', name, src }]。プロジェクトの保存で GLB ごとコピーする
+async function refreshGenPatterns() {
   // 公開ページには素材の一覧（media-models.json）が無いので、プロジェクトに保存した形を使う（projectBackend.apply。2026-10-05：公開ページで石と草が出ていなかった）
   if (VIEW_NAME) return;
   await loadModelList();
   const pick = (head) => (modelFileList[STONE_DIR] || []).filter((n) => new RegExp(`^${head}\\d+\\.glb$`).test(n)).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10));
-  // 大きい石は岩の形に替える（幅 45〜80cm で混ぜる。2026-10-03）。草のジェネレーターの形のもと（2026-10-03）
+  // 草のジェネレーターの形のもと（2026-10-03）
   const of = (kind, head) => pick(head).map((n) => ({ kind, name: n.replace(/\.glb$/, ''), src: mediaUrlOf(STONE_DIR, n) }));
-  applyGenPatterns([...of('stone', '石'), ...of('rock', '岩'), ...of('grass', '草')]);
+  applyGenPatterns(of('grass', '草'));
 }
 function applyGenPatterns(list) {
   genPatterns = list;
   const by = (kind) => list.filter((p) => p.kind === kind);
-  const names = by('stone'), rocks = by('rock'), grasses = by('grass');
-  stonePatternCount = names.length; rockPatternCount = rocks.length;
-  setStonePatterns(names.map((p) => p.src), rocks.map((p) => p.src));
-  for (const el of document.querySelectorAll('#stoneRows .note')) el.textContent = stoneNote();
+  const grasses = by('grass');   // 古いプロジェクトに残る石・岩の形（kind: 'stone'／'rock'）は読まない
   grassPatternCount = grasses.length;
   const gNames = grasses.map((p) => p.name);
   setGrassPatterns(grasses.map((p) => ({ url: p.src, name: p.name })));
   if (gNames.join('|') !== grassPatternNames.join('|')) { grassPatternNames = gNames; renderScreens(); }   // 割合のスライダーを草の数に合わせて作り直す
   for (const el of document.querySelectorAll('#grassRows .note')) el.textContent = grassNote();
 }
-const stoneNote = () => (stonePatternCount ? `形：石1〜${stonePatternCount}${rockPatternCount ? `、大きい物は岩1〜${rockPatternCount}` : ''}（${STONE_DIR}）` : `形が見つかりません（${STONE_DIR} に 石1.glb などを置いてください）`);
 // カードにマウスが乗っている間、そのオブジェクトの輪郭を色付ける（2026-10-03 ユーザー指定：どのカードを触ればよいか分かりにくい）
 // まとまりの見出し（.genHead。2026-10-09 ユーザー指定：スライダーを内容ごとにグルーピングして見出しを付ける）の出し隠し：
 // 種類ごとにスライダーを出し隠しするカード（水）では、中身が全部隠れているまとまりの見出しも隠す。
@@ -381,9 +377,16 @@ function stoneRow(st, i) {
   slider('横位置', 'x', -30, 30, 0.1, 1, '群れの中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
+  slider('埋まり具合', 'bury', 0, 0.9, 0.05, 2, '石を地面に沈める深さ（石の高さに対する割合）。0 で地面の上に乗る、0.5 で半分埋まる。石ごとに少しばらつく。地面から顔を出した岩になる');
   head('数と広がり');
   slider('個数', 'count', 1, 400, 1, 0, '石の数。重ならない場所が見つからない石は置かないので、狭い範囲に多くすると少なめになる');
   slider('ばらけ具合', 'spread', 0, 20, 0.1, 1, '散らばる範囲の広さ [unit]。中心ほど多く、外ほどまばら（ほぼこの値の 1.5 倍までに収まる）');
+  // 密集した時の置き方（2026-10-09 ユーザー指定：密集した時に石が消えずに隣り合う仕様も欲しい）
+  const crowdRow = put(col, '<label class="sld crowdDep" title="石どうしが重なる時の置き方。置かない：重ならない場所が見つからない石は置かない（今までどおり。狭い範囲に多く置くと数が減る）。押し広げる：重なった石を押し離して、隣り合うように並べる（数は減らず、群れが自然に広がる）。積む：重なった石を、下の石の上に乗せる（数は減らず、石の山になる）。「水辺に並べる」の時は、石を岸からの幅の中に留めたまま押し広げるので、河原に石が詰まって並ぶ"><span>密集した時</span><select><option value="drop">置かない</option><option value="push">押し広げる</option><option value="stack">積む</option></select><b></b></label>');
+  const crowdSel = crowdRow.querySelector('select');
+  crowdSel.value = ['push', 'stack'].includes(st.crowd) ? st.crowd : 'drop';
+  crowdSel.onkeydown = (e) => e.stopPropagation();
+  crowdSel.onchange = () => { st.crowd = crowdSel.value; changed(); };
   head('水辺', '川・池の岸に沿って石を並べる時の設定');
   // 水辺に並べる（2026-10-09 ユーザー指定：川や池の岸に沿って石を自動で置く）
   const shoreChk = put(col, '<label class="genChk" title="石を、川・池の岸に沿って並べる。オンにすると、この群れの範囲（横位置・奥行き・ばらけ具合）の中にある岸へ石を寄せて置く。川全体に並べたい時は、ばらけ具合を大きくする。海には並べない"><input type="checkbox" class="shoreCb"><span>水辺に並べる</span></label>').querySelector('input');
@@ -393,20 +396,16 @@ function stoneRow(st, i) {
   slider('水の中の割合', 'shoreIn', 0, 1, 0.05, 2, '「水辺に並べる」の時、水の中に置く石の割合。0 で全部が陸の側、1 で全部が水の中。掘った川では、水の中の石は川底に座る').classList.add('shoreDep');   // 「水辺に並べる」がオフの間はグレー（style.css）
   col = colR;   // 右の列：大きさ・色・形
   head('大きさ');
-  slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率。1 で 3D モデルと同じ（石1 の幅 32cm を実物の 1.25 倍で置く）。幅が 45〜80cm（GLB の寸法。舞台の見た目では 56〜100cm）の石は岩の形が混ざり、それより大きいと全部岩になる');
+  slider('大きさ', 'size', 0.1, 5, 0.05, 2, '石の大きさの倍率');
   slider('大きさのばらつき', 'sizeVar', 0, 1, 0.05, 2, '大きさのばらつき。0 で全部同じ大きさ、1 で大小の差が大きい（1/8〜8 倍）');
   head('色');
   slider('色の濃さ', 'shade', 0, 3, 0.05, 2, '石の色の濃さ。1 で元の色。1 上がるごとに明るさが半分（濃く）、1 下がるごとに倍（淡く）');
   slider('色のばらつき', 'shadeVar', 0, 1, 0.05, 2, '石ごとの色の濃さのばらつき。0 で全部同じ、1 で濃さが ±1 ほどばらつく（明るさ 1/2〜2 倍）');
+  slider('苔', 'moss', 0, 1, 0.05, 2, '苔の量。上を向いた面ほど付き、上げるほど側面まで広がる。0 で苔なし');
+  slider('苔のばらつき', 'mossVar', 0, 1, 0.05, 2, '石ごとの苔の量のばらつき。0 で全部同じ、0.25 で 0.75〜1.25 倍、1 で苔の無い石から 2 倍の石まで混ざる');
   head('形');
-  // 形の作り方（2026-10-09 ユーザー指定：石の GLB をコードだけで再現して比べたい）。群れごとに選ぶ。既定は今までどおり 3D モデル
-  const kindRow = put(col, '<label class="sld" title="石の形の作り方。3D モデル：素材フォルダの 石1.glb などを使う（今までどおり。大きい石は岩の形に替わる）。コードで作る：同じ作り方（丸い塊を平らな面で切り落とす）をコードで行い、8 種類の形を使い回す。肌の点々は大きさに依らず同じ実寸で、素材のファイルが要らない"><span>形の作り方</span><select><option value="glb">3D モデル</option><option value="proc">コードで作る</option></select><b></b></label>');
-  const kindSel = kindRow.querySelector('select');
-  kindSel.classList.add('kindSel');
-  kindSel.value = st.kind === 'proc' ? 'proc' : 'glb';
-  kindSel.onkeydown = (e) => e.stopPropagation();
-  kindSel.onchange = () => { st.kind = kindSel.value; changed(); };
-  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合（形の作り方が「コードで作る」の時だけ効く）。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石、0.2 が 3D モデルの小さい石に近い形').classList.add('rugDep');   // 形の作り方が「3D モデル」の間はグレー（style.css）
+  slider('ごつごつ', 'rug', 0, 1, 0.05, 2, '石のごつごつ具合。上げるほど、凹凸と面の割れが強くなり、細かい凹凸が重なり、切り落とした面が増えて、荒い岩になる。0 でなめらかな丸い石');
+  slider('ごつごつのばらつき', 'rugVar', 0, 1, 0.05, 2, '石ごとのごつごつ具合のばらつき。0 で全部同じ、1 でごつごつの値 ±0.5 の範囲（5 段階）から石ごとに選ぶ。上げると形の種類が最大 5 倍になり、その分だけ描く回数が増える');
   const btns = put(top, '<div class="stoneBtns"></div>');   // 作り直し・複製・削除は、上の段の「表示」の右へ（2026-10-09 ユーザー指定）
   const again = put(btns, '<button title="同じ設定のまま、並び（位置・向き・形の割り当て）だけ変える">並べ直し</button>');
   again.onclick = () => { st.seed = ((st.seed ?? 1) % 1000000) + 1; changed(); };
@@ -414,7 +413,6 @@ function stoneRow(st, i) {
   dup.onclick = () => { const c = stoneDefaults(JSON.parse(JSON.stringify(st))); c.name = `${st.name || `石${i + 1}`}のコピー`; stones.splice(i + 1, 0, c); renderScreens(); changed(); };
   const del = put(btns, '<button class="del" title="この群れを削除する">削除</button>');
   del.onclick = () => { stones.splice(i, 1); renderScreens(); changed(); };
-  put(box, `<div class="note">${stoneNote()}</div>`);
   return box;
 }
 // 草のジェネレーター（2026-10-03 ユーザー指定）。石と同じ作りで、clump（群生のまとまり 0〜1）を足し、重なりは許す
@@ -470,6 +468,7 @@ function grassRow(st, i) {
   slider('横位置', 'x', -30, 30, 0.1, 1, '群れの中心の左右の位置 [unit]。0 が舞台の中央、プラスが客席から見て右');
   slider('奥行き', 'z', -36, 8, 0.1, 1, '群れの中心の前後の位置 [unit]。プラスが客席側、マイナスが奥');
   slider('高さ', 'y', -2, 10, 0.05, 2, '床からの高さ [unit]。0 で床に置く');
+  slider('埋まり具合', 'bury', 0, 0.9, 0.05, 2, '石を地面に沈める深さ（石の高さに対する割合）。0 で地面の上に乗る、0.5 で半分埋まる。石ごとに少しばらつく。地面から顔を出した岩になる');
   put(col, '<div class="genHead">数と広がり</div>');
   slider('個数', 'count', 1, 1000, 1, 0, '草の株の数（上限 1000。2026-10-04 ユーザー指定）。中心が床の外になる株は置かない（はみ出した分は床の縁で消える）');
   slider('ばらけ具合', 'spread', 0, 30, 0.1, 1, '生える範囲の広さ（中心からの半径）[unit]。範囲の中に均一に散らばる（2026-10-04 ユーザー指定）。30 で床とひな壇の全体に行き渡る（上限 30）。床の外になる株は置かない');
@@ -3158,8 +3157,8 @@ const projectBackend = {
   async save(name) {
     const assets = [];
     const snap = snapshotSettings();
-    // 置いた石・草の形のもと（GLB）も一緒にコピーする（公開ページには素材の一覧が無いため。2026-10-05）
-    const used = new Set([...(stones.length ? ['stone', 'rock'] : []), ...(grass.length ? ['grass'] : [])]);
+    // 置いた草の形のもと（GLB）も一緒にコピーする（公開ページには素材の一覧が無いため。2026-10-05。石は GLB を使わなくなった：2026-10-09）
+    const used = new Set(grass.length ? ['grass'] : []);
     snap[PATTERNS_KEY] = JSON.stringify(genPatterns.filter((p) => used.has(p.kind)));
     const settings = mapAssetSrcs(snap, (u) => { assets.push(u); });
     const body = { settings, midi: null, audio: null, assets };
@@ -3446,7 +3445,7 @@ setPillars(pillars);  // 石の柱（2026-10-05）
 setMasonry(masonry);  // 石組み（2026-10-05）
 setTrees(trees);      // 木のジェネレーター（2026-10-05）
 setSteps(steps);      // 段差（2026-10-08）。水・草・木を地面の高さに乗せ直すので最後に
-refreshStonePatterns();
+refreshGenPatterns();
 renderScreens();      // スクリーンの操作メニューを作る（3D 側はひな壇の組み立て時に反映される）
 setScreens(screens);
 refreshValueLabels();

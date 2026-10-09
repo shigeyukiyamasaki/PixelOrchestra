@@ -192,13 +192,11 @@ body:has(#groundBounceOn:not(:checked)) label:has(#groundBounce) { opacity: .45;
    ・「表示」がオフのカード：名前・表示・ボタン群の段（.stoneTop）、素材の絵の段（.top）、下の段（.foot）、名前の欄は通常のまま。それ以外を全部薄く。
      よけるチェックの段（.genChecks）は .stoneTop と同じ形だが配下なので薄くする
    ・石の「水辺に並べる」がオフ：岸からの幅・水の中の割合（.shoreDep）
-   ・石の「形の作り方」が 3D モデル：ごつごつ（.rugDep。コードで作る時だけ効く）
    カードごと薄い時は、中の個別の薄さを重ねない（二重に掛けると見えなくなる） */
 #screenBar .screen:has(.showCb:not(:checked)) > *:not(.stoneTop):not(.top):not(.foot):not(.name),
 #screenBar .screen:has(.showCb:not(:checked)) > .genChecks { opacity: .45; pointer-events: none; }
-#screenBar .screen .genCol:has(.shoreCb:not(:checked)) .shoreDep,
-#screenBar .screen .genCol:has(.kindSel > option[value="glb"]:checked) .rugDep { opacity: .45; pointer-events: none; }
-#screenBar .screen:has(.showCb:not(:checked)) .shoreDep, #screenBar .screen:has(.showCb:not(:checked)) .rugDep { opacity: 1; }
+#screenBar .screen .genCol:has(.shoreCb:not(:checked)) .shoreDep { opacity: .45; pointer-events: none; }
+#screenBar .screen:has(.showCb:not(:checked)) .shoreDep { opacity: 1; }
 /* まとまりの中に置くチェック（列の中の 1 行。上の段のチェックと同じ見た目） */
 #screenBar .screen.gen .genCol > .genChk { display: flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
 /* 3D モデル用の風（2026-10-02）：左に風の箱、右にカードの列 */
